@@ -55,3 +55,36 @@ export const createSessionSchema = z.object({
 });
 
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
+
+// --- Run / Attempt validation ---
+
+export const SELF_SCORES = ["CORRECT", "PARTIAL", "INCORRECT"] as const;
+export type SelfScore = (typeof SELF_SCORES)[number];
+
+export const ERROR_TYPES = [
+  "MISCONCEPTION",
+  "PROCEDURE",
+  "CARELESS",
+  "MEMORY",
+  "UNKNOWN",
+] as const;
+export type ErrorType = (typeof ERROR_TYPES)[number];
+
+export const RUN_STATUSES = ["CREATED", "ACTIVE", "PAUSED", "COMPLETED"] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export const submitAttemptSchema = z.object({
+  prompt_index: z.number().int().min(0),
+  user_answer: z.string().min(1, "Answer is required"),
+  self_score: z.enum(SELF_SCORES),
+  time_to_answer_seconds: z.number().int().min(0).optional(),
+  error_log: z
+    .object({
+      error_type: z.enum(ERROR_TYPES),
+      correction_rule: z.string().min(1, "Correction rule is required"),
+      variant_question: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type SubmitAttemptInput = z.infer<typeof submitAttemptSchema>;
