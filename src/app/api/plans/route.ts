@@ -1,0 +1,38 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getUserId } from "@/lib/auth";
+import { createPlan } from "@/services/plan";
+import { z } from "zod/v4";
+
+export async function POST(request: NextRequest) {
+  const userId = getUserId(request.headers);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const result = await createPlan(userId, body);
+    return NextResponse.json(result, { status: 201 });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Validation failed", issues: err.issues },
+        { status: 400 }
+      );
+    }
+    console.error("Failed to create plan:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
