@@ -3,11 +3,13 @@ import { generateSessionId } from "@/lib/session-id";
 import { generateRetrievalPrompts } from "@/lib/prompts";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
+import { logger } from "@/lib/logger";
+import { captureException } from "@/lib/error-reporter";
 import type { SubmitAttemptInput } from "@/lib/validation";
 
 // ---- Types ----
 
-interface RunMetrics {
+export interface RunMetrics {
   attempts_count: number;
   correct_count: number;
   partial_count: number;
@@ -31,7 +33,6 @@ function emptyMetrics(): RunMetrics {
 // ---- Start / Resume ----
 
 export async function startOrResumeRun(userId: string, sessionId: string) {
-  // Fetch session
   const session = await prisma.session.findUnique({ where: { sessionId } });
   if (!session) return { error: "session_not_found" as const };
   if (session.userId !== userId) return { error: "forbidden" as const };
@@ -39,14 +40,13 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
     return { error: "unsupported_mode" as const };
   }
 
-  // Check for existing active run
+  // Idempotent: return existing active run if present
   const existingRun = await prisma.sessionRun.findFirst({
     where: { sessionId: session.sessionId, userId, status: { in: ["CREATED", "ACTIVE"] } },
     orderBy: { createdAt: "desc" },
   });
 
   if (existingRun) {
-    // Resume: update break state in case time passed
     const breakState = existingRun.breakState as unknown as BreakState;
     const updatedBreakState = checkBreakNeeded(breakState);
     if (updatedBreakState !== breakState) {
@@ -55,6 +55,13 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
         data: { breakState: updatedBreakState as object },
       });
     }
+
+    logger.info("run.resumed", {
+      user_id: userId,
+      session_id: sessionId,
+      run_id: existingRun.runId,
+      current_index: existingRun.currentIndex,
+    });
 
     return {
       data: {
@@ -98,6 +105,14 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       metrics: metrics as object,
       breakState: breakState as object,
     },
+  });
+
+  logger.info("run.started", {
+    user_id: userId,
+    session_id: sessionId,
+    run_id: run.runId,
+    prompt_count: prompts.length,
+    break_type: breakProtocol?.type ?? "50_10",
   });
 
   return {
@@ -176,11 +191,11 @@ export async function submitAttempt(userId: string, runId: string, input: Submit
   // Check break state
   const breakState = checkBreakNeeded(run.breakState as unknown as BreakState);
   if (breakState.on_break) {
-    // Persist updated break state
     await prisma.sessionRun.update({
       where: { id: run.id },
       data: { breakState: breakState as object },
     });
+    logger.info("break.started", { run_id: runId, user_id: userId });
     return { error: "on_break" as const, break_state: breakState };
   }
 
@@ -193,36 +208,15 @@ export async function submitAttempt(userId: string, runId: string, input: Submit
   const prompt = prompts[input.prompt_index];
   if (!prompt) return { error: "invalid_index" as const };
 
-  // Insert attempt
-  await prisma.sessionAttempt.create({
-    data: {
-      runId: run.runId,
-      promptIndex: input.prompt_index,
-      promptId: prompt.id,
-      promptText: prompt.text,
-      userAnswer: input.user_answer,
-      selfScore: input.self_score,
-      timeToAnswerSeconds: input.time_to_answer_seconds ?? null,
-    },
+  // Check for duplicate attempt (idempotency / double-click protection)
+  const existing = await prisma.sessionAttempt.findUnique({
+    where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
   });
-
-  // Insert error log if needed
-  if (
-    (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
-    input.error_log
-  ) {
-    await prisma.sessionErrorLog.create({
-      data: {
-        runId: run.runId,
-        promptIndex: input.prompt_index,
-        errorType: input.error_log.error_type,
-        correctionRule: input.error_log.correction_rule,
-        variantQuestion: input.error_log.variant_question ?? null,
-      },
-    });
+  if (existing) {
+    return { error: "duplicate_attempt" as const };
   }
 
-  // Update metrics
+  // Transaction: insert attempt + error log + update run atomically
   const metrics = run.metrics as unknown as RunMetrics;
   const newMetrics: RunMetrics = {
     attempts_count: metrics.attempts_count + 1,
@@ -230,8 +224,7 @@ export async function submitAttempt(userId: string, runId: string, input: Submit
     partial_count: metrics.partial_count + (input.self_score === "PARTIAL" ? 1 : 0),
     incorrect_count: metrics.incorrect_count + (input.self_score === "INCORRECT" ? 1 : 0),
     accuracy: 0,
-    time_spent_seconds:
-      metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
+    time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
   };
   newMetrics.accuracy =
     newMetrics.attempts_count > 0
@@ -240,30 +233,82 @@ export async function submitAttempt(userId: string, runId: string, input: Submit
 
   const newIndex = run.currentIndex + 1;
   const isLastPrompt = newIndex >= prompts.length;
-
-  // Check if break is needed after advancing
   const updatedBreakState = isLastPrompt ? breakState : checkBreakNeeded(breakState);
 
-  await prisma.sessionRun.update({
-    where: { id: run.id },
-    data: {
-      currentIndex: newIndex,
-      metrics: newMetrics as object,
-      breakState: updatedBreakState as object,
-      status: isLastPrompt ? "COMPLETED" : "ACTIVE",
-      endedAt: isLastPrompt ? new Date() : undefined,
-    },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Insert attempt
+      await tx.sessionAttempt.create({
+        data: {
+          runId: run.runId,
+          promptIndex: input.prompt_index,
+          promptId: prompt.id,
+          promptText: prompt.text,
+          userAnswer: input.user_answer,
+          selfScore: input.self_score,
+          timeToAnswerSeconds: input.time_to_answer_seconds ?? null,
+        },
+      });
+
+      // Insert error log if needed
+      if (
+        (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
+        input.error_log
+      ) {
+        await tx.sessionErrorLog.create({
+          data: {
+            runId: run.runId,
+            promptIndex: input.prompt_index,
+            errorType: input.error_log.error_type,
+            correctionRule: input.error_log.correction_rule,
+            variantQuestion: input.error_log.variant_question ?? null,
+          },
+        });
+      }
+
+      // Compute final metrics if last prompt
+      const metricsToStore = isLastPrompt
+        ? { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) }
+        : newMetrics;
+
+      // Update run
+      await tx.sessionRun.update({
+        where: { id: run.id },
+        data: {
+          currentIndex: newIndex,
+          metrics: metricsToStore as object,
+          breakState: updatedBreakState as object,
+          status: isLastPrompt ? "COMPLETED" : "ACTIVE",
+          endedAt: isLastPrompt ? new Date() : undefined,
+        },
+      });
+    });
+  } catch (err: unknown) {
+    // Handle unique constraint violation (double submit that raced past the check)
+    if (err instanceof Error && err.message.includes("Unique constraint")) {
+      return { error: "duplicate_attempt" as const };
+    }
+    captureException(err, { user_id: userId, run_id: runId, action: "submitAttempt" });
+    throw err;
+  }
+
+  logger.info("prompt.submitted", {
+    user_id: userId,
+    run_id: runId,
+    prompt_index: input.prompt_index,
+    self_score: input.self_score,
+    time_to_answer_seconds: input.time_to_answer_seconds,
+    is_last: isLastPrompt,
   });
 
-  // If completed, add followup recommendations
   if (isLastPrompt) {
-    const followups = computeFollowups(newMetrics.accuracy);
-    const finalMetrics = { ...newMetrics, recommended_followups: followups };
-    await prisma.sessionRun.update({
-      where: { id: run.id },
-      data: { metrics: finalMetrics as object },
+    const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
+    logger.info("run.completed", {
+      user_id: userId,
+      run_id: runId,
+      accuracy: finalMetrics.accuracy,
+      attempts_count: finalMetrics.attempts_count,
     });
-
     return {
       data: {
         status: "COMPLETED" as const,
@@ -284,25 +329,47 @@ export async function submitAttempt(userId: string, runId: string, input: Submit
   };
 }
 
-// ---- Complete Run (manual) ----
+// ---- Complete Run (idempotent) ----
 
 export async function completeRun(userId: string, runId: string) {
   const run = await prisma.sessionRun.findUnique({ where: { runId } });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
-  if (run.status === "COMPLETED") return { error: "already_completed" as const };
+
+  // Idempotent: if already completed, return existing result
+  if (run.status === "COMPLETED") {
+    const metrics = run.metrics as unknown as RunMetrics;
+    return {
+      data: {
+        run_id: run.runId,
+        status: "COMPLETED" as const,
+        metrics,
+        started_at: run.startedAt?.toISOString() ?? null,
+        ended_at: run.endedAt?.toISOString() ?? null,
+      },
+    };
+  }
 
   const metrics = run.metrics as unknown as RunMetrics;
   const followups = computeFollowups(metrics.accuracy);
   const finalMetrics = { ...metrics, recommended_followups: followups };
+  const endedAt = new Date();
 
   await prisma.sessionRun.update({
     where: { id: run.id },
     data: {
       status: "COMPLETED",
-      endedAt: new Date(),
+      endedAt,
       metrics: finalMetrics as object,
     },
+  });
+
+  logger.info("run.completed", {
+    user_id: userId,
+    run_id: runId,
+    accuracy: finalMetrics.accuracy,
+    attempts_count: finalMetrics.attempts_count,
+    manual: true,
   });
 
   return {
@@ -311,7 +378,7 @@ export async function completeRun(userId: string, runId: string) {
       status: "COMPLETED" as const,
       metrics: finalMetrics,
       started_at: run.startedAt?.toISOString() ?? null,
-      ended_at: new Date().toISOString(),
+      ended_at: endedAt.toISOString(),
     },
   };
 }
@@ -339,6 +406,13 @@ export async function endBreak(userId: string, runId: string) {
   await prisma.sessionRun.update({
     where: { id: run.id },
     data: { breakState: newState as object },
+  });
+
+  logger.info("break.ended", {
+    user_id: userId,
+    run_id: runId,
+    cycle: newState.current_cycle,
+    early: true,
   });
 
   return { data: { break_state: newState } };

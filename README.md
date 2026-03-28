@@ -123,7 +123,7 @@ curl -X POST http://localhost:3000/api/runs/xYz789/attempt \
   }'
 ```
 
-**Error codes:** 409 if on break, wrong index, or run completed.
+**Error codes:** 409 if on break, wrong index, duplicate attempt, or run completed.
 
 #### POST /api/runs/:runId/complete
 
@@ -206,3 +206,70 @@ npx prisma migrate dev --name add-session-runs
 | `CARELESS` | Knew it but made a mistake |
 | `MEMORY` | Couldn't recall |
 | `UNKNOWN` | Other |
+
+---
+
+## Testing
+
+### Unit tests (no DB required)
+
+```bash
+npm run test:unit
+```
+
+Covers: session ID generation, validation schemas, break protocol logic, prompt generation, spacing recommendations, structured logger.
+
+### Integration tests (requires PostgreSQL)
+
+```bash
+# Set up a test database
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/studybot_test" npm run test:integration
+```
+
+Covers: full session → run → attempt → complete flow, ownership enforcement (403), idempotent start/complete, duplicate attempt protection, break enforcement, 404 cases, DB integrity verification.
+
+### E2E tests (requires PostgreSQL + browser)
+
+```bash
+# Install Playwright browsers (first time only)
+npx playwright install --with-deps chromium
+
+# Run E2E tests (starts dev server automatically)
+npm run test:e2e
+```
+
+Covers: preflight screen rendering, prompt submission, error logging, page refresh resumability, completion summary, security (auth, cross-user), state validation (wrong index, post-completion, idempotent complete).
+
+### Test break protocols
+
+For deterministic testing, use these break protocols:
+
+| Type | Work | Break | Use case |
+|------|------|-------|----------|
+| `TEST_1_1` | 1 sec | 1 sec | Fast break trigger |
+| `TEST_3_2` | 3 sec | 2 sec | E2E tests |
+
+---
+
+## Hardening
+
+- **Double-submit protection**: Unique constraint on `(run_id, prompt_index)` in session_attempts + application-level duplicate check
+- **Transactional writes**: Attempt insert + error log + metrics update + index advance wrapped in a DB transaction
+- **Idempotent start**: Calling start twice returns the same active run
+- **Idempotent complete**: Calling complete on an already-completed run returns the existing result (no 409)
+- **Strict validation**: `error_log` required when self_score is PARTIAL/INCORRECT; `time_to_answer_seconds` capped at 7200
+
+## Observability
+
+- **Structured JSON logs** via `src/lib/logger.ts` — events: `session.created`, `run.started`, `run.resumed`, `prompt.submitted`, `break.started`, `break.ended`, `run.completed`
+- **Error reporter** stub at `src/lib/error-reporter.ts` — replace with Sentry/Datadog in production
+- Logs suppressed in test environment unless `LOG_LEVEL=debug`
+
+## CI Pipeline
+
+GitHub Actions workflow at `.github/workflows/quality-gate.yml`:
+
+1. **Lint & Typecheck** — `tsc --noEmit`
+2. **Unit Tests** — fast, no DB
+3. **Integration Tests** — with PostgreSQL service container
+4. **E2E Tests** — Playwright headless against built app + PostgreSQL
