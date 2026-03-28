@@ -87,3 +87,40 @@ model SessionErrorLog {
   @@index([runId])
   @@map("session_error_logs")
 }
+
+model StudyPlan {
+  id         String          @id @default(uuid())
+  planId     String          @unique @map("plan_id")
+  userId     String          @map("user_id")
+  courseId    String          @map("course_id")
+  courseName String          @map("course_name")
+  examId     String          @map("exam_id")
+  examName   String          @map("exam_name")
+  examDate   DateTime        @map("exam_date") @db.Date
+  timezone   String          @default("America/New_York")
+  startDate  DateTime        @map("start_date") @db.Date
+  endDate    DateTime        @map("end_date") @db.Date
+  config     Json            @default("{}")
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  items      StudyPlanItem[]
+
+  @@index([userId])
+  @@map("study_plans")
+}
+
+model StudyPlanItem {
+  id        String    @id @default(uuid())
+  planId    String    @map("plan_id")
+  sessionId String    @map("session_id")
+  dayIndex  Int       @map("day_index")
+  startTime DateTime  @map("start_time") @db.Timestamptz
+  endTime   DateTime  @map("end_time") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  plan      StudyPlan @relation(fields: [planId], references: [planId])
+
+  @@index([planId])
+  @@map("study_plan_items")
+}

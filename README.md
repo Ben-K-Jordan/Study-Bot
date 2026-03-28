@@ -265,6 +265,61 @@ For deterministic testing, use these break protocols:
 - **Error reporter** stub at `src/lib/error-reporter.ts` — replace with Sentry/Datadog in production
 - Logs suppressed in test environment unless `LOG_LEVEL=debug`
 
+## Week Planner
+
+Generate a 7-day study plan with automatic session creation and calendar export.
+
+### Creating a Plan
+
+Visit `/plan` in the browser or use the API:
+
+```bash
+curl -X POST http://localhost:3000/api/plans \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{
+    "course_name": "CS 2110",
+    "exam_name": "Prelim 1",
+    "exam_date": "2024-03-15",
+    "objectives": ["Loops and invariants", "Recursion", "Linked lists", "Stacks and queues", "Big-O analysis"],
+    "availability": [
+      {"start": "09:00", "end": "17:00"},
+      {"start": "09:00", "end": "17:00"},
+      {"start": "09:00", "end": "17:00"},
+      {"start": "09:00", "end": "17:00"},
+      {"start": "09:00", "end": "17:00"},
+      {"start": "09:00", "end": "17:00"},
+      {"start": "09:00", "end": "17:00"}
+    ],
+    "daily_study_cap_minutes": 180,
+    "break_protocol_default": "50_10"
+  }'
+```
+
+### Downloading ICS Calendar File
+
+```bash
+curl http://localhost:3000/api/plans/{plan_id}/ics \
+  -H "X-User-Id: user_123" \
+  -o study-plan.ics
+```
+
+Import the `.ics` file into Google Calendar, Apple Calendar, or Outlook.
+
+### Plan Schedule
+
+| Day | Sessions |
+|-----|----------|
+| 0 | Diagnostic Retrieval (short) + Retrieval pack A |
+| 1 | Retrieval pack B |
+| 2 | Interleaved Practice (A+B mixed) |
+| 3 | Retrieval pack C (or revisit A) |
+| 4 | Interleaved Practice (B+C mixed) |
+| 5 | Exam Sim + Error Repair |
+| 6 | Final mixed Retrieval (all packs) |
+
+---
+
 ## CI Pipeline
 
 GitHub Actions workflow at `.github/workflows/quality-gate.yml`:

@@ -96,3 +96,47 @@ export const submitAttemptSchema = z
   );
 
 export type SubmitAttemptInput = z.infer<typeof submitAttemptSchema>;
+
+// --- Plan validation ---
+
+export const PLAN_BREAK_TYPES = ["25_5", "50_10", "90_15"] as const;
+
+const dayAvailabilitySchema = z.object({
+  start: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
+  end: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
+});
+
+export const createPlanSchema = z
+  .object({
+    course_name: z.string().min(1, "course_name is required"),
+    course_id: z.string().optional(),
+    exam_name: z.string().min(1, "exam_name is required"),
+    exam_id: z.string().optional(),
+    exam_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
+    timezone: z.string().optional().default("America/New_York"),
+    objectives: z
+      .array(z.string().min(1))
+      .min(3, "At least 3 objectives required"),
+    availability: z
+      .array(dayAvailabilitySchema)
+      .length(7, "Must provide availability for 7 days"),
+    daily_study_cap_minutes: z
+      .number()
+      .int()
+      .min(30)
+      .max(600)
+      .optional()
+      .default(180),
+    break_protocol_default: z
+      .enum(PLAN_BREAK_TYPES)
+      .optional()
+      .default("50_10"),
+  })
+  .refine(
+    (data) => {
+      return data.availability.every((day) => day.start < day.end);
+    },
+    { message: "Each day's end time must be after start time" }
+  );
+
+export type CreatePlanInput = z.infer<typeof createPlanSchema>;
