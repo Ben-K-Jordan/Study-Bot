@@ -8,23 +8,81 @@ datasource db {
 }
 
 model Session {
-  id             String   @id @default(uuid())
-  sessionId      String   @unique @map("session_id")
-  userId         String   @map("user_id")
-  courseId        String   @map("course_id")
-  courseName     String   @map("course_name")
-  examId         String   @map("exam_id")
-  examName       String   @map("exam_name")
+  id             String       @id @default(uuid())
+  sessionId      String       @unique @map("session_id")
+  userId         String       @map("user_id")
+  courseId        String       @map("course_id")
+  courseName     String       @map("course_name")
+  examId         String       @map("exam_id")
+  examName       String       @map("exam_name")
   mode           String
-  topicScope     String   @map("topic_scope")
+  topicScope     String       @map("topic_scope")
   objectives     Json?
-  targetOutcome  Json?    @map("target_outcome")
-  breakProtocol  Json?    @map("break_protocol")
+  targetOutcome  Json?        @map("target_outcome")
+  breakProtocol  Json?        @map("break_protocol")
   resources      Json?
-  plannedMinutes Int      @map("planned_minutes")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  plannedMinutes Int          @map("planned_minutes")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  runs           SessionRun[]
 
   @@index([userId])
   @@map("sessions")
+}
+
+model SessionRun {
+  id           String             @id @default(uuid())
+  runId        String             @unique @map("run_id")
+  sessionId    String             @map("session_id")
+  userId       String             @map("user_id")
+  status       String             @default("CREATED") // CREATED | ACTIVE | PAUSED | COMPLETED
+  startedAt    DateTime?          @map("started_at")
+  endedAt      DateTime?          @map("ended_at")
+  currentIndex Int                @default(0) @map("current_index")
+  prompts      Json               // Array of generated prompts for this run
+  metrics      Json               @default("{}") // Rolling stats
+  breakState   Json               @default("{}") @map("break_state")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  session      Session            @relation(fields: [sessionId], references: [sessionId])
+  attempts     SessionAttempt[]
+  errorLogs    SessionErrorLog[]
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("session_runs")
+}
+
+model SessionAttempt {
+  id                  String     @id @default(uuid())
+  runId               String     @map("run_id")
+  promptIndex         Int        @map("prompt_index")
+  promptId            String     @map("prompt_id")
+  promptText          String     @map("prompt_text")
+  userAnswer          String     @map("user_answer")
+  selfScore           String     @map("self_score") // CORRECT | PARTIAL | INCORRECT
+  timeToAnswerSeconds Int?       @map("time_to_answer_seconds")
+  createdAt           DateTime   @default(now()) @map("created_at")
+
+  run                 SessionRun @relation(fields: [runId], references: [runId])
+
+  @@index([runId])
+  @@map("session_attempts")
+}
+
+model SessionErrorLog {
+  id              String     @id @default(uuid())
+  runId           String     @map("run_id")
+  promptIndex     Int        @map("prompt_index")
+  errorType       String     @map("error_type") // MISCONCEPTION | PROCEDURE | CARELESS | MEMORY | UNKNOWN
+  correctionRule  String     @map("correction_rule")
+  variantQuestion String?    @map("variant_question")
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  run             SessionRun @relation(fields: [runId], references: [runId])
+
+  @@index([runId])
+  @@map("session_error_logs")
 }
