@@ -68,6 +68,7 @@ model SessionAttempt {
 
   run                 SessionRun @relation(fields: [runId], references: [runId])
 
+  @@unique([runId, promptIndex], map: "session_attempts_run_id_prompt_index_key")
   @@index([runId])
   @@map("session_attempts")
 }

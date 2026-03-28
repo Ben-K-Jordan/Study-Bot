@@ -64,6 +64,9 @@ export async function POST(
       if (err === "invalid_index") {
         return NextResponse.json({ error: "Invalid prompt index" }, { status: 400 });
       }
+      if (err === "duplicate_attempt") {
+        return NextResponse.json({ error: "Attempt already submitted for this prompt" }, { status: 409 });
+      }
     }
 
     return NextResponse.json(result.data);

@@ -6,6 +6,7 @@ import {
   CreateSessionInput,
   SessionMode,
 } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -75,6 +76,13 @@ export async function createSession(userId: string, input: unknown) {
       resources: parsed.resources ?? undefined,
       plannedMinutes: parsed.planned_minutes,
     },
+  });
+
+  logger.info("session.created", {
+    user_id: userId,
+    session_id: session.sessionId,
+    mode: parsed.mode,
+    planned_minutes: parsed.planned_minutes,
   });
 
   return {

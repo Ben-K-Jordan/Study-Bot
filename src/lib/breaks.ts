@@ -13,6 +13,10 @@ const BREAK_MAP: Record<string, BreakConfig> = {
   "25_5": { workMinutes: 25, breakMinutes: 5 },
   "50_10": { workMinutes: 50, breakMinutes: 10 },
   "90_15": { workMinutes: 90, breakMinutes: 15 },
+  // Test-only: 1-second work / 1-second break for deterministic E2E tests
+  TEST_1_1: { workMinutes: 1 / 60, breakMinutes: 1 / 60 },
+  // Test-only: 3-second work / 2-second break
+  TEST_3_2: { workMinutes: 3 / 60, breakMinutes: 2 / 60 },
 };
 
 export function getBreakConfig(type: string): BreakConfig {
