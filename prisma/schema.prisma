@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Session {
+  id             String   @id @default(uuid())
+  sessionId      String   @unique @map("session_id")
+  userId         String   @map("user_id")
+  courseId        String   @map("course_id")
+  courseName     String   @map("course_name")
+  examId         String   @map("exam_id")
+  examName       String   @map("exam_name")
+  mode           String
+  topicScope     String   @map("topic_scope")
+  objectives     Json?
+  targetOutcome  Json?    @map("target_outcome")
+  breakProtocol  Json?    @map("break_protocol")
+  resources      Json?
+  plannedMinutes Int      @map("planned_minutes")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
