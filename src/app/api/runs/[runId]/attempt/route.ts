@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { submitAttempt } from "@/services/run";
-import { submitAttemptSchema } from "@/lib/validation";
+import { parseAttemptPayload } from "@/lib/validation";
 import { z } from "zod/v4";
 
 export async function POST(
@@ -24,7 +24,7 @@ export async function POST(
 
   let parsed;
   try {
-    parsed = submitAttemptSchema.parse(body);
+    parsed = parseAttemptPayload(body);
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
@@ -66,6 +66,21 @@ export async function POST(
       }
       if (err === "duplicate_attempt") {
         return NextResponse.json({ error: "Attempt already submitted for this prompt" }, { status: 409 });
+      }
+      if (err === "wrong_phase") {
+        return NextResponse.json(
+          { error: (result as any).message || "Invalid operation for current phase" },
+          { status: 409 }
+        );
+      }
+      if (err === "no_attempt_to_score") {
+        return NextResponse.json({ error: "No attempt found to score at this index" }, { status: 409 });
+      }
+      if (err === "already_scored") {
+        return NextResponse.json({ error: "This attempt has already been scored" }, { status: 409 });
+      }
+      if (err === "missing_score") {
+        return NextResponse.json({ error: "self_score is required for SCORE kind" }, { status: 400 });
       }
     }
 

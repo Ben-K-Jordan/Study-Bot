@@ -13,6 +13,12 @@ export interface Prompt {
   objective_id?: string;
   text: string;
   difficulty: number;
+  meta?: {
+    source_error_log_id?: string;
+    original_prompt_text?: string;
+    expected_correction_rule?: string;
+    variant_question?: string;
+  };
 }
 
 export interface RunMetrics {
@@ -36,13 +42,27 @@ export interface BreakState {
   completed_breaks: string[];
 }
 
+export interface RunPolicies {
+  scoring: "IMMEDIATE" | "DELAYED";
+  requiresErrorLogOn: string[];
+  allowHintsBeforeAnswer: boolean;
+  allowEndBreakEarly: boolean;
+}
+
 export interface RunData {
   run_id: string;
   status: string;
+  mode: string;
+  phase: string;
   current_index: number;
+  answered_count?: number | null;
+  scored_count?: number | null;
   prompts: Prompt[];
+  policies: RunPolicies;
   metrics: RunMetrics;
   break_state: BreakState;
+  // Attempts are available on resumed runs (from GET /api/runs/:runId)
+  attempts?: { prompt_index: number; user_answer: string; self_score: string | null }[];
 }
 
 export interface SessionData {
@@ -125,7 +145,20 @@ export function SessionRunner({ session }: Props) {
       const data = await apiPost(
         `/api/sessions/${session.session_id}/runs/start`
       );
-      setRun(data);
+      // For EXAM_SIM REVIEW phase, fetch attempts so we can show saved answers
+      let attempts: RunData["attempts"] = undefined;
+      if (data.phase === "REVIEW" && data.resumed) {
+        const full = await apiGet(`/api/runs/${data.run_id}`);
+        attempts = full.attempts;
+      }
+      const runData: RunData = {
+        ...data,
+        mode: data.mode ?? session.mode,
+        phase: data.phase ?? "ACTIVE",
+        policies: data.policies ?? { scoring: "IMMEDIATE", requiresErrorLogOn: ["PARTIAL", "INCORRECT"], allowHintsBeforeAnswer: false, allowEndBreakEarly: true },
+        attempts,
+      };
+      setRun(runData);
       if (data.status === "COMPLETED") {
         setScreen("end");
       } else if (data.break_state?.on_break) {
@@ -138,20 +171,10 @@ export function SessionRunner({ session }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [session.session_id]);
+  }, [session.session_id, session.mode]);
 
   const handleAttemptSubmit = useCallback(
-    async (attempt: {
-      prompt_index: number;
-      user_answer: string;
-      self_score: string;
-      time_to_answer_seconds?: number;
-      error_log?: {
-        error_type: string;
-        correction_rule: string;
-        variant_question?: string;
-      };
-    }) => {
+    async (attempt: Record<string, unknown>) => {
       if (!run) return;
       setError(null);
       try {
@@ -165,7 +188,17 @@ export function SessionRunner({ session }: Props) {
           metrics: data.metrics,
           break_state: data.break_state,
           status: data.status,
+          phase: data.phase ?? run.phase,
+          answered_count: data.answered_count ?? run.answered_count,
+          scored_count: data.scored_count ?? run.scored_count,
         };
+
+        // When transitioning to REVIEW, fetch attempts for display
+        if (data.phase === "REVIEW" && run.phase === "EXAM") {
+          const full = await apiGet(`/api/runs/${run.run_id}`);
+          updatedRun.attempts = full.attempts;
+        }
+
         setRun(updatedRun);
 
         if (data.status === "COMPLETED") {
@@ -176,15 +209,17 @@ export function SessionRunner({ session }: Props) {
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Failed to submit";
         if (msg.includes("break")) {
-          // Refresh run state
           const fresh = await apiGet(`/api/runs/${run.run_id}`);
           setRun({
+            ...run,
             run_id: fresh.run_id,
             status: fresh.status,
             current_index: fresh.current_index,
             prompts: fresh.prompts,
             metrics: fresh.metrics,
             break_state: fresh.break_state,
+            phase: fresh.phase ?? run.phase,
+            policies: fresh.policies ?? run.policies,
           });
           setScreen("break");
         } else {
@@ -203,7 +238,6 @@ export function SessionRunner({ session }: Props) {
       setRun({ ...run, break_state: data.break_state });
       setScreen("runner");
     } catch (e: unknown) {
-      // Break may have already ended naturally
       setScreen("runner");
     }
   }, [run]);

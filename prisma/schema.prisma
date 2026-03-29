@@ -32,23 +32,28 @@ model Session {
 }
 
 model SessionRun {
-  id           String             @id @default(uuid())
-  runId        String             @unique @map("run_id")
-  sessionId    String             @map("session_id")
-  userId       String             @map("user_id")
-  status       String             @default("CREATED") // CREATED | ACTIVE | PAUSED | COMPLETED
-  startedAt    DateTime?          @map("started_at")
-  endedAt      DateTime?          @map("ended_at")
-  currentIndex Int                @default(0) @map("current_index")
-  prompts      Json               // Array of generated prompts for this run
-  metrics      Json               @default("{}") // Rolling stats
-  breakState   Json               @default("{}") @map("break_state")
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
+  id            String             @id @default(uuid())
+  runId         String             @unique @map("run_id")
+  sessionId     String             @map("session_id")
+  userId        String             @map("user_id")
+  mode          String             @default("RETRIEVAL")
+  phase         String             @default("ACTIVE") // ACTIVE | EXAM | REVIEW | COMPLETE
+  status        String             @default("CREATED") // CREATED | ACTIVE | PAUSED | COMPLETED
+  startedAt     DateTime?          @map("started_at")
+  endedAt       DateTime?          @map("ended_at")
+  currentIndex  Int                @default(0) @map("current_index")
+  answeredCount Int?               @map("answered_count") // EXAM_SIM: prompts answered
+  scoredCount   Int?               @map("scored_count")   // EXAM_SIM: prompts scored in review
+  prompts       Json               // Array of generated prompts for this run
+  policies      Json               @default("{}") // Scoring/hint/error-log policies
+  metrics       Json               @default("{}") // Rolling stats
+  breakState    Json               @default("{}") @map("break_state")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
 
-  session      Session            @relation(fields: [sessionId], references: [sessionId])
-  attempts     SessionAttempt[]
-  errorLogs    SessionErrorLog[]
+  session       Session            @relation(fields: [sessionId], references: [sessionId])
+  attempts      SessionAttempt[]
+  errorLogs     SessionErrorLog[]
 
   @@index([userId])
   @@index([sessionId])
@@ -62,7 +67,7 @@ model SessionAttempt {
   promptId            String     @map("prompt_id")
   promptText          String     @map("prompt_text")
   userAnswer          String     @map("user_answer")
-  selfScore           String     @map("self_score") // CORRECT | PARTIAL | INCORRECT
+  selfScore           String?    @map("self_score") // CORRECT | PARTIAL | INCORRECT | null (EXAM phase)
   timeToAnswerSeconds Int?       @map("time_to_answer_seconds")
   createdAt           DateTime   @default(now()) @map("created_at")
 
@@ -74,17 +79,21 @@ model SessionAttempt {
 }
 
 model SessionErrorLog {
-  id              String     @id @default(uuid())
-  runId           String     @map("run_id")
-  promptIndex     Int        @map("prompt_index")
-  errorType       String     @map("error_type") // MISCONCEPTION | PROCEDURE | CARELESS | MEMORY | UNKNOWN
-  correctionRule  String     @map("correction_rule")
-  variantQuestion String?    @map("variant_question")
-  createdAt       DateTime   @default(now()) @map("created_at")
+  id               String     @id @default(uuid())
+  runId            String     @map("run_id")
+  userId           String     @default("") @map("user_id")
+  promptIndex      Int        @map("prompt_index")
+  errorType        String     @map("error_type") // MISCONCEPTION | PROCEDURE | CARELESS | MEMORY | UNKNOWN
+  correctionRule   String     @map("correction_rule")
+  variantQuestion  String?    @map("variant_question")
+  resolvedAt       DateTime?  @map("resolved_at") @db.Timestamptz
+  resolvedByRunId  String?    @map("resolved_by_run_id")
+  createdAt        DateTime   @default(now()) @map("created_at")
 
-  run             SessionRun @relation(fields: [runId], references: [runId])
+  run              SessionRun @relation(fields: [runId], references: [runId])
 
   @@index([runId])
+  @@index([userId, resolvedAt, createdAt(sort: Desc)], map: "session_error_logs_user_unresolved_idx")
   @@map("session_error_logs")
 }
 

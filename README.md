@@ -1,6 +1,6 @@
 # Study Bot
 
-Research-based study planner with session link generation and an interactive retrieval practice terminal runner.
+Research-based study planner with session link generation and an interactive multi-mode terminal runner supporting retrieval practice, interleaved practice, exam simulation, and error repair.
 
 ## Stack
 
@@ -14,7 +14,7 @@ Research-based study planner with session link generation and an interactive ret
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.19+ (or Node 22 LTS recommended; see `.nvmrc`)
 - PostgreSQL database
 
 ### Setup
@@ -71,10 +71,10 @@ Returns session data. 403 if not owner.
 
 #### POST /api/sessions/:sessionId/runs/start
 
-Starts a new retrieval run or resumes an existing active run.
+Starts a new run or resumes an existing active run. Supports all four modes.
 
-- Generates prompts from session objectives
-- Initializes break state and metrics
+- Generates prompts from session objectives (mode-specific deck generation)
+- Initializes break state, metrics, and mode-specific policies
 - Returns 201 (new) or 200 (resumed)
 
 ```bash
@@ -82,18 +82,21 @@ curl -X POST http://localhost:3000/api/sessions/ABC123/runs/start \
   -H "X-User-Id: user_123"
 ```
 
-**Response:**
+**Response includes mode-specific fields:**
 
 ```json
 {
   "run_id": "xYz789AbCdEfGhIjKlMn",
   "status": "ACTIVE",
+  "mode": "RETRIEVAL",
+  "phase": "ACTIVE",
+  "policies": { "scoring": "IMMEDIATE" },
   "current_index": 0,
-  "prompts": [
-    {"id": "p_0", "objective_id": "obj_34", "text": "From memory: explain Loops and invariants in 3-5 bullets.", "difficulty": 1}
-  ],
-  "metrics": {"attempts_count": 0, "correct_count": 0, "partial_count": 0, "incorrect_count": 0, "accuracy": 0, "time_spent_seconds": 0},
-  "break_state": {"work_started_at": "...", "current_cycle": 0, "total_cycles": 1, "on_break": false, "work_duration_seconds": 3000, "break_duration_seconds": 600, "completed_breaks": []},
+  "prompts": [...],
+  "metrics": {...},
+  "break_state": {...},
+  "answered_count": 0,
+  "scored_count": 0,
   "resumed": false
 }
 ```
@@ -104,7 +107,9 @@ Returns full run state including attempts and error logs.
 
 #### POST /api/runs/:runId/attempt
 
-Submits an answer + self-score for the current prompt.
+Submits an attempt for the current prompt. Payload format depends on mode.
+
+**Legacy / Immediate scoring (RETRIEVAL, INTERLEAVED_PRACTICE, ERROR_REPAIR):**
 
 ```bash
 curl -X POST http://localhost:3000/api/runs/xYz789/attempt \
@@ -123,7 +128,38 @@ curl -X POST http://localhost:3000/api/runs/xYz789/attempt \
   }'
 ```
 
-**Error codes:** 409 if on break, wrong index, duplicate attempt, or run completed.
+**EXAM_SIM — Answer phase (`kind: "ANSWER"`):**
+
+```bash
+curl -X POST http://localhost:3000/api/runs/xYz789/attempt \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{
+    "prompt_index": 0,
+    "kind": "ANSWER",
+    "user_answer": "My exam answer...",
+    "time_to_answer_seconds": 60
+  }'
+```
+
+**EXAM_SIM — Review phase (`kind: "SCORE"`):**
+
+```bash
+curl -X POST http://localhost:3000/api/runs/xYz789/attempt \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{
+    "prompt_index": 0,
+    "kind": "SCORE",
+    "self_score": "INCORRECT",
+    "error_log": {
+      "error_type": "MISCONCEPTION",
+      "correction_rule": "The correct approach is XYZ"
+    }
+  }'
+```
+
+**Error codes:** 409 if on break, wrong index, duplicate attempt, run completed, wrong phase for kind (e.g., SCORE during EXAM phase).
 
 #### POST /api/runs/:runId/complete
 
@@ -135,18 +171,52 @@ Ends the current break early and advances to the next work cycle.
 
 ---
 
+## Study Modes
+
+Four evidence-based study modes, each with distinct prompt decks and scoring policies:
+
+| Mode | Scoring | Phase Flow | Prompt Deck |
+|------|---------|------------|-------------|
+| `RETRIEVAL` | Immediate | ACTIVE → COMPLETE | One prompt per objective, sequential |
+| `INTERLEAVED_PRACTICE` | Immediate | ACTIVE → COMPLETE | Round-robin interleaving across objectives (deterministic seeded shuffle) |
+| `EXAM_SIM` | Delayed (two-phase) | EXAM → REVIEW → COMPLETE | Same as retrieval, but answer all first, then self-score all |
+| `ERROR_REPAIR` | Immediate | ACTIVE → COMPLETE | Repair prompts generated from unresolved error logs |
+
+### EXAM_SIM Two-Phase Flow
+
+1. **EXAM phase** — Answer every prompt without seeing feedback. Attempts are stored with `self_score = null`. SCORE requests are rejected (409).
+2. **REVIEW phase** — After the last answer, phase transitions to REVIEW. The runner shows each saved answer and asks for self-scoring. ANSWER requests are rejected (409).
+3. **COMPLETE** — After the last score, the run completes with full metrics including accuracy and recommended follow-ups.
+
+### ERROR_REPAIR Flow
+
+1. A prior session (any mode) must have produced error logs with `self_score = INCORRECT`.
+2. Creating an `ERROR_REPAIR` session and starting a run fetches all unresolved error logs for the user.
+3. Repair prompts reference the original error but do not reveal the correction rule.
+4. Scoring a repair prompt `CORRECT` marks the source error log as resolved (`resolved_at` + `resolved_by_run_id`).
+5. Resolved errors are excluded from future repair decks.
+
+### Interleaved Practice
+
+Prompts are distributed roughly equally across objectives using round-robin assignment with a deterministic seeded shuffle (Fisher-Yates with LCG PRNG). No more than 2 consecutive prompts share the same objective.
+
+---
+
 ## Terminal Runner Flow
 
 Visit `/s/:sessionId` in the browser to run an interactive session:
 
 ### 1. Preflight Screen
 - Shows session details (course, exam, mode, target outcome, break protocol)
+- EXAM_SIM shows a banner: "No feedback until the review phase"
 - Requires three commitments: closed-book, phone away, honest grading
 - "Start Session" or "Resume Session" button
 
 ### 2. Runner Screen
 - Shows one prompt at a time with progress bar
-- Type answer in textarea, then self-score: Correct / Partial / Incorrect
+- **Immediate modes** (RETRIEVAL, INTERLEAVED_PRACTICE, ERROR_REPAIR): Type answer, then self-score
+- **EXAM_SIM EXAM phase**: Answer-only, no scoring UI, purple "EXAM MODE" banner
+- **EXAM_SIM REVIEW phase**: Shows saved answer read-only, scoring buttons, blue "REVIEW PHASE" banner
 - If Partial/Incorrect: log error type, correction rule, optional variant question
 - Progress persisted after every attempt (survives refresh/crash)
 
@@ -160,6 +230,7 @@ Visit `/s/:sessionId` in the browser to run an interactive session:
 - Accuracy percentage, correct/partial/incorrect counts
 - Time spent
 - Score breakdown bar chart
+- EXAM_SIM: shows answered/scored counts with two-phase indicator
 - Spacing-based follow-up recommendations:
   - < 70% accuracy: next session in 1 and 2 days
   - 70-85%: 2 and 4 days
@@ -167,18 +238,18 @@ Visit `/s/:sessionId` in the browser to run an interactive session:
 
 ### Resumability
 - Refreshing the page preserves all progress
-- Active runs are automatically resumed
+- Active runs are automatically resumed (including EXAM_SIM mid-phase)
 - Completed runs show the summary with option to start a new run
 
 ---
 
 ## Database Schema
 
-Three new tables support the terminal runner:
+Three tables support the terminal runner:
 
-- **session_runs**: Tracks run state, prompts, metrics, break state
-- **session_attempts**: Individual prompt answers with self-scores
-- **session_error_logs**: Error categorization and correction rules
+- **session_runs**: Tracks run state, prompts, metrics, break state. New fields: `mode`, `phase`, `policies` (JSONB), `answered_count`, `scored_count`
+- **session_attempts**: Individual prompt answers with self-scores. `self_score` is now nullable (null during EXAM_SIM EXAM phase)
+- **session_error_logs**: Error categorization and correction rules. New fields: `user_id`, `resolved_at`, `resolved_by_run_id` (for ERROR_REPAIR resolution tracking)
 
 Run migrations:
 
@@ -258,6 +329,8 @@ For deterministic testing, use these break protocols:
 - **Idempotent start**: Calling start twice returns the same active run
 - **Idempotent complete**: Calling complete on an already-completed run returns the existing result (no 409)
 - **Strict validation**: `error_log` required when self_score is PARTIAL/INCORRECT; `time_to_answer_seconds` capped at 7200
+- **Phase enforcement**: EXAM_SIM rejects SCORE during EXAM phase (409) and ANSWER during REVIEW phase (409)
+- **Atomic error resolution**: ERROR_REPAIR marks error logs resolved in the same transaction as the CORRECT attempt
 
 ## Observability
 
@@ -340,10 +413,14 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/studybot_e2e npm run test:e2e
 | Unit: plan-generator | `plan-generator.test.ts` | Pedagogical invariants, schedule validity, determinism, edge cases |
 | Unit: ICS | `ics.test.ts` | Structure, field parsing, UID uniqueness, escaping, deep links, determinism |
 | Unit: validation | `validation-plan.test.ts` | Plan schema: defaults, constraints, error cases |
+| Unit: validation (modes) | `validation-attempt-modes.test.ts` | `parseAttemptPayload` discriminated union, ANSWER/SCORE schemas, legacy compat |
+| Unit: prompts (modes) | `prompts-modes.test.ts` | Interleaved generation, deterministic shuffle, error repair deck, distribution |
 | Integration: plan flow | `plan-flow.test.ts` | Plan creation, DB integrity, ICS export, plan→run continuity, ownership |
 | Integration: session flow | `full-flow.test.ts` | Session→run→attempt→complete, breaks, idempotency |
+| Integration: mode parity | `mode-parity.test.ts` | All 4 modes end-to-end, EXAM_SIM phases, ERROR_REPAIR resolution, ownership |
 | E2E: plan-to-run | `plan-to-run.spec.ts` | API plan creation, ICS download, session launch, attempt, resume |
 | E2E: session runner | `session-runner.spec.ts` | Full UI flow, security, state validation |
+| E2E: mode parity | `mode-parity.spec.ts` | Interleaved/ExamSim/ErrorRepair runners, phase transitions, UI rendering |
 
 ## CI Pipeline
 

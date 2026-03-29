@@ -1,6 +1,6 @@
 "use client";
 
-import type { RunData, RunMetrics, SessionData } from "../session-runner";
+import type { RunData, RunMetrics, SessionData, RunPolicies } from "../session-runner";
 
 interface Props {
   run: RunData | null;
@@ -58,6 +58,26 @@ export function EndScreen({ run, session, onNewRun }: Props) {
           {session.mode_label}: {session.topic_scope}
         </p>
       </div>
+
+      {/* EXAM_SIM two-phase indicator */}
+      {session.mode === "EXAM_SIM" && run && (
+        <div
+          style={{
+            background: "#2d1b4e",
+            border: "1px solid #6c3fc0",
+            borderRadius: 6,
+            padding: "0.75rem 1rem",
+            marginBottom: "1rem",
+            fontSize: "0.8rem",
+            color: "#c9a0ff",
+            display: "flex",
+            justifyContent: "space-around",
+          }}
+        >
+          <span>Answered: {run.answered_count ?? "—"}</span>
+          <span>Scored: {run.scored_count ?? "—"}</span>
+        </div>
+      )}
 
       {/* Stats grid */}
       <div
