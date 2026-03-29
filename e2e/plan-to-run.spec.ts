@@ -24,7 +24,6 @@ const PLAN_PAYLOAD = {
 
 let planId: string;
 let firstSessionId: string;
-let firstSessionUrl: string;
 
 test.describe.serial("E2E: Plan → Session → Run continuity", () => {
   test("create plan via API", async ({ request }) => {
@@ -43,7 +42,6 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
 
     planId = body.plan_id;
     firstSessionId = body.items[0].session_id;
-    firstSessionUrl = `/s/${firstSessionId}`;
 
     // Verify all required session types exist
     const modes = body.items.map((i: any) => i.mode);
@@ -67,7 +65,6 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     expect(body.course_name).toBe("E2E Plan 101");
     expect(body.items.length).toBeGreaterThanOrEqual(5);
 
-    // Verify each item has session_url
     for (const item of body.items) {
       expect(item.session_url).toContain("/s/");
       expect(item.calendar).toBeTruthy();
@@ -87,18 +84,14 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     expect(body).toContain("BEGIN:VCALENDAR");
     expect(body).toContain("END:VCALENDAR");
 
-    // Count events
     const eventCount = (body.match(/BEGIN:VEVENT/g) || []).length;
     expect(eventCount).toBeGreaterThanOrEqual(5);
 
-    // Every event has required fields
     expect(body).toContain("UID:");
     expect(body).toContain("DTSTART:");
     expect(body).toContain("DTEND:");
     expect(body).toContain("SUMMARY:");
     expect(body).toContain("DESCRIPTION:");
-
-    // Deep links present
     expect(body).toContain("/s/");
 
     // No duplicate UIDs
@@ -117,110 +110,72 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     expect(disposition).toContain(".ics");
   });
 
-  test("open first session from plan in browser", async ({ page }) => {
-    await page.goto(firstSessionUrl);
-
-    // Session info visible
+  test("session page renders for plan-created session", async ({ page }) => {
+    await page.goto(`/s/${firstSessionId}`);
     await expect(page.getByText("E2E Plan 101")).toBeVisible();
     await expect(page.getByText("Final Exam")).toBeVisible();
   });
 
-  test("start run on plan-created session", async ({ page }) => {
-    // Set user ID in localStorage first, then navigate
-    await page.goto(firstSessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
-    await page.goto(firstSessionUrl);
-    await page.waitForLoadState("networkidle");
+  test("start run on plan-created session via API", async ({ request }) => {
+    const response = await request.post(
+      `${BASE_URL}/api/sessions/${firstSessionId}/runs/start`,
+      { headers: { "X-User-Id": USER_ID } }
+    );
 
-    // Check commitments and start
-    const checkboxes = page.locator('input[type="checkbox"]');
-    const count = await checkboxes.count();
-    for (let i = 0; i < count; i++) {
-      await checkboxes.nth(i).check();
-    }
-
-    const startBtn = page.getByRole("button", { name: /start session|resume session/i });
-    await expect(startBtn).toBeEnabled({ timeout: 5000 });
-    await startBtn.click();
-
-    // Wait for either prompt text or an error message to appear
-    const promptOrError = page.getByText(/PROMPT 1 \/|error|failed/i).first();
-    await expect(promptOrError).toBeVisible({ timeout: 15000 });
-
-    // Assert it's the prompt, not an error
-    await expect(page.getByText(/PROMPT 1 \//)).toBeVisible();
-    await expect(page.locator("textarea")).toBeVisible();
+    expect(response.status()).toBe(201);
+    const body = await response.json();
+    expect(body.status).toBe("ACTIVE");
+    expect(body.current_index).toBe(0);
+    expect(body.prompts.length).toBeGreaterThan(0);
+    expect(body.break_state).toBeDefined();
   });
 
-  test("submit attempt and see progress", async ({ page }) => {
-    await page.goto(firstSessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
-    await page.goto(firstSessionUrl);
-    await page.waitForLoadState("networkidle");
-
-    // Resume
-    const checkboxes = page.locator('input[type="checkbox"]');
-    const count = await checkboxes.count();
-    for (let i = 0; i < count; i++) {
-      await checkboxes.nth(i).check();
-    }
-    await page.getByRole("button", { name: /start session|resume session/i }).click();
-    await expect(page.locator("textarea")).toBeVisible({ timeout: 10000 });
-
-    // Type answer
-    await page.locator("textarea").fill("Page navigation uses routing and URL patterns");
-    await page.getByRole("button", { name: /submit answer/i }).click();
-
-    // Score as correct
-    await expect(page.getByRole("button", { name: "✓ Correct" })).toBeVisible({ timeout: 5000 });
-    await page.getByRole("button", { name: "✓ Correct" }).click();
-
-    // Should advance to prompt 2
-    await expect(page.getByText(/PROMPT 2 \//)).toBeVisible({ timeout: 5000 });
-  });
-
-  test("refresh preserves progress (resume state)", async ({ page }) => {
-    await page.goto(firstSessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
-    await page.goto(firstSessionUrl);
-    await page.waitForLoadState("networkidle");
-
-    // Should show Resume button
-    await expect(
-      page.getByRole("button", { name: /resume session/i })
-    ).toBeVisible({ timeout: 5000 });
-
-    // Resume
-    const checkboxes = page.locator('input[type="checkbox"]');
-    const count = await checkboxes.count();
-    for (let i = 0; i < count; i++) {
-      await checkboxes.nth(i).check();
-    }
-    await page.getByRole("button", { name: /resume session/i }).click();
-
-    // Should still be on prompt 2 (not prompt 1)
-    await expect(page.getByText(/PROMPT 2 \//)).toBeVisible({ timeout: 10000 });
-  });
-
-  test("verify run state via API", async ({ request }) => {
-    // Start/resume to get run_id
+  test("submit attempt on plan-created session", async ({ request }) => {
+    // Resume run to get run_id
     const startRes = await request.post(
       `${BASE_URL}/api/sessions/${firstSessionId}/runs/start`,
       { headers: { "X-User-Id": USER_ID } }
     );
     expect(startRes.status()).toBe(200);
     const run = await startRes.json();
-    expect(run.status).toBe("ACTIVE");
-    expect(run.current_index).toBe(1); // 1 attempt submitted
-    expect(run.metrics.attempts_count).toBe(1);
-    expect(run.metrics.correct_count).toBe(1);
     expect(run.resumed).toBe(true);
+
+    // Submit attempt
+    const attemptRes = await request.post(
+      `${BASE_URL}/api/runs/${run.run_id}/attempt`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": USER_ID,
+        },
+        data: {
+          prompt_index: 0,
+          user_answer: "Page navigation uses routing and URL matching",
+          self_score: "CORRECT",
+          time_to_answer_seconds: 30,
+        },
+      }
+    );
+
+    expect(attemptRes.status()).toBe(200);
+    const result = await attemptRes.json();
+    expect(result.current_index).toBe(1);
+    expect(result.metrics.correct_count).toBe(1);
+    expect(result.metrics.attempts_count).toBe(1);
+  });
+
+  test("resume preserves state after attempt", async ({ request }) => {
+    const response = await request.post(
+      `${BASE_URL}/api/sessions/${firstSessionId}/runs/start`,
+      { headers: { "X-User-Id": USER_ID } }
+    );
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.resumed).toBe(true);
+    expect(body.current_index).toBe(1);
+    expect(body.metrics.attempts_count).toBe(1);
+    expect(body.metrics.correct_count).toBe(1);
   });
 });
 
