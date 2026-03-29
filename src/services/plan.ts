@@ -40,6 +40,7 @@ export async function createPlan(userId: string, input: unknown) {
   // Track cumulative start offset per day for multiple blocks on same day
   const dayOffsets: Record<number, number> = {};
 
+  // Pre-compute all items before any DB writes
   const items: {
     sessionId: string;
     sessionUrl: string;
@@ -75,24 +76,6 @@ export async function createPlan(userId: string, input: unknown) {
     const endTime = new Date(startTime.getTime() + block.plannedMinutes * 60000);
     dayOffsets[block.dayIndex] = offsetMinutes + block.plannedMinutes;
 
-    // Create Session record
-    await prisma.session.create({
-      data: {
-        sessionId,
-        userId,
-        courseId: parsed.course_id ?? "",
-        courseName: parsed.course_name,
-        examId: parsed.exam_id ?? "",
-        examName: parsed.exam_name,
-        mode: block.mode,
-        topicScope: block.topicScope,
-        objectives: block.objectives as unknown as undefined,
-        targetOutcome: block.targetOutcome as unknown as undefined,
-        breakProtocol: { type: parsed.break_protocol_default, cycles: 1 } as unknown as undefined,
-        plannedMinutes: block.plannedMinutes,
-      },
-    });
-
     items.push({
       sessionId,
       sessionUrl,
@@ -104,34 +87,55 @@ export async function createPlan(userId: string, input: unknown) {
     });
   }
 
-  // Create StudyPlan and StudyPlanItems
-  await prisma.studyPlan.create({
-    data: {
-      planId,
-      userId,
-      courseId: parsed.course_id ?? "",
-      courseName: parsed.course_name,
-      examId: parsed.exam_id ?? "",
-      examName: parsed.exam_name,
-      examDate: new Date(parsed.exam_date),
-      timezone: parsed.timezone,
-      startDate,
-      endDate,
-      config: {
-        objectives: parsed.objectives,
-        availability: parsed.availability,
-        daily_study_cap_minutes: parsed.daily_study_cap_minutes,
-        break_protocol_default: parsed.break_protocol_default,
-      },
-      items: {
-        create: items.map((item) => ({
+  // Transactional: create all sessions + plan + items atomically
+  await prisma.$transaction(async (tx) => {
+    for (const item of items) {
+      await tx.session.create({
+        data: {
           sessionId: item.sessionId,
-          dayIndex: item.dayIndex,
-          startTime: item.startTime,
-          endTime: item.endTime,
-        })),
+          userId,
+          courseId: parsed.course_id ?? "",
+          courseName: parsed.course_name,
+          examId: parsed.exam_id ?? "",
+          examName: parsed.exam_name,
+          mode: item.block.mode,
+          topicScope: item.block.topicScope,
+          objectives: item.block.objectives as unknown as undefined,
+          targetOutcome: item.block.targetOutcome as unknown as undefined,
+          breakProtocol: { type: parsed.break_protocol_default, cycles: 1 } as unknown as undefined,
+          plannedMinutes: item.block.plannedMinutes,
+        },
+      });
+    }
+
+    await tx.studyPlan.create({
+      data: {
+        planId,
+        userId,
+        courseId: parsed.course_id ?? "",
+        courseName: parsed.course_name,
+        examId: parsed.exam_id ?? "",
+        examName: parsed.exam_name,
+        examDate: new Date(parsed.exam_date),
+        timezone: parsed.timezone,
+        startDate,
+        endDate,
+        config: {
+          objectives: parsed.objectives,
+          availability: parsed.availability,
+          daily_study_cap_minutes: parsed.daily_study_cap_minutes,
+          break_protocol_default: parsed.break_protocol_default,
+        },
+        items: {
+          create: items.map((item) => ({
+            sessionId: item.sessionId,
+            dayIndex: item.dayIndex,
+            startTime: item.startTime,
+            endTime: item.endTime,
+          })),
+        },
       },
-    },
+    });
   });
 
   logger.info("plan.created", {

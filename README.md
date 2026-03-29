@@ -320,6 +320,31 @@ Import the `.ics` file into Google Calendar, Apple Calendar, or Outlook.
 
 ---
 
+## Running Tests Locally
+
+```bash
+# Unit tests (no DB required)
+npm run test:unit
+
+# Integration tests (requires PostgreSQL)
+DATABASE_URL=postgresql://user:pass@localhost:5432/studybot_test npm run test:integration
+
+# E2E tests (requires PostgreSQL + running app)
+DATABASE_URL=postgresql://user:pass@localhost:5432/studybot_e2e npm run test:e2e
+```
+
+### Test Coverage
+
+| Category | Files | What's tested |
+|----------|-------|---------------|
+| Unit: plan-generator | `plan-generator.test.ts` | Pedagogical invariants, schedule validity, determinism, edge cases |
+| Unit: ICS | `ics.test.ts` | Structure, field parsing, UID uniqueness, escaping, deep links, determinism |
+| Unit: validation | `validation-plan.test.ts` | Plan schema: defaults, constraints, error cases |
+| Integration: plan flow | `plan-flow.test.ts` | Plan creation, DB integrity, ICS export, plan→run continuity, ownership |
+| Integration: session flow | `full-flow.test.ts` | Session→run→attempt→complete, breaks, idempotency |
+| E2E: plan-to-run | `plan-to-run.spec.ts` | API plan creation, ICS download, session launch, attempt, resume |
+| E2E: session runner | `session-runner.spec.ts` | Full UI flow, security, state validation |
+
 ## CI Pipeline
 
 GitHub Actions workflow at `.github/workflows/quality-gate.yml`:

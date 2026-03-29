@@ -121,6 +121,7 @@ model StudyPlanItem {
 
   plan      StudyPlan @relation(fields: [planId], references: [planId])
 
+  @@unique([planId, sessionId], map: "study_plan_items_plan_id_session_id_key")
   @@index([planId])
   @@map("study_plan_items")
 }
