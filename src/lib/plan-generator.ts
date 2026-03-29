@@ -53,7 +53,7 @@ function availableMinutes(avail: { start: string; end: string }): number {
 
 function clampDuration(desired: number, cap: number, windowMinutes: number): number {
   const max = Math.min(cap, windowMinutes);
-  return Math.max(30, Math.min(desired, max));
+  return Math.max(15, Math.min(desired, max));
 }
 
 function toObjectiveEntries(strs: string[]): { id: string; title: string }[] {
@@ -68,6 +68,7 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
   const packA = packs[0];
   const packB = packs[1] || packs[0];
   const packC = packs[2] || packs[0];
+  const packD = packs[3] || null;
   const allObjs = objectives;
 
   const schedule: {
@@ -118,14 +119,37 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
       objs: packC,
       desiredMinutes: 80,
     },
-    // Day 4: Interleaved B+C
-    {
+  ];
+
+  // If there's a pack D, give it its own retrieval day and interleave with C+D
+  if (packD) {
+    schedule.push(
+      {
+        dayIndex: 4,
+        mode: "RETRIEVAL",
+        scope: packD.join(", "),
+        objs: packD,
+        desiredMinutes: 60,
+      },
+      {
+        dayIndex: 4,
+        mode: "INTERLEAVED_PRACTICE",
+        scope: [...packC, ...packD].join(", "),
+        objs: [...packC, ...packD],
+        desiredMinutes: 50,
+      },
+    );
+  } else {
+    schedule.push({
       dayIndex: 4,
       mode: "INTERLEAVED_PRACTICE",
       scope: [...packB, ...packC].join(", "),
       objs: [...packB, ...packC],
       desiredMinutes: 70,
-    },
+    });
+  }
+
+  schedule.push(
     // Day 5: Exam Sim + Error Repair
     {
       dayIndex: 5,
@@ -149,7 +173,7 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
       objs: allObjs,
       desiredMinutes: 90,
     },
-  ];
+  );
 
   // Track remaining minutes per day
   const dayRemaining = availability.map((a, i) =>

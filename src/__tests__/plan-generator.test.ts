@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { generatePlan, PlanBlock } from "@/lib/plan-generator";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 const defaultAvailability = Array.from({ length: 7 }, () => ({
   start: "09:00",
   end: "17:00",
@@ -10,135 +14,241 @@ function makeObjectives(n: number): string[] {
   return Array.from({ length: n }, (_, i) => `Objective ${i + 1}`);
 }
 
-describe("plan-generator", () => {
-  it("produces blocks for all required session types", () => {
-    const blocks = generatePlan({
-      objectives: makeObjectives(10),
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: defaultAvailability,
-    });
+function defaultInput(overrides?: Partial<Parameters<typeof generatePlan>[0]>) {
+  return {
+    objectives: makeObjectives(10),
+    dailyCap: 180,
+    breakProtocol: "50_10",
+    availability: defaultAvailability,
+    ...overrides,
+  };
+}
 
-    const modes = blocks.map((b) => b.mode);
-    expect(modes).toContain("RETRIEVAL");
-    expect(modes).toContain("INTERLEAVED_PRACTICE");
-    expect(modes).toContain("EXAM_SIM");
-    expect(modes).toContain("ERROR_REPAIR");
-  });
+function dayTotals(blocks: PlanBlock[]): Record<number, number> {
+  const totals: Record<number, number> = {};
+  for (const b of blocks) {
+    totals[b.dayIndex] = (totals[b.dayIndex] || 0) + b.plannedMinutes;
+  }
+  return totals;
+}
+
+// ---------------------------------------------------------------------------
+// A) Pedagogical Invariants
+// ---------------------------------------------------------------------------
+
+describe("plan-generator: pedagogical invariants", () => {
+  const objectiveCounts = [3, 6, 10, 15, 25];
+
+  for (const n of objectiveCounts) {
+    describe(`with ${n} objectives`, () => {
+      const blocks = generatePlan(defaultInput({ objectives: makeObjectives(n) }));
+      const modes = blocks.map((b) => b.mode);
+
+      it("contains >= 1 INTERLEAVED_PRACTICE", () => {
+        expect(modes.filter((m) => m === "INTERLEAVED_PRACTICE").length).toBeGreaterThanOrEqual(1);
+      });
+
+      it("contains >= 1 EXAM_SIM scheduled in last 2 days (day_index >= 5)", () => {
+        const examSimBlocks = blocks.filter(
+          (b) => b.mode === "EXAM_SIM" && b.dayIndex >= 5
+        );
+        expect(examSimBlocks.length).toBeGreaterThanOrEqual(1);
+      });
+
+      it("contains >= 1 ERROR_REPAIR scheduled in last 2 days (day_index >= 5)", () => {
+        const errorRepairBlocks = blocks.filter(
+          (b) => b.mode === "ERROR_REPAIR" && b.dayIndex >= 5
+        );
+        expect(errorRepairBlocks.length).toBeGreaterThanOrEqual(1);
+      });
+
+      it("each objective appears in >= 2 RETRIEVAL sessions", () => {
+        const objectives = makeObjectives(n);
+        const retrievalBlocks = blocks.filter((b) => b.mode === "RETRIEVAL");
+        for (const obj of objectives) {
+          const count = retrievalBlocks.filter((b) =>
+            b.objectives.some((o) => o.title === obj)
+          ).length;
+          expect(count, `Objective "${obj}" should appear in >= 2 RETRIEVAL sessions`).toBeGreaterThanOrEqual(2);
+        }
+      });
+
+      it("every block has target_outcome populated", () => {
+        for (const b of blocks) {
+          expect(b.targetOutcome).toBeDefined();
+          expect(b.targetOutcome.prompt_count).toBeGreaterThan(0);
+          expect(b.targetOutcome.target_accuracy).toBeGreaterThan(0);
+        }
+      });
+    });
+  }
 
   it("includes a diagnostic session on day 0", () => {
-    const blocks = generatePlan({
-      objectives: makeObjectives(8),
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: defaultAvailability,
-    });
-
-    const day0Diagnostic = blocks.find(
+    const blocks = generatePlan(defaultInput());
+    const diag = blocks.find(
       (b) => b.dayIndex === 0 && b.targetOutcome.type === "diagnostic"
     );
-    expect(day0Diagnostic).toBeDefined();
-    expect(day0Diagnostic!.mode).toBe("RETRIEVAL");
+    expect(diag).toBeDefined();
+    expect(diag!.mode).toBe("RETRIEVAL");
   });
+});
 
-  it("ensures each objective appears in at least 2 retrieval sessions", () => {
-    const objectives = makeObjectives(6);
-    const blocks = generatePlan({
-      objectives,
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: defaultAvailability,
-    });
+// ---------------------------------------------------------------------------
+// B) Schedule Validity
+// ---------------------------------------------------------------------------
 
-    const retrievalBlocks = blocks.filter((b) => b.mode === "RETRIEVAL");
-    for (const obj of objectives) {
-      const count = retrievalBlocks.filter((b) =>
-        b.objectives.some((o) => o.title === obj)
-      ).length;
-      expect(count).toBeGreaterThanOrEqual(2);
-    }
-  });
-
-  it("respects daily cap", () => {
-    const blocks = generatePlan({
-      objectives: makeObjectives(10),
-      dailyCap: 60,
-      breakProtocol: "50_10",
-      availability: defaultAvailability,
-    });
-
-    // Group by day and check total minutes
-    const dayTotals: Record<number, number> = {};
+describe("plan-generator: schedule validity", () => {
+  it("no overlapping plan items within a day (blocks are sequential)", () => {
+    const blocks = generatePlan(defaultInput());
+    // Group by day, check that blocks placed sequentially don't exceed availability
+    const byDay: Record<number, PlanBlock[]> = {};
     for (const b of blocks) {
-      dayTotals[b.dayIndex] = (dayTotals[b.dayIndex] || 0) + b.plannedMinutes;
+      (byDay[b.dayIndex] = byDay[b.dayIndex] || []).push(b);
     }
-    for (const [, total] of Object.entries(dayTotals)) {
-      expect(total).toBeLessThanOrEqual(60);
+    for (const [dayStr, dayBlocks] of Object.entries(byDay)) {
+      const totalMinutes = dayBlocks.reduce((s, b) => s + b.plannedMinutes, 0);
+      const avail = defaultAvailability[Number(dayStr)];
+      const [sh, sm] = avail.start.split(":").map(Number);
+      const [eh, em] = avail.end.split(":").map(Number);
+      const windowMinutes = (eh * 60 + em) - (sh * 60 + sm);
+      expect(
+        totalMinutes,
+        `Day ${dayStr}: total ${totalMinutes} exceeds window ${windowMinutes}`
+      ).toBeLessThanOrEqual(windowMinutes);
     }
   });
 
-  it("respects availability window", () => {
-    const shortAvailability = Array.from({ length: 7 }, () => ({
+  it("daily total minutes <= daily cap", () => {
+    const cap = 90;
+    const blocks = generatePlan(defaultInput({ dailyCap: cap }));
+    const totals = dayTotals(blocks);
+    for (const [day, total] of Object.entries(totals)) {
+      expect(total, `Day ${day}: total ${total} exceeds cap ${cap}`).toBeLessThanOrEqual(cap);
+    }
+  });
+
+  it("daily total minutes <= daily cap (small cap)", () => {
+    const cap = 45;
+    const blocks = generatePlan(defaultInput({ dailyCap: cap }));
+    const totals = dayTotals(blocks);
+    for (const [day, total] of Object.entries(totals)) {
+      expect(total, `Day ${day}: total ${total} exceeds cap ${cap}`).toBeLessThanOrEqual(cap);
+    }
+  });
+
+  it("all sessions fit within availability windows (short window)", () => {
+    const shortAvail = Array.from({ length: 7 }, () => ({
       start: "14:00",
-      end: "15:00", // only 60 min window
+      end: "15:30", // 90 min window
     }));
-
-    const blocks = generatePlan({
-      objectives: makeObjectives(6),
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: shortAvailability,
-    });
-
-    for (const b of blocks) {
-      expect(b.plannedMinutes).toBeLessThanOrEqual(60);
+    const blocks = generatePlan(
+      defaultInput({ availability: shortAvail, dailyCap: 300 })
+    );
+    const totals = dayTotals(blocks);
+    for (const [day, total] of Object.entries(totals)) {
+      expect(total, `Day ${day}: total ${total} exceeds 90-min window`).toBeLessThanOrEqual(90);
     }
   });
 
-  it("produces blocks with valid planned_minutes (>= 15)", () => {
-    const blocks = generatePlan({
-      objectives: makeObjectives(12),
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: defaultAvailability,
-    });
+  it("all sessions fit within availability windows (varying per day)", () => {
+    const mixedAvail = [
+      { start: "08:00", end: "10:00" }, // 120
+      { start: "13:00", end: "14:00" }, // 60
+      { start: "09:00", end: "12:00" }, // 180
+      { start: "16:00", end: "17:00" }, // 60
+      { start: "10:00", end: "13:00" }, // 180
+      { start: "09:00", end: "11:00" }, // 120
+      { start: "14:00", end: "16:00" }, // 120
+    ];
+    const windowMins = [120, 60, 180, 60, 180, 120, 120];
+    const blocks = generatePlan(
+      defaultInput({ availability: mixedAvail, dailyCap: 300 })
+    );
+    const totals = dayTotals(blocks);
+    for (const [day, total] of Object.entries(totals)) {
+      const w = windowMins[Number(day)];
+      expect(total, `Day ${day}: total ${total} exceeds window ${w}`).toBeLessThanOrEqual(w);
+    }
+  });
 
+  it("every block has plannedMinutes >= 15", () => {
+    const blocks = generatePlan(defaultInput());
     for (const b of blocks) {
       expect(b.plannedMinutes).toBeGreaterThanOrEqual(15);
     }
   });
 
-  it("handles large objective lists (20+)", () => {
-    const blocks = generatePlan({
-      objectives: makeObjectives(25),
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: defaultAvailability,
-    });
+  it("skips days with < 15 remaining availability", () => {
+    const tinyAvail = Array.from({ length: 7 }, (_, i) => ({
+      start: "09:00",
+      end: i === 5 ? "09:10" : "17:00",
+    }));
+    const blocks = generatePlan(defaultInput({ availability: tinyAvail }));
+    const day5 = blocks.filter((b) => b.dayIndex === 5);
+    // 10 min window < 15 min minimum → nothing should be scheduled
+    expect(day5.length).toBe(0);
+  });
+});
 
+// ---------------------------------------------------------------------------
+// C) Determinism
+// ---------------------------------------------------------------------------
+
+describe("plan-generator: determinism", () => {
+  it("produces identical output for same input", () => {
+    const input = defaultInput();
+    const run1 = generatePlan(input);
+    const run2 = generatePlan(input);
+    expect(run1).toEqual(run2);
+  });
+
+  it("produces identical output regardless of repeated calls", () => {
+    const input = defaultInput({ objectives: makeObjectives(20) });
+    const runs = Array.from({ length: 5 }, () => generatePlan(input));
+    for (let i = 1; i < runs.length; i++) {
+      expect(runs[i]).toEqual(runs[0]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D) Edge cases
+// ---------------------------------------------------------------------------
+
+describe("plan-generator: edge cases", () => {
+  it("handles minimum objectives (3)", () => {
+    const blocks = generatePlan(defaultInput({ objectives: makeObjectives(3) }));
     expect(blocks.length).toBeGreaterThanOrEqual(5);
     const modes = blocks.map((b) => b.mode);
+    expect(modes).toContain("RETRIEVAL");
     expect(modes).toContain("EXAM_SIM");
     expect(modes).toContain("ERROR_REPAIR");
   });
 
-  it("skips days with insufficient remaining time", () => {
-    const tightAvailability = Array.from({ length: 7 }, (_, i) => ({
-      start: "09:00",
-      end: i === 5 ? "09:10" : "17:00", // Day 5 only has 10 min
-    }));
+  it("handles large objective lists (30+)", () => {
+    const blocks = generatePlan(defaultInput({ objectives: makeObjectives(30) }));
+    expect(blocks.length).toBeGreaterThanOrEqual(5);
+    const modes = blocks.map((b) => b.mode);
+    expect(modes).toContain("INTERLEAVED_PRACTICE");
+    expect(modes).toContain("EXAM_SIM");
+    expect(modes).toContain("ERROR_REPAIR");
+  });
 
-    const blocks = generatePlan({
-      objectives: makeObjectives(6),
-      dailyCap: 180,
-      breakProtocol: "50_10",
-      availability: tightAvailability,
-    });
+  it("handles maximum daily cap (600)", () => {
+    const blocks = generatePlan(defaultInput({ dailyCap: 600 }));
+    const totals = dayTotals(blocks);
+    for (const [, total] of Object.entries(totals)) {
+      expect(total).toBeLessThanOrEqual(600);
+    }
+  });
 
-    // Day 5 should have at most 1 block (if any fit in 10 min, it'll be skipped since < 15)
-    const day5Blocks = blocks.filter((b) => b.dayIndex === 5);
-    // Both exam sim (60 min desired) and error repair (45 min desired) get clamped to 10 min
-    // but since remaining drops and 10 < 15, the second should be skipped
-    expect(day5Blocks.length).toBeLessThanOrEqual(1);
+  it("handles minimum daily cap (30)", () => {
+    const blocks = generatePlan(defaultInput({ dailyCap: 30 }));
+    const totals = dayTotals(blocks);
+    for (const [, total] of Object.entries(totals)) {
+      expect(total).toBeLessThanOrEqual(30);
+    }
+    // Should still produce some blocks
+    expect(blocks.length).toBeGreaterThan(0);
   });
 });
