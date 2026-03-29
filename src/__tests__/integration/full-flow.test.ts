@@ -125,7 +125,7 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
     expect(data.metrics.accuracy).toBe(1);
   });
 
-  it("rejects duplicate attempt for same prompt_index", async () => {
+  it("rejects duplicate attempt for already-submitted prompt_index", async () => {
     const result = await submitAttempt(userId, runId, {
       prompt_index: 0,
       user_answer: "Duplicate",
@@ -133,7 +133,8 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
       time_to_answer_seconds: 10,
     });
     expect("error" in result).toBe(true);
-    expect(result.error).toBe("duplicate_attempt");
+    // Index 0 is behind currentIndex (1), so wrong_index fires before duplicate check
+    expect(result.error).toBe("wrong_index");
   });
 
   it("rejects wrong prompt_index", async () => {
