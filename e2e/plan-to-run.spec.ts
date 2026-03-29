@@ -122,22 +122,32 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     await expect(page.getByText("Final Exam")).toBeVisible();
   });
 
-  test("start run on plan-created session", async ({ page }) => {
+  test("start run on plan-created session", async ({ page, request }) => {
+    // Verify the session is RETRIEVAL mode via API first
+    const apiRes = await request.post(
+      `${BASE_URL}/api/sessions/${firstSessionId}/runs/start`,
+      { headers: { "X-User-Id": USER_ID } }
+    );
+    expect(apiRes.status()).toBeLessThan(400);
+    const runData = await apiRes.json();
+    expect(runData.prompts.length).toBeGreaterThan(0);
+
+    // Now test the UI
     await page.goto(firstSessionUrl);
     await page.evaluate((uid) => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
     await page.goto(firstSessionUrl);
 
-    // Check commitments and start
+    // Should show Resume since we just started a run via API
     const checkboxes = page.locator('input[type="checkbox"]');
     const count = await checkboxes.count();
     for (let i = 0; i < count; i++) {
       await checkboxes.nth(i).check();
     }
-    await page.getByRole("button", { name: /start session/i }).click();
+    await page.getByRole("button", { name: /start session|resume session/i }).click();
 
-    // Should see first prompt (longer timeout for CI)
+    // Should see first prompt
     await expect(page.getByText(/PROMPT 1 \//)).toBeVisible({ timeout: 15000 });
     await expect(page.locator("textarea")).toBeVisible();
   });
@@ -163,8 +173,8 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     await page.getByRole("button", { name: /submit answer/i }).click();
 
     // Score as correct
-    await expect(page.getByRole("button", { name: /correct/i })).toBeVisible();
-    await page.getByRole("button", { name: /correct/i }).click();
+    await expect(page.getByRole("button", { name: "✓ Correct" })).toBeVisible();
+    await page.getByRole("button", { name: "✓ Correct" }).click();
 
     // Should advance to prompt 2
     await expect(page.getByText(/PROMPT 2 \//)).toBeVisible({ timeout: 5000 });

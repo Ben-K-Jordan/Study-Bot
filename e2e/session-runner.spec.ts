@@ -105,8 +105,8 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     await page.getByRole("button", { name: /submit answer/i }).click();
 
     // Should see scoring buttons
-    await expect(page.getByRole("button", { name: /correct/i })).toBeVisible();
-    await page.getByRole("button", { name: /correct/i }).click();
+    await expect(page.getByRole("button", { name: "✓ Correct" })).toBeVisible();
+    await page.getByRole("button", { name: "✓ Correct" }).click();
 
     // Should advance to next prompt
     await expect(page.getByText(/PROMPT \d+ \/ 3/)).toBeVisible({ timeout: 5000 });
@@ -132,7 +132,7 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     await page.getByRole("button", { name: /submit answer/i }).click();
 
     // Score as incorrect
-    await page.getByRole("button", { name: /incorrect/i }).click();
+    await page.getByRole("button", { name: "✗ Incorrect" }).click();
 
     // Should show error log form
     await expect(page.getByText(/log the error/i)).toBeVisible();
@@ -190,7 +190,7 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     // Answer last prompt
     await page.locator("textarea").fill("Final answer about E2E testing");
     await page.getByRole("button", { name: /submit answer/i }).click();
-    await page.getByRole("button", { name: /correct/i }).click();
+    await page.getByRole("button", { name: "✓ Correct" }).click();
 
     // Should show end screen
     await expect(page.getByText("SESSION COMPLETE")).toBeVisible({ timeout: 5000 });
