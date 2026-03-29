@@ -46,7 +46,7 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     // Session info should be visible
     await expect(page.getByText("E2E 101")).toBeVisible();
     await expect(page.getByText("Final Exam")).toBeVisible();
-    await expect(page.getByText("Retrieval")).toBeVisible();
+    await expect(page.getByText(/Retrieval: End-to-end testing/)).toBeVisible();
 
     // Start button should be disabled initially
     const startBtn = page.getByRole("button", { name: /start session/i });
@@ -280,7 +280,10 @@ test.describe("E2E: Security", () => {
 
   test("missing auth header returns 401", async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/sessions`, {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": "",
+      },
       data: { course_name: "X", exam_name: "Y", mode: "RETRIEVAL", topic_scope: "Z", planned_minutes: 15 },
     });
     expect(res.status()).toBe(401);

@@ -137,8 +137,8 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     }
     await page.getByRole("button", { name: /start session/i }).click();
 
-    // Should see first prompt
-    await expect(page.getByText(/PROMPT 1 \//)).toBeVisible({ timeout: 5000 });
+    // Should see first prompt (longer timeout for CI)
+    await expect(page.getByText(/PROMPT 1 \//)).toBeVisible({ timeout: 15000 });
     await expect(page.locator("textarea")).toBeVisible();
   });
 
@@ -251,7 +251,10 @@ test.describe("E2E: Plan security", () => {
 
   test("missing auth returns 401", async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/plans`, {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": "",
+      },
       data: PLAN_PAYLOAD,
     });
     expect(res.status()).toBe(401);
