@@ -76,7 +76,8 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - run: npx prisma migrate deploy || npx prisma db push --force-reset
+      - name: Setup database
+        run: npx prisma db push --force-reset --accept-data-loss
       - run: npm run test:integration
 
   e2e-tests:
@@ -114,7 +115,8 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - run: npx prisma migrate deploy || npx prisma db push --force-reset
+      - name: Setup database
+        run: npx prisma db push --force-reset --accept-data-loss
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run start &
