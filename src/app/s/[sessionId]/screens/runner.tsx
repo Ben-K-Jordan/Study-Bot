@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { RunData, SessionData } from "../session-runner";
+import type { RunData, SessionData, FeedbackExcerpt } from "../session-runner";
 
 const ERROR_TYPES = [
   { value: "MISCONCEPTION", label: "Misconception" },
@@ -18,7 +18,7 @@ interface Props {
   onComplete: () => void;
 }
 
-type UIPhase = "answering" | "scoring" | "error_log";
+type UIPhase = "answering" | "scoring" | "error_log" | "review";
 
 export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const isExamSim = run.mode === "EXAM_SIM";
@@ -34,6 +34,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [correctionRule, setCorrectionRule] = useState("");
   const [variantQuestion, setVariantQuestion] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [feedbackExcerpts, setFeedbackExcerpts] = useState<FeedbackExcerpt[]>([]);
+  const [lastScore, setLastScore] = useState<string | null>(null);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -56,8 +58,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     ? run.attempts.find((a) => a.prompt_index === currentIndex)?.user_answer ?? ""
     : "";
 
-  // Reset state when prompt changes
+  // When feedback arrives, show the review panel
   useEffect(() => {
+    if (run.feedback && run.feedback.excerpts.length > 0) {
+      setFeedbackExcerpts(run.feedback.excerpts);
+      setUIPhase("review");
+    }
+  }, [run.feedback]);
+
+  // Reset state when prompt changes (but not if we're showing review feedback)
+  useEffect(() => {
+    if (uiPhase === "review" && feedbackExcerpts.length > 0) return;
     if (isReviewPhase) {
       setUIPhase("scoring");
     } else {
@@ -68,10 +79,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setCorrectionRule("");
     setVariantQuestion("");
     setErrorType("MISCONCEPTION");
+    setFeedbackExcerpts([]);
+    setLastScore(null);
     startTimeRef.current = Date.now();
     if (!isReviewPhase) {
       textareaRef.current?.focus();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, isReviewPhase]);
 
   if (!currentPrompt) {
@@ -133,6 +147,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     const s = finalScore || score;
     if (!s) return;
     setSubmitting(true);
+    setLastScore(s);
 
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
     const attempt: Record<string, unknown> = {
@@ -152,6 +167,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
     await onSubmit(attempt);
     setSubmitting(false);
+
+    // Check if feedback was returned (run.feedback will be set by parent)
+    // Transition to review phase is handled by useEffect below
   };
 
   const doReviewScore = async (finalScore?: string) => {
@@ -428,6 +446,95 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             }}
           >
             {submitting ? "Saving..." : "Save & Next Prompt"}
+          </button>
+        </div>
+      )}
+
+      {/* Review & Repair panel — shown AFTER scoring if feedback excerpts exist */}
+      {uiPhase === "review" && feedbackExcerpts.length > 0 && (
+        <div data-testid="review-panel">
+          <div
+            style={{
+              background: "#1a2e1a",
+              border: "1px solid #2ecc71",
+              borderRadius: 6,
+              padding: "1rem",
+              marginBottom: "1rem",
+            }}
+          >
+            <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
+              REVIEW (from your materials)
+            </p>
+
+            {feedbackExcerpts.map((excerpt, i) => (
+              <div
+                key={excerpt.chunk_id}
+                style={{
+                  background: "#16213e",
+                  border: "1px solid #333",
+                  borderRadius: 4,
+                  padding: "0.75rem",
+                  marginBottom: i < feedbackExcerpts.length - 1 ? "0.5rem" : 0,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#888", marginBottom: "0.4rem" }}>
+                  <span data-testid="excerpt-doc-title">{excerpt.doc_title}</span>
+                  {excerpt.page_number && <span>p. {excerpt.page_number}</span>}
+                </div>
+                <p
+                  style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
+                  dangerouslySetInnerHTML={{
+                    __html: excerpt.snippet
+                      .replace(/<<(.*?)>>/g, '<mark style="background:#4cc9f033;color:#4cc9f0">$1</mark>'),
+                  }}
+                />
+              </div>
+            ))}
+
+            {/* Repair prompt for PARTIAL/INCORRECT */}
+            {lastScore && lastScore !== "CORRECT" && (correctionRule || variantQuestion) && (
+              <div
+                style={{
+                  background: "#2d1b1b",
+                  border: "1px solid #e74c3c55",
+                  borderRadius: 4,
+                  padding: "0.75rem",
+                  marginTop: "0.75rem",
+                }}
+              >
+                <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#e74c3c" }}>
+                  Repair Prompt
+                </p>
+                {correctionRule && (
+                  <p style={{ margin: "0 0 0.3rem", fontSize: "0.8rem" }}>
+                    <strong>Rule:</strong> {correctionRule}
+                  </p>
+                )}
+                {variantQuestion && (
+                  <p style={{ margin: "0 0 0.3rem", fontSize: "0.8rem" }}>
+                    <strong>Try this:</strong> {variantQuestion}
+                  </p>
+                )}
+                <p style={{ margin: "0.5rem 0 0", fontSize: "0.7rem", color: "#aaa", fontStyle: "italic" }}>
+                  Say the correct answer aloud once before moving on.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => {
+              setFeedbackExcerpts([]);
+              setLastScore(null);
+              if (isReviewPhase) {
+                setUIPhase("scoring");
+              } else {
+                setUIPhase("answering");
+              }
+            }}
+            style={primaryBtn}
+          >
+            Next Prompt
           </button>
         </div>
       )}
