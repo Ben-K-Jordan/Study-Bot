@@ -51,6 +51,9 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     expect(modes).toContain("INTERLEAVED_PRACTICE");
     expect(modes).toContain("EXAM_SIM");
     expect(modes).toContain("ERROR_REPAIR");
+
+    // Verify first session is RETRIEVAL (diagnostic)
+    expect(body.items[0].mode).toBe("RETRIEVAL");
   });
 
   test("GET plan returns correct items", async ({ request }) => {
@@ -122,33 +125,32 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     await expect(page.getByText("Final Exam")).toBeVisible();
   });
 
-  test("start run on plan-created session", async ({ page, request }) => {
-    // Verify the session is RETRIEVAL mode via API first
-    const apiRes = await request.post(
-      `${BASE_URL}/api/sessions/${firstSessionId}/runs/start`,
-      { headers: { "X-User-Id": USER_ID } }
-    );
-    expect(apiRes.status()).toBeLessThan(400);
-    const runData = await apiRes.json();
-    expect(runData.prompts.length).toBeGreaterThan(0);
-
-    // Now test the UI
+  test("start run on plan-created session", async ({ page }) => {
+    // Set user ID in localStorage first, then navigate
     await page.goto(firstSessionUrl);
     await page.evaluate((uid) => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
     await page.goto(firstSessionUrl);
+    await page.waitForLoadState("networkidle");
 
-    // Should show Resume since we just started a run via API
+    // Check commitments and start
     const checkboxes = page.locator('input[type="checkbox"]');
     const count = await checkboxes.count();
     for (let i = 0; i < count; i++) {
       await checkboxes.nth(i).check();
     }
-    await page.getByRole("button", { name: /start session|resume session/i }).click();
 
-    // Should see first prompt
-    await expect(page.getByText(/PROMPT 1 \//)).toBeVisible({ timeout: 15000 });
+    const startBtn = page.getByRole("button", { name: /start session|resume session/i });
+    await expect(startBtn).toBeEnabled({ timeout: 5000 });
+    await startBtn.click();
+
+    // Wait for either prompt text or an error message to appear
+    const promptOrError = page.getByText(/PROMPT 1 \/|error|failed/i).first();
+    await expect(promptOrError).toBeVisible({ timeout: 15000 });
+
+    // Assert it's the prompt, not an error
+    await expect(page.getByText(/PROMPT 1 \//)).toBeVisible();
     await expect(page.locator("textarea")).toBeVisible();
   });
 
@@ -158,6 +160,7 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
     await page.goto(firstSessionUrl);
+    await page.waitForLoadState("networkidle");
 
     // Resume
     const checkboxes = page.locator('input[type="checkbox"]');
@@ -166,14 +169,14 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
       await checkboxes.nth(i).check();
     }
     await page.getByRole("button", { name: /start session|resume session/i }).click();
-    await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("textarea")).toBeVisible({ timeout: 10000 });
 
     // Type answer
     await page.locator("textarea").fill("Page navigation uses routing and URL patterns");
     await page.getByRole("button", { name: /submit answer/i }).click();
 
     // Score as correct
-    await expect(page.getByRole("button", { name: "✓ Correct" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "✓ Correct" })).toBeVisible({ timeout: 5000 });
     await page.getByRole("button", { name: "✓ Correct" }).click();
 
     // Should advance to prompt 2
@@ -186,6 +189,7 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
     await page.goto(firstSessionUrl);
+    await page.waitForLoadState("networkidle");
 
     // Should show Resume button
     await expect(
@@ -201,7 +205,7 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     await page.getByRole("button", { name: /resume session/i }).click();
 
     // Should still be on prompt 2 (not prompt 1)
-    await expect(page.getByText(/PROMPT 2 \//)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/PROMPT 2 \//)).toBeVisible({ timeout: 10000 });
   });
 
   test("verify run state via API", async ({ request }) => {

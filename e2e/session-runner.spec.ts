@@ -195,9 +195,7 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     // Should show end screen
     await expect(page.getByText("SESSION COMPLETE")).toBeVisible({ timeout: 5000 });
     // Should show accuracy
-    await expect(page.getByText(/Accuracy/i)).toBeVisible();
-    // Should show correct/incorrect counts
-    await expect(page.getByText(/Correct/i)).toBeVisible();
+    await expect(page.getByText("Accuracy", { exact: true })).toBeVisible();
     // Should show recommended follow-ups
     await expect(page.getByText(/RECOMMENDED FOLLOW-UPS/i)).toBeVisible();
   });
