@@ -25,7 +25,7 @@ export async function POST(
       }
       if (result.error === "unsupported_mode") {
         return NextResponse.json(
-          { error: "Only RETRIEVAL mode is supported for runs" },
+          { error: "This session mode is not yet supported for runs" },
           { status: 400 }
         );
       }

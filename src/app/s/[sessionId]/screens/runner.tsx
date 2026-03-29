@@ -14,24 +14,20 @@ const ERROR_TYPES = [
 interface Props {
   run: RunData;
   session: SessionData;
-  onSubmit: (attempt: {
-    prompt_index: number;
-    user_answer: string;
-    self_score: string;
-    time_to_answer_seconds?: number;
-    error_log?: {
-      error_type: string;
-      correction_rule: string;
-      variant_question?: string;
-    };
-  }) => void;
+  onSubmit: (attempt: Record<string, unknown>) => void;
   onComplete: () => void;
 }
 
-type Phase = "answering" | "scoring" | "error_log";
+type UIPhase = "answering" | "scoring" | "error_log";
 
 export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
-  const [phase, setPhase] = useState<Phase>("answering");
+  const isExamSim = run.mode === "EXAM_SIM";
+  const isExamPhase = isExamSim && run.phase === "EXAM";
+  const isReviewPhase = isExamSim && run.phase === "REVIEW";
+
+  const [uiPhase, setUIPhase] = useState<UIPhase>(() =>
+    isReviewPhase ? "scoring" : "answering"
+  );
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState<string | null>(null);
   const [errorType, setErrorType] = useState("MISCONCEPTION");
@@ -45,22 +41,49 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const currentIndex = run.current_index;
   const currentPrompt = prompts[currentIndex];
   const total = prompts.length;
-  const progress = total > 0 ? (currentIndex / total) * 100 : 0;
+
+  // For EXAM_SIM, progress tracking differs by phase
+  const progressLabel = isExamSim
+    ? isExamPhase
+      ? `ANSWERING ${currentIndex + 1} / ${total}`
+      : `REVIEWING ${currentIndex + 1} / ${total}`
+    : `PROMPT ${currentIndex + 1} / ${total}`;
+
+  const progressPct = total > 0 ? (currentIndex / total) * 100 : 0;
+
+  // Get saved answer for REVIEW phase
+  const savedAnswer = isReviewPhase && run.attempts
+    ? run.attempts.find((a) => a.prompt_index === currentIndex)?.user_answer ?? ""
+    : "";
 
   // Reset state when prompt changes
   useEffect(() => {
-    setPhase("answering");
+    if (isReviewPhase) {
+      setUIPhase("scoring");
+    } else {
+      setUIPhase("answering");
+    }
     setAnswer("");
     setScore(null);
     setCorrectionRule("");
     setVariantQuestion("");
     setErrorType("MISCONCEPTION");
     startTimeRef.current = Date.now();
-    textareaRef.current?.focus();
-  }, [currentIndex]);
+    if (!isReviewPhase) {
+      textareaRef.current?.focus();
+    }
+  }, [currentIndex, isReviewPhase]);
 
   if (!currentPrompt) {
-    // All prompts completed
+    // All prompts completed for this phase
+    if (isExamPhase) {
+      // Should not happen — phase transitions server-side
+      return (
+        <div style={{ textAlign: "center", padding: "2rem 0" }}>
+          <p style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>All answers submitted. Transitioning to review...</p>
+        </div>
+      );
+    }
     return (
       <div style={{ textAlign: "center", padding: "2rem 0" }}>
         <p style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>All prompts completed!</p>
@@ -73,29 +96,73 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
   const handleAnswerSubmit = () => {
     if (!answer.trim()) return;
-    setPhase("scoring");
+    if (isExamPhase) {
+      // EXAM_SIM: submit answer only (no scoring)
+      doExamAnswer();
+    } else {
+      setUIPhase("scoring");
+    }
+  };
+
+  const doExamAnswer = async () => {
+    setSubmitting(true);
+    const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
+    await onSubmit({
+      prompt_index: currentIndex,
+      kind: "ANSWER",
+      user_answer: answer,
+      time_to_answer_seconds: elapsed,
+    });
+    setSubmitting(false);
   };
 
   const handleScore = (s: string) => {
     setScore(s);
     if (s === "CORRECT") {
-      doSubmit(s);
+      if (isReviewPhase) {
+        doReviewScore(s);
+      } else {
+        doImmediateSubmit(s);
+      }
     } else {
-      setPhase("error_log");
+      setUIPhase("error_log");
     }
   };
 
-  const doSubmit = async (finalScore?: string) => {
+  const doImmediateSubmit = async (finalScore?: string) => {
     const s = finalScore || score;
     if (!s) return;
     setSubmitting(true);
 
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
-    const attempt: Parameters<typeof onSubmit>[0] = {
+    const attempt: Record<string, unknown> = {
       prompt_index: currentIndex,
       user_answer: answer,
       self_score: s,
       time_to_answer_seconds: elapsed,
+    };
+
+    if (s !== "CORRECT" && correctionRule.trim()) {
+      attempt.error_log = {
+        error_type: errorType,
+        correction_rule: correctionRule.trim(),
+        variant_question: variantQuestion.trim() || undefined,
+      };
+    }
+
+    await onSubmit(attempt);
+    setSubmitting(false);
+  };
+
+  const doReviewScore = async (finalScore?: string) => {
+    const s = finalScore || score;
+    if (!s) return;
+    setSubmitting(true);
+
+    const attempt: Record<string, unknown> = {
+      prompt_index: currentIndex,
+      kind: "SCORE",
+      self_score: s,
     };
 
     if (s !== "CORRECT" && correctionRule.trim()) {
@@ -131,6 +198,44 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         </span>
       </div>
 
+      {/* EXAM MODE banner */}
+      {isExamPhase && (
+        <div
+          style={{
+            background: "#2d1b4e",
+            border: "1px solid #6c3fc0",
+            borderRadius: 4,
+            padding: "0.4rem 0.75rem",
+            marginBottom: "0.75rem",
+            fontSize: "0.7rem",
+            color: "#c9a0ff",
+            textAlign: "center",
+            letterSpacing: "0.05em",
+          }}
+        >
+          EXAM MODE — feedback after all answers
+        </div>
+      )}
+
+      {/* REVIEW MODE banner */}
+      {isReviewPhase && (
+        <div
+          style={{
+            background: "#1b3a4e",
+            border: "1px solid #3f8cc0",
+            borderRadius: 4,
+            padding: "0.4rem 0.75rem",
+            marginBottom: "0.75rem",
+            fontSize: "0.7rem",
+            color: "#a0d4ff",
+            textAlign: "center",
+            letterSpacing: "0.05em",
+          }}
+        >
+          REVIEW PHASE — score your answers
+        </div>
+      )}
+
       {/* Progress bar */}
       <div
         style={{
@@ -144,8 +249,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         <div
           style={{
             height: "100%",
-            width: `${progress}%`,
-            background: "#4cc9f0",
+            width: `${progressPct}%`,
+            background: isReviewPhase ? "#3f8cc0" : "#4cc9f0",
             transition: "width 0.3s ease",
           }}
         />
@@ -169,15 +274,32 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             letterSpacing: "0.08em",
           }}
         >
-          PROMPT {currentIndex + 1} / {total}
+          {progressLabel}
         </div>
         <p style={{ margin: 0, fontSize: "1rem", lineHeight: 1.5 }}>
           {currentPrompt.text}
         </p>
       </div>
 
-      {/* Answering phase */}
-      {phase === "answering" && (
+      {/* REVIEW: show saved answer read-only */}
+      {isReviewPhase && savedAnswer && (
+        <div
+          style={{
+            background: "#0f3460",
+            borderRadius: 6,
+            padding: "1rem",
+            marginBottom: "1rem",
+            fontSize: "0.85rem",
+            lineHeight: 1.6,
+          }}
+        >
+          <strong>Your answer:</strong>
+          <p style={{ margin: "0.5rem 0 0", whiteSpace: "pre-wrap" }}>{savedAnswer}</p>
+        </div>
+      )}
+
+      {/* Answering phase (RETRIEVAL / INTERLEAVED / ERROR_REPAIR / EXAM_SIM EXAM) */}
+      {uiPhase === "answering" && !isReviewPhase && (
         <div>
           <textarea
             ref={textareaRef}
@@ -196,36 +318,39 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             <span style={{ fontSize: "0.7rem", color: "#666" }}>Ctrl+Enter to submit</span>
             <button
               onClick={handleAnswerSubmit}
-              disabled={!answer.trim()}
+              disabled={!answer.trim() || submitting}
               style={{
                 ...primaryBtn,
                 width: "auto",
                 padding: "0.6rem 1.5rem",
-                opacity: answer.trim() ? 1 : 0.4,
+                opacity: answer.trim() && !submitting ? 1 : 0.4,
               }}
             >
-              Submit Answer
+              {submitting ? "Submitting..." : "Submit Answer"}
             </button>
           </div>
         </div>
       )}
 
-      {/* Scoring phase */}
-      {phase === "scoring" && (
+      {/* Scoring phase (RETRIEVAL / INTERLEAVED / ERROR_REPAIR after answering, or REVIEW phase) */}
+      {uiPhase === "scoring" && (
         <div>
-          <div
-            style={{
-              background: "#0f3460",
-              borderRadius: 6,
-              padding: "1rem",
-              marginBottom: "1rem",
-              fontSize: "0.85rem",
-              lineHeight: 1.6,
-            }}
-          >
-            <strong>Your answer:</strong>
-            <p style={{ margin: "0.5rem 0 0", whiteSpace: "pre-wrap" }}>{answer}</p>
-          </div>
+          {/* Show answer for non-REVIEW modes */}
+          {!isReviewPhase && (
+            <div
+              style={{
+                background: "#0f3460",
+                borderRadius: 6,
+                padding: "1rem",
+                marginBottom: "1rem",
+                fontSize: "0.85rem",
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>Your answer:</strong>
+              <p style={{ margin: "0.5rem 0 0", whiteSpace: "pre-wrap" }}>{answer}</p>
+            </div>
+          )}
 
           <p style={{ fontSize: "0.85rem", color: "#ccc", marginBottom: "0.75rem" }}>
             How did you do? Be honest.
@@ -245,7 +370,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       )}
 
       {/* Error logging phase */}
-      {phase === "error_log" && (
+      {uiPhase === "error_log" && (
         <div>
           <div
             style={{
@@ -295,7 +420,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           </div>
 
           <button
-            onClick={() => doSubmit()}
+            onClick={() => isReviewPhase ? doReviewScore() : doImmediateSubmit()}
             disabled={!correctionRule.trim() || submitting}
             style={{
               ...primaryBtn,

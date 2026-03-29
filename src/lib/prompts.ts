@@ -1,6 +1,9 @@
 /**
- * MVP prompt generation for RETRIEVAL mode.
- * Generates prompts from session objectives until target count is reached.
+ * Prompt deck generators for all session modes.
+ *
+ * Each generator is a pure function that produces a deterministic deck
+ * from session data. Decks are generated once at run start and persisted
+ * in session_runs.prompts — no DB randomness needed at runtime.
  */
 
 export interface Prompt {
@@ -8,6 +11,13 @@ export interface Prompt {
   objective_id?: string;
   text: string;
   difficulty: number;
+  meta?: {
+    pack?: string;
+    source_error_log_id?: string;
+    original_prompt_text?: string;
+    expected_correction_rule?: string;
+    variant_question?: string;
+  };
 }
 
 interface Objective {
@@ -15,7 +25,9 @@ interface Objective {
   title: string;
 }
 
-const VARIANTS = [
+// ---- Shared helpers ----
+
+const RETRIEVAL_VARIANTS = [
   (title: string) => `From memory: explain ${title} in 3–5 bullets.`,
   (title: string) => `Define ${title} and give one concrete example.`,
   (title: string) => `List the key steps involved in ${title}.`,
@@ -24,21 +36,35 @@ const VARIANTS = [
   (title: string) => `Compare and contrast two aspects of ${title}.`,
 ] as const;
 
+function resolveObjectives(
+  objectives?: Objective[] | null,
+  topicScope?: string
+): Objective[] {
+  if (objectives?.length) return objectives;
+  return [{ id: "topic_0", title: topicScope ?? "General" }];
+}
+
+function resolvePromptCount(
+  targetOutcome?: { prompt_count?: number } | null,
+  fallback = 10
+): number {
+  return targetOutcome?.prompt_count ?? fallback;
+}
+
+// ---- RETRIEVAL ----
+
 export function generateRetrievalPrompts(session: {
   objectives?: Objective[] | null;
   target_outcome?: { prompt_count?: number } | null;
   topic_scope: string;
 }): Prompt[] {
-  const count = session.target_outcome?.prompt_count ?? 10;
-  const objectives = session.objectives?.length
-    ? session.objectives
-    : [{ id: "topic_0", title: session.topic_scope }];
-
+  const count = resolvePromptCount(session.target_outcome);
+  const objectives = resolveObjectives(session.objectives, session.topic_scope);
   const prompts: Prompt[] = [];
 
   for (let i = 0; i < count; i++) {
     const obj = objectives[i % objectives.length];
-    const variantFn = VARIANTS[i % VARIANTS.length];
+    const variantFn = RETRIEVAL_VARIANTS[i % RETRIEVAL_VARIANTS.length];
     prompts.push({
       id: `p_${i}`,
       objective_id: obj.id,
@@ -48,4 +74,161 @@ export function generateRetrievalPrompts(session: {
   }
 
   return prompts;
+}
+
+// ---- INTERLEAVED_PRACTICE ----
+
+/**
+ * Generates an interleaved deck where consecutive prompts differ by
+ * objective_id as much as possible.
+ *
+ * Algorithm:
+ * 1. Generate K prompts per objective (K = ceil(count / numObjectives))
+ * 2. Use seeded deterministic shuffle within each objective's list
+ * 3. Interleave round-robin: take 1 from each objective list in rotation
+ * 4. Trim to target count
+ *
+ * Guarantees: no more than 2 consecutive prompts with the same objective_id
+ * when there are 2+ objectives.
+ */
+export function generateInterleavedPrompts(session: {
+  objectives?: Objective[] | null;
+  target_outcome?: { prompt_count?: number } | null;
+  topic_scope: string;
+  seed?: string;
+}): Prompt[] {
+  const count = resolvePromptCount(session.target_outcome);
+  const objectives = resolveObjectives(session.objectives, session.topic_scope);
+
+  if (objectives.length === 1) {
+    // Fall back to retrieval-style when only one objective
+    return generateRetrievalPrompts(session);
+  }
+
+  // Build per-objective prompt lists
+  const perObj = Math.ceil(count / objectives.length);
+  const buckets: Prompt[][] = objectives.map((obj, objIdx) => {
+    const list: Prompt[] = [];
+    for (let k = 0; k < perObj; k++) {
+      const globalIdx = objIdx * perObj + k;
+      const variantFn = RETRIEVAL_VARIANTS[globalIdx % RETRIEVAL_VARIANTS.length];
+      list.push({
+        id: `p_${globalIdx}`,
+        objective_id: obj.id,
+        text: variantFn(obj.title),
+        difficulty: 1,
+        meta: { pack: `obj_${objIdx}` },
+      });
+    }
+    return list;
+  });
+
+  // Deterministic shuffle each bucket using seed
+  const seed = session.seed ?? "default";
+  for (const bucket of buckets) {
+    deterministicShuffle(bucket, seed);
+  }
+
+  // Interleave round-robin
+  const result: Prompt[] = [];
+  const pointers = new Array(buckets.length).fill(0);
+  let exhausted = 0;
+
+  while (result.length < count && exhausted < buckets.length) {
+    exhausted = 0;
+    for (let b = 0; b < buckets.length && result.length < count; b++) {
+      if (pointers[b] < buckets[b].length) {
+        result.push(buckets[b][pointers[b]]);
+        pointers[b]++;
+      } else {
+        exhausted++;
+      }
+    }
+  }
+
+  // Re-assign sequential IDs for cleanliness
+  for (let i = 0; i < result.length; i++) {
+    result[i] = { ...result[i], id: `p_${i}` };
+  }
+
+  return result;
+}
+
+/**
+ * Deterministic in-place shuffle using a simple seed-based PRNG.
+ * Fisher-Yates with a seeded hash. Not cryptographic, but deterministic.
+ */
+export function deterministicShuffle<T>(arr: T[], seed: string): void {
+  let h = simpleHash(seed);
+  for (let i = arr.length - 1; i > 0; i--) {
+    h = (h * 1664525 + 1013904223) >>> 0;
+    const j = h % (i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function simpleHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) >>> 0;
+  }
+  return h || 1;
+}
+
+// ---- EXAM_SIM ----
+
+/**
+ * Generates an exam simulation deck. Same prompt generation as retrieval
+ * but policies differ (delayed scoring). The deck itself is identical.
+ */
+export function generateExamSimPrompts(session: {
+  objectives?: Objective[] | null;
+  target_outcome?: { prompt_count?: number } | null;
+  topic_scope: string;
+}): Prompt[] {
+  // Exam sim uses same prompt generation as retrieval
+  return generateRetrievalPrompts(session);
+}
+
+// ---- ERROR_REPAIR ----
+
+export interface ErrorLogForRepair {
+  id: string;
+  prompt_index: number;
+  error_type: string;
+  correction_rule: string;
+  variant_question?: string | null;
+  prompt_text?: string;
+}
+
+/**
+ * Generates a repair deck from unresolved error logs.
+ * Each error becomes a repair prompt that tests the correction rule
+ * WITHOUT revealing it before the user answers.
+ */
+export function generateErrorRepairPrompts(
+  errorLogs: ErrorLogForRepair[],
+  targetCount: number
+): Prompt[] {
+  const selected = errorLogs.slice(0, targetCount);
+
+  return selected.map((log, i) => {
+    const variant = log.variant_question?.trim();
+    const text = variant
+      ? `From memory: state the correct rule and answer the variant: ${variant}`
+      : `From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`;
+
+    return {
+      id: `p_${i}`,
+      objective_id: undefined,
+      text,
+      difficulty: 2,
+      meta: {
+        source_error_log_id: log.id,
+        original_prompt_text: log.prompt_text,
+        expected_correction_rule: log.correction_rule,
+        variant_question: variant ?? undefined,
+      },
+    };
+  });
 }

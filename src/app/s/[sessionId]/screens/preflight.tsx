@@ -75,6 +75,22 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
         <p>{session.planned_minutes} minutes</p>
       </Section>
 
+      {session.mode === "EXAM_SIM" && (
+        <div
+          style={{
+            background: "#2d1b4e",
+            border: "1px solid #6c3fc0",
+            borderRadius: 6,
+            padding: "0.75rem 1rem",
+            margin: "1rem 0",
+            fontSize: "0.85rem",
+            color: "#c9a0ff",
+          }}
+        >
+          Exam Simulation: No feedback until the review phase. Answer all prompts first, then self-score.
+        </div>
+      )}
+
       <div
         style={{
           background: "#16213e",
