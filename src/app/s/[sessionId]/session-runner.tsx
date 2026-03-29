@@ -49,6 +49,14 @@ export interface RunPolicies {
   allowEndBreakEarly: boolean;
 }
 
+export interface FeedbackExcerpt {
+  chunk_id: string;
+  doc_title: string;
+  page_number: number | null;
+  snippet: string;
+  rank: number;
+}
+
 export interface RunData {
   run_id: string;
   status: string;
@@ -63,6 +71,8 @@ export interface RunData {
   break_state: BreakState;
   // Attempts are available on resumed runs (from GET /api/runs/:runId)
   attempts?: { prompt_index: number; user_answer: string; self_score: string | null }[];
+  // Post-score feedback (only present after PARTIAL/INCORRECT scoring)
+  feedback?: { excerpts: FeedbackExcerpt[] };
 }
 
 export interface SessionData {
@@ -191,6 +201,7 @@ export function SessionRunner({ session }: Props) {
           phase: data.phase ?? run.phase,
           answered_count: data.answered_count ?? run.answered_count,
           scored_count: data.scored_count ?? run.scored_count,
+          feedback: data.feedback ?? undefined,
         };
 
         // When transitioning to REVIEW, fetch attempts for display

@@ -1,0 +1,116 @@
+import { prisma } from "./db";
+
+export interface SearchParams {
+  userId: string;
+  q: string;
+  namespace: "COURSE" | "RESEARCH";
+  courseName?: string;
+  examName?: string;
+  topK?: number;
+}
+
+export interface SearchResult {
+  chunk_id: string;
+  doc_id: string;
+  doc_title: string;
+  page_number: number | null;
+  rank_score: number;
+  snippet: string;
+}
+
+/**
+ * Full-text search over ContentChunks using PostgreSQL tsvector/tsquery.
+ *
+ * Uses plainto_tsquery for robustness (handles any user input).
+ * Ranks with ts_rank_cd and generates highlighted snippets with ts_headline.
+ * Always scoped to user_id + namespace; optionally filtered by course/exam.
+ */
+export async function searchChunks(params: SearchParams): Promise<SearchResult[]> {
+  const { userId, q, namespace, courseName, examName, topK = 5 } = params;
+  const limit = Math.min(Math.max(topK, 1), 10);
+
+  if (!q.trim()) return [];
+
+  // Build WHERE conditions for the document filter
+  const conditions: string[] = [
+    `d."user_id" = $1`,
+    `d."namespace" = $2`,
+  ];
+  const values: (string | number)[] = [userId, namespace];
+  let paramIdx = 3;
+
+  if (courseName) {
+    conditions.push(`d."course_name" = $${paramIdx}`);
+    values.push(courseName);
+    paramIdx++;
+  }
+  if (examName) {
+    conditions.push(`d."exam_name" = $${paramIdx}`);
+    values.push(examName);
+    paramIdx++;
+  }
+
+  // Only search PROCESSED documents
+  conditions.push(`d."status" = 'PROCESSED'`);
+
+  const queryParamIdx = paramIdx;
+  values.push(q);
+  paramIdx++;
+
+  const limitParamIdx = paramIdx;
+  values.push(limit);
+
+  const sql = `
+    SELECT
+      c.id AS chunk_id,
+      d.id AS doc_id,
+      d.title AS doc_title,
+      c.page_number,
+      ts_rank_cd(to_tsvector('english', c.text), plainto_tsquery('english', $${queryParamIdx})) AS rank_score,
+      ts_headline('english', c.text, plainto_tsquery('english', $${queryParamIdx}),
+        'StartSel=<<, StopSel=>>, MaxWords=40, MinWords=20') AS snippet
+    FROM content_chunks c
+    JOIN content_documents d ON c.document_id = d.id
+    WHERE ${conditions.join(" AND ")}
+      AND to_tsvector('english', c.text) @@ plainto_tsquery('english', $${queryParamIdx})
+    ORDER BY rank_score DESC
+    LIMIT $${limitParamIdx}
+  `;
+
+  const rows = await prisma.$queryRawUnsafe<
+    {
+      chunk_id: string;
+      doc_id: string;
+      doc_title: string;
+      page_number: number | null;
+      rank_score: number;
+      snippet: string;
+    }[]
+  >(sql, ...values);
+
+  return rows.map((r) => ({
+    chunk_id: r.chunk_id,
+    doc_id: r.doc_id,
+    doc_title: r.doc_title,
+    page_number: r.page_number,
+    rank_score: Number(r.rank_score),
+    snippet: r.snippet,
+  }));
+}
+
+/**
+ * Build a search query from attempt context for post-score feedback.
+ * Combines prompt text + correction rule + objective title.
+ * No LLM dependency — just string concatenation.
+ */
+export function buildFeedbackQuery(
+  promptText: string,
+  correctionRule?: string,
+  objectiveTitle?: string
+): string {
+  const parts = [promptText];
+  if (correctionRule) parts.push(correctionRule);
+  if (objectiveTitle) parts.push(objectiveTitle);
+  // Take first ~200 chars to keep the query reasonable
+  return parts.join(" ").slice(0, 200);
+}

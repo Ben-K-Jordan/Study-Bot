@@ -12,6 +12,7 @@ import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks"
 import { computeFollowups } from "@/lib/spacing";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
+import { fetchFeedbackExcerpts, type FeedbackExcerpt } from "@/services/content";
 import type {
   SubmitAttemptInput,
   ExamAnswerInput,
@@ -373,21 +374,31 @@ export async function submitAttempt(userId: string, runId: string, input: Attemp
   }
 
   if (mode === "EXAM_SIM" && (kind === "SCORE" || (kind === "LEGACY" && phase === "REVIEW"))) {
-    return handleExamScore(run, prompt, input as ExamScoreInput | SubmitAttemptInput, breakState, userId);
+    const sessionForFeedback = await prisma.session.findUnique({
+      where: { sessionId: run.sessionId },
+      select: { courseName: true, examName: true, objectives: true },
+    });
+    return handleExamScore(run, prompt, input as ExamScoreInput | SubmitAttemptInput, breakState, userId, sessionForFeedback);
   }
 
   // RETRIEVAL / INTERLEAVED / ERROR_REPAIR: immediate scoring
-  return handleImmediateScoring(run, prompt, input as SubmitAttemptInput, breakState, userId);
+  // Fetch session for course/exam context (needed for feedback)
+  const session = await prisma.session.findUnique({
+    where: { sessionId: run.sessionId },
+    select: { courseName: true, examName: true, objectives: true },
+  });
+  return handleImmediateScoring(run, prompt, input as SubmitAttemptInput, breakState, userId, session);
 }
 
 // ---- Immediate scoring (RETRIEVAL / INTERLEAVED / ERROR_REPAIR) ----
 
 async function handleImmediateScoring(
-  run: { id: string; runId: string; userId: string; currentIndex: number; mode: string; metrics: unknown; breakState: unknown },
+  run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; mode: string; metrics: unknown; breakState: unknown },
   prompt: Prompt,
   input: SubmitAttemptInput,
   breakState: BreakState,
-  userId: string
+  userId: string,
+  session?: { courseName: string; examName: string; objectives: unknown } | null
 ) {
   // Check for duplicate attempt
   const existing = await prisma.sessionAttempt.findUnique({
@@ -413,9 +424,10 @@ async function handleImmediateScoring(
   const isLastPrompt = newIndex >= prompts.length;
   const updatedBreakState = isLastPrompt ? breakState : checkBreakNeeded(breakState);
 
+  let attemptId: string;
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.sessionAttempt.create({
+    const txResult = await prisma.$transaction(async (tx) => {
+      const attempt = await tx.sessionAttempt.create({
         data: {
           runId: run.runId,
           promptIndex: input.prompt_index,
@@ -469,13 +481,39 @@ async function handleImmediateScoring(
           endedAt: isLastPrompt ? new Date() : undefined,
         },
       });
+
+      return { attemptId: attempt.id };
     });
+    attemptId = txResult.attemptId;
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("Unique constraint")) {
       return { error: "duplicate_attempt" as const };
     }
     captureException(err, { user_id: userId, run_id: run.runId, action: "submitAttempt" });
     throw err;
+  }
+
+  // Post-score feedback: AFTER transaction commits, fetch excerpts
+  // Only for PARTIAL/INCORRECT — never for CORRECT in v1
+  let feedback: { excerpts: FeedbackExcerpt[] } | undefined;
+  if (
+    (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
+    session
+  ) {
+    const objectives = session.objectives as { id: string; title: string }[] | null;
+    const objectiveTitle = objectives?.[0]?.title;
+    const excerpts = await fetchFeedbackExcerpts(
+      userId,
+      attemptId,
+      prompt.text,
+      session.courseName,
+      session.examName,
+      input.error_log?.correction_rule,
+      objectiveTitle
+    );
+    if (excerpts.length > 0) {
+      feedback = { excerpts };
+    }
   }
 
   logger.info("prompt.submitted", {
@@ -497,6 +535,7 @@ async function handleImmediateScoring(
         current_index: newIndex,
         metrics: finalMetrics,
         break_state: updatedBreakState,
+        feedback,
       },
     };
   }
@@ -508,6 +547,7 @@ async function handleImmediateScoring(
       current_index: newIndex,
       metrics: newMetrics,
       break_state: updatedBreakState,
+      feedback,
     },
   };
 }
@@ -600,11 +640,12 @@ async function handleExamAnswer(
 // ---- EXAM_SIM: REVIEW phase (score existing attempt) ----
 
 async function handleExamScore(
-  run: { id: string; runId: string; userId: string; currentIndex: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown },
+  run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown },
   prompt: Prompt,
   input: ExamScoreInput | SubmitAttemptInput,
   breakState: BreakState,
-  userId: string
+  userId: string,
+  session?: { courseName: string; examName: string; objectives: unknown } | null
 ) {
   const selfScore = "self_score" in input ? input.self_score : null;
   const errorLog = "error_log" in input ? input.error_log : undefined;
@@ -688,6 +729,28 @@ async function handleExamScore(
     is_last_score: isLastScore,
   });
 
+  // Post-score feedback for PARTIAL/INCORRECT in REVIEW phase
+  let feedback: { excerpts: FeedbackExcerpt[] } | undefined;
+  if (
+    (selfScore === "PARTIAL" || selfScore === "INCORRECT") &&
+    session
+  ) {
+    const objectives = session.objectives as { id: string; title: string }[] | null;
+    const objectiveTitle = objectives?.[0]?.title;
+    const excerpts = await fetchFeedbackExcerpts(
+      userId,
+      existing.id,
+      prompt.text,
+      session.courseName,
+      session.examName,
+      errorLog?.correction_rule,
+      objectiveTitle
+    );
+    if (excerpts.length > 0) {
+      feedback = { excerpts };
+    }
+  }
+
   if (isLastScore) {
     const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
     logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
@@ -700,6 +763,7 @@ async function handleExamScore(
         scored_count: newScoredCount,
         metrics: finalMetrics,
         break_state: breakState,
+        feedback,
       },
     };
   }
@@ -713,6 +777,7 @@ async function handleExamScore(
       scored_count: newScoredCount,
       metrics: newMetrics,
       break_state: breakState,
+      feedback,
     },
   };
 }

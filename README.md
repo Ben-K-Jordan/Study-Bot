@@ -332,6 +332,101 @@ For deterministic testing, use these break protocols:
 - **Phase enforcement**: EXAM_SIM rejects SCORE during EXAM phase (409) and ANSWER during REVIEW phase (409)
 - **Atomic error resolution**: ERROR_REPAIR marks error logs resolved in the same transaction as the CORRECT attempt
 
+## Knowledge Layer
+
+Make the app content-aware by uploading course materials, research papers, and practice questions.
+
+### Three Namespaces
+
+| Namespace | Purpose | Content |
+|-----------|---------|---------|
+| **Course Knowledge Base (CKB)** | Post-score feedback | Slides, notes, PDFs |
+| **Practice Bank (PB)** | Question import | MCQ, short answer, coding prompts |
+| **Study Science KB (SSKB)** | Policy rationales | Research papers + evidence cards |
+
+### Upload + Process Documents
+
+```bash
+# Upload a course PDF
+curl -X POST http://localhost:3000/api/content/documents \
+  -H "X-User-Id: user_123" \
+  -F "file=@notes.pdf" \
+  -F "namespace=COURSE" \
+  -F "course_name=CS 2110"
+
+# Process into searchable chunks
+curl -X POST http://localhost:3000/api/content/documents/{document_id}/process \
+  -H "X-User-Id: user_123"
+
+# Search
+curl -X POST http://localhost:3000/api/content/search \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{"q": "loop invariant", "namespace": "COURSE", "course_name": "CS 2110"}'
+```
+
+Processing is explicit and resumable: upload returns immediately, processing is triggered separately. This avoids request timeouts on large documents and allows retry on failure.
+
+### FTS-First Search
+
+Search uses PostgreSQL full-text search (`plainto_tsquery` + `ts_rank_cd` + `ts_headline`). This is fast (<300ms P95 for <=2,000 chunks) and requires no external services. Vector/embedding search will layer on top in a future sprint.
+
+### Practice Bank Import
+
+```bash
+# Create a practice set
+curl -X POST http://localhost:3000/api/practice-sets \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{"course_name": "CS 2110", "title": "Midterm Prep"}'
+
+# Import questions (JSON format)
+curl -X POST http://localhost:3000/api/practice-sets/{id}/import \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{"questions": [
+    {"kind": "SHORT_ANSWER", "prompt_text": "Define loop invariant"},
+    {"kind": "MCQ", "prompt_text": "Which is correct? A/B/C", "answer_key": "B"},
+    {"kind": "CODING", "prompt_text": "Write binary search", "solution_steps": "1. Init low/high..."}
+  ]}'
+```
+
+### Evidence Cards (SSKB)
+
+```bash
+# Upload research paper, then create evidence paper + cards
+curl -X POST http://localhost:3000/api/evidence/papers \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{"title": "The Testing Effect", "document_id": "...", "tags": ["retrieval_practice"]}'
+
+curl -X POST http://localhost:3000/api/evidence/papers/{id}/cards \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user_123" \
+  -d '{"claim": "Retrieval practice enhances retention", "recommendation": "Use self-testing", "strength": "STRONG"}'
+```
+
+### Runner Feedback + No-Leakage Guardrail
+
+**STRICT PEDAGOGY GUARDRAIL**: No excerpts, hints, or citations are shown BEFORE the user answers. Closed-book retrieval is preserved.
+
+After scoring PARTIAL or INCORRECT:
+1. The attempt transaction commits first (fast, atomic)
+2. FTS search runs against the user's course materials (AFTER commit)
+3. Up to 5 cited excerpts are displayed in a "REVIEW (from your materials)" panel
+4. `AttemptCitation` rows are stored for audit/analytics
+
+If feedback search fails, the attempt is NOT affected — feedback is best-effort.
+
+### Library Page
+
+Visit `/library` to manage all three namespaces:
+- **Course Materials tab**: Upload, process, list, and search documents
+- **Practice Bank tab**: Create sets and import questions
+- **Research Library tab**: Upload papers and create evidence cards
+
+---
+
 ## Observability
 
 - **Structured JSON logs** via `src/lib/logger.ts` — events: `session.created`, `run.started`, `run.resumed`, `prompt.submitted`, `break.started`, `break.ended`, `run.completed`
@@ -421,6 +516,12 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/studybot_e2e npm run test:e2e
 | E2E: plan-to-run | `plan-to-run.spec.ts` | API plan creation, ICS download, session launch, attempt, resume |
 | E2E: session runner | `session-runner.spec.ts` | Full UI flow, security, state validation |
 | E2E: mode parity | `mode-parity.spec.ts` | Interleaved/ExamSim/ErrorRepair runners, phase transitions, UI rendering |
+| Unit: chunker | `chunker.test.ts` | Deterministic output, size bounds, overlap, ordinals, page-aware, edge cases |
+| Unit: storage/hashing | `storage-hashing.test.ts` | SHA-256 consistency, uniqueness, storage key building |
+| Unit: search query | `search-query.test.ts` | Feedback query composition, truncation, optional params |
+| Unit: content validation | `validation-content.test.ts` | Upload, search, practice, evidence schemas |
+| Integration: knowledge layer | `knowledge-layer.test.ts` | Upload+process+search, ownership, dedupe, citations, practice bank, evidence |
+| E2E: knowledge layer | `knowledge-layer.spec.ts` | Leak prevention (no excerpts before answer), feedback after scoring, library page |
 
 ## CI Pipeline
 
@@ -430,3 +531,19 @@ GitHub Actions workflow at `.github/workflows/quality-gate.yml`:
 2. **Unit Tests** — fast, no DB
 3. **Integration Tests** — with PostgreSQL service container
 4. **E2E Tests** — Playwright headless against built app + PostgreSQL
+
+## Architecture Notes: Knowledge Layer
+
+### Why processing is explicit and resumable
+Upload and processing are separate steps. Upload saves the file and returns immediately (no timeout risk). Processing extracts text, chunks it, and indexes it — which may take seconds for large PDFs. If processing fails, the document stays in FAILED status with an error message, and can be retried. This also enables future background/queue-based processing.
+
+### Why FTS-first (and how embeddings will layer in later)
+PostgreSQL full-text search (`tsvector` + `tsquery`) is fast, requires no external dependencies, and handles the MVP use case well. The schema is designed so that adding an `embedding` column (e.g., `pgvector`) to `ContentChunk` is a non-breaking additive change. A future sprint can add embedding-based search as a ranking signal alongside FTS, using the same chunk rows.
+
+### How citations are stored and leakage is prevented
+- **Storage**: `AttemptCitation` rows link `attempt_id` → `chunk_id` with rank and displayed snippet. This enables future analytics ("which excerpts helped students improve?").
+- **Leakage prevention**: The runner UI has no access to CKB content before scoring. The API only returns `feedback` in the attempt response AFTER the scoring transaction commits. The UI enforces this with a `review` UIPhase that only renders after scoring completes. The E2E test explicitly verifies no excerpt content appears before answer submission.
+- **Immutability**: Chunks are never updated in place. If a document changes (different `content_hash`), new chunks are created. This keeps citation references stable.
+
+### New dependencies
+- **pdf-parse** (v1.1.1): Lightweight PDF text extraction. Chosen for simplicity and zero native dependencies. Will be replaced with pdfjs-dist if page-level extraction is needed.

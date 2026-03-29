@@ -71,7 +71,8 @@ model SessionAttempt {
   timeToAnswerSeconds Int?       @map("time_to_answer_seconds")
   createdAt           DateTime   @default(now()) @map("created_at")
 
-  run                 SessionRun @relation(fields: [runId], references: [runId])
+  run                 SessionRun      @relation(fields: [runId], references: [runId])
+  citations           AttemptCitation[]
 
   @@unique([runId, promptIndex], map: "session_attempts_run_id_prompt_index_key")
   @@index([runId])
@@ -117,6 +118,129 @@ model StudyPlan {
 
   @@index([userId])
   @@map("study_plans")
+}
+
+// ---- Knowledge Layer ----
+
+model ContentDocument {
+  id               String         @id @default(uuid())
+  userId           String         @map("user_id")
+  namespace        String         // COURSE | RESEARCH
+  courseName       String?        @map("course_name")
+  examName         String?        @map("exam_name")
+  title            String
+  originalFilename String         @map("original_filename")
+  mimeType         String         @map("mime_type")
+  storageKey       String         @map("storage_key")
+  contentHash      String         @map("content_hash")
+  status           String         @default("UPLOADED") // UPLOADED | PROCESSED | FAILED
+  errorMessage     String?        @map("error_message")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  chunks           ContentChunk[]
+  evidencePapers   EvidencePaper[]
+
+  @@unique([userId, contentHash], map: "content_documents_user_hash_key")
+  @@index([userId, namespace, courseName, examName], map: "content_documents_user_ns_course_exam_idx")
+  @@map("content_documents")
+}
+
+model ContentChunk {
+  id         String            @id @default(uuid())
+  documentId String            @map("document_id")
+  ordinal    Int
+  pageNumber Int?              @map("page_number")
+  text       String
+  textHash   String            @map("text_hash")
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  document   ContentDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  citations  AttemptCitation[]
+
+  @@unique([documentId, ordinal], map: "content_chunks_doc_ordinal_key")
+  @@map("content_chunks")
+}
+
+model PracticeSet {
+  id         String             @id @default(uuid())
+  userId     String             @map("user_id")
+  courseName String             @map("course_name")
+  examName   String?            @map("exam_name")
+  title      String
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  questions  PracticeQuestion[]
+
+  @@index([userId, courseName, examName], map: "practice_sets_user_course_exam_idx")
+  @@map("practice_sets")
+}
+
+model PracticeQuestion {
+  id            String      @id @default(uuid())
+  practiceSetId String      @map("practice_set_id")
+  kind          String      // SHORT_ANSWER | MCQ | CODING
+  promptText    String      @map("prompt_text")
+  answerKey     String?     @map("answer_key")
+  solutionSteps String?     @map("solution_steps")
+  tags          Json?
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  practiceSet   PracticeSet @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
+
+  @@index([practiceSetId])
+  @@map("practice_questions")
+}
+
+model EvidencePaper {
+  id         String          @id @default(uuid())
+  userId     String          @map("user_id")
+  title      String
+  authors    String?
+  year       Int?
+  venue      String?
+  documentId String          @map("document_id")
+  tags       Json?
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  document   ContentDocument @relation(fields: [documentId], references: [id])
+  cards      EvidenceCard[]
+
+  @@index([userId])
+  @@map("evidence_papers")
+}
+
+model EvidenceCard {
+  id                 String        @id @default(uuid())
+  evidencePaperId    String        @map("evidence_paper_id")
+  claim              String
+  recommendation     String
+  boundaryConditions String?       @map("boundary_conditions")
+  strength           String        // WEAK | MODERATE | STRONG
+  tags               Json?
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  paper              EvidencePaper @relation(fields: [evidencePaperId], references: [id], onDelete: Cascade)
+
+  @@index([evidencePaperId])
+  @@map("evidence_cards")
+}
+
+model AttemptCitation {
+  id        String         @id @default(uuid())
+  attemptId String         @map("attempt_id")
+  chunkId   String         @map("chunk_id")
+  rank      Int
+  snippet   String
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  attempt   SessionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  chunk     ContentChunk   @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, chunkId], map: "attempt_citations_attempt_chunk_key")
+  @@index([attemptId])
+  @@index([chunkId])
+  @@map("attempt_citations")
 }
 
 model StudyPlanItem {
