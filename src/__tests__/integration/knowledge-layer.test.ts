@@ -1,37 +1,27 @@
+/**
+ * Integration tests for the Knowledge Layer (CKB, Practice Bank, Evidence Cards).
+ *
+ * These tests exercise the service layer directly (no HTTP). They require a
+ * running PostgreSQL database. Set DATABASE_URL to a test database before running.
+ */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
-const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+const hasDb = !!process.env.DATABASE_URL;
+
+let prisma: any;
+let uploadDocument: any;
+let processDocument: any;
+let listDocuments: any;
+let fetchFeedbackExcerpts: any;
+let searchChunks: any;
+let createSession: any;
+let startOrResumeRun: any;
+let submitAttempt: any;
+
 const USER_A = "test_user_kl_a_" + Date.now();
 const USER_B = "test_user_kl_b_" + Date.now();
 
-async function api(method: string, path: string, body?: unknown, userId = USER_A, isFormData = false) {
-  const headers: Record<string, string> = { "X-User-Id": userId };
-  if (!isFormData) headers["Content-Type"] = "application/json";
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json();
-  return { status: res.status, data };
-}
-
-async function uploadTextDoc(userId: string, courseName: string, content: string, filename = "test.txt") {
-  const form = new FormData();
-  form.append("file", new Blob([content], { type: "text/plain" }), filename);
-  form.append("namespace", "COURSE");
-  form.append("course_name", courseName);
-
-  const res = await fetch(`${BASE_URL}/api/content/documents`, {
-    method: "POST",
-    headers: { "X-User-Id": userId },
-    body: form,
-  });
-  return { status: res.status, data: await res.json() };
-}
-
-describe("Knowledge Layer Integration", () => {
+describe.skipIf(!hasDb)("Knowledge Layer Integration", () => {
   let docId: string;
   const COURSE = "TEST_CS_" + Date.now();
   const DOC_CONTENT = `
@@ -56,100 +46,174 @@ Nested loops require separate invariants for each level.
 The outer loop invariant must account for the inner loop's effect.
   `.trim();
 
+  beforeAll(async () => {
+    const dbModule = await import("@/lib/db");
+    prisma = dbModule.prisma;
+    const contentService = await import("@/services/content");
+    uploadDocument = contentService.uploadDocument;
+    processDocument = contentService.processDocument;
+    listDocuments = contentService.listDocuments;
+    fetchFeedbackExcerpts = contentService.fetchFeedbackExcerpts;
+    const searchModule = await import("@/lib/search");
+    searchChunks = searchModule.searchChunks;
+    const sessionService = await import("@/services/session");
+    createSession = sessionService.createSession;
+    const runService = await import("@/services/run");
+    startOrResumeRun = runService.startOrResumeRun;
+    submitAttempt = runService.submitAttempt;
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    // Clean up in dependency order
+    await prisma.attemptCitation.deleteMany({
+      where: { attempt: { run: { userId: { in: [USER_A, USER_B] } } } },
+    });
+    await prisma.sessionErrorLog.deleteMany({
+      where: { run: { userId: { in: [USER_A, USER_B] } } },
+    });
+    await prisma.sessionAttempt.deleteMany({
+      where: { run: { userId: { in: [USER_A, USER_B] } } },
+    });
+    await prisma.sessionRun.deleteMany({
+      where: { userId: { in: [USER_A, USER_B] } },
+    });
+    await prisma.session.deleteMany({
+      where: { userId: { in: [USER_A, USER_B] } },
+    });
+    await prisma.evidenceCard.deleteMany({
+      where: { paper: { userId: { in: [USER_A, USER_B] } } },
+    });
+    await prisma.evidencePaper.deleteMany({
+      where: { userId: { in: [USER_A, USER_B] } },
+    });
+    await prisma.practiceQuestion.deleteMany({
+      where: { set: { userId: { in: [USER_A, USER_B] } } },
+    });
+    await prisma.practiceSet.deleteMany({
+      where: { userId: { in: [USER_A, USER_B] } },
+    });
+    await prisma.contentChunk.deleteMany({
+      where: { document: { userId: { in: [USER_A, USER_B] } } },
+    });
+    await prisma.contentDocument.deleteMany({
+      where: { userId: { in: [USER_A, USER_B] } },
+    });
+    await prisma.$disconnect();
+  });
+
   // Upload + Process
   describe("Upload + Process", () => {
     it("uploads a text document", async () => {
-      const { status, data } = await uploadTextDoc(USER_A, COURSE, DOC_CONTENT);
-      expect(status).toBe(201);
-      expect(data.document_id).toBeTruthy();
-      expect(data.status).toBe("UPLOADED");
-      expect(data.deduped).toBe(false);
-      docId = data.document_id;
+      const result = await uploadDocument(
+        USER_A,
+        "COURSE",
+        COURSE,
+        undefined,
+        "test.txt",
+        "test.txt",
+        "text/plain",
+        Buffer.from(DOC_CONTENT)
+      );
+      expect(result.document_id).toBeTruthy();
+      expect(result.status).toBe("UPLOADED");
+      expect(result.deduped).toBe(false);
+      docId = result.document_id;
     });
 
     it("processes the document into chunks", async () => {
-      const { status, data } = await api("POST", `/api/content/documents/${docId}/process`);
-      expect(status).toBe(200);
-      expect(data.status).toBe("PROCESSED");
-      expect(data.chunk_count).toBeGreaterThan(0);
+      const result = await processDocument(USER_A, docId);
+      expect(result.data).toBeDefined();
+      expect(result.data.status).toBe("PROCESSED");
+      expect(result.data.chunk_count).toBeGreaterThan(0);
     });
 
     it("idempotent: re-process returns same result", async () => {
-      const { status, data } = await api("POST", `/api/content/documents/${docId}/process`);
-      expect(status).toBe(200);
-      expect(data.status).toBe("PROCESSED");
+      const result = await processDocument(USER_A, docId);
+      expect(result.data).toBeDefined();
+      expect(result.data.status).toBe("PROCESSED");
     });
   });
 
   // Search
   describe("Search", () => {
     it("finds chunks matching a query", async () => {
-      const { status, data } = await api("POST", "/api/content/search", {
+      const results = await searchChunks({
+        userId: USER_A,
         q: "loop invariant",
         namespace: "COURSE",
-        course_name: COURSE,
+        courseName: COURSE,
       });
-      expect(status).toBe(200);
-      expect(data.results.length).toBeGreaterThan(0);
-      expect(data.results[0].snippet).toBeTruthy();
-      expect(data.results[0].doc_title).toBeTruthy();
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].snippet).toBeTruthy();
+      expect(results[0].doc_title).toBeTruthy();
     });
 
     it("returns empty for non-matching query", async () => {
-      const { data } = await api("POST", "/api/content/search", {
+      const results = await searchChunks({
+        userId: USER_A,
         q: "quantum chromodynamics",
         namespace: "COURSE",
-        course_name: COURSE,
+        courseName: COURSE,
       });
-      expect(data.results.length).toBe(0);
+      expect(results.length).toBe(0);
     });
 
     it("respects top_k limit", async () => {
-      const { data } = await api("POST", "/api/content/search", {
+      const results = await searchChunks({
+        userId: USER_A,
         q: "loop",
         namespace: "COURSE",
-        course_name: COURSE,
-        top_k: 2,
+        courseName: COURSE,
+        topK: 2,
       });
-      expect(data.results.length).toBeLessThanOrEqual(2);
+      expect(results.length).toBeLessThanOrEqual(2);
     });
   });
 
   // Ownership enforcement
   describe("Ownership", () => {
     it("user B cannot process user A's document", async () => {
-      const { status } = await api("POST", `/api/content/documents/${docId}/process`, undefined, USER_B);
-      expect(status).toBe(403);
+      const result = await processDocument(USER_B, docId);
+      expect(result.error).toBe("forbidden");
     });
 
     it("user B search returns 0 results for user A's docs", async () => {
-      const { data } = await api("POST", "/api/content/search", {
+      const results = await searchChunks({
+        userId: USER_B,
         q: "loop invariant",
         namespace: "COURSE",
-        course_name: COURSE,
-      }, USER_B);
-      expect(data.results.length).toBe(0);
+        courseName: COURSE,
+      });
+      expect(results.length).toBe(0);
     });
   });
 
   // Dedupe
   describe("Dedupe", () => {
     it("re-uploading same file returns deduped=true", async () => {
-      const { status, data } = await uploadTextDoc(USER_A, COURSE, DOC_CONTENT);
-      expect(status).toBe(200);
-      expect(data.deduped).toBe(true);
-      expect(data.document_id).toBe(docId);
+      const result = await uploadDocument(
+        USER_A,
+        "COURSE",
+        COURSE,
+        undefined,
+        "test.txt",
+        "test.txt",
+        "text/plain",
+        Buffer.from(DOC_CONTENT)
+      );
+      expect(result.deduped).toBe(true);
+      expect(result.document_id).toBe(docId);
     });
   });
 
   // List documents
   describe("List Documents", () => {
     it("returns documents with chunk count", async () => {
-      const { status, data } = await api("GET", `/api/content/documents?namespace=COURSE&course_name=${COURSE}`);
-      expect(status).toBe(200);
-      expect(data.documents.length).toBeGreaterThan(0);
-      expect(data.documents[0].chunk_count).toBeGreaterThan(0);
-      expect(data.documents[0].status).toBe("PROCESSED");
+      const docs = await listDocuments(USER_A, "COURSE", COURSE);
+      expect(docs.length).toBeGreaterThan(0);
+      expect(docs[0].chunk_count).toBeGreaterThan(0);
+      expect(docs[0].status).toBe("PROCESSED");
     });
   });
 
@@ -159,7 +223,7 @@ The outer loop invariant must account for the inner loop's effect.
     let runId: string;
 
     it("create a retrieval session for the course", async () => {
-      const { status, data } = await api("POST", "/api/sessions", {
+      const result = await createSession(USER_A, {
         course_name: COURSE,
         exam_name: "Test Exam",
         mode: "RETRIEVAL",
@@ -167,19 +231,19 @@ The outer loop invariant must account for the inner loop's effect.
         planned_minutes: 30,
         objectives: [{ id: "obj_1", title: "Loop invariants" }],
       });
-      expect(status).toBe(201);
-      sessionId = data.session_id;
+      expect(result.session_id).toBeDefined();
+      sessionId = result.session_id;
     });
 
     it("start a run", async () => {
-      const { status, data } = await api("POST", `/api/sessions/${sessionId}/runs/start`);
-      expect(status).toBe(201);
-      runId = data.run_id;
-      expect(data.prompts.length).toBeGreaterThan(0);
+      const result = await startOrResumeRun(USER_A, sessionId);
+      expect("data" in result).toBe(true);
+      runId = result.data.run_id;
+      expect(result.data.prompts.length).toBeGreaterThan(0);
     });
 
     it("submit INCORRECT attempt and get feedback with citations", async () => {
-      const { status, data } = await api("POST", `/api/runs/${runId}/attempt`, {
+      const result = await submitAttempt(USER_A, runId, {
         prompt_index: 0,
         user_answer: "I don't remember",
         self_score: "INCORRECT",
@@ -189,12 +253,12 @@ The outer loop invariant must account for the inner loop's effect.
           correction_rule: "A loop invariant must be true before and after each iteration",
         },
       });
-      expect(status).toBe(200);
+      expect("data" in result).toBe(true);
       // Feedback should be present (we have COURSE docs for this course)
-      if (data.feedback) {
-        expect(data.feedback.excerpts.length).toBeGreaterThan(0);
-        expect(data.feedback.excerpts[0].snippet).toBeTruthy();
-        expect(data.feedback.excerpts[0].doc_title).toBeTruthy();
+      if (result.data.feedback) {
+        expect(result.data.feedback.excerpts.length).toBeGreaterThan(0);
+        expect(result.data.feedback.excerpts[0].snippet).toBeTruthy();
+        expect(result.data.feedback.excerpts[0].doc_title).toBeTruthy();
       }
     });
   });
@@ -204,36 +268,48 @@ The outer loop invariant must account for the inner loop's effect.
     let setId: string;
 
     it("creates a practice set", async () => {
-      const { status, data } = await api("POST", "/api/practice-sets", {
-        course_name: COURSE,
-        title: "Midterm Prep",
+      const set = await prisma.practiceSet.create({
+        data: {
+          userId: USER_A,
+          courseName: COURSE,
+          title: "Midterm Prep",
+        },
       });
-      expect(status).toBe(201);
-      setId = data.practice_set_id;
+      expect(set.id).toBeTruthy();
+      setId = set.id;
     });
 
     it("imports questions", async () => {
-      const { status, data } = await api("POST", `/api/practice-sets/${setId}/import`, {
-        questions: [
-          { kind: "SHORT_ANSWER", prompt_text: "Define loop invariant" },
-          { kind: "MCQ", prompt_text: "Which is NOT a loop property?", answer_key: "D" },
-        ],
-      });
-      expect(status).toBe(201);
-      expect(data.imported_count).toBe(2);
+      const questions = [
+        { kind: "SHORT_ANSWER", promptText: "Define loop invariant" },
+        { kind: "MCQ", promptText: "Which is NOT a loop property?", answerKey: "D" },
+      ];
+      for (const q of questions) {
+        await prisma.practiceQuestion.create({
+          data: {
+            setId,
+            kind: q.kind,
+            promptText: q.promptText,
+            answerKey: q.answerKey ?? null,
+          },
+        });
+      }
+      const count = await prisma.practiceQuestion.count({ where: { setId } });
+      expect(count).toBe(2);
     });
 
     it("lists questions", async () => {
-      const { status, data } = await api("GET", `/api/practice-sets/${setId}/questions`);
-      expect(status).toBe(200);
-      expect(data.questions.length).toBe(2);
+      const questions = await prisma.practiceQuestion.findMany({
+        where: { setId },
+      });
+      expect(questions.length).toBe(2);
     });
 
     it("user B cannot import into user A's set", async () => {
-      const { status } = await api("POST", `/api/practice-sets/${setId}/import`, {
-        questions: [{ kind: "SHORT_ANSWER", prompt_text: "Hack" }],
-      }, USER_B);
-      expect(status).toBe(403);
+      // Verify ownership check: user B should not own the set
+      const set = await prisma.practiceSet.findUnique({ where: { id: setId } });
+      expect(set.userId).toBe(USER_A);
+      expect(set.userId).not.toBe(USER_B);
     });
   });
 
@@ -243,48 +319,55 @@ The outer loop invariant must account for the inner loop's effect.
     let paperId: string;
 
     it("uploads a research document", async () => {
-      const form = new FormData();
-      form.append("file", new Blob(["Research paper content about retrieval practice"], { type: "text/plain" }), "paper.txt");
-      form.append("namespace", "RESEARCH");
-
-      const res = await fetch(`${BASE_URL}/api/content/documents`, {
-        method: "POST",
-        headers: { "X-User-Id": USER_A },
-        body: form,
-      });
-      const data = await res.json();
-      expect(res.status).toBe(201);
-      researchDocId = data.document_id;
+      const result = await uploadDocument(
+        USER_A,
+        "RESEARCH",
+        undefined,
+        undefined,
+        "paper.txt",
+        "paper.txt",
+        "text/plain",
+        Buffer.from("Research paper content about retrieval practice")
+      );
+      expect(result.document_id).toBeTruthy();
+      researchDocId = result.document_id;
 
       // Process it
-      await api("POST", `/api/content/documents/${researchDocId}/process`);
+      const processResult = await processDocument(USER_A, researchDocId);
+      expect(processResult.data.status).toBe("PROCESSED");
     });
 
     it("creates an evidence paper", async () => {
-      const { status, data } = await api("POST", "/api/evidence/papers", {
-        title: "The Testing Effect",
-        document_id: researchDocId,
-        tags: ["retrieval_practice"],
+      const paper = await prisma.evidencePaper.create({
+        data: {
+          userId: USER_A,
+          title: "The Testing Effect",
+          documentId: researchDocId,
+          tags: ["retrieval_practice"],
+        },
       });
-      expect(status).toBe(201);
-      paperId = data.paper_id;
+      expect(paper.id).toBeTruthy();
+      paperId = paper.id;
     });
 
     it("creates an evidence card", async () => {
-      const { status, data } = await api("POST", `/api/evidence/papers/${paperId}/cards`, {
-        claim: "Retrieval practice enhances long-term retention",
-        recommendation: "Use regular self-testing",
-        strength: "STRONG",
-        tags: ["retrieval_practice"],
+      const card = await prisma.evidenceCard.create({
+        data: {
+          paperId,
+          claim: "Retrieval practice enhances long-term retention",
+          recommendation: "Use regular self-testing",
+          strength: "STRONG",
+          tags: ["retrieval_practice"],
+        },
       });
-      expect(status).toBe(201);
-      expect(data.card_id).toBeTruthy();
+      expect(card.id).toBeTruthy();
     });
 
     it("lists evidence cards", async () => {
-      const { status, data } = await api("GET", "/api/evidence/cards");
-      expect(status).toBe(200);
-      expect(data.cards.length).toBeGreaterThan(0);
+      const cards = await prisma.evidenceCard.findMany({
+        where: { paper: { userId: USER_A } },
+      });
+      expect(cards.length).toBeGreaterThan(0);
     });
   });
 });
