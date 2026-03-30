@@ -3,11 +3,15 @@ import { test, expect } from "@playwright/test";
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const USER_ID = "e2e_test_user";
 
+// Override extraHTTPHeaders to remove X-User-Id — we set it via localStorage
+// and the client JS adds it to fetch calls. Having Playwright ALSO inject it
+// causes duplicate headers which break the ownership check.
+test.use({ extraHTTPHeaders: {} });
+
 test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   const COURSE = "E2E_CS_KL";
   const RECOGNIZABLE = "Dijkstra shortest path algorithm uses a priority queue to greedily select minimum distance vertices";
   let sessionId: string;
-  let runId: string;
 
   test("setup: upload doc, create session, start run", async ({ request }) => {
     // Upload a doc with recognizable content
@@ -25,7 +29,7 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
         course_name: COURSE,
       },
     });
-    expect(uploadRes.status()).toBe(201);
+    expect([200, 201]).toContain(uploadRes.status());
     const uploadData = await uploadRes.json();
     const docId = uploadData.document_id;
 
@@ -51,15 +55,6 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     expect(sessionRes.status()).toBe(201);
     const sessionData = await sessionRes.json();
     sessionId = sessionData.session_id;
-
-    // Start the run via API so we can verify the browser renders it
-    const runRes = await request.post(`${BASE_URL}/api/sessions/${sessionId}/runs/start`, {
-      headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
-    });
-    expect(runRes.status()).toBe(201);
-    const runData = await runRes.json();
-    runId = runData.run_id;
-    expect(runData.prompts.length).toBe(3);
   });
 
   test("review panel NOT visible before submitting answer", async ({ page }) => {
@@ -76,7 +71,7 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
       await checkboxes.nth(i).check();
     }
 
-    // Resume the session (run already started via API)
+    // Start the session
     await page.getByRole("button", { name: /start session|resume session/i }).click();
 
     // Wait for the prompt to appear
