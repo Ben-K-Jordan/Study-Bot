@@ -3,65 +3,56 @@ import { test, expect } from "@playwright/test";
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const USER_ID = "e2e_kl_user_" + Date.now();
 
-async function api(method: string, path: string, body?: unknown) {
-  const headers: Record<string, string> = { "X-User-Id": USER_ID };
-  if (body && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
-  });
-  return { status: res.status, data: await res.json() };
-}
-
-test.describe("Knowledge Layer — Leak Prevention", () => {
+test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   const COURSE = "E2E_CS_" + Date.now();
   const RECOGNIZABLE = "Dijkstra shortest path algorithm uses a priority queue to greedily select minimum distance vertices";
   let sessionId: string;
-  let docId: string;
 
-  test.beforeAll(async () => {
-    // Upload + process a doc with recognizable content
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob(
-        [
-          `Introduction to Graph Algorithms\n\n${RECOGNIZABLE}\n\nThe algorithm maintains a set of visited vertices and relaxes edges.\n\nBellman-Ford handles negative weights but is slower.\n\nFloyd-Warshall computes all-pairs shortest paths.`,
-        ],
-        { type: "text/plain" }
-      ),
-      "graphs.txt"
-    );
-    form.append("namespace", "COURSE");
-    form.append("course_name", COURSE);
+  test("setup: upload doc, create session", async ({ request }) => {
+    // Upload a doc with recognizable content
+    const docContent = `Introduction to Graph Algorithms\n\n${RECOGNIZABLE}\n\nThe algorithm maintains a set of visited vertices and relaxes edges.\n\nBellman-Ford handles negative weights but is slower.\n\nFloyd-Warshall computes all-pairs shortest paths.`;
 
-    const uploadRes = await fetch(`${BASE_URL}/api/content/documents`, {
-      method: "POST",
+    const uploadRes = await request.post(`${BASE_URL}/api/content/documents`, {
       headers: { "X-User-Id": USER_ID },
-      body: form,
+      multipart: {
+        file: {
+          name: "graphs.txt",
+          mimeType: "text/plain",
+          buffer: Buffer.from(docContent),
+        },
+        namespace: "COURSE",
+        course_name: COURSE,
+      },
     });
+    expect(uploadRes.status()).toBe(201);
     const uploadData = await uploadRes.json();
-    docId = uploadData.document_id;
+    const docId = uploadData.document_id;
 
     // Process
-    await api("POST", `/api/content/documents/${docId}/process`);
-
-    // Create a RETRIEVAL session for this course
-    const sessionRes = await api("POST", "/api/sessions", {
-      course_name: COURSE,
-      exam_name: "Final",
-      mode: "RETRIEVAL",
-      topic_scope: "Graph algorithms",
-      planned_minutes: 30,
-      objectives: [{ id: "obj_graphs", title: "Dijkstra shortest path" }],
+    const processRes = await request.post(`${BASE_URL}/api/content/documents/${docId}/process`, {
+      headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
     });
-    sessionId = sessionRes.data.session_id;
+    expect(processRes.status()).toBe(200);
+
+    // Create a RETRIEVAL session
+    const sessionRes = await request.post(`${BASE_URL}/api/sessions`, {
+      headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
+      data: {
+        course_name: COURSE,
+        exam_name: "Final",
+        mode: "RETRIEVAL",
+        topic_scope: "Graph algorithms",
+        planned_minutes: 30,
+        objectives: [{ id: "obj_graphs", title: "Dijkstra shortest path" }],
+        target_outcome: { prompt_count: 3 },
+      },
+    });
+    expect(sessionRes.status()).toBe(201);
+    const sessionData = await sessionRes.json();
+    sessionId = sessionData.session_id;
   });
 
   test("review panel NOT visible before submitting answer", async ({ page }) => {
-    // Set user ID in localStorage
     await page.goto(`${BASE_URL}/s/${sessionId}`);
     await page.evaluate((uid) => {
       localStorage.setItem("study_bot_user_id", uid);
@@ -75,11 +66,11 @@ test.describe("Knowledge Layer — Leak Prevention", () => {
     }
 
     // Start the session
-    const startBtn = page.locator('button:has-text("Start Session"), button:has-text("Resume Session")');
-    await startBtn.click();
+    await page.getByRole("button", { name: /start session/i }).click();
 
     // Wait for the prompt to appear
-    await expect(page.locator("textarea")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/PROMPT 1 \/ 3/)).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("textarea")).toBeVisible();
 
     // Assert: review panel is NOT visible
     await expect(page.locator('[data-testid="review-panel"]')).not.toBeVisible();
@@ -101,33 +92,31 @@ test.describe("Knowledge Layer — Leak Prevention", () => {
       await checkboxes.nth(i).check();
     }
 
-    // Start/resume session
-    const startBtn = page.locator('button:has-text("Start Session"), button:has-text("Resume Session")');
-    await startBtn.click();
+    // Resume session (run was started in previous test)
+    await page.getByRole("button", { name: /start session|resume session/i }).click();
 
     // Wait for prompt
     await expect(page.locator("textarea")).toBeVisible({ timeout: 10000 });
 
     // Type answer
     await page.locator("textarea").first().fill("I think Dijkstra uses BFS");
-    await page.locator('button:has-text("Submit Answer")').click();
+    await page.getByRole("button", { name: /submit answer/i }).click();
 
     // Score as INCORRECT
-    await page.locator('button:has-text("Incorrect")').click();
+    await page.getByRole("button", { name: "✗ Incorrect" }).click();
 
-    // Fill error log
-    await page.locator('textarea[placeholder*="correct rule"]').fill(
-      "Dijkstra uses a priority queue not plain BFS"
-    );
+    // Fill correction rule (required)
+    const textareas = page.locator("textarea");
+    await textareas.nth(0).fill("Dijkstra uses a priority queue not plain BFS");
 
-    // Save
-    await page.locator('button:has-text("Save & Next")').click();
+    // Submit error log
+    await page.getByRole("button", { name: /save/i }).click();
 
     // The review panel should appear if feedback was returned
     // Give it time to fetch and render
     const reviewPanel = page.locator('[data-testid="review-panel"]');
     // Check if review panel appeared (it will only if search returned results)
-    const visible = await reviewPanel.isVisible().catch(() => false);
+    const visible = await reviewPanel.isVisible({ timeout: 5000 }).catch(() => false);
 
     if (visible) {
       // If visible, verify it shows the doc title or snippet content
