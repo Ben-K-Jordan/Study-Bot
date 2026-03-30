@@ -69,6 +69,11 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     // Start the session
     await page.getByRole("button", { name: /start session/i }).click();
 
+    // Wait for the runner to load — either prompt text or an error
+    await page.waitForTimeout(3000);
+    const bodyText = await page.textContent("body");
+    console.log("PAGE BODY AFTER START:", bodyText?.slice(0, 500));
+
     // Wait for the prompt to appear
     await expect(page.getByText("PROMPT 1 / 3")).toBeVisible({ timeout: 10000 });
     await expect(page.locator("textarea")).toBeVisible();
