@@ -53,11 +53,12 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   });
 
   test("review panel NOT visible before submitting answer", async ({ page }) => {
-    await page.goto(`${BASE_URL}/s/${sessionId}`);
+    const sessionUrl = `${BASE_URL}/s/${sessionId}`;
+    await page.goto(sessionUrl);
     await page.evaluate((uid) => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
-    await page.reload();
+    await page.goto(sessionUrl);
 
     // Check pre-session commitment checkboxes
     const checkboxes = page.locator('input[type="checkbox"]');
@@ -69,7 +70,7 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     await page.getByRole("button", { name: /start session/i }).click();
 
     // Wait for the prompt to appear
-    await expect(page.getByText(/PROMPT 1 \/ 3/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("PROMPT 1 / 3")).toBeVisible({ timeout: 10000 });
     await expect(page.locator("textarea")).toBeVisible();
 
     // Assert: review panel is NOT visible
@@ -80,11 +81,12 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   });
 
   test("review panel appears after INCORRECT scoring with feedback", async ({ page }) => {
-    await page.goto(`${BASE_URL}/s/${sessionId}`);
+    const sessionUrl = `${BASE_URL}/s/${sessionId}`;
+    await page.goto(sessionUrl);
     await page.evaluate((uid) => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
-    await page.reload();
+    await page.goto(sessionUrl);
 
     // Check pre-session commitment checkboxes
     const checkboxes = page.locator('input[type="checkbox"]');
