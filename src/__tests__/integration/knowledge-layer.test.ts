@@ -88,7 +88,7 @@ The outer loop invariant must account for the inner loop's effect.
       where: { userId: { in: [USER_A, USER_B] } },
     });
     await prisma.practiceQuestion.deleteMany({
-      where: { set: { userId: { in: [USER_A, USER_B] } } },
+      where: { practiceSet: { userId: { in: [USER_A, USER_B] } } },
     });
     await prisma.practiceSet.deleteMany({
       where: { userId: { in: [USER_A, USER_B] } },
@@ -287,7 +287,7 @@ The outer loop invariant must account for the inner loop's effect.
       for (const q of questions) {
         await prisma.practiceQuestion.create({
           data: {
-            setId,
+            practiceSet: { connect: { id: setId } },
             kind: q.kind,
             promptText: q.promptText,
             answerKey: q.answerKey ?? null,
@@ -300,7 +300,7 @@ The outer loop invariant must account for the inner loop's effect.
 
     it("lists questions", async () => {
       const questions = await prisma.practiceQuestion.findMany({
-        where: { setId },
+        where: { practiceSetId: setId },
       });
       expect(questions.length).toBe(2);
     });
@@ -353,7 +353,7 @@ The outer loop invariant must account for the inner loop's effect.
     it("creates an evidence card", async () => {
       const card = await prisma.evidenceCard.create({
         data: {
-          paperId,
+          paper: { connect: { id: paperId } },
           claim: "Retrieval practice enhances long-term retention",
           recommendation: "Use regular self-testing",
           strength: "STRONG",
