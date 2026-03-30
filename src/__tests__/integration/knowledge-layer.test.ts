@@ -294,7 +294,7 @@ The outer loop invariant must account for the inner loop's effect.
           },
         });
       }
-      const count = await prisma.practiceQuestion.count({ where: { setId } });
+      const count = await prisma.practiceQuestion.count({ where: { practiceSetId: setId } });
       expect(count).toBe(2);
     });
 
