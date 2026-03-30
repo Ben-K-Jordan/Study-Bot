@@ -1,12 +1,16 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const isCI = !!process.env.CI;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false, // Sequential since tests depend on state
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  forbidOnly: isCI,
+  retries: isCI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? "github" : "list",
+  reporter: isCI
+    ? [["github"], ["html", { open: "never" }]]
+    : "list",
   timeout: 30_000,
   use: {
     baseURL: process.env.BASE_URL || "http://localhost:3000",
@@ -21,12 +25,10 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: process.env.CI
-    ? undefined
-    : {
-        command: "npm run dev",
-        url: "http://localhost:3000",
-        reuseExistingServer: true,
-        timeout: 30_000,
-      },
+  webServer: {
+    command: isCI ? "npm run build && npm run start" : "npm run dev",
+    url: "http://localhost:3000",
+    reuseExistingServer: !isCI,
+    timeout: isCI ? 120_000 : 30_000,
+  },
 });
