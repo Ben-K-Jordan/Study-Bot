@@ -68,6 +68,12 @@ test.describe("Knowledge Layer — Leak Prevention", () => {
     }, USER_ID);
     await page.reload();
 
+    // Check pre-session commitment checkboxes
+    const checkboxes = page.locator('input[type="checkbox"]');
+    for (let i = 0; i < 3; i++) {
+      await checkboxes.nth(i).check();
+    }
+
     // Start the session
     const startBtn = page.locator('button:has-text("Start Session"), button:has-text("Resume Session")');
     await startBtn.click();
@@ -88,6 +94,12 @@ test.describe("Knowledge Layer — Leak Prevention", () => {
       localStorage.setItem("study_bot_user_id", uid);
     }, USER_ID);
     await page.reload();
+
+    // Check pre-session commitment checkboxes
+    const checkboxes = page.locator('input[type="checkbox"]');
+    for (let i = 0; i < 3; i++) {
+      await checkboxes.nth(i).check();
+    }
 
     // Start/resume session
     const startBtn = page.locator('button:has-text("Start Session"), button:has-text("Resume Session")');
