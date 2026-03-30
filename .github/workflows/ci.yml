@@ -1,4 +1,4 @@
-name: Quality Gate
+name: CI
 
 on:
   push:
@@ -6,16 +6,16 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
 jobs:
-  lint-and-typecheck:
-    name: Lint & Typecheck
+  lint-and-build:
+    name: Lint & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,8 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run build
 
   unit-tests:
     name: Unit Tests
@@ -47,7 +48,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    needs: unit-tests
+    needs: [lint-and-build, unit-tests]
 
     services:
       postgres:
@@ -59,15 +60,13 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studybot_test?schema=public
-      BASE_URL: http://localhost:3000
-      NODE_ENV: test
 
     steps:
       - uses: actions/checkout@v4
@@ -79,14 +78,14 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - name: Setup database
+      - name: Push schema to test DB
         run: npx prisma db push --force-reset --accept-data-loss
       - run: npm run test:integration
 
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: integration-tests
+    needs: [lint-and-build, unit-tests, integration-tests]
 
     services:
       postgres:
@@ -98,7 +97,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -106,7 +105,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studybot_e2e?schema=public
       BASE_URL: http://localhost:3000
-      NODE_ENV: test
 
     steps:
       - uses: actions/checkout@v4
@@ -118,12 +116,9 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - name: Setup database
+      - name: Push schema to test DB
         run: npx prisma db push --force-reset --accept-data-loss
       - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run start &
-      - run: npx wait-on http://localhost:3000 --timeout 30000
       - run: npm run test:e2e
 
       - uses: actions/upload-artifact@v4
