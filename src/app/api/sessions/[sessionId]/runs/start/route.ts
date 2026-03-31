@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { startOrResumeRun } from "@/services/run";
+import { logger } from "@/lib/logger";
 
 export async function POST(
   request: NextRequest,
@@ -31,8 +32,18 @@ export async function POST(
       }
     }
 
-    const status = result.data!.resumed ? 200 : 201;
-    return NextResponse.json(result.data, { status });
+    const httpStatus = result.data!.resumed ? 200 : 201;
+    const payload = JSON.stringify(result.data);
+    logger.info("run.start.response", {
+      session_id: sessionId,
+      run_id: result.data!.run_id,
+      payload_bytes: payload.length,
+      resumed: result.data!.resumed,
+    });
+    return new NextResponse(payload, {
+      status: httpStatus,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err) {
     console.error("Failed to start run:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

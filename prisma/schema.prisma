@@ -42,9 +42,10 @@ model SessionRun {
   startedAt     DateTime?          @map("started_at")
   endedAt       DateTime?          @map("ended_at")
   currentIndex  Int                @default(0) @map("current_index")
+  promptCount   Int                @default(0) @map("prompt_count")
   answeredCount Int?               @map("answered_count") // EXAM_SIM: prompts answered
   scoredCount   Int?               @map("scored_count")   // EXAM_SIM: prompts scored in review
-  prompts       Json               // Array of generated prompts for this run
+  prompts       Json               // Array of generated prompts (legacy, kept for backward compat)
   policies      Json               @default("{}") // Scoring/hint/error-log policies
   metrics       Json               @default("{}") // Rolling stats
   breakState    Json               @default("{}") @map("break_state")
@@ -54,8 +55,9 @@ model SessionRun {
   session       Session            @relation(fields: [sessionId], references: [sessionId])
   attempts      SessionAttempt[]
   errorLogs     SessionErrorLog[]
+  runPrompts    SessionRunPrompt[]
 
-  @@index([userId])
+  @@index([userId, status])
   @@index([sessionId])
   @@map("session_runs")
 }
@@ -76,6 +78,7 @@ model SessionAttempt {
 
   @@unique([runId, promptIndex], map: "session_attempts_run_id_prompt_index_key")
   @@index([runId])
+  @@index([runId, createdAt])
   @@map("session_attempts")
 }
 
@@ -96,6 +99,25 @@ model SessionErrorLog {
   @@index([runId])
   @@index([userId, resolvedAt, createdAt(sort: Desc)], map: "session_error_logs_user_unresolved_idx")
   @@map("session_error_logs")
+}
+
+model SessionRunPrompt {
+  id          String     @id @default(uuid())
+  runId       String     @map("run_id")
+  promptIndex Int        @map("prompt_index")
+  objectiveId String?    @map("objective_id")
+  text        String
+  difficulty  Int        @default(1)
+  sourceType  String     @default("GENERATED") @map("source_type") // GENERATED | PRACTICE_QUESTION | ERROR_LOG
+  sourceRefId String?    @map("source_ref_id")
+  meta        Json?
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  run         SessionRun @relation(fields: [runId], references: [runId], onDelete: Cascade)
+
+  @@unique([runId, promptIndex], map: "session_run_prompts_run_prompt_key")
+  @@index([runId, promptIndex])
+  @@map("session_run_prompts")
 }
 
 model StudyPlan {
@@ -157,9 +179,27 @@ model ContentChunk {
 
   document   ContentDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
   citations  AttemptCitation[]
+  anchors    ObjectiveAnchor[]
 
   @@unique([documentId, ordinal], map: "content_chunks_doc_ordinal_key")
   @@map("content_chunks")
+}
+
+model ObjectiveAnchor {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  courseName  String       @map("course_name")
+  examName    String       @default("") @map("exam_name")
+  objectiveId String       @map("objective_id")
+  chunkId     String       @map("chunk_id")
+  rank        Int
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  chunk       ContentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseName, examName, objectiveId, chunkId], map: "objective_anchors_unique_key")
+  @@index([userId, courseName, examName, objectiveId], map: "objective_anchors_lookup_idx")
+  @@map("objective_anchors")
 }
 
 model PracticeSet {

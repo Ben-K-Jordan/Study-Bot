@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { submitAttempt } from "@/services/run";
 import { parseAttemptPayload } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 import { z } from "zod/v4";
 
 export async function POST(
@@ -84,7 +85,15 @@ export async function POST(
       }
     }
 
-    return NextResponse.json(result.data);
+    const payload = JSON.stringify(result.data);
+    logger.info("attempt.response", {
+      run_id: runId,
+      payload_bytes: payload.length,
+    });
+    return new NextResponse(payload, {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err) {
     console.error("Failed to submit attempt:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

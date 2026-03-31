@@ -28,7 +28,7 @@ export async function extractDocumentText(
 }
 
 async function extractPdf(filePath: string): Promise<ExtractionResult> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line
   const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string; numpages: number }>;
   const buffer = await readFile(filePath);
   const result = await pdfParse(buffer);
