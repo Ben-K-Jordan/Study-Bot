@@ -21,6 +21,14 @@ export interface Prompt {
   };
 }
 
+export interface PromptView {
+  prompt_index: number;
+  text: string;
+  objective_id?: string;
+  difficulty?: number;
+  source_type?: string;
+}
+
 export interface RunMetrics {
   attempts_count: number;
   correct_count: number;
@@ -63,16 +71,22 @@ export interface RunData {
   mode: string;
   phase: string;
   current_index: number;
+  prompt_count: number;
+  current_prompt: PromptView | null;
   answered_count?: number | null;
   scored_count?: number | null;
-  prompts: Prompt[];
+  // Legacy: full prompt array (kept for backward compat, may be absent)
+  prompts?: Prompt[];
   policies: RunPolicies;
   metrics: RunMetrics;
   break_state: BreakState;
   // Attempts are available on resumed runs (from GET /api/runs/:runId)
-  attempts?: { prompt_index: number; user_answer: string; self_score: string | null }[];
-  // Post-score feedback (only present after PARTIAL/INCORRECT scoring)
+  attempts?: { id: string; prompt_index: number; user_answer: string; self_score: string | null }[];
+  // Deferred feedback: set by UI after fetching from /api/attempts/:attemptId/feedback
   feedback?: { excerpts: FeedbackExcerpt[] };
+  // Last attempt info for deferred feedback
+  last_attempt_id?: string;
+  last_feedback_status?: "PENDING" | "NONE";
 }
 
 export interface SessionData {
@@ -122,7 +136,7 @@ async function apiGet(url: string) {
   return data;
 }
 
-function getUserIdFromStorage(): string {
+export function getUserIdFromStorage(): string {
   if (typeof window === "undefined") return "anonymous";
   let uid = localStorage.getItem("study_bot_user_id");
   if (!uid) {
@@ -130,6 +144,16 @@ function getUserIdFromStorage(): string {
     localStorage.setItem("study_bot_user_id", uid);
   }
   return uid;
+}
+
+/** Fetch a single prompt by index */
+async function fetchPrompt(runId: string, index: number): Promise<PromptView> {
+  return apiGet(`/api/runs/${runId}/prompt?index=${index}`);
+}
+
+/** Fetch deferred feedback for an attempt */
+export async function fetchFeedback(attemptId: string): Promise<{ status: string; excerpts: FeedbackExcerpt[] }> {
+  return apiGet(`/api/attempts/${attemptId}/feedback`);
 }
 
 // --- Main Component ---
@@ -155,14 +179,34 @@ export function SessionRunner({ session }: Props) {
       const data = await apiPost(
         `/api/sessions/${session.session_id}/runs/start`
       );
+
+      // Build current_prompt from response
+      let currentPrompt: PromptView | null = data.current_prompt ?? null;
+
+      // Fallback for backward compat: if no current_prompt but prompts array exists
+      if (!currentPrompt && data.prompts && data.prompts.length > 0) {
+        const p = data.prompts[data.current_index ?? 0];
+        if (p) {
+          currentPrompt = {
+            prompt_index: data.current_index ?? 0,
+            text: p.text,
+            objective_id: p.objective_id,
+            difficulty: p.difficulty,
+          };
+        }
+      }
+
       // For EXAM_SIM REVIEW phase, fetch attempts so we can show saved answers
       let attempts: RunData["attempts"] = undefined;
       if (data.phase === "REVIEW" && data.resumed) {
         const full = await apiGet(`/api/runs/${data.run_id}`);
         attempts = full.attempts;
       }
+
       const runData: RunData = {
         ...data,
+        prompt_count: data.prompt_count ?? data.prompts?.length ?? 0,
+        current_prompt: currentPrompt,
         mode: data.mode ?? session.mode,
         phase: data.phase ?? "ACTIVE",
         policies: data.policies ?? { scoring: "IMMEDIATE", requiresErrorLogOn: ["PARTIAL", "INCORRECT"], allowHintsBeforeAnswer: false, allowEndBreakEarly: true },
@@ -192,16 +236,38 @@ export function SessionRunner({ session }: Props) {
           `/api/runs/${run.run_id}/attempt`,
           attempt
         );
+
+        const newIndex = data.current_index;
+        const promptCount = data.prompt_count ?? run.prompt_count;
+
+        // Fetch next prompt if there are more
+        let nextPrompt: PromptView | null = null;
+        if (data.status !== "COMPLETED" && newIndex < promptCount) {
+          try {
+            nextPrompt = await fetchPrompt(run.run_id, newIndex);
+          } catch {
+            // Fallback to prompts array if available
+            if (run.prompts && run.prompts[newIndex]) {
+              const p = run.prompts[newIndex];
+              nextPrompt = { prompt_index: newIndex, text: p.text, objective_id: p.objective_id, difficulty: p.difficulty };
+            }
+          }
+        }
+
         const updatedRun: RunData = {
           ...run,
-          current_index: data.current_index,
+          current_index: newIndex,
+          prompt_count: promptCount,
+          current_prompt: nextPrompt,
           metrics: data.metrics,
           break_state: data.break_state,
           status: data.status,
           phase: data.phase ?? run.phase,
           answered_count: data.answered_count ?? run.answered_count,
           scored_count: data.scored_count ?? run.scored_count,
-          feedback: data.feedback ?? undefined,
+          last_attempt_id: data.attempt_id,
+          last_feedback_status: data.feedback_status,
+          feedback: undefined, // Clear previous feedback
         };
 
         // When transitioning to REVIEW, fetch attempts for display
@@ -226,7 +292,8 @@ export function SessionRunner({ session }: Props) {
             run_id: fresh.run_id,
             status: fresh.status,
             current_index: fresh.current_index,
-            prompts: fresh.prompts,
+            prompt_count: fresh.prompt_count ?? run.prompt_count,
+            current_prompt: run.current_prompt,
             metrics: fresh.metrics,
             break_state: fresh.break_state,
             phase: fresh.phase ?? run.phase,

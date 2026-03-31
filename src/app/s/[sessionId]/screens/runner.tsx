@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { RunData, SessionData, FeedbackExcerpt } from "../session-runner";
+import { fetchFeedback } from "../session-runner";
 
 const ERROR_TYPES = [
   { value: "MISCONCEPTION", label: "Misconception" },
@@ -35,14 +36,15 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [variantQuestion, setVariantQuestion] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedbackExcerpts, setFeedbackExcerpts] = useState<FeedbackExcerpt[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [lastScore, setLastScore] = useState<string | null>(null);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const prompts = run.prompts;
+  // Use current_prompt from run data (Phase 2: no full prompt array needed)
+  const currentPrompt = run.current_prompt;
   const currentIndex = run.current_index;
-  const currentPrompt = prompts[currentIndex];
-  const total = prompts.length;
+  const total = run.prompt_count || run.prompts?.length || 0;
 
   // For EXAM_SIM, progress tracking differs by phase
   const progressLabel = isExamSim
@@ -58,17 +60,32 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     ? run.attempts.find((a) => a.prompt_index === currentIndex)?.user_answer ?? ""
     : "";
 
-  // When feedback arrives, show the review panel
+  // Phase 1: Deferred feedback — fetch after scoring PARTIAL/INCORRECT
   useEffect(() => {
-    if (run.feedback && run.feedback.excerpts.length > 0) {
-      setFeedbackExcerpts(run.feedback.excerpts);
-      setUIPhase("review");
+    if (
+      run.last_feedback_status === "PENDING" &&
+      run.last_attempt_id &&
+      !feedbackLoading &&
+      feedbackExcerpts.length === 0 &&
+      uiPhase === "review"
+    ) {
+      setFeedbackLoading(true);
+      fetchFeedback(run.last_attempt_id)
+        .then((result) => {
+          if (result.status === "OK" && result.excerpts.length > 0) {
+            setFeedbackExcerpts(result.excerpts);
+          }
+        })
+        .catch(() => {
+          // Feedback failure is non-fatal
+        })
+        .finally(() => setFeedbackLoading(false));
     }
-  }, [run.feedback]);
+  }, [run.last_feedback_status, run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length]);
 
-  // Reset state when prompt changes (but not if we're showing review feedback)
+  // Reset state when prompt changes
   useEffect(() => {
-    if (uiPhase === "review" && feedbackExcerpts.length > 0) return;
+    if (uiPhase === "review" && (feedbackExcerpts.length > 0 || feedbackLoading)) return;
     if (isReviewPhase) {
       setUIPhase("scoring");
     } else {
@@ -80,6 +97,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setVariantQuestion("");
     setErrorType("MISCONCEPTION");
     setFeedbackExcerpts([]);
+    setFeedbackLoading(false);
     setLastScore(null);
     startTimeRef.current = Date.now();
     if (!isReviewPhase) {
@@ -91,7 +109,6 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   if (!currentPrompt) {
     // All prompts completed for this phase
     if (isExamPhase) {
-      // Should not happen — phase transitions server-side
       return (
         <div style={{ textAlign: "center", padding: "2rem 0" }}>
           <p style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>All answers submitted. Transitioning to review...</p>
@@ -111,7 +128,6 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const handleAnswerSubmit = () => {
     if (!answer.trim()) return;
     if (isExamPhase) {
-      // EXAM_SIM: submit answer only (no scoring)
       doExamAnswer();
     } else {
       setUIPhase("scoring");
@@ -168,14 +184,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     await onSubmit(attempt);
     setSubmitting(false);
 
-    // Check if feedback was returned (run.feedback will be set by parent)
-    // Transition to review phase is handled by useEffect below
+    // After submit, if PARTIAL/INCORRECT, show review phase for deferred feedback
+    if (s !== "CORRECT") {
+      setUIPhase("review");
+    }
   };
 
   const doReviewScore = async (finalScore?: string) => {
     const s = finalScore || score;
     if (!s) return;
     setSubmitting(true);
+    setLastScore(s);
 
     const attempt: Record<string, unknown> = {
       prompt_index: currentIndex,
@@ -193,6 +212,11 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
     await onSubmit(attempt);
     setSubmitting(false);
+
+    // After submit, if PARTIAL/INCORRECT, show review phase for deferred feedback
+    if (s !== "CORRECT") {
+      setUIPhase("review");
+    }
   };
 
   return (
@@ -316,7 +340,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         </div>
       )}
 
-      {/* Answering phase (RETRIEVAL / INTERLEAVED / ERROR_REPAIR / EXAM_SIM EXAM) */}
+      {/* Answering phase */}
       {uiPhase === "answering" && !isReviewPhase && (
         <div>
           <textarea
@@ -350,10 +374,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         </div>
       )}
 
-      {/* Scoring phase (RETRIEVAL / INTERLEAVED / ERROR_REPAIR after answering, or REVIEW phase) */}
+      {/* Scoring phase */}
       {uiPhase === "scoring" && (
         <div>
-          {/* Show answer for non-REVIEW modes */}
           {!isReviewPhase && (
             <div
               style={{
@@ -450,8 +473,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         </div>
       )}
 
-      {/* Review & Repair panel — shown AFTER scoring if feedback excerpts exist */}
-      {uiPhase === "review" && feedbackExcerpts.length > 0 && (
+      {/* Review & Repair panel — shown AFTER scoring with deferred feedback */}
+      {uiPhase === "review" && (
         <div data-testid="review-panel">
           <div
             style={{
@@ -465,6 +488,12 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
               REVIEW (from your materials)
             </p>
+
+            {feedbackLoading && (
+              <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }} data-testid="feedback-loading">
+                Loading relevant excerpts...
+              </p>
+            )}
 
             {feedbackExcerpts.map((excerpt, i) => (
               <div
@@ -490,6 +519,12 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 />
               </div>
             ))}
+
+            {!feedbackLoading && feedbackExcerpts.length === 0 && (
+              <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }}>
+                No relevant excerpts found in your materials.
+              </p>
+            )}
 
             {/* Repair prompt for PARTIAL/INCORRECT */}
             {lastScore && lastScore !== "CORRECT" && (correctionRule || variantQuestion) && (
@@ -525,6 +560,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           <button
             onClick={() => {
               setFeedbackExcerpts([]);
+              setFeedbackLoading(false);
               setLastScore(null);
               if (isReviewPhase) {
                 setUIPhase("scoring");

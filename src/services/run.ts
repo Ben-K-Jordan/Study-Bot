@@ -12,7 +12,6 @@ import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks"
 import { computeFollowups } from "@/lib/spacing";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
-import { fetchFeedbackExcerpts, type FeedbackExcerpt } from "@/services/content";
 import type {
   SubmitAttemptInput,
   ExamAnswerInput,
@@ -39,6 +38,14 @@ export interface RunMetrics {
   accuracy: number;
   time_spent_seconds: number;
   recommended_followups?: { label: string; days_from_now: number; date: string }[];
+}
+
+export interface PromptView {
+  prompt_index: number;
+  text: string;
+  objective_id?: string;
+  difficulty?: number;
+  source_type?: string;
 }
 
 function emptyMetrics(): RunMetrics {
@@ -78,6 +85,16 @@ function initialPhaseForMode(mode: string): string {
   return mode === "EXAM_SIM" ? "EXAM" : "ACTIVE";
 }
 
+/** Convert a generated Prompt to a PromptView for API responses */
+function toPromptView(prompt: Prompt, index: number): PromptView {
+  return {
+    prompt_index: index,
+    text: prompt.text,
+    objective_id: prompt.objective_id,
+    difficulty: prompt.difficulty,
+  };
+}
+
 // ---- Start / Resume ----
 
 export async function startOrResumeRun(userId: string, sessionId: string) {
@@ -106,6 +123,9 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       });
     }
 
+    // Fetch current prompt from run_prompts table, falling back to JSONB
+    const currentPrompt = await getPromptAt(existingRun.runId, existingRun.currentIndex, existingRun.prompts as unknown as Prompt[]);
+
     logger.info("run.resumed", {
       user_id: userId,
       session_id: sessionId,
@@ -122,6 +142,8 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
         mode: existingRun.mode,
         phase: existingRun.phase,
         current_index: existingRun.currentIndex,
+        prompt_count: existingRun.promptCount,
+        current_prompt: currentPrompt,
         answered_count: existingRun.answeredCount,
         scored_count: existingRun.scoredCount,
         prompts: existingRun.prompts,
@@ -218,29 +240,52 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
   const policies = policiesForMode(mode);
   const phase = initialPhaseForMode(mode);
 
-  const run = await prisma.sessionRun.create({
-    data: {
-      runId,
-      sessionId: session.sessionId,
-      userId,
-      mode,
-      phase,
-      status: "ACTIVE",
-      startedAt: new Date(),
-      currentIndex: 0,
-      answeredCount: mode === "EXAM_SIM" ? 0 : null,
-      scoredCount: mode === "EXAM_SIM" ? 0 : null,
-      prompts: prompts as object[],
-      policies: policies as object,
-      metrics: metrics as object,
-      breakState: breakState as object,
-    },
+  // Create run + persist prompts to SessionRunPrompt table in one transaction
+  await prisma.$transaction(async (tx) => {
+    await tx.sessionRun.create({
+      data: {
+        runId,
+        sessionId: session.sessionId,
+        userId,
+        mode,
+        phase,
+        status: "ACTIVE",
+        startedAt: new Date(),
+        currentIndex: 0,
+        promptCount: prompts.length,
+        answeredCount: mode === "EXAM_SIM" ? 0 : null,
+        scoredCount: mode === "EXAM_SIM" ? 0 : null,
+        prompts: prompts as object[],
+        policies: policies as object,
+        metrics: metrics as object,
+        breakState: breakState as object,
+      },
+    });
+
+    // Write prompts to normalized table
+    for (let i = 0; i < prompts.length; i++) {
+      const p = prompts[i];
+      await tx.sessionRunPrompt.create({
+        data: {
+          runId,
+          promptIndex: i,
+          objectiveId: p.objective_id ?? null,
+          text: p.text,
+          difficulty: p.difficulty ?? 1,
+          sourceType: p.meta?.source_error_log_id ? "ERROR_LOG" : "GENERATED",
+          sourceRefId: p.meta?.source_error_log_id ?? null,
+          meta: p.meta ? (p.meta as object) : undefined,
+        },
+      });
+    }
   });
+
+  const currentPrompt = toPromptView(prompts[0], 0);
 
   logger.info("run.started", {
     user_id: userId,
     session_id: sessionId,
-    run_id: run.runId,
+    run_id: runId,
     mode,
     phase,
     prompt_count: prompts.length,
@@ -249,11 +294,13 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
 
   return {
     data: {
-      run_id: run.runId,
-      status: run.status,
+      run_id: runId,
+      status: "ACTIVE",
       mode,
       phase,
       current_index: 0,
+      prompt_count: prompts.length,
+      current_prompt: currentPrompt,
       answered_count: mode === "EXAM_SIM" ? 0 : null,
       scored_count: mode === "EXAM_SIM" ? 0 : null,
       prompts,
@@ -263,6 +310,42 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       resumed: false,
     },
   };
+}
+
+// ---- Get Prompt by Index ----
+
+async function getPromptAt(runId: string, index: number, fallbackPrompts: Prompt[]): Promise<PromptView> {
+  const row = await prisma.sessionRunPrompt.findUnique({
+    where: { runId_promptIndex: { runId, promptIndex: index } },
+  });
+  if (row) {
+    return {
+      prompt_index: row.promptIndex,
+      text: row.text,
+      objective_id: row.objectiveId ?? undefined,
+      difficulty: row.difficulty,
+      source_type: row.sourceType,
+    };
+  }
+  // Fallback to JSONB for runs created before migration
+  const p = fallbackPrompts[index];
+  if (!p) return { prompt_index: index, text: "" };
+  return toPromptView(p, index);
+}
+
+export async function getRunPrompt(userId: string, runId: string, index: number) {
+  const run = await prisma.sessionRun.findUnique({
+    where: { runId },
+    select: { userId: true, promptCount: true, prompts: true },
+  });
+  if (!run) return { error: "not_found" as const };
+  if (run.userId !== userId) return { error: "forbidden" as const };
+
+  const count = run.promptCount || (run.prompts as unknown as Prompt[]).length;
+  if (index < 0 || index >= count) return { error: "invalid_index" as const };
+
+  const prompt = await getPromptAt(runId, index, run.prompts as unknown as Prompt[]);
+  return { data: prompt };
 }
 
 // ---- Get Run ----
@@ -288,6 +371,7 @@ export async function getRun(userId: string, runId: string) {
       mode: run.mode,
       phase: run.phase,
       current_index: run.currentIndex,
+      prompt_count: run.promptCount,
       answered_count: run.answeredCount,
       scored_count: run.scoredCount,
       prompts: run.prompts,
@@ -297,6 +381,7 @@ export async function getRun(userId: string, runId: string) {
       started_at: run.startedAt?.toISOString() ?? null,
       ended_at: run.endedAt?.toISOString() ?? null,
       attempts: run.attempts.map((a) => ({
+        id: a.id,
         prompt_index: a.promptIndex,
         prompt_id: a.promptId,
         prompt_text: a.promptText,
@@ -325,6 +410,7 @@ export async function getRun(userId: string, runId: string) {
 // ---- Submit Attempt (unified for all modes) ----
 
 export async function submitAttempt(userId: string, runId: string, input: AttemptPayload) {
+  const txStart = Date.now();
   const run = await prisma.sessionRun.findUnique({ where: { runId } });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
@@ -364,41 +450,38 @@ export async function submitAttempt(userId: string, runId: string, input: Attemp
     return { error: "wrong_index" as const, expected: run.currentIndex };
   }
 
+  // Read prompt from normalized table, fall back to JSONB
   const prompts = run.prompts as unknown as Prompt[];
-  const prompt = prompts[promptIndex];
+  const promptRow = await prisma.sessionRunPrompt.findUnique({
+    where: { runId_promptIndex: { runId, promptIndex } },
+  });
+  const prompt: Prompt = promptRow
+    ? { id: promptRow.id, text: promptRow.text, objective_id: promptRow.objectiveId ?? undefined, difficulty: promptRow.difficulty, meta: promptRow.meta as Prompt["meta"] }
+    : prompts[promptIndex];
   if (!prompt) return { error: "invalid_index" as const };
 
   // Route to the appropriate handler
   if (mode === "EXAM_SIM" && (kind === "ANSWER" || (kind === "LEGACY" && phase === "EXAM"))) {
-    return handleExamAnswer(run, prompt, input as ExamAnswerInput | SubmitAttemptInput, breakState);
+    return handleExamAnswer(run, prompt, input as ExamAnswerInput | SubmitAttemptInput, breakState, txStart);
   }
 
   if (mode === "EXAM_SIM" && (kind === "SCORE" || (kind === "LEGACY" && phase === "REVIEW"))) {
-    const sessionForFeedback = await prisma.session.findUnique({
-      where: { sessionId: run.sessionId },
-      select: { courseName: true, examName: true, objectives: true },
-    });
-    return handleExamScore(run, prompt, input as ExamScoreInput | SubmitAttemptInput, breakState, userId, sessionForFeedback);
+    return handleExamScore(run, prompt, input as ExamScoreInput | SubmitAttemptInput, breakState, userId, txStart);
   }
 
   // RETRIEVAL / INTERLEAVED / ERROR_REPAIR: immediate scoring
-  // Fetch session for course/exam context (needed for feedback)
-  const session = await prisma.session.findUnique({
-    where: { sessionId: run.sessionId },
-    select: { courseName: true, examName: true, objectives: true },
-  });
-  return handleImmediateScoring(run, prompt, input as SubmitAttemptInput, breakState, userId, session);
+  return handleImmediateScoring(run, prompt, input as SubmitAttemptInput, breakState, userId, txStart);
 }
 
 // ---- Immediate scoring (RETRIEVAL / INTERLEAVED / ERROR_REPAIR) ----
 
 async function handleImmediateScoring(
-  run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; mode: string; metrics: unknown; breakState: unknown },
+  run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; promptCount: number; mode: string; metrics: unknown; breakState: unknown; prompts: unknown },
   prompt: Prompt,
   input: SubmitAttemptInput,
   breakState: BreakState,
   userId: string,
-  session?: { courseName: string; examName: string; objectives: unknown } | null
+  txStart: number
 ) {
   // Check for duplicate attempt
   const existing = await prisma.sessionAttempt.findUnique({
@@ -406,7 +489,7 @@ async function handleImmediateScoring(
   });
   if (existing) return { error: "duplicate_attempt" as const };
 
-  const prompts = (await prisma.sessionRun.findUnique({ where: { id: run.id }, select: { prompts: true } }))!.prompts as unknown as Prompt[];
+  const promptCount = run.promptCount || (run.prompts as unknown as Prompt[]).length;
   const metrics = run.metrics as unknown as RunMetrics;
   const newMetrics: RunMetrics = {
     attempts_count: metrics.attempts_count + 1,
@@ -421,7 +504,7 @@ async function handleImmediateScoring(
     : 0;
 
   const newIndex = run.currentIndex + 1;
-  const isLastPrompt = newIndex >= prompts.length;
+  const isLastPrompt = newIndex >= promptCount;
   const updatedBreakState = isLastPrompt ? breakState : checkBreakNeeded(breakState);
 
   let attemptId: string;
@@ -493,28 +576,10 @@ async function handleImmediateScoring(
     throw err;
   }
 
-  // Post-score feedback: AFTER transaction commits, fetch excerpts
-  // Only for PARTIAL/INCORRECT — never for CORRECT in v1
-  let feedback: { excerpts: FeedbackExcerpt[] } | undefined;
-  if (
-    (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
-    session
-  ) {
-    const objectives = session.objectives as { id: string; title: string }[] | null;
-    const objectiveTitle = objectives?.[0]?.title;
-    const excerpts = await fetchFeedbackExcerpts(
-      userId,
-      attemptId,
-      prompt.text,
-      session.courseName,
-      session.examName,
-      input.error_log?.correction_rule,
-      objectiveTitle
-    );
-    if (excerpts.length > 0) {
-      feedback = { excerpts };
-    }
-  }
+  const dbTxMs = Date.now() - txStart;
+  const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
+    ? "PENDING" as const
+    : "NONE" as const;
 
   logger.info("prompt.submitted", {
     user_id: userId,
@@ -523,6 +588,7 @@ async function handleImmediateScoring(
     self_score: input.self_score,
     mode: run.mode,
     is_last: isLastPrompt,
+    db_tx_ms: dbTxMs,
   });
 
   if (isLastPrompt) {
@@ -530,24 +596,28 @@ async function handleImmediateScoring(
     logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
     return {
       data: {
+        attempt_id: attemptId,
+        feedback_status: feedbackStatus,
         status: "COMPLETED" as const,
         phase: "COMPLETE",
         current_index: newIndex,
+        prompt_count: promptCount,
         metrics: finalMetrics,
         break_state: updatedBreakState,
-        feedback,
       },
     };
   }
 
   return {
     data: {
+      attempt_id: attemptId,
+      feedback_status: feedbackStatus,
       status: "ACTIVE" as const,
       phase: "ACTIVE",
       current_index: newIndex,
+      prompt_count: promptCount,
       metrics: newMetrics,
       break_state: updatedBreakState,
-      feedback,
     },
   };
 }
@@ -555,10 +625,11 @@ async function handleImmediateScoring(
 // ---- EXAM_SIM: EXAM phase (answer only, no scoring) ----
 
 async function handleExamAnswer(
-  run: { id: string; runId: string; userId: string; currentIndex: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown },
+  run: { id: string; runId: string; userId: string; currentIndex: number; promptCount: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown; prompts: unknown },
   prompt: Prompt,
   input: ExamAnswerInput | SubmitAttemptInput,
-  breakState: BreakState
+  breakState: BreakState,
+  txStart: number
 ) {
   const userAnswer = "user_answer" in input ? input.user_answer : "";
   const timeToAnswer = "time_to_answer_seconds" in input ? input.time_to_answer_seconds : undefined;
@@ -569,10 +640,10 @@ async function handleExamAnswer(
   });
   if (existing) return { error: "duplicate_attempt" as const };
 
-  const prompts = (await prisma.sessionRun.findUnique({ where: { id: run.id }, select: { prompts: true } }))!.prompts as unknown as Prompt[];
+  const promptCount = run.promptCount || (run.prompts as unknown as Prompt[]).length;
   const newIndex = run.currentIndex + 1;
   const newAnsweredCount = (run.answeredCount ?? 0) + 1;
-  const isLastAnswer = newIndex >= prompts.length;
+  const isLastAnswer = newIndex >= promptCount;
   const updatedBreakState = isLastAnswer ? breakState : checkBreakNeeded(breakState);
 
   const metrics = run.metrics as unknown as RunMetrics;
@@ -581,10 +652,11 @@ async function handleExamAnswer(
     time_spent_seconds: metrics.time_spent_seconds + (timeToAnswer ?? 0),
   };
 
+  let attemptId: string;
   try {
-    await prisma.$transaction(async (tx) => {
+    const txResult = await prisma.$transaction(async (tx) => {
       // Insert attempt with self_score = null
-      await tx.sessionAttempt.create({
+      const attempt = await tx.sessionAttempt.create({
         data: {
           runId: run.runId,
           promptIndex: input.prompt_index,
@@ -607,7 +679,10 @@ async function handleExamAnswer(
           phase: isLastAnswer ? "REVIEW" : "EXAM",
         },
       });
+
+      return { attemptId: attempt.id };
     });
+    attemptId = txResult.attemptId;
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("Unique constraint")) {
       return { error: "duplicate_attempt" as const };
@@ -615,6 +690,7 @@ async function handleExamAnswer(
     throw err;
   }
 
+  const dbTxMs = Date.now() - txStart;
   logger.info("prompt.submitted", {
     user_id: run.userId,
     run_id: run.runId,
@@ -622,13 +698,17 @@ async function handleExamAnswer(
     mode: "EXAM_SIM",
     phase: isLastAnswer ? "REVIEW" : "EXAM",
     is_last_answer: isLastAnswer,
+    db_tx_ms: dbTxMs,
   });
 
   return {
     data: {
+      attempt_id: attemptId,
+      feedback_status: "NONE" as const,
       status: "ACTIVE" as const,
       phase: isLastAnswer ? "REVIEW" : "EXAM",
       current_index: isLastAnswer ? 0 : newIndex,
+      prompt_count: promptCount,
       answered_count: newAnsweredCount,
       scored_count: run.scoredCount ?? 0,
       metrics: newMetrics,
@@ -640,12 +720,12 @@ async function handleExamAnswer(
 // ---- EXAM_SIM: REVIEW phase (score existing attempt) ----
 
 async function handleExamScore(
-  run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown },
+  run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; promptCount: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown; prompts: unknown },
   prompt: Prompt,
   input: ExamScoreInput | SubmitAttemptInput,
   breakState: BreakState,
   userId: string,
-  session?: { courseName: string; examName: string; objectives: unknown } | null
+  txStart: number
 ) {
   const selfScore = "self_score" in input ? input.self_score : null;
   const errorLog = "error_log" in input ? input.error_log : undefined;
@@ -659,11 +739,11 @@ async function handleExamScore(
   if (!existing) return { error: "no_attempt_to_score" as const };
   if (existing.selfScore !== null) return { error: "already_scored" as const };
 
-  const prompts = (await prisma.sessionRun.findUnique({ where: { id: run.id }, select: { prompts: true } }))!.prompts as unknown as Prompt[];
+  const promptCount = run.promptCount || (run.prompts as unknown as Prompt[]).length;
   const metrics = run.metrics as unknown as RunMetrics;
   const newScoredCount = (run.scoredCount ?? 0) + 1;
   const newIndex = run.currentIndex + 1;
-  const isLastScore = newIndex >= prompts.length;
+  const isLastScore = newIndex >= promptCount;
 
   const newMetrics: RunMetrics = {
     attempts_count: metrics.attempts_count + 1,
@@ -677,6 +757,7 @@ async function handleExamScore(
     ? newMetrics.correct_count / newMetrics.attempts_count
     : 0;
 
+  let attemptId: string;
   try {
     await prisma.$transaction(async (tx) => {
       // Update existing attempt with score
@@ -715,10 +796,16 @@ async function handleExamScore(
         },
       });
     });
+    attemptId = existing.id;
   } catch (err: unknown) {
     captureException(err, { user_id: userId, run_id: run.runId, action: "examScore" });
     throw err;
   }
+
+  const dbTxMs = Date.now() - txStart;
+  const feedbackStatus = (selfScore === "PARTIAL" || selfScore === "INCORRECT")
+    ? "PENDING" as const
+    : "NONE" as const;
 
   logger.info("prompt.scored", {
     user_id: userId,
@@ -727,57 +814,40 @@ async function handleExamScore(
     self_score: selfScore,
     mode: "EXAM_SIM",
     is_last_score: isLastScore,
+    db_tx_ms: dbTxMs,
   });
-
-  // Post-score feedback for PARTIAL/INCORRECT in REVIEW phase
-  let feedback: { excerpts: FeedbackExcerpt[] } | undefined;
-  if (
-    (selfScore === "PARTIAL" || selfScore === "INCORRECT") &&
-    session
-  ) {
-    const objectives = session.objectives as { id: string; title: string }[] | null;
-    const objectiveTitle = objectives?.[0]?.title;
-    const excerpts = await fetchFeedbackExcerpts(
-      userId,
-      existing.id,
-      prompt.text,
-      session.courseName,
-      session.examName,
-      errorLog?.correction_rule,
-      objectiveTitle
-    );
-    if (excerpts.length > 0) {
-      feedback = { excerpts };
-    }
-  }
 
   if (isLastScore) {
     const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
     logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
     return {
       data: {
+        attempt_id: attemptId,
+        feedback_status: feedbackStatus,
         status: "COMPLETED" as const,
         phase: "COMPLETE",
         current_index: newIndex,
+        prompt_count: promptCount,
         answered_count: run.answeredCount,
         scored_count: newScoredCount,
         metrics: finalMetrics,
         break_state: breakState,
-        feedback,
       },
     };
   }
 
   return {
     data: {
+      attempt_id: attemptId,
+      feedback_status: feedbackStatus,
       status: "ACTIVE" as const,
       phase: "REVIEW",
       current_index: newIndex,
+      prompt_count: promptCount,
       answered_count: run.answeredCount,
       scored_count: newScoredCount,
       metrics: newMetrics,
       break_state: breakState,
-      feedback,
     },
   };
 }

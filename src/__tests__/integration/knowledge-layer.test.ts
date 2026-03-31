@@ -242,7 +242,7 @@ The outer loop invariant must account for the inner loop's effect.
       expect(result.data.prompts.length).toBeGreaterThan(0);
     });
 
-    it("submit INCORRECT attempt and get feedback with citations", async () => {
+    it("submit INCORRECT attempt returns attempt_id and deferred feedback_status", async () => {
       const result = await submitAttempt(USER_A, runId, {
         prompt_index: 0,
         user_answer: "I don't remember",
@@ -254,12 +254,11 @@ The outer loop invariant must account for the inner loop's effect.
         },
       });
       expect("data" in result).toBe(true);
-      // Feedback should be present (we have COURSE docs for this course)
-      if (result.data.feedback) {
-        expect(result.data.feedback.excerpts.length).toBeGreaterThan(0);
-        expect(result.data.feedback.excerpts[0].snippet).toBeTruthy();
-        expect(result.data.feedback.excerpts[0].doc_title).toBeTruthy();
-      }
+      // Phase 1: attempt returns attempt_id + feedback_status (deferred)
+      expect(result.data.attempt_id).toBeTruthy();
+      expect(result.data.feedback_status).toBe("PENDING");
+      // No inline feedback in the response
+      expect(result.data.feedback).toBeUndefined();
     });
   });
 
