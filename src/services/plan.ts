@@ -5,6 +5,8 @@ import { createPlanSchema, SessionMode } from "@/lib/validation";
 import { generatePlan, PlanBlock } from "@/lib/plan-generator";
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
+import { getGoogleClient } from "@/lib/google/calendar-client";
+import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/google/free-slots";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -37,6 +39,57 @@ export async function createPlan(userId: string, input: unknown) {
     availability: parsed.availability,
   });
 
+  // If Google availability is requested, fetch busy times and fit blocks into free slots
+  let googleFreeSlotsByDay: Map<number, TimeInterval[]> | null = null;
+
+  if (parsed.use_google_availability) {
+    const integration = await prisma.googleIntegration.findUnique({
+      where: { userId },
+    });
+
+    if (integration) {
+      const client = getGoogleClient(userId);
+      const calendarId = integration.calendarIdSelected || "primary";
+
+      // Query 7-day window
+      const timeMin = startDate.toISOString();
+      const windowEnd = new Date(startDate);
+      windowEnd.setDate(windowEnd.getDate() + 7);
+      const timeMax = windowEnd.toISOString();
+
+      try {
+        const busy = await client.freebusyQuery({
+          timeMin,
+          timeMax,
+          calendarIds: [calendarId],
+        });
+
+        const busyIntervals: TimeInterval[] = busy.map((b) => ({
+          start: new Date(b.start).getTime(),
+          end: new Date(b.end).getTime(),
+        }));
+
+        // Compute free slots per day
+        googleFreeSlotsByDay = new Map();
+        for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+          const dayAvail = parsed.availability[dayIdx];
+          const dayStart = computeStartTime(startDate, dayIdx, dayAvail.start);
+          const dayEnd = computeStartTime(startDate, dayIdx, dayAvail.end);
+          const freeSlots = computeFreeSlots(dayStart.getTime(), dayEnd.getTime(), busyIntervals);
+          googleFreeSlotsByDay.set(dayIdx, freeSlots);
+        }
+
+        logger.info("plan.google_availability", {
+          user_id: userId,
+          busy_count: busy.length,
+        });
+      } catch (err) {
+        logger.error("plan.google_availability_failed", { user_id: userId, error: String(err) });
+        // Fall back to regular scheduling
+      }
+    }
+  }
+
   // Track cumulative start offset per day for multiple blocks on same day
   const dayOffsets: Record<number, number> = {};
 
@@ -51,40 +104,89 @@ export async function createPlan(userId: string, input: unknown) {
     block: PlanBlock;
   }[] = [];
 
-  for (const block of blocks) {
-    const sessionId = generateSessionId();
-    const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
+  // If using Google availability, group blocks by day and fit into free slots
+  if (googleFreeSlotsByDay) {
+    // Group blocks by day
+    const blocksByDay = new Map<number, PlanBlock[]>();
+    for (const block of blocks) {
+      if (!blocksByDay.has(block.dayIndex)) blocksByDay.set(block.dayIndex, []);
+      blocksByDay.get(block.dayIndex)!.push(block);
+    }
 
-    const calendarTitle = buildCalendarTitle({
-      courseName: parsed.course_name,
-      examName: parsed.exam_name,
-      mode: block.mode as SessionMode,
-      topicScope: block.topicScope,
-    });
+    for (const [dayIdx, dayBlocks] of blocksByDay.entries()) {
+      const freeSlots = googleFreeSlotsByDay.get(dayIdx) || [];
+      const durations = dayBlocks.map((b) => b.plannedMinutes * 60000);
+      const scheduled = fitBlocksIntoSlots(durations, freeSlots);
 
-    const calendarDescription = buildCalendarDescription({
-      outcome: block.targetOutcome,
-      sessionUrl,
-      breaks: { type: parsed.break_protocol_default, cycles: 1 },
-    });
+      for (let i = 0; i < dayBlocks.length; i++) {
+        const block = dayBlocks[i];
+        const slot = scheduled[i];
+        if (!slot) continue; // Block doesn't fit — skip it
 
-    // Compute start/end times
-    const dayAvail = parsed.availability[block.dayIndex];
-    const offsetMinutes = dayOffsets[block.dayIndex] || 0;
-    const baseStart = computeStartTime(startDate, block.dayIndex, dayAvail.start);
-    const startTime = new Date(baseStart.getTime() + offsetMinutes * 60000);
-    const endTime = new Date(startTime.getTime() + block.plannedMinutes * 60000);
-    dayOffsets[block.dayIndex] = offsetMinutes + block.plannedMinutes;
+        const sessionId = generateSessionId();
+        const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
 
-    items.push({
-      sessionId,
-      sessionUrl,
-      dayIndex: block.dayIndex,
-      startTime,
-      endTime,
-      calendar: { title: calendarTitle, description: calendarDescription },
-      block,
-    });
+        const calendarTitle = buildCalendarTitle({
+          courseName: parsed.course_name,
+          examName: parsed.exam_name,
+          mode: block.mode as SessionMode,
+          topicScope: block.topicScope,
+        });
+
+        const calendarDescription = buildCalendarDescription({
+          outcome: block.targetOutcome,
+          sessionUrl,
+          breaks: { type: parsed.break_protocol_default, cycles: 1 },
+        });
+
+        items.push({
+          sessionId,
+          sessionUrl,
+          dayIndex: block.dayIndex,
+          startTime: new Date(slot.start),
+          endTime: new Date(slot.end),
+          calendar: { title: calendarTitle, description: calendarDescription },
+          block,
+        });
+      }
+    }
+  } else {
+    // Original scheduling: sequential blocks within availability windows
+    for (const block of blocks) {
+      const sessionId = generateSessionId();
+      const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
+
+      const calendarTitle = buildCalendarTitle({
+        courseName: parsed.course_name,
+        examName: parsed.exam_name,
+        mode: block.mode as SessionMode,
+        topicScope: block.topicScope,
+      });
+
+      const calendarDescription = buildCalendarDescription({
+        outcome: block.targetOutcome,
+        sessionUrl,
+        breaks: { type: parsed.break_protocol_default, cycles: 1 },
+      });
+
+      // Compute start/end times
+      const dayAvail = parsed.availability[block.dayIndex];
+      const offsetMinutes = dayOffsets[block.dayIndex] || 0;
+      const baseStart = computeStartTime(startDate, block.dayIndex, dayAvail.start);
+      const startTime = new Date(baseStart.getTime() + offsetMinutes * 60000);
+      const endTime = new Date(startTime.getTime() + block.plannedMinutes * 60000);
+      dayOffsets[block.dayIndex] = offsetMinutes + block.plannedMinutes;
+
+      items.push({
+        sessionId,
+        sessionUrl,
+        dayIndex: block.dayIndex,
+        startTime,
+        endTime,
+        calendar: { title: calendarTitle, description: calendarDescription },
+        block,
+      });
+    }
   }
 
   // Transactional: create all sessions + plan + items atomically

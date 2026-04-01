@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const MODE_LABELS: Record<string, string> = {
   RETRIEVAL: "Retrieval",
@@ -55,9 +55,27 @@ export default function PlanPage() {
   const [availability, setAvailability] = useState(defaultAvailability);
   const [dailyCap, setDailyCap] = useState(180);
   const [breakProtocol, setBreakProtocol] = useState("50_10");
+  const [useGoogleAvailability, setUseGoogleAvailability] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PlanResult | null>(null);
+
+  // Check if Google Calendar is connected
+  useEffect(() => {
+    async function checkGoogle() {
+      try {
+        const res = await fetch("/api/integrations/google/status", {
+          headers: { "X-User-Id": getOrCreateUserId() },
+        });
+        const data = await res.json();
+        setGoogleConnected(data.connected);
+      } catch {
+        // Non-critical
+      }
+    }
+    checkGoogle();
+  }, []);
 
   const updateAvailability = (
     index: number,
@@ -98,6 +116,7 @@ export default function PlanPage() {
           availability,
           daily_study_cap_minutes: dailyCap,
           break_protocol_default: breakProtocol,
+          use_google_availability: useGoogleAvailability || undefined,
         }),
       });
 
@@ -298,6 +317,25 @@ export default function PlanPage() {
                   <option value="90_15">90/15</option>
                 </select>
               </label>
+            </div>
+            <div style={{ marginTop: "0.75rem" }}>
+              {googleConnected ? (
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={useGoogleAvailability}
+                    onChange={(e) => setUseGoogleAvailability(e.target.checked)}
+                  />
+                  Use Google Calendar availability
+                </label>
+              ) : (
+                <div style={{ fontSize: "0.85rem", color: "#888" }}>
+                  <a href="/settings/calendar" style={{ color: "#00ff88" }}>
+                    Connect Google Calendar
+                  </a>{" "}
+                  to schedule around your existing events.
+                </div>
+              )}
             </div>
           </fieldset>
 

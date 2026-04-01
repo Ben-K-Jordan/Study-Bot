@@ -201,6 +201,7 @@ export const createPlanSchema = z
       .enum(PLAN_BREAK_TYPES)
       .optional()
       .default("50_10"),
+    use_google_availability: z.boolean().optional(),
   })
   .refine(
     (data) => {
