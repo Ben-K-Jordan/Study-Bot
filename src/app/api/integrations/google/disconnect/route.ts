@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!integration) {
-    return NextResponse.json({ status: "DISCONNECTED" });
+    return NextResponse.json({ disconnected: true, status: "DISCONNECTED" });
   }
 
   // Best-effort revoke token at Google
@@ -46,5 +46,5 @@ export async function POST(request: NextRequest) {
 
   logger.info("google.integration.disconnected", { user_id: userId });
 
-  return NextResponse.json({ status: "DISCONNECTED" });
+  return NextResponse.json({ disconnected: true, status: "DISCONNECTED" });
 }
