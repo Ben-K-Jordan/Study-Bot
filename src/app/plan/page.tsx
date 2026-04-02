@@ -62,10 +62,11 @@ interface PublishResponse {
   plan_id: string;
   provider: string;
   calendar_id: string;
-  status: "PUBLISHED" | "PARTIAL" | "FAILED";
+  status: "OK" | "PARTIAL" | "FAILED";
   published_at: string;
-  results: { created: number; updated: number; unchanged: number; failed: number };
-  items: PublishItemResult[];
+  duration_ms: number;
+  summary: { created: number; updated: number; unchanged: number; failed: number; total: number };
+  item_results: PublishItemResult[];
   warnings?: string[];
 }
 
@@ -560,8 +561,8 @@ export default function PlanPage() {
                   <div style={{ marginBottom: "0.5rem" }}>
                     <StatusBadge status={publishResult.status} />
                     <span style={{ color: "#888", marginLeft: "0.5rem", fontSize: "0.85rem" }}>
-                      {publishResult.results.created} created, {publishResult.results.updated} updated, {publishResult.results.unchanged} unchanged
-                      {publishResult.results.failed > 0 && <span style={{ color: "#ff4444" }}>, {publishResult.results.failed} failed</span>}
+                      {publishResult.summary.created} created, {publishResult.summary.updated} updated, {publishResult.summary.unchanged} unchanged
+                      {publishResult.summary.failed > 0 && <span style={{ color: "#ff4444" }}>, {publishResult.summary.failed} failed</span>}
                     </span>
                   </div>
                   {publishResult.warnings && publishResult.warnings.length > 0 && (
@@ -572,10 +573,10 @@ export default function PlanPage() {
                   {/* Per-item results table */}
                   <details style={{ marginTop: "0.5rem" }}>
                     <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "#aaa" }}>
-                      Item details ({publishResult.items.length})
+                      Item details ({publishResult.item_results.length})
                     </summary>
                     <div style={{ marginTop: "0.5rem", maxHeight: 200, overflowY: "auto" }}>
-                      {publishResult.items.map((item) => (
+                      {publishResult.item_results.map((item) => (
                         <div key={item.plan_item_id} style={{ display: "flex", gap: "0.5rem", fontSize: "0.8rem", padding: "0.2rem 0", borderBottom: "1px solid #222" }}>
                           <ActionBadge action={item.action} />
                           <span style={{ color: "#aaa" }}>{item.session_id.slice(0, 8)}...</span>

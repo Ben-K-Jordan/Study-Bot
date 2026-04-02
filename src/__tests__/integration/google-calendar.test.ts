@@ -192,15 +192,17 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     const result = await publishPlanToGoogle(userId, plan.plan_id);
 
     expect(result.data).toBeDefined();
-    expect(result.data.status).toBe("PUBLISHED");
+    expect(result.data.status).toBe("OK");
     expect(result.data.provider).toBe("GOOGLE");
     expect(result.data.calendar_id).toBe("primary");
-    expect(result.data.results.created).toBeGreaterThan(0);
-    expect(result.data.results.failed).toBe(0);
-    expect(result.data.items.length).toBe(plan.items.length);
+    expect(result.data.summary.created).toBeGreaterThan(0);
+    expect(result.data.summary.failed).toBe(0);
+    expect(result.data.summary.total).toBe(plan.items.length);
+    expect(result.data.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(result.data.item_results.length).toBe(plan.items.length);
 
     // Each item should have an event_id and html_link
-    for (const item of result.data.items) {
+    for (const item of result.data.item_results) {
       expect(item.action).toBe("CREATED");
       expect(item.event_id).toBeTruthy();
       expect(item.html_link).toBeTruthy();
@@ -229,16 +231,16 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     // First publish
     const first = await publishPlanToGoogle(userId, plan.plan_id);
-    expect(first.data.results.created).toBeGreaterThan(0);
+    expect(first.data.summary.created).toBeGreaterThan(0);
 
     // Clear call log
     fakeClient.clearCallLog();
 
     // Second publish — all items should be UNCHANGED (same hash)
     const second = await publishPlanToGoogle(userId, plan.plan_id);
-    expect(second.data.results.unchanged).toBe(first.data.results.created);
-    expect(second.data.results.created).toBe(0);
-    expect(second.data.results.updated).toBe(0);
+    expect(second.data.summary.unchanged).toBe(first.data.summary.created);
+    expect(second.data.summary.created).toBe(0);
+    expect(second.data.summary.updated).toBe(0);
 
     // Verify no createEvent or updateEvent calls were made
     const createCalls = fakeClient.callLog.filter((c) => c.method === "createEvent");
@@ -270,8 +272,8 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     // Republish — items should be UPDATED (hash changed)
     const result = await publishPlanToGoogle(userId, plan.plan_id);
-    expect(result.data.results.updated).toBe(items.length);
-    expect(result.data.results.created).toBe(0);
+    expect(result.data.summary.updated).toBe(items.length);
+    expect(result.data.summary.created).toBe(0);
 
     const updateCalls = fakeClient.callLog.filter((c) => c.method === "updateEvent");
     expect(updateCalls.length).toBe(items.length);
@@ -282,7 +284,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     const pubResult = await publishPlanToGoogle(userId, plan.plan_id);
 
     // Simulate manual deletion of first event in Google
-    const firstEventId = pubResult.data.items[0].event_id!;
+    const firstEventId = pubResult.data.item_results[0].event_id!;
     fakeClient.simulateManualDelete(firstEventId);
 
     // Modify times to trigger update attempt
@@ -299,7 +301,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     // Republish — should recreate the deleted event
     const result = await publishPlanToGoogle(userId, plan.plan_id);
-    const firstItem = result.data.items.find((i: any) => i.plan_item_id === items[0].id);
+    const firstItem = result.data.item_results.find((i: any) => i.plan_item_id === items[0].id);
     expect(firstItem).toBeTruthy();
     expect(firstItem!.action).toBe("CREATED");
     expect(firstItem!.event_id).toBeTruthy();
@@ -374,7 +376,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     const result = await publishPlanToGoogle(userId, plan.plan_id, { dryRun: true });
     expect(result.data).toBeDefined();
-    expect(result.data.results.created).toBeGreaterThan(0);
+    expect(result.data.summary.created).toBeGreaterThan(0);
 
     // No Google API calls should have been made
     const apiCalls = fakeClient.callLog.filter((c) =>
@@ -387,5 +389,66 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
       where: { planId: plan.plan_id },
     });
     expect(mappings.length).toBe(0);
+  });
+
+  // ---- Revoked token flow ----
+
+  it("publish returns GOOGLE_RECONNECT_REQUIRED when integration is DISCONNECTED", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+
+    // Mark integration as DISCONNECTED
+    await prisma.googleIntegration.updateMany({
+      where: { userId },
+      data: { status: "DISCONNECTED" },
+    });
+
+    const result = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(result.error).toBe("GOOGLE_RECONNECT_REQUIRED");
+    expect(result.status).toBe(409);
+
+    // Restore for other tests
+    await prisma.googleIntegration.updateMany({
+      where: { userId },
+      data: { status: "CONNECTED" },
+    });
+  });
+
+  // ---- Unpublish 404 semantics ----
+
+  it("unpublish treats externally deleted events as success", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    const pubResult = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(pubResult.data.status).toBe("OK");
+
+    // Delete all events from fake store (simulate user deleting in Google UI)
+    for (const item of pubResult.data.item_results) {
+      if (item.event_id) fakeClient.simulateManualDelete(item.event_id);
+    }
+
+    // Unpublish should still succeed — 404 deletes treated as success
+    const result = await unpublishPlanFromGoogle(userId, plan.plan_id);
+    expect(result.data).toBeDefined();
+    expect(result.data.status).toBe("UNPUBLISHED");
+    expect(result.data.failed).toBe(0);
+    expect(result.data.deleted).toBeGreaterThan(0);
+    expect(result.data.duration_ms).toBeGreaterThanOrEqual(0);
+
+    // Mappings should be cleared
+    const mappings = await prisma.planItemExternalEvent.findMany({
+      where: { planId: plan.plan_id },
+    });
+    expect(mappings.length).toBe(0);
+  });
+
+  // ---- Publish summary includes total ----
+
+  it("publish response includes summary.total", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    const result = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(result.data.summary.total).toBe(plan.items.length);
+    expect(result.data.summary.total).toBe(
+      result.data.summary.created + result.data.summary.updated +
+      result.data.summary.unchanged + result.data.summary.failed,
+    );
   });
 });

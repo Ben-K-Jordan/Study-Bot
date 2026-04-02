@@ -35,28 +35,53 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const durationMs = Date.now() - startMs;
     logger.info("google.integration.test.completed", {
       user_id: userId,
       ok: true,
-      duration_ms: Date.now() - startMs,
+      duration_ms: durationMs,
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, duration_ms: durationMs });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     const isReconnect = err instanceof GoogleReconnectError;
+    const durationMs = Date.now() - startMs;
 
     logger.info("google.integration.test.completed", {
       user_id: userId,
       ok: false,
       reason,
-      duration_ms: Date.now() - startMs,
+      is_reconnect: isReconnect,
+      duration_ms: durationMs,
     });
 
     if (isReconnect) {
-      return NextResponse.json({ ok: false, reason: "Reconnect required — please reconnect your Google account." });
+      // Mark DISCONNECTED so user knows to reconnect
+      await prisma.googleIntegration.update({
+        where: { id: integration.id },
+        data: {
+          status: "DISCONNECTED",
+          lastErrorCode: "GOOGLE_RECONNECT_REQUIRED",
+          lastErrorMessage: "Token revoked or expired. Please reconnect.",
+        },
+      });
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "GOOGLE_RECONNECT_REQUIRED",
+          reason: "Token revoked or expired. Please reconnect your Google account.",
+          duration_ms: durationMs,
+        },
+        { status: 409 },
+      );
     }
 
-    return NextResponse.json({ ok: false, reason: "Connection test failed. Please try again." });
+    return NextResponse.json({
+      ok: false,
+      reason: "Connection test failed. Please try again.",
+      duration_ms: durationMs,
+    });
   }
 }

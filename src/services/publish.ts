@@ -39,15 +39,17 @@ export interface PublishResult {
   plan_id: string;
   provider: "GOOGLE";
   calendar_id: string;
-  status: "PUBLISHED" | "PARTIAL" | "FAILED";
+  status: "OK" | "PARTIAL" | "FAILED";
   published_at: string;
-  results: {
+  duration_ms: number;
+  summary: {
     created: number;
     updated: number;
     unchanged: number;
     failed: number;
+    total: number;
   };
-  items: PublishItemResult[];
+  item_results: PublishItemResult[];
   warnings?: string[];
 }
 
@@ -56,6 +58,7 @@ export interface UnpublishResult {
   provider: "GOOGLE";
   calendar_id: string;
   status: "UNPUBLISHED" | "PARTIAL";
+  duration_ms: number;
   deleted: number;
   failed: number;
   items_failed?: { plan_item_id: string; event_id?: string; error: { code: string; message: string } }[];
@@ -177,7 +180,7 @@ export async function publishPlanToGoogle(
   const baseUrl = getBaseUrl();
   const warnings: string[] = [];
 
-  logger.info("plan.publish.started", {
+  logger.info("google.publish.started", {
     user_id: userId,
     plan_id: planId,
     calendar_id: calendarId,
@@ -232,7 +235,7 @@ export async function publishPlanToGoogle(
           event_id: mapping.eventId,
           html_link: mapping.htmlLink || undefined,
         });
-        logger.info("plan.publish.item", { plan_item_id: item.id, action: "UNCHANGED" });
+        logger.info("google.publish.item", { plan_item_id: item.id, action: "UNCHANGED" });
         return;
       }
 
@@ -268,7 +271,7 @@ export async function publishPlanToGoogle(
             event_id: event.id,
             html_link: event.htmlLink,
           });
-          logger.info("plan.publish.item", { plan_item_id: item.id, action: "UPDATED" });
+          logger.info("google.publish.item", { plan_item_id: item.id, action: "UPDATED" });
           return;
         } catch (err) {
           if (err instanceof GoogleApiError && err.status === 404) {
@@ -313,7 +316,7 @@ export async function publishPlanToGoogle(
               event_id: event.id,
               html_link: event.htmlLink,
             });
-            logger.info("plan.publish.item", { plan_item_id: item.id, action: "UPDATED", reconciled: true });
+            logger.info("google.publish.item", { plan_item_id: item.id, action: "UPDATED", reconciled: true });
             return;
           }
         } catch {
@@ -375,7 +378,7 @@ export async function publishPlanToGoogle(
         action: "FAILED",
         error: { code, message },
       });
-      logger.error("plan.publish.item", {
+      logger.error("google.publish.item", {
         plan_item_id: item.id,
         action: "FAILED",
         error: message,
@@ -401,11 +404,14 @@ export async function publishPlanToGoogle(
   };
 
   const status: PublishResult["status"] =
-    counts.failed === 0 ? "PUBLISHED"
+    counts.failed === 0 ? "OK"
     : counts.created + counts.updated + counts.unchanged > 0 ? "PARTIAL"
     : "FAILED";
 
   const now = new Date();
+
+  // Map status for DB (DB uses PUBLISHED, API returns OK)
+  const dbStatus = status === "OK" ? "PUBLISHED" : status;
 
   if (!options.dryRun) {
     const lastError = counts.failed > 0
@@ -419,15 +425,15 @@ export async function publishPlanToGoogle(
         planId,
         provider: "GOOGLE",
         calendarId,
-        status,
+        status: dbStatus,
         publishedAt: now,
         lastSyncedAt: now,
         lastError,
       },
       update: {
         calendarId,
-        status,
-        publishedAt: status === "PUBLISHED" || status === "PARTIAL" ? now : undefined,
+        status: dbStatus,
+        publishedAt: dbStatus === "PUBLISHED" || dbStatus === "PARTIAL" ? now : undefined,
         lastSyncedAt: now,
         lastError,
       },
@@ -435,7 +441,7 @@ export async function publishPlanToGoogle(
   }
 
   const durationMs = Date.now() - startMs;
-  logger.info("plan.publish.completed", {
+  logger.info("google.publish.completed", {
     user_id: userId,
     plan_id: planId,
     calendar_id: calendarId,
@@ -452,8 +458,9 @@ export async function publishPlanToGoogle(
       calendar_id: calendarId,
       status,
       published_at: now.toISOString(),
-      results: counts,
-      items: itemResults,
+      duration_ms: durationMs,
+      summary: { ...counts, total: itemResults.length },
+      item_results: itemResults,
       warnings: warnings.length > 0 ? warnings : undefined,
     },
   };
@@ -487,6 +494,8 @@ export async function unpublishPlanFromGoogle(
 
   const calendarId = options.calendarId || publication?.calendarId || integration.calendarIdSelected || "primary";
 
+  const startMs = Date.now();
+
   let mappings = await prisma.planItemExternalEvent.findMany({
     where: { provider: "GOOGLE", planId },
     include: { planItem: true },
@@ -502,7 +511,7 @@ export async function unpublishPlanFromGoogle(
   let deleted = 0;
   const failedItems: UnpublishResult["items_failed"] = [];
 
-  logger.info("plan.unpublish.started", {
+  logger.info("google.unpublish.started", {
     user_id: userId,
     plan_id: planId,
     calendar_id: calendarId,
@@ -546,11 +555,13 @@ export async function unpublishPlanFromGoogle(
     });
   }
 
-  logger.info("plan.unpublish.completed", {
+  const durationMs = Date.now() - startMs;
+  logger.info("google.unpublish.completed", {
     user_id: userId,
     plan_id: planId,
     deleted,
     failed: failedItems!.length,
+    duration_ms: durationMs,
   });
 
   return {
@@ -559,6 +570,7 @@ export async function unpublishPlanFromGoogle(
       provider: "GOOGLE",
       calendar_id: calendarId,
       status,
+      duration_ms: durationMs,
       deleted,
       failed: failedItems!.length,
       items_failed: failedItems!.length > 0 ? failedItems : undefined,
