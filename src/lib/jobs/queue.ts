@@ -45,9 +45,13 @@ export async function claimJobs(
   batchSize: number = 1,
   types?: JobType[],
 ): Promise<ClaimedJob[]> {
-  const typeFilter = types?.length ? `AND type IN (${types.map((t) => `'${t}'`).join(",")})` : "";
+  // Build parameterized query — type filter uses $3 array param if provided
+  const hasTypeFilter = types && types.length > 0;
+  const typeClause = hasTypeFilter ? `AND type = ANY($3)` : "";
 
-  // Use raw query for SKIP LOCKED semantics
+  const params: unknown[] = [workerId, batchSize];
+  if (hasTypeFilter) params.push(types);
+
   const jobs = await prisma.$queryRawUnsafe<RawJob[]>(
     `UPDATE job_queue
      SET status = 'RUNNING', locked_at = NOW(), locked_by = $1, attempts = attempts + 1
@@ -55,14 +59,13 @@ export async function claimJobs(
        SELECT id FROM job_queue
        WHERE status IN ('PENDING', 'RETRY')
          AND run_after <= NOW()
-         ${typeFilter}
+         ${typeClause}
        ORDER BY priority ASC, run_after ASC
        FOR UPDATE SKIP LOCKED
        LIMIT $2
      )
      RETURNING id, type, payload, attempts, max_attempts`,
-    workerId,
-    batchSize,
+    ...params,
   );
 
   return jobs.map((j) => ({
@@ -108,28 +111,17 @@ export async function succeedJob(jobId: string): Promise<void> {
  * Mark a job as failed. If attempts < maxAttempts, schedule for retry with exponential backoff.
  */
 export async function failJob(jobId: string, error: string, attempts: number, maxAttempts: number): Promise<void> {
-  if (attempts < maxAttempts) {
-    const backoffMs = Math.min(1000 * Math.pow(2, attempts), 300_000); // max 5 min
-    const runAfter = new Date(Date.now() + backoffMs);
-    await prisma.jobQueue.update({
-      where: { id: jobId },
-      data: {
-        status: "RETRY",
-        lastError: error.slice(0, 1000),
-        lockedAt: null,
-        lockedBy: null,
-        runAfter,
-      },
-    });
-  } else {
-    await prisma.jobQueue.update({
-      where: { id: jobId },
-      data: {
-        status: "FAILED",
-        lastError: error.slice(0, 1000),
-        lockedAt: null,
-        lockedBy: null,
-      },
-    });
-  }
+  const canRetry = attempts < maxAttempts;
+  const backoffMs = Math.min(1000 * Math.pow(2, attempts), 300_000);
+
+  await prisma.jobQueue.update({
+    where: { id: jobId },
+    data: {
+      status: canRetry ? "RETRY" : "FAILED",
+      lastError: error.slice(0, 1000),
+      lockedAt: null,
+      lockedBy: null,
+      ...(canRetry && { runAfter: new Date(Date.now() + backoffMs) }),
+    },
+  });
 }

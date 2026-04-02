@@ -66,12 +66,6 @@ function sha256(data: string): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** Deterministic cache key from task + model + prompt version + input. */
-function buildCacheKey(task: string, model: string, promptVersion: string, input: unknown): string {
-  const canonical = JSON.stringify({ task, model, promptVersion, input });
-  return sha256(canonical);
-}
-
 // ---------------------------------------------------------------------------
 // Budget enforcement
 // ---------------------------------------------------------------------------
@@ -238,8 +232,8 @@ export async function runTask<T>(
   }
 
   const { task, model, promptVersion, input, parseOutput } = spec;
-  const prompt = getPrompt(task);
-  const cacheKey = buildCacheKey(task, model, promptVersion, input);
+  const inputJson = JSON.stringify(input);
+  const cacheKey = sha256(JSON.stringify({ task, model, promptVersion, input }));
   const startMs = Date.now();
 
   // --- Cache check ---
@@ -287,6 +281,7 @@ export async function runTask<T>(
   let rawOutput: unknown;
 
   try {
+    const prompt = getPrompt(task);
     const systemPrompt = prompt.systemPrompt;
     const userPrompt = prompt.buildUserPrompt(input);
     const result = await ctx.provider.completeJson(systemPrompt, userPrompt, model);
@@ -320,8 +315,7 @@ export async function runTask<T>(
 
   // --- Cache write (fire-and-forget) ---
   if (!opts.skipCache) {
-    const inputFingerprint = sha256(JSON.stringify(input));
-    cacheSet(cacheKey, task, model, promptVersion, inputFingerprint, rawOutput).catch(() => {});
+    cacheSet(cacheKey, task, model, promptVersion, sha256(inputJson), rawOutput).catch(() => {});
   }
 
   // --- Log call ---
