@@ -105,7 +105,7 @@ test.describe("Google Calendar - Plan with user", () => {
         use_google_availability: true,
       },
     });
-    expect(res.status()).toBe(200);
+    expect(res.status()).toBe(201);
     const body = await res.json();
     expect(body.plan_id).toBeTruthy();
     expect(body.items.length).toBeGreaterThan(0);
