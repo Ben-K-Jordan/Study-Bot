@@ -2,7 +2,7 @@
  * Simple spacing recommendations based on session accuracy.
  */
 
-export interface FollowupRecommendation {
+interface FollowupRecommendation {
   label: string;
   days_from_now: number;
   date: string; // ISO date string

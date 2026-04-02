@@ -1,15 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-
-const MODE_LABELS: Record<string, string> = {
-  RETRIEVAL: "Retrieval",
-  INTERLEAVED_PRACTICE: "Interleaved Practice",
-  ERROR_REPAIR: "Error Repair",
-  EXAM_SIM: "Exam Sim",
-  WORKED_EXAMPLES: "Worked Examples",
-  OFFICE_HOURS_PREP: "Office Hours Prep",
-};
+import { MODE_LABELS, getOrCreateUserId } from "@/lib/client-utils";
 
 const DAY_LABELS = ["Day 0 (Today)", "Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
 
@@ -28,16 +20,6 @@ interface PlanItem {
 interface PlanResult {
   plan_id: string;
   items: PlanItem[];
-}
-
-function getOrCreateUserId(): string {
-  if (typeof window === "undefined") return "anonymous";
-  let id = localStorage.getItem("study-bot-user-id");
-  if (!id) {
-    id = "user_" + Math.random().toString(36).slice(2, 10);
-    localStorage.setItem("study-bot-user-id", id);
-  }
-  return id;
 }
 
 const defaultAvailability = Array.from({ length: 7 }, () => ({

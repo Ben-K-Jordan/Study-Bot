@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { join, dirname } from "path";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./data/uploads";
@@ -37,13 +37,6 @@ export async function saveFile(
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, data);
   return key;
-}
-
-/**
- * Read a file from disk by its storage key.
- */
-export async function readStoredFile(storageKey: string): Promise<Buffer> {
-  return readFile(join(UPLOAD_DIR, storageKey));
 }
 
 /**

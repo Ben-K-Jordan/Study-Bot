@@ -1,19 +1,11 @@
 import { prisma } from "@/lib/db";
+import { MODE_LABELS } from "@/lib/calendar";
 import { notFound } from "next/navigation";
 import { SessionRunner } from "./session-runner";
 
 interface SessionPageProps {
   params: { sessionId: string };
 }
-
-const MODE_LABELS: Record<string, string> = {
-  RETRIEVAL: "Retrieval",
-  INTERLEAVED_PRACTICE: "Interleaved Practice",
-  ERROR_REPAIR: "Error Repair",
-  EXAM_SIM: "Exam Sim",
-  WORKED_EXAMPLES: "Worked Examples",
-  OFFICE_HOURS_PREP: "Office Hours Prep",
-};
 
 export default async function SessionPage({ params }: SessionPageProps) {
   const { sessionId } = await params;

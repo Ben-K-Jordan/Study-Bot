@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { getOrCreateUserId } from "@/lib/client-utils";
 import { PreflightScreen } from "./screens/preflight";
 import { RunnerScreen } from "./screens/runner";
 import { BreakScreen } from "./screens/break-screen";
@@ -118,7 +119,7 @@ async function apiPost(url: string, body?: unknown) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-User-Id": getUserIdFromStorage(),
+      "X-User-Id": getOrCreateUserId(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -129,21 +130,11 @@ async function apiPost(url: string, body?: unknown) {
 
 async function apiGet(url: string) {
   const res = await fetch(url, {
-    headers: { "X-User-Id": getUserIdFromStorage() },
+    headers: { "X-User-Id": getOrCreateUserId() },
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
-}
-
-export function getUserIdFromStorage(): string {
-  if (typeof window === "undefined") return "anonymous";
-  let uid = localStorage.getItem("study_bot_user_id");
-  if (!uid) {
-    uid = "user_" + Math.random().toString(36).slice(2, 10);
-    localStorage.setItem("study_bot_user_id", uid);
-  }
-  return uid;
 }
 
 /** Fetch a single prompt by index */

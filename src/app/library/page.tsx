@@ -1,23 +1,14 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { getOrCreateUserId } from "@/lib/client-utils";
 
 type Tab = "materials" | "practice" | "research";
-
-function getUserId(): string {
-  if (typeof window === "undefined") return "anonymous";
-  let uid = localStorage.getItem("study_bot_user_id");
-  if (!uid) {
-    uid = "user_" + Math.random().toString(36).slice(2, 10);
-    localStorage.setItem("study_bot_user_id", uid);
-  }
-  return uid;
-}
 
 async function apiFetch(url: string, init?: RequestInit) {
   const res = await fetch(url, {
     ...init,
-    headers: { ...init?.headers, "X-User-Id": getUserId() },
+    headers: { ...init?.headers, "X-User-Id": getOrCreateUserId() },
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Request failed");
@@ -104,7 +95,7 @@ function MaterialsTab() {
 
       const res = await fetch("/api/content/documents", {
         method: "POST",
-        headers: { "X-User-Id": getUserId() },
+        headers: { "X-User-Id": getOrCreateUserId() },
         body: form,
       });
       const data = await res.json();
@@ -325,7 +316,7 @@ function ResearchTab() {
       form.append("namespace", "RESEARCH");
       const res = await fetch("/api/content/documents", {
         method: "POST",
-        headers: { "X-User-Id": getUserId() },
+        headers: { "X-User-Id": getOrCreateUserId() },
         body: form,
       });
       const data = await res.json();

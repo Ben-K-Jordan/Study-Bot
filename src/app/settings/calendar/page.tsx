@@ -1,21 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getOrCreateUserId } from "@/lib/client-utils";
 
 interface CalendarEntry {
   id: string;
   summary: string;
   primary?: boolean;
-}
-
-function getOrCreateUserId(): string {
-  if (typeof window === "undefined") return "anonymous";
-  let id = localStorage.getItem("study-bot-user-id");
-  if (!id) {
-    id = "user_" + Math.random().toString(36).slice(2, 10);
-    localStorage.setItem("study-bot-user-id", id);
-  }
-  return id;
 }
 
 export default function CalendarSettingsPage() {

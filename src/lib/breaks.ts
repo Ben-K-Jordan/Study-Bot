@@ -3,7 +3,7 @@
  * All time tracking uses absolute timestamps (survives tab sleep / refresh).
  */
 
-export interface BreakConfig {
+interface BreakConfig {
   workMinutes: number;
   breakMinutes: number;
 }
@@ -23,7 +23,7 @@ export function getBreakConfig(type: string): BreakConfig {
   return BREAK_MAP[type] ?? { workMinutes: 50, breakMinutes: 10 };
 }
 
-export interface BreakProtocol {
+interface BreakProtocol {
   type?: string;
   cycles?: number;
 }
