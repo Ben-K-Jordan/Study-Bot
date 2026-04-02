@@ -67,8 +67,9 @@ export default function CalendarSettingsPage() {
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   // Fetch calendar list when connected
+  const integrationStatus = integration?.status;
   useEffect(() => {
-    if (!integration || integration.status !== "CONNECTED") return;
+    if (integrationStatus !== "CONNECTED") return;
     async function fetchCalendars() {
       try {
         const res = await fetch("/api/integrations/google/calendars", { headers: headers() });
@@ -81,7 +82,7 @@ export default function CalendarSettingsPage() {
       }
     }
     fetchCalendars();
-  }, [integration?.status, headers]);
+  }, [integrationStatus, headers]);
 
   const handleConnect = () => {
     window.location.href = `/api/integrations/google/connect?x_user_id=${getOrCreateUserId()}`;
