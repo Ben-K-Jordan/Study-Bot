@@ -522,6 +522,76 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/studybot_e2e npm run test:e2e
 | Unit: content validation | `validation-content.test.ts` | Upload, search, practice, evidence schemas |
 | Integration: knowledge layer | `knowledge-layer.test.ts` | Upload+process+search, ownership, dedupe, citations, practice bank, evidence |
 | E2E: knowledge layer | `knowledge-layer.spec.ts` | Leak prevention (no excerpts before answer), feedback after scoring, library page |
+| Unit: gcal-link | `gcal-link.test.ts` | Google Calendar template URL generation, optional fields |
+| Unit: event-builder | `event-builder.test.ts` | Event payload building, extended properties, hash stability/sensitivity |
+| Unit: free-slots | `free-slots.test.ts` | Free slot computation, block fitting |
+| Integration: google-cal | `google-calendar.test.ts` | Publish/unpublish/status, idempotent republish, hash skip, manual deletion recovery, dry_run |
+| E2E: google-cal | `google-calendar.spec.ts` | Publish/unpublish API contracts, auth enforcement, status endpoint |
+
+## Google Calendar Integration
+
+One-way sync from StudyPlan to Google Calendar events.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Yes | OAuth client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Yes | OAuth client secret |
+| `GOOGLE_TOKEN_ENC_KEY` | Yes | 32-byte key (hex or base64) for AES-256-GCM token encryption |
+| `BASE_URL` | Yes | App base URL (e.g. `https://studybot.example.com`) |
+| `GOOGLE_CALENDAR_SYNC_CONCURRENCY` | No | Max parallel Google API calls (default: 5) |
+
+### Connecting Google Calendar
+
+1. Visit `/settings/calendar` to start the OAuth flow
+2. Grant calendar read/write scopes
+3. Select a target calendar (default: primary)
+
+### Publishing Plan Events
+
+```bash
+# Publish all plan items to Google Calendar
+curl -X POST http://localhost:3000/api/plans/{plan_id}/publish/google \
+  -H "X-User-Id: user_123" \
+  -H "Content-Type: application/json" \
+  -d '{"calendar_id": "primary"}'
+
+# Check publish status
+curl http://localhost:3000/api/plans/{plan_id}/publish/google \
+  -H "X-User-Id: user_123"
+
+# Unpublish (delete all events)
+curl -X POST http://localhost:3000/api/plans/{plan_id}/unpublish/google \
+  -H "X-User-Id: user_123" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**Publish options:**
+- `calendar_id`: Target calendar (default: stored default or "primary")
+- `force`: If `true`, republish to a different calendar (unpublishes from old first)
+- `dry_run`: If `true`, compute actions without calling Google API
+
+**Publish is idempotent:** Re-publishing updates existing events. Hash-based change detection skips unchanged items (no API call). Manually deleted events are automatically recreated.
+
+**Events include:**
+- Course, exam, mode, topic in summary
+- Session deep link, objectives, target, break protocol in description
+- `extendedProperties.private` with `sb_plan`, `sb_item`, `sb_sess` for reconciliation
+- `transparency: "opaque"` to block time
+
+### ICS Feed + Subscription
+
+```bash
+# Download .ics file
+curl http://localhost:3000/api/plans/{plan_id}/ics -H "X-User-Id: user_123" -o plan.ics
+
+# Subscribe via webcal (use the webcal_url from plan response)
+# webcal://localhost:3000/api/plans/{plan_id}/feed
+```
+
+---
 
 ## CI Pipeline
 
