@@ -1,7 +1,7 @@
 /**
  * E2E tests for Google Calendar integration.
  *
- * Tests API-level flows: status, freebusy, calendars, plan with google availability.
+ * Tests API-level flows: status, freebusy, calendars, publish/unpublish.
  * Uses FakeGoogleCalendarClient injected at server level.
  */
 import { test, expect } from "@playwright/test";
@@ -57,7 +57,6 @@ test.describe("Google Calendar API", () => {
 });
 
 test.describe("Google Calendar - Plan with availability", () => {
-  // This test uses a separate user with no extra headers to test auth
   test.use({ extraHTTPHeaders: {} });
 
   test("POST /api/plans returns 401 without user id", async ({ request }) => {
@@ -109,5 +108,90 @@ test.describe("Google Calendar - Plan with user", () => {
     const body = await res.json();
     expect(body.plan_id).toBeTruthy();
     expect(body.items.length).toBeGreaterThan(0);
+  });
+});
+
+test.describe("Google Calendar - Publish/Unpublish", () => {
+  test.use({ extraHTTPHeaders: { "X-User-Id": userId } });
+
+  test("POST publish returns 409 when Google not connected", async ({ request }) => {
+    // First create a plan
+    const planRes = await request.post(`${BASE}/api/plans`, {
+      data: {
+        course_name: "E2E Publish",
+        exam_name: "Final",
+        exam_date: "2026-06-15",
+        objectives: ["Publish test", "Unpublish test", "Status test"],
+        availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "17:00" })),
+        daily_study_cap_minutes: 120,
+        break_protocol_default: "50_10",
+      },
+    });
+    expect(planRes.status()).toBe(201);
+    const plan = await planRes.json();
+
+    // Publish should fail — no Google integration for this user
+    const pubRes = await request.post(`${BASE}/api/plans/${plan.plan_id}/publish/google`, {
+      data: {},
+    });
+    expect(pubRes.status()).toBe(409);
+    const pubBody = await pubRes.json();
+    expect(pubBody.error).toBe("GOOGLE_NOT_CONNECTED");
+  });
+
+  test("GET publish status returns null publication when not published", async ({ request }) => {
+    const planRes = await request.post(`${BASE}/api/plans`, {
+      data: {
+        course_name: "E2E Status",
+        exam_name: "Final",
+        exam_date: "2026-06-15",
+        objectives: ["Status check A", "Status check B", "Status check C"],
+        availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "17:00" })),
+        daily_study_cap_minutes: 120,
+        break_protocol_default: "50_10",
+      },
+    });
+    const plan = await planRes.json();
+
+    const statusRes = await request.get(`${BASE}/api/plans/${plan.plan_id}/publish/google`);
+    expect(statusRes.status()).toBe(200);
+    const status = await statusRes.json();
+    expect(status.publication).toBeNull();
+    expect(status.items).toEqual([]);
+  });
+
+  test("POST publish returns 404 for nonexistent plan", async ({ request }) => {
+    const res = await request.post(`${BASE}/api/plans/nonexistent/publish/google`, {
+      data: {},
+    });
+    expect(res.status()).toBe(404);
+  });
+
+  test("POST unpublish returns 409 when Google not connected", async ({ request }) => {
+    const planRes = await request.post(`${BASE}/api/plans`, {
+      data: {
+        course_name: "E2E Unpub",
+        exam_name: "Final",
+        exam_date: "2026-06-15",
+        objectives: ["Unpublish A", "Unpublish B", "Unpublish C"],
+        availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "17:00" })),
+        daily_study_cap_minutes: 120,
+        break_protocol_default: "50_10",
+      },
+    });
+    const plan = await planRes.json();
+
+    const res = await request.post(`${BASE}/api/plans/${plan.plan_id}/unpublish/google`, {
+      data: {},
+    });
+    expect(res.status()).toBe(409);
+  });
+
+  test("POST publish returns 401 without auth header", async ({ request }) => {
+    const res = await request.post(`${BASE}/api/plans/some-plan/publish/google`, {
+      data: {},
+      headers: { "X-User-Id": "" },
+    });
+    expect(res.status()).toBe(401);
   });
 });
