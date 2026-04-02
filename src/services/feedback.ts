@@ -199,7 +199,8 @@ async function tryObjectiveAnchors(
       rank_score: 1.0 / a.rank,
       snippet: a.chunk.text.slice(0, 300),
     }));
-  } catch {
+  } catch (err) {
+    logger.error("feedback.anchor_lookup_failed", { error: String(err) });
     return [];
   }
 }

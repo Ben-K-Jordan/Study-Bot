@@ -61,8 +61,6 @@ export const createSessionSchema = z.object({
     .optional(),
 });
 
-export type CreateSessionInput = z.infer<typeof createSessionSchema>;
-
 // --- Run / Attempt validation ---
 
 export const SELF_SCORES = ["CORRECT", "PARTIAL", "INCORRECT"] as const;
@@ -160,7 +158,7 @@ export function parseAttemptPayload(body: unknown): AttemptPayload {
 
 // --- Plan validation ---
 
-export const PLAN_BREAK_TYPES = ["25_5", "50_10", "90_15"] as const;
+const PLAN_BREAK_TYPES = ["25_5", "50_10", "90_15"] as const;
 
 const dayAvailabilitySchema = z.object({
   start: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
@@ -200,5 +198,3 @@ export const createPlanSchema = z
     },
     { message: "Each day's end time must be after start time" }
   );
-
-export type CreatePlanInput = z.infer<typeof createPlanSchema>;

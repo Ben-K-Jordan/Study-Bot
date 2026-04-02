@@ -3,14 +3,7 @@
  * Must only be imported from "use client" components.
  */
 
-export const MODE_LABELS: Record<string, string> = {
-  RETRIEVAL: "Retrieval",
-  INTERLEAVED_PRACTICE: "Interleaved Practice",
-  ERROR_REPAIR: "Error Repair",
-  EXAM_SIM: "Exam Sim",
-  WORKED_EXAMPLES: "Worked Examples",
-  OFFICE_HOURS_PREP: "Office Hours Prep",
-};
+export { MODE_LABELS } from "./calendar";
 
 const USER_ID_KEY = "study_bot_user_id";
 
