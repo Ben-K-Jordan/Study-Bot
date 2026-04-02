@@ -19,13 +19,13 @@ import {
 
 const hasDb = !!process.env.DATABASE_URL;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let prisma: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let createPlan: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let publishPlanToGoogle: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let computeReflow: any;
 
 describe.skipIf(!hasDb)("Integration: Reflow API", () => {
@@ -144,11 +144,11 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     const sessions = await prisma.session.findMany({
       where: { sessionId: { in: sessionIds } },
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    
     const sessionMap = new Map(sessions.map((s: any) => [s.sessionId, s]));
 
     const reflowItems = plan.items.map((item: { id: string; sessionId: string; dayIndex: number; startTime: Date; endTime: Date; status: string; locked: boolean }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      
       const session = sessionMap.get(item.sessionId) as any;
       return {
         id: item.id,
@@ -214,11 +214,11 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     const sessions = await prisma.session.findMany({
       where: { sessionId: { in: sessionIds } },
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    
     const sessionMap = new Map(sessions.map((s: any) => [s.sessionId, s]));
 
     const reflowItems = plan.items.map((item: { id: string; sessionId: string; dayIndex: number; startTime: Date; endTime: Date; status: string; locked: boolean }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      
       const session = sessionMap.get(item.sessionId) as any;
       return {
         id: item.id,
@@ -255,7 +255,7 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
 
     // Apply changes in transaction (simulating what the apply endpoint does)
     const now = earlyNow;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    
     await prisma.$transaction(async (tx: any) => {
       for (const change of movedChanges) {
         const item = plan.items.find((i: { id: string }) => i.id === change.itemId)!;
@@ -396,11 +396,11 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     const sessions = await prisma.session.findMany({
       where: { sessionId: { in: sessionIds } },
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    
     const sessionMap = new Map(sessions.map((s: any) => [s.sessionId, s]));
 
     const reflowItems = plan.items.map((item: { id: string; sessionId: string; dayIndex: number; startTime: Date; endTime: Date; status: string; locked: boolean }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      
       const session = sessionMap.get(item.sessionId) as any;
       return {
         id: item.id,
