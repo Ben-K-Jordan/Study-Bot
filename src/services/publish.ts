@@ -1,22 +1,84 @@
 /**
  * Publish / unpublish plan events to Google Calendar.
  *
- * - Idempotent: re-publishing updates existing events instead of duplicating.
- * - Uses extendedProperties.private for plan/session ID mapping.
- * - Stores googleEventId on StudyPlanItem for future updates.
- * - Concurrency-limited to avoid rate-limit spikes.
+ * Orchestration flow (see spec for full details):
+ *   1) Load plan + items + sessions (no N+1)
+ *   2) Load publication + external event mappings
+ *   3) For each item: build payload → hash → skip/update/create
+ *   4) Write publication status
+ *   5) Return detailed per-item results
+ *
+ * Idempotent: re-publishing updates existing events, skips unchanged.
+ * Robust: handles 404 (manual deletion), rate limits, partial failure.
  */
 import { prisma } from "@/lib/db";
-import { getGoogleClient, type CalendarEventInput } from "@/lib/google/calendar-client";
-import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
-import { type SessionMode } from "@/lib/validation";
+import { getGoogleClient, GoogleApiError, type CalendarEventInput } from "@/lib/google/calendar-client";
+import { buildEventPayload } from "@/lib/google/event-builder";
 import { logger } from "@/lib/logger";
+
+const CONCURRENCY_LIMIT = parseInt(process.env.GOOGLE_CALENDAR_SYNC_CONCURRENCY || "5", 10);
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
 }
 
-const MAX_CONCURRENT = 5;
+// ---- Types ----
+
+export type ItemAction = "CREATED" | "UPDATED" | "UNCHANGED" | "FAILED";
+
+export interface PublishItemResult {
+  plan_item_id: string;
+  session_id: string;
+  action: ItemAction;
+  event_id?: string;
+  html_link?: string;
+  error?: { code: string; message: string };
+}
+
+export interface PublishResult {
+  plan_id: string;
+  provider: "GOOGLE";
+  calendar_id: string;
+  status: "PUBLISHED" | "PARTIAL" | "FAILED";
+  published_at: string;
+  results: {
+    created: number;
+    updated: number;
+    unchanged: number;
+    failed: number;
+  };
+  items: PublishItemResult[];
+  warnings?: string[];
+}
+
+export interface UnpublishResult {
+  plan_id: string;
+  provider: "GOOGLE";
+  calendar_id: string;
+  status: "UNPUBLISHED" | "PARTIAL";
+  deleted: number;
+  failed: number;
+  items_failed?: { plan_item_id: string; event_id?: string; error: { code: string; message: string } }[];
+}
+
+export interface PublishStatusResult {
+  publication: {
+    status: string;
+    calendar_id: string;
+    published_at: string | null;
+    last_synced_at: string | null;
+    last_error: string | null;
+  } | null;
+  items: {
+    plan_item_id: string;
+    event_id: string;
+    html_link: string | null;
+    last_synced_at: string;
+    last_synced_hash: string;
+  }[];
+}
+
+// ---- Concurrency limiter ----
 
 async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
   const results: T[] = [];
@@ -34,147 +96,500 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
   return results;
 }
 
-export async function publishPlanToGoogle(userId: string, planId: string) {
-  // Verify plan exists and belongs to user
+// ---- Zod schemas for request validation ----
+
+import { z } from "zod/v4";
+
+export const publishRequestSchema = z.object({
+  calendar_id: z.string().optional(),
+  force: z.boolean().optional().default(false),
+  dry_run: z.boolean().optional().default(false),
+});
+
+export const unpublishRequestSchema = z.object({
+  calendar_id: z.string().optional(),
+  only_future: z.boolean().optional().default(false),
+});
+
+// ---- Publish ----
+
+export async function publishPlanToGoogle(
+  userId: string,
+  planId: string,
+  options: { calendarId?: string; force?: boolean; dryRun?: boolean } = {},
+): Promise<{ data: PublishResult } | { error: string; status?: number; current_calendar_id?: string }> {
+  const startMs = Date.now();
+
+  // 1) Load plan + items + sessions (no N+1)
   const plan = await prisma.studyPlan.findUnique({
     where: { planId },
-    include: { items: { orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }] } },
+    include: {
+      items: { orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }] },
+    },
   });
 
-  if (!plan) return { error: "not_found" as const };
-  if (plan.userId !== userId) return { error: "forbidden" as const };
+  if (!plan) return { error: "not_found", status: 404 };
+  if (plan.userId !== userId) return { error: "forbidden", status: 403 };
 
-  // Verify Google integration exists
+  // Verify Google integration
   const integration = await prisma.googleIntegration.findUnique({
     where: { userId },
   });
-  if (!integration) return { error: "google_not_connected" as const };
+  if (!integration) return { error: "GOOGLE_NOT_CONNECTED", status: 409 };
 
-  const calendarId = integration.calendarIdSelected || "primary";
-  const client = getGoogleClient(userId);
+  const calendarId = options.calendarId || integration.calendarIdSelected || "primary";
 
-  // Fetch sessions for event titles/descriptions
+  // 2) Load existing publication + mappings
+  const existingPub = await prisma.planCalendarPublication.findUnique({
+    where: { provider_planId: { provider: "GOOGLE", planId } },
+  });
+
+  // Check calendar conflict
+  if (existingPub && existingPub.calendarId !== calendarId && existingPub.status !== "UNPUBLISHED") {
+    if (!options.force) {
+      return {
+        error: "ALREADY_PUBLISHED_DIFFERENT_CALENDAR",
+        status: 409,
+        current_calendar_id: existingPub.calendarId,
+      };
+    }
+    // Force: unpublish from old calendar first
+    await unpublishPlanFromGoogle(userId, planId, { calendarId: existingPub.calendarId });
+  }
+
+  const existingMappings = await prisma.planItemExternalEvent.findMany({
+    where: { provider: "GOOGLE", planId },
+  });
+  const mappingByItemId = new Map(existingMappings.map((m) => [m.planItemId, m]));
+
+  // Load sessions for all items
   const sessionIds = plan.items.map((i) => i.sessionId);
   const sessions = await prisma.session.findMany({
     where: { sessionId: { in: sessionIds } },
   });
   const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
 
+  const client = getGoogleClient(userId);
   const baseUrl = getBaseUrl();
-  let created = 0;
-  let updated = 0;
+  const warnings: string[] = [];
+
+  logger.info("plan.publish.started", {
+    user_id: userId,
+    plan_id: planId,
+    calendar_id: calendarId,
+    item_count: plan.items.length,
+    dry_run: options.dryRun || false,
+  });
+
+  // 3) Process each item
+  const itemResults: PublishItemResult[] = [];
 
   const tasks = plan.items.map((item) => async () => {
     const session = sessionMap.get(item.sessionId);
-    if (!session) return;
+    if (!session) {
+      itemResults.push({
+        plan_item_id: item.id,
+        session_id: item.sessionId,
+        action: "FAILED",
+        error: { code: "SESSION_NOT_FOUND", message: "Session record missing" },
+      });
+      return;
+    }
 
-    const title = buildCalendarTitle({
+    const { input: eventInput, hash } = buildEventPayload({
+      planId,
+      planItemId: item.id,
+      sessionId: item.sessionId,
+      userId,
+      calendarId,
       courseName: session.courseName,
       examName: session.examName,
-      mode: session.mode as SessionMode,
+      mode: session.mode,
       topicScope: session.topicScope,
+      plannedMinutes: session.plannedMinutes,
+      startTime: item.startTime.toISOString(),
+      endTime: item.endTime.toISOString(),
+      timezone: plan.timezone,
+      objectives: session.objectives as string[] | null,
+      targetOutcome: session.targetOutcome as Record<string, unknown> | null,
+      breakProtocol: session.breakProtocol as Record<string, unknown> | null,
+      baseUrl,
     });
 
-    const description = buildCalendarDescription({
-      outcome: session.targetOutcome as Record<string, unknown> | null,
-      sessionUrl: `${baseUrl}/s/${item.sessionId}`,
-      breaks: session.breakProtocol as Record<string, unknown> | null,
-    });
+    const mapping = mappingByItemId.get(item.id);
 
-    const eventInput: CalendarEventInput = {
-      calendarId,
-      summary: title,
-      description,
-      start: item.startTime.toISOString(),
-      end: item.endTime.toISOString(),
-      extendedProperties: {
-        studybot_plan_id: plan.planId,
-        studybot_plan_item_id: item.id,
-        studybot_session_id: item.sessionId,
-      },
-    };
+    try {
+      if (mapping && mapping.lastSyncedHash === hash) {
+        // UNCHANGED — skip API call
+        itemResults.push({
+          plan_item_id: item.id,
+          session_id: item.sessionId,
+          action: "UNCHANGED",
+          event_id: mapping.eventId,
+          html_link: mapping.htmlLink || undefined,
+        });
+        logger.info("plan.publish.item", { plan_item_id: item.id, action: "UNCHANGED" });
+        return;
+      }
 
-    if (item.googleEventId) {
-      // Update existing event
-      await client.updateEvent(calendarId, item.googleEventId, eventInput);
-      updated++;
-    } else {
-      // Create new event
+      if (options.dryRun) {
+        itemResults.push({
+          plan_item_id: item.id,
+          session_id: item.sessionId,
+          action: mapping ? "UPDATED" : "CREATED",
+        });
+        return;
+      }
+
+      if (mapping) {
+        // Try UPDATE existing event
+        try {
+          const event = await client.updateEvent(calendarId, mapping.eventId, eventInput);
+          await prisma.planItemExternalEvent.update({
+            where: { id: mapping.id },
+            data: {
+              calendarId,
+              eventId: event.id,
+              htmlLink: event.htmlLink || null,
+              etag: event.etag || null,
+              remoteUpdatedAt: event.updated ? new Date(event.updated) : null,
+              lastSyncedHash: hash,
+              lastSyncedAt: new Date(),
+            },
+          });
+          itemResults.push({
+            plan_item_id: item.id,
+            session_id: item.sessionId,
+            action: "UPDATED",
+            event_id: event.id,
+            html_link: event.htmlLink,
+          });
+          logger.info("plan.publish.item", { plan_item_id: item.id, action: "UPDATED" });
+          return;
+        } catch (err) {
+          if (err instanceof GoogleApiError && err.status === 404) {
+            // Event was manually deleted — fall through to create
+            warnings.push(`Event ${mapping.eventId} was deleted externally; recreating.`);
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // No mapping, or mapping pointed to deleted event — try reconciliation via list
+      if (!mapping) {
+        try {
+          const found = await client.listEvents({
+            calendarId,
+            privateExtendedProperty: `sb_item=${item.id}`,
+            maxResults: 1,
+          });
+          if (found.length > 0) {
+            // Reconcile: update existing event + create mapping
+            const event = await client.updateEvent(calendarId, found[0].id, eventInput);
+            await prisma.planItemExternalEvent.create({
+              data: {
+                userId,
+                planId,
+                planItemId: item.id,
+                provider: "GOOGLE",
+                calendarId,
+                eventId: event.id,
+                htmlLink: event.htmlLink || null,
+                etag: event.etag || null,
+                remoteUpdatedAt: event.updated ? new Date(event.updated) : null,
+                lastSyncedHash: hash,
+                lastSyncedAt: new Date(),
+              },
+            });
+            itemResults.push({
+              plan_item_id: item.id,
+              session_id: item.sessionId,
+              action: "UPDATED",
+              event_id: event.id,
+              html_link: event.htmlLink,
+            });
+            logger.info("plan.publish.item", { plan_item_id: item.id, action: "UPDATED", reconciled: true });
+            return;
+          }
+        } catch {
+          // Reconciliation failed — fall through to create
+        }
+      }
+
+      // CREATE new event
       const event = await client.createEvent(eventInput);
-      await prisma.studyPlanItem.update({
-        where: { id: item.id },
-        data: { googleEventId: event.id, googleCalendarId: calendarId },
+
+      // Upsert mapping (delete stale if mapping existed for deleted event)
+      if (mapping) {
+        await prisma.planItemExternalEvent.update({
+          where: { id: mapping.id },
+          data: {
+            calendarId,
+            eventId: event.id,
+            htmlLink: event.htmlLink || null,
+            etag: event.etag || null,
+            remoteUpdatedAt: event.updated ? new Date(event.updated) : null,
+            lastSyncedHash: hash,
+            lastSyncedAt: new Date(),
+          },
+        });
+      } else {
+        await prisma.planItemExternalEvent.create({
+          data: {
+            userId,
+            planId,
+            planItemId: item.id,
+            provider: "GOOGLE",
+            calendarId,
+            eventId: event.id,
+            htmlLink: event.htmlLink || null,
+            etag: event.etag || null,
+            remoteUpdatedAt: event.updated ? new Date(event.updated) : null,
+            lastSyncedHash: hash,
+            lastSyncedAt: new Date(),
+          },
+        });
+      }
+
+      itemResults.push({
+        plan_item_id: item.id,
+        session_id: item.sessionId,
+        action: "CREATED",
+        event_id: event.id,
+        html_link: event.htmlLink,
       });
-      created++;
+      logger.info("plan.publish.item", { plan_item_id: item.id, action: "CREATED" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = err instanceof GoogleApiError ? `GOOGLE_${err.status}` : "UNKNOWN";
+      itemResults.push({
+        plan_item_id: item.id,
+        session_id: item.sessionId,
+        action: "FAILED",
+        error: { code, message },
+      });
+      logger.error("plan.publish.item", {
+        plan_item_id: item.id,
+        action: "FAILED",
+        error: message,
+      });
     }
   });
 
-  await runWithConcurrency(tasks, MAX_CONCURRENT);
+  await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
 
-  logger.info("plan.published", {
+  // 4) Compute status + write publication row
+  const counts = {
+    created: itemResults.filter((r) => r.action === "CREATED").length,
+    updated: itemResults.filter((r) => r.action === "UPDATED").length,
+    unchanged: itemResults.filter((r) => r.action === "UNCHANGED").length,
+    failed: itemResults.filter((r) => r.action === "FAILED").length,
+  };
+
+  const status: PublishResult["status"] =
+    counts.failed === 0 ? "PUBLISHED"
+    : counts.created + counts.updated + counts.unchanged > 0 ? "PARTIAL"
+    : "FAILED";
+
+  const now = new Date();
+
+  if (!options.dryRun) {
+    const lastError = counts.failed > 0
+      ? itemResults.find((r) => r.action === "FAILED")?.error?.message || null
+      : null;
+
+    await prisma.planCalendarPublication.upsert({
+      where: { provider_planId: { provider: "GOOGLE", planId } },
+      create: {
+        userId,
+        planId,
+        provider: "GOOGLE",
+        calendarId,
+        status,
+        publishedAt: now,
+        lastSyncedAt: now,
+        lastError,
+      },
+      update: {
+        calendarId,
+        status,
+        publishedAt: status === "PUBLISHED" || status === "PARTIAL" ? now : undefined,
+        lastSyncedAt: now,
+        lastError,
+      },
+    });
+  }
+
+  const durationMs = Date.now() - startMs;
+  logger.info("plan.publish.completed", {
     user_id: userId,
     plan_id: planId,
-    created,
-    updated,
-    total: plan.items.length,
+    calendar_id: calendarId,
+    status,
+    ...counts,
+    duration_ms: durationMs,
+    dry_run: options.dryRun || false,
   });
 
   return {
     data: {
       plan_id: planId,
-      published: true,
-      events_created: created,
-      events_updated: updated,
-      total_items: plan.items.length,
+      provider: "GOOGLE",
+      calendar_id: calendarId,
+      status,
+      published_at: now.toISOString(),
+      results: counts,
+      items: itemResults,
+      warnings: warnings.length > 0 ? warnings : undefined,
     },
   };
 }
 
-export async function unpublishPlanFromGoogle(userId: string, planId: string) {
+// ---- Unpublish ----
+
+export async function unpublishPlanFromGoogle(
+  userId: string,
+  planId: string,
+  options: { calendarId?: string; onlyFuture?: boolean } = {},
+): Promise<{ data: UnpublishResult } | { error: string; status?: number }> {
   const plan = await prisma.studyPlan.findUnique({
     where: { planId },
-    include: { items: true },
   });
 
-  if (!plan) return { error: "not_found" as const };
-  if (plan.userId !== userId) return { error: "forbidden" as const };
+  if (!plan) return { error: "not_found", status: 404 };
+  if (plan.userId !== userId) return { error: "forbidden", status: 403 };
 
   const integration = await prisma.googleIntegration.findUnique({
     where: { userId },
   });
-  if (!integration) return { error: "google_not_connected" as const };
+  if (!integration) return { error: "GOOGLE_NOT_CONNECTED", status: 409 };
+
+  const publication = await prisma.planCalendarPublication.findUnique({
+    where: { provider_planId: { provider: "GOOGLE", planId } },
+  });
+
+  const calendarId = options.calendarId || publication?.calendarId || integration.calendarIdSelected || "primary";
+
+  let mappings = await prisma.planItemExternalEvent.findMany({
+    where: { provider: "GOOGLE", planId },
+    include: { planItem: true },
+  });
+
+  // Filter to future events only if requested
+  if (options.onlyFuture) {
+    const now = new Date();
+    mappings = mappings.filter((m) => m.planItem.startTime >= now);
+  }
 
   const client = getGoogleClient(userId);
   let deleted = 0;
+  const failedItems: UnpublishResult["items_failed"] = [];
 
-  const tasks = plan.items
-    .filter((item) => item.googleEventId && item.googleCalendarId)
-    .map((item) => async () => {
-      try {
-        await client.deleteEvent(item.googleCalendarId!, item.googleEventId!);
-      } catch {
-        // Event may already be deleted — ignore
+  logger.info("plan.unpublish.started", {
+    user_id: userId,
+    plan_id: planId,
+    calendar_id: calendarId,
+    mapping_count: mappings.length,
+  });
+
+  const tasks = mappings.map((mapping) => async () => {
+    try {
+      await client.deleteEvent(mapping.calendarId, mapping.eventId);
+    } catch (err) {
+      if (err instanceof GoogleApiError && (err.status === 404 || err.status === 410)) {
+        // Already deleted — treat as success
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        failedItems!.push({
+          plan_item_id: mapping.planItemId,
+          event_id: mapping.eventId,
+          error: { code: "DELETE_FAILED", message },
+        });
+        return; // Don't delete mapping on failure
       }
-      await prisma.studyPlanItem.update({
-        where: { id: item.id },
-        data: { googleEventId: null, googleCalendarId: null },
-      });
-      deleted++;
+    }
+
+    await prisma.planItemExternalEvent.delete({ where: { id: mapping.id } });
+    deleted++;
+  });
+
+  await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+
+  // Update publication status
+  const status: UnpublishResult["status"] = failedItems!.length === 0 ? "UNPUBLISHED" : "PARTIAL";
+
+  if (publication) {
+    await prisma.planCalendarPublication.update({
+      where: { id: publication.id },
+      data: {
+        status,
+        lastSyncedAt: new Date(),
+        lastError: failedItems!.length > 0 ? failedItems![0].error.message : null,
+      },
     });
+  }
 
-  await runWithConcurrency(tasks, MAX_CONCURRENT);
-
-  logger.info("plan.unpublished", {
+  logger.info("plan.unpublish.completed", {
     user_id: userId,
     plan_id: planId,
     deleted,
+    failed: failedItems!.length,
   });
 
   return {
     data: {
       plan_id: planId,
-      published: false,
-      events_deleted: deleted,
+      provider: "GOOGLE",
+      calendar_id: calendarId,
+      status,
+      deleted,
+      failed: failedItems!.length,
+      items_failed: failedItems!.length > 0 ? failedItems : undefined,
+    },
+  };
+}
+
+// ---- Get Publish Status ----
+
+export async function getPublishStatus(
+  userId: string,
+  planId: string,
+): Promise<{ data: PublishStatusResult } | { error: string; status?: number }> {
+  const plan = await prisma.studyPlan.findUnique({
+    where: { planId },
+  });
+
+  if (!plan) return { error: "not_found", status: 404 };
+  if (plan.userId !== userId) return { error: "forbidden", status: 403 };
+
+  const publication = await prisma.planCalendarPublication.findUnique({
+    where: { provider_planId: { provider: "GOOGLE", planId } },
+  });
+
+  const mappings = await prisma.planItemExternalEvent.findMany({
+    where: { provider: "GOOGLE", planId },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return {
+    data: {
+      publication: publication
+        ? {
+            status: publication.status,
+            calendar_id: publication.calendarId,
+            published_at: publication.publishedAt?.toISOString() || null,
+            last_synced_at: publication.lastSyncedAt?.toISOString() || null,
+            last_error: publication.lastError,
+          }
+        : null,
+      items: mappings.map((m) => ({
+        plan_item_id: m.planItemId,
+        event_id: m.eventId,
+        html_link: m.htmlLink,
+        last_synced_at: m.lastSyncedAt.toISOString(),
+        last_synced_hash: m.lastSyncedHash,
+      })),
     },
   };
 }
