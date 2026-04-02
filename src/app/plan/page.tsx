@@ -6,9 +6,16 @@ import { MODE_LABELS, getOrCreateUserId } from "@/lib/client-utils";
 const DAY_LABELS = ["Day 0 (Today)", "Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
 
 interface PlanItem {
+  id: string;
   day_index: number;
   start_time: string;
   end_time: string;
+  status: string;
+  locked: boolean;
+  completed_at: string | null;
+  missed_at: string | null;
+  original_start_at: string | null;
+  original_end_at: string | null;
   session_id: string;
   session_url: string;
   mode: string;
@@ -16,6 +23,22 @@ interface PlanItem {
   planned_minutes: number;
   calendar: { title: string; description: string };
   gcal_link: string;
+}
+
+interface ReflowChange {
+  itemId: string;
+  sessionId: string;
+  action: "MOVED" | "DROPPED" | "KEPT";
+  before: { dayIndex: number; startTime: string; endTime: string } | null;
+  after: { dayIndex: number; startTime: string; endTime: string } | null;
+}
+
+interface ReflowPreview {
+  plan_id: string;
+  algorithm_version: string;
+  changes: ReflowChange[];
+  warnings: { itemId: string; code: string; message: string }[];
+  summary: { total_items: number; moved: number; kept: number; dropped: number };
 }
 
 interface PlanResult {
@@ -87,6 +110,12 @@ export default function PlanPage() {
 
   const [googleStatus, setGoogleStatus] = useState<string>("DISCONNECTED");
   const [googleError, setGoogleError] = useState<{ code: string; message: string } | null>(null);
+
+  // Reflow state
+  const [reflowPreview, setReflowPreview] = useState<ReflowPreview | null>(null);
+  const [reflowLoading, setReflowLoading] = useState(false);
+  const [reflowApplying, setReflowApplying] = useState(false);
+  const [itemUpdating, setItemUpdating] = useState<string | null>(null);
 
   // Check if Google Calendar is connected
   useEffect(() => {
@@ -239,6 +268,103 @@ export default function PlanPage() {
       setError("Network error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ---- Item status handlers ----
+  const handleItemStatus = async (itemId: string, status: string, locked?: boolean) => {
+    if (!result) return;
+    setItemUpdating(itemId);
+    try {
+      const body: Record<string, unknown> = { status };
+      if (locked !== undefined) body.locked = locked;
+      const res = await fetch(`/api/plans/${result.plan_id}/items/${itemId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": getOrCreateUserId() },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Update local state
+        setResult((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: prev.items.map((item) =>
+              item.id === itemId
+                ? { ...item, status: data.status, locked: data.locked, completed_at: data.completed_at, missed_at: data.missed_at }
+                : item,
+            ),
+          };
+        });
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to update item");
+      }
+    } catch {
+      setError("Network error updating item");
+    } finally {
+      setItemUpdating(null);
+    }
+  };
+
+  const handleToggleLock = async (item: PlanItem) => {
+    await handleItemStatus(item.id, item.status, !item.locked);
+  };
+
+  // ---- Reflow handlers ----
+  const handleReflowPreview = async () => {
+    if (!result) return;
+    setReflowLoading(true);
+    setReflowPreview(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plans/${result.plan_id}/reflow/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": getOrCreateUserId() },
+        body: JSON.stringify({ reason: "MANUAL" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setReflowPreview(data);
+      } else {
+        setError(data.error || "Failed to compute reflow");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setReflowLoading(false);
+    }
+  };
+
+  const handleReflowApply = async () => {
+    if (!result) return;
+    setReflowApplying(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plans/${result.plan_id}/reflow/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-User-Id": getOrCreateUserId() },
+        body: JSON.stringify({ reason: "MANUAL", republish: isPublished }),
+      });
+      const data = await res.json();
+      if (res.ok && data.applied) {
+        // Reload the plan to get updated times
+        const planRes = await fetch(`/api/plans/${result.plan_id}`, {
+          headers: { "X-User-Id": getOrCreateUserId() },
+        });
+        if (planRes.ok) {
+          const planData = await planRes.json();
+          setResult({ ...result, items: planData.items });
+        }
+        setReflowPreview(null);
+      } else {
+        setError(data.error || data.message || "No changes applied");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setReflowApplying(false);
     }
   };
 
@@ -500,6 +626,65 @@ export default function PlanPage() {
 
           {error && <ErrorBanner message={error} />}
 
+          {/* Reflow section */}
+          <fieldset style={{ border: "1px solid #333", padding: "1rem", marginBottom: "1.5rem" }}>
+            <legend style={{ color: "#00ff88" }}>Reschedule (Reflow)</legend>
+            <p style={{ fontSize: "0.8rem", color: "#888", marginTop: 0 }}>
+              Mark items as Done/Missed/Skipped, then preview and apply a reflow to reschedule remaining sessions.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={handleReflowPreview} disabled={reflowLoading} style={secondaryBtnStyle}>
+                {reflowLoading ? "Computing..." : "Preview Reflow"}
+              </button>
+              {reflowPreview && reflowPreview.summary.moved > 0 && (
+                <button onClick={handleReflowApply} disabled={reflowApplying} style={primaryBtnStyle(reflowApplying)}>
+                  {reflowApplying ? "Applying..." : `Apply Reflow (${reflowPreview.summary.moved} moves)`}
+                </button>
+              )}
+              {reflowPreview && (
+                <button onClick={() => setReflowPreview(null)} style={secondaryBtnStyle}>
+                  Dismiss
+                </button>
+              )}
+            </div>
+
+            {reflowPreview && (
+              <div style={{ marginTop: "0.75rem", background: "#111", padding: "0.75rem", border: "1px solid #333" }}>
+                <div style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                  <span style={{ color: "#00ff88" }}>{reflowPreview.summary.moved} moved</span>
+                  {", "}
+                  <span style={{ color: "#888" }}>{reflowPreview.summary.kept} kept</span>
+                  {reflowPreview.summary.dropped > 0 && (
+                    <span style={{ color: "#ff4444" }}>, {reflowPreview.summary.dropped} dropped</span>
+                  )}
+                </div>
+                {reflowPreview.warnings.length > 0 && (
+                  <div style={{ fontSize: "0.8rem", color: "#ffaa00", marginBottom: "0.5rem" }}>
+                    {reflowPreview.warnings.map((w, i) => <div key={i}>{w.message}</div>)}
+                  </div>
+                )}
+                <details>
+                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#aaa" }}>Change details</summary>
+                  <div style={{ marginTop: "0.25rem", maxHeight: 200, overflowY: "auto" }}>
+                    {reflowPreview.changes.map((c, i) => (
+                      <div key={i} style={{ fontSize: "0.78rem", padding: "0.15rem 0", borderBottom: "1px solid #222", display: "flex", gap: "0.5rem" }}>
+                        <ReflowActionBadge action={c.action} />
+                        <span style={{ color: "#aaa" }}>{c.sessionId.slice(0, 8)}</span>
+                        {c.action === "MOVED" && c.before && c.after && (
+                          <span style={{ color: "#888" }}>
+                            Day {c.before.dayIndex} {new Date(c.before.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            {" → "}
+                            Day {c.after.dayIndex} {new Date(c.after.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
+          </fieldset>
+
           {/* Day-by-day schedule */}
           {[0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
             const dayItems = grouped[dayIdx];
@@ -509,30 +694,63 @@ export default function PlanPage() {
                 <h2 style={{ color: "#00ff88", fontSize: "1.1rem", marginTop: 0, marginBottom: "0.75rem" }}>
                   {DAY_LABELS[dayIdx]}
                 </h2>
-                {dayItems.map((item, i) => (
-                  <div key={i} style={{ background: "#111", padding: "0.75rem", marginBottom: "0.5rem", borderLeft: "3px solid #00ff88" }}>
-                    <div style={{ fontWeight: "bold", marginBottom: "0.3rem" }}>
-                      {MODE_LABELS[item.mode] || item.mode}
+                {dayItems.map((item) => {
+                  const borderColor = itemBorderColor(item.status);
+                  const isUpdating = itemUpdating === item.id;
+                  return (
+                    <div key={item.id || item.session_id} style={{ background: "#111", padding: "0.75rem", marginBottom: "0.5rem", borderLeft: `3px solid ${borderColor}`, opacity: item.status === "SKIPPED" ? 0.5 : 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.3rem" }}>
+                        <div style={{ fontWeight: "bold" }}>
+                          {MODE_LABELS[item.mode] || item.mode}
+                        </div>
+                        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                          <ItemStatusBadge status={item.status} />
+                          {item.locked && <span style={{ color: "#ffaa00", fontSize: "0.75rem" }}>[LOCKED]</span>}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: "0.85rem", color: "#aaa" }}>
+                        {new Date(item.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {" - "}
+                        {new Date(item.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {" "}({item.planned_minutes} min)
+                        {item.original_start_at && (
+                          <span style={{ color: "#666", marginLeft: "0.5rem" }}>
+                            (was {new Date(item.original_start_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: "0.8rem", color: "#888", marginTop: "0.25rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        Topics: {item.topic_scope}
+                      </div>
+                      <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
+                        <a href={item.session_url} target="_blank" rel="noopener noreferrer" style={{ color: "#00ff88", fontSize: "0.85rem" }}>
+                          Open session
+                        </a>
+                        <a href={item.gcal_link} target="_blank" rel="noopener noreferrer" style={{ color: "#4285f4", fontSize: "0.85rem" }}>
+                          + Google Cal
+                        </a>
+                        {item.status === "SCHEDULED" && (
+                          <>
+                            <button disabled={isUpdating} onClick={() => handleItemStatus(item.id, "DONE")} style={smallBtnStyle("#00ff88")}>
+                              Done
+                            </button>
+                            <button disabled={isUpdating} onClick={() => handleItemStatus(item.id, "MISSED")} style={smallBtnStyle("#ff4444")}>
+                              Missed
+                            </button>
+                            <button disabled={isUpdating} onClick={() => handleItemStatus(item.id, "SKIPPED")} style={smallBtnStyle("#888")}>
+                              Skip
+                            </button>
+                          </>
+                        )}
+                        {item.id && item.status === "SCHEDULED" && (
+                          <button disabled={isUpdating} onClick={() => handleToggleLock(item)} style={smallBtnStyle(item.locked ? "#ffaa00" : "#555")}>
+                            {item.locked ? "Unlock" : "Lock"}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: "0.85rem", color: "#aaa" }}>
-                      {new Date(item.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      {" - "}
-                      {new Date(item.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      {" "}({item.planned_minutes} min)
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: "#888", marginTop: "0.25rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      Topics: {item.topic_scope}
-                    </div>
-                    <div style={{ display: "flex", gap: "1rem", marginTop: "0.3rem" }}>
-                      <a href={item.session_url} target="_blank" rel="noopener noreferrer" style={{ color: "#00ff88", fontSize: "0.85rem" }}>
-                        Open session
-                      </a>
-                      <a href={item.gcal_link} target="_blank" rel="noopener noreferrer" style={{ color: "#4285f4", fontSize: "0.85rem" }}>
-                        + Google Cal
-                      </a>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })}
@@ -580,6 +798,47 @@ function ActionBadge({ action }: { action: string }) {
       {action}
     </span>
   );
+}
+
+function ItemStatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    SCHEDULED: "#4285f4",
+    IN_PROGRESS: "#ffaa00",
+    DONE: "#00ff88",
+    MISSED: "#ff4444",
+    SKIPPED: "#888",
+    RESCHEDULED: "#aa88ff",
+  };
+  return (
+    <span style={{ color: colors[status] || "#888", fontSize: "0.75rem", fontWeight: "bold" }}>
+      [{status}]
+    </span>
+  );
+}
+
+function ReflowActionBadge({ action }: { action: string }) {
+  const colors: Record<string, string> = {
+    MOVED: "#4285f4",
+    DROPPED: "#ff4444",
+    KEPT: "#888",
+  };
+  return (
+    <span style={{ color: colors[action] || "#888", fontWeight: "bold", minWidth: 60, display: "inline-block", fontSize: "0.78rem" }}>
+      {action}
+    </span>
+  );
+}
+
+function itemBorderColor(status: string): string {
+  const colors: Record<string, string> = {
+    SCHEDULED: "#00ff88",
+    IN_PROGRESS: "#ffaa00",
+    DONE: "#00ff88",
+    MISSED: "#ff4444",
+    SKIPPED: "#555",
+    RESCHEDULED: "#aa88ff",
+  };
+  return colors[status] || "#00ff88";
 }
 
 // ---- Styles ----
@@ -635,6 +894,18 @@ function googleBtnStyle(disabled: boolean): React.CSSProperties {
     fontWeight: "bold",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
+  };
+}
+
+function smallBtnStyle(color: string): React.CSSProperties {
+  return {
+    background: "transparent",
+    color,
+    border: `1px solid ${color}`,
+    padding: "0.2rem 0.5rem",
+    fontFamily: "monospace",
+    fontSize: "0.75rem",
+    cursor: "pointer",
   };
 }
 

@@ -291,20 +291,44 @@ model AttemptCitation {
 }
 
 model StudyPlanItem {
-  id              String    @id @default(uuid())
-  planId          String    @map("plan_id")
-  sessionId       String    @map("session_id")
-  dayIndex        Int       @map("day_index")
-  startTime       DateTime  @map("start_time") @db.Timestamptz
-  endTime         DateTime  @map("end_time") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id                String    @id @default(uuid())
+  planId            String    @map("plan_id")
+  sessionId         String    @map("session_id")
+  dayIndex          Int       @map("day_index")
+  startTime         DateTime  @map("start_time") @db.Timestamptz
+  endTime           DateTime  @map("end_time") @db.Timestamptz
+  status            String    @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | DONE | MISSED | SKIPPED | RESCHEDULED
+  locked            Boolean   @default(false)
+  completedRunId    String?   @map("completed_run_id")
+  completedAt       DateTime? @map("completed_at") @db.Timestamptz
+  missedAt          DateTime? @map("missed_at") @db.Timestamptz
+  lastRescheduledAt DateTime? @map("last_rescheduled_at") @db.Timestamptz
+  originalStartAt   DateTime? @map("original_start_at") @db.Timestamptz
+  originalEndAt     DateTime? @map("original_end_at") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   plan            StudyPlan              @relation(fields: [planId], references: [planId])
   externalEvents  PlanItemExternalEvent[]
 
   @@unique([planId, sessionId], map: "study_plan_items_plan_id_session_id_key")
   @@index([planId])
+  @@index([planId, startTime], map: "study_plan_items_plan_start_idx")
+  @@index([planId, status], map: "study_plan_items_plan_status_idx")
   @@map("study_plan_items")
+}
+
+model PlanReflowAudit {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  planId           String   @map("plan_id")
+  reason           String   // MANUAL | AUTO_MISSED | AUTO_RESCHEDULE
+  algorithmVersion String   @default("v1") @map("algorithm_version")
+  inputSummary     Json     @map("input_summary")
+  changes          Json     // Array of { itemId, action, before, after }
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([planId, createdAt(sort: Desc)], map: "plan_reflow_audits_plan_created_idx")
+  @@map("plan_reflow_audits")
 }
 
 // ---- Calendar Publication Tracking ----
