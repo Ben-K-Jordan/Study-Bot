@@ -1,26 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { unpublishPlanFromGoogle } from "@/services/publish";
+import { getUserId } from "@/lib/auth";
+import { unpublishPlanFromGoogle, unpublishRequestSchema } from "@/services/publish";
 import { logger } from "@/lib/logger";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ planId: string }> }
+  { params }: { params: Promise<{ planId: string }> },
 ) {
-  const userId = request.headers.get("X-User-Id");
+  const userId = getUserId(request.headers);
   if (!userId) {
-    return NextResponse.json({ error: "Missing X-User-Id header" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { planId } = await params;
 
+  let body: Record<string, unknown> = {};
   try {
-    const result = await unpublishPlanFromGoogle(userId, planId);
+    body = await request.json();
+  } catch {
+    // Empty body is fine — all fields optional
+  }
+
+  const parsed = unpublishRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid request", details: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const result = await unpublishPlanFromGoogle(userId, planId, {
+      calendarId: parsed.data.calendar_id,
+      onlyFuture: parsed.data.only_future,
+    });
 
     if ("error" in result) {
-      const status = result.error === "not_found" ? 404
-        : result.error === "forbidden" ? 403
-        : result.error === "google_not_connected" ? 400
-        : 500;
+      const status = result.status || 500;
       return NextResponse.json({ error: result.error }, { status });
     }
 
