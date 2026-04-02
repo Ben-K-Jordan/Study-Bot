@@ -527,6 +527,7 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/studybot_e2e npm run test:e2e
 | Unit: free-slots | `free-slots.test.ts` | Free slot computation, block fitting |
 | Integration: google-cal | `google-calendar.test.ts` | Publish/unpublish/status, idempotent republish, hash skip, manual deletion recovery, dry_run |
 | E2E: google-cal | `google-calendar.spec.ts` | Publish/unpublish API contracts, auth enforcement, status endpoint |
+| Unit: asset pipeline | `assets-pipeline.test.ts` | Manifest generation, key stability, @2x downscale, SVG optimization, budgets, determinism |
 
 ## Google Calendar Integration
 
@@ -590,6 +591,97 @@ curl http://localhost:3000/api/plans/{plan_id}/ics -H "X-User-Id: user_123" -o p
 # Subscribe via webcal (use the webcal_url from plan response)
 # webcal://localhost:3000/api/plans/{plan_id}/feed
 ```
+
+---
+
+## Photoshop Asset Pipeline
+
+Design UI components in Photoshop, export them, and import into the app with automatic optimization.
+
+### Directory Structure
+
+```
+design/exports-raw/          # Raw exports from Photoshop (tracked in git)
+  btn-primary.png            # Raster button skin
+  btn-primary@2x.png         # @2x variant → auto-generates @1x
+  icon-phone-off.svg         # Vector icon
+public/assets/ui/            # Optimized output (gitignored, rebuilt)
+src/ui/assets/manifest.ts    # Generated TypeScript manifest (gitignored)
+src/ui/components/           # Reusable UI components
+  Icon.tsx                   # Renders SVG from manifest by key
+  Button.tsx                 # CSS-first button with optional texture
+```
+
+### Photoshop Export Steps
+
+1. Design your asset in Photoshop
+2. Export as PNG (raster) or SVG (vector) to `design/exports-raw/`
+3. Naming: use kebab-case slugs — `btn-primary.png`, `icon-phone-off.svg`
+4. For retina: append `@2x` — `btn-primary@2x.png` (auto-generates `@1x`)
+5. Run `npm run assets:build`
+
+### Running the Pipeline
+
+```bash
+# Build optimized assets + generate manifest
+npm run assets:build
+
+# Check budgets only (CI)
+npm run assets:check
+
+# Auto-runs before `npm run build` via prebuild hook
+```
+
+### What It Does
+
+| Input | Output | Details |
+|-------|--------|---------|
+| `*.png` | `.avif` (q55) + `.webp` (q80) | Metadata stripped, smallest modern formats |
+| `*@2x.png` | `@2x` + `@1x` (50% downscale) | Both get AVIF + WebP |
+| `*.svg` | Optimized `.svg` | SVGO strips metadata, comments, unused defs |
+
+### Budgets (enforced in CI)
+
+| Rule | Limit | Action |
+|------|-------|--------|
+| Single file size | 300KB | **Fail** build |
+| Raster dimension | 2000px per side | **Warn** |
+| Pixel count | 4MP (w*h) | **Fail** unless allowlisted |
+
+These budgets prevent accidentally shipping large UI assets that hurt download time and memory.
+
+### Using Assets in Components
+
+```tsx
+import { assets, assetSrc } from "@/ui/assets/manifest";
+import Image from "next/image";
+
+// Raster via next/image (preferred)
+const btn = assets["btn-primary"];
+<Image src={btn.avif!} width={btn.width!} height={btn.height!} alt="Button" />
+
+// Quick helper (auto-picks best format)
+<img src={assetSrc("icon-session")} alt="Session" />
+
+// SVG icon component
+import { Icon } from "@/ui/components/Icon";
+<Icon name="icon-check" size={20} />
+
+// CSS-first button with optional texture
+import { Button } from "@/ui/components/Button";
+<Button variant="primary">Start</Button>
+<Button textureKey="btn-primary">Textured</Button>
+```
+
+### SVGR (Optional)
+
+SVG-as-React-component imports are not enabled by default to keep the build simple. To enable:
+
+1. Install `@svgr/webpack`
+2. Add webpack config to `next.config.js`
+3. Set `SVGR=1` env var
+
+For now, use the `<Icon>` component or `<img>` tags.
 
 ---
 
