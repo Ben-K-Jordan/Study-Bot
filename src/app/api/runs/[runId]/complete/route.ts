@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { completeRun } from "@/services/run";
+import { logger } from "@/lib/logger";
 
 export async function POST(
   request: NextRequest,
@@ -27,7 +28,7 @@ export async function POST(
 
     return NextResponse.json(result.data);
   } catch (err) {
-    console.error("Failed to complete run:", err);
+    logger.error("run_complete_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

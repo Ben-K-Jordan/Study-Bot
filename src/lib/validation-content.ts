@@ -3,9 +3,6 @@ import { z } from "zod/v4";
 // ---- Content Documents ----
 
 export const CONTENT_NAMESPACES = ["COURSE", "RESEARCH"] as const;
-export type ContentNamespace = (typeof CONTENT_NAMESPACES)[number];
-
-export const DOCUMENT_STATUSES = ["UPLOADED", "PROCESSED", "FAILED"] as const;
 
 export const uploadDocumentSchema = z
   .object({
@@ -43,7 +40,6 @@ export const listDocumentsSchema = z.object({
 // ---- Practice Bank ----
 
 export const QUESTION_KINDS = ["SHORT_ANSWER", "MCQ", "CODING"] as const;
-export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
 export const createPracticeSetSchema = z.object({
   course_name: z.string().min(1, "course_name is required"),

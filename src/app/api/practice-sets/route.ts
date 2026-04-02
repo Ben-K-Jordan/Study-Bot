@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createPracticeSetSchema } from "@/lib/validation-content";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.error("Create practice set failed:", err);
+    logger.error("create_practice_set_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

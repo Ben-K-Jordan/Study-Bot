@@ -721,7 +721,7 @@ async function handleExamAnswer(
 
 async function handleExamScore(
   run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; promptCount: number; answeredCount: number | null; scoredCount: number | null; metrics: unknown; breakState: unknown; prompts: unknown },
-  prompt: Prompt,
+  _prompt: Prompt,
   input: ExamScoreInput | SubmitAttemptInput,
   breakState: BreakState,
   userId: string,

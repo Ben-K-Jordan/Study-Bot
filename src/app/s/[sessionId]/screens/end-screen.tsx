@@ -1,6 +1,6 @@
 "use client";
 
-import type { RunData, RunMetrics, SessionData, RunPolicies } from "../session-runner";
+import type { RunData, RunMetrics, SessionData } from "../session-runner";
 
 interface Props {
   run: RunData | null;

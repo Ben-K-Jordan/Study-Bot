@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       merged_busy: mergedBusy,
     });
   } catch (err) {
-    console.error("Freebusy query failed:", err);
+    logger.error("google_freebusy_query_failed", { error: String(err) });
     return NextResponse.json({ error: "Failed to query Google Calendar" }, { status: 500 });
   }
 }

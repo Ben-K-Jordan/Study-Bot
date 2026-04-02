@@ -20,8 +20,6 @@ export const RUNNABLE_MODES = [
 
 export type RunnableMode = (typeof RUNNABLE_MODES)[number];
 
-export const BREAK_TYPES = ["50_10", "25_5", "custom"] as const;
-
 export const createSessionSchema = z.object({
   course_id: z.string().optional(),
   course_name: z.string().min(1, "course_name is required"),
@@ -68,8 +66,6 @@ export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 // --- Run / Attempt validation ---
 
 export const SELF_SCORES = ["CORRECT", "PARTIAL", "INCORRECT"] as const;
-export type SelfScore = (typeof SELF_SCORES)[number];
-
 export const ERROR_TYPES = [
   "MISCONCEPTION",
   "PROCEDURE",
@@ -77,11 +73,6 @@ export const ERROR_TYPES = [
   "MEMORY",
   "UNKNOWN",
 ] as const;
-export type ErrorType = (typeof ERROR_TYPES)[number];
-
-export const RUN_STATUSES = ["CREATED", "ACTIVE", "PAUSED", "COMPLETED"] as const;
-export type RunStatus = (typeof RUN_STATUSES)[number];
-
 const errorLogSchema = z.object({
   error_type: z.enum(ERROR_TYPES),
   correction_rule: z.string().min(1, "Correction rule is required"),

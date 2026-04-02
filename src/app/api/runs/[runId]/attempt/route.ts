@@ -95,7 +95,7 @@ export async function POST(
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Failed to submit attempt:", err);
+    logger.error("run_submit_attempt_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
-      console.error("Token exchange failed:", errBody);
+      logger.error("google_token_exchange_failed", { error: String(errBody) });
       return NextResponse.redirect(`${baseUrl}/settings/calendar?error=token_exchange_failed`, 302);
     }
 
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.redirect(`${baseUrl}/settings/calendar?connected=1`, 302);
   } catch (err) {
-    console.error("OAuth callback error:", err);
+    logger.error("google_oauth_callback_failed", { error: String(err) });
     return NextResponse.redirect(`${baseUrl}/settings/calendar?error=internal`, 302);
   }
 }

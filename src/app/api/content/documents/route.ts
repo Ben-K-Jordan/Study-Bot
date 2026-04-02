@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { uploadDocument, listDocuments } from "@/services/content";
 import { uploadDocumentSchema, listDocumentsSchema } from "@/lib/validation-content";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.error("Upload failed:", err);
+    logger.error("document_upload_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.error("List documents failed:", err);
+    logger.error("list_documents_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -3,7 +3,6 @@ import { generateSessionId } from "@/lib/session-id";
 import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
 import {
   createSessionSchema,
-  CreateSessionInput,
   SessionMode,
 } from "@/lib/validation";
 import { logger } from "@/lib/logger";

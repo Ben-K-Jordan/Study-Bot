@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getGoogleClient } from "@/lib/google/calendar-client";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
       selected: integration.calendarIdSelected,
     });
   } catch (err) {
-    console.error("List calendars failed:", err);
+    logger.error("google_list_calendars_failed", { error: String(err) });
     return NextResponse.json({ error: "Failed to list calendars" }, { status: 500 });
   }
 }

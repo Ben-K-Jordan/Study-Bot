@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getRunPrompt } from "@/services/run";
+import { logger } from "@/lib/logger";
 
 export async function GET(
   request: NextRequest,
@@ -41,7 +42,7 @@ export async function GET(
 
     return NextResponse.json(result.data);
   } catch (err) {
-    console.error("Failed to get prompt:", err);
+    logger.error("run_get_prompt_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
