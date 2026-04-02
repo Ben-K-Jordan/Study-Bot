@@ -313,9 +313,16 @@ export async function getPlan(userId: string, planId: string) {
       items: plan.items.map((item) => {
         const session = sessionMap.get(item.sessionId);
         return {
+          id: item.id,
           day_index: item.dayIndex,
           start_time: item.startTime.toISOString(),
           end_time: item.endTime.toISOString(),
+          status: item.status,
+          locked: item.locked,
+          completed_at: item.completedAt?.toISOString() ?? null,
+          missed_at: item.missedAt?.toISOString() ?? null,
+          original_start_at: item.originalStartAt?.toISOString() ?? null,
+          original_end_at: item.originalEndAt?.toISOString() ?? null,
           session_id: item.sessionId,
           session_url: `${getBaseUrl()}/s/${item.sessionId}`,
           mode: session?.mode ?? "",
