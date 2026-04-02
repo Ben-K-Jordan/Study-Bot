@@ -55,7 +55,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -83,6 +83,8 @@ jobs:
       - run: npx prisma generate
       - name: Push schema to test DB
         run: npx prisma db push --force-reset --accept-data-loss
+      - name: Apply pgvector migration
+        run: psql "$DATABASE_URL" -f prisma/migrations/manual/001_pgvector.sql
       - run: npm run test:integration
 
   e2e-tests:
@@ -92,7 +94,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -121,6 +123,8 @@ jobs:
       - run: npx prisma generate
       - name: Push schema to test DB
         run: npx prisma db push --force-reset --accept-data-loss
+      - name: Apply pgvector migration
+        run: psql "$DATABASE_URL" -f prisma/migrations/manual/001_pgvector.sql
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
 

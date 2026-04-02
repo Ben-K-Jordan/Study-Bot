@@ -170,19 +170,25 @@ model ContentDocument {
 }
 
 model ContentChunk {
-  id         String            @id @default(uuid())
-  documentId String            @map("document_id")
-  ordinal    Int
-  pageNumber Int?              @map("page_number")
-  text       String
-  textHash   String            @map("text_hash")
-  createdAt  DateTime          @default(now()) @map("created_at")
+  id                String            @id @default(uuid())
+  documentId        String            @map("document_id")
+  ordinal           Int
+  pageNumber        Int?              @map("page_number")
+  text              String
+  textHash          String            @map("text_hash")
+  embeddingStatus   String            @default("NONE") @map("embedding_status") // NONE | PENDING | READY | FAILED
+  embeddingModel    String?           @map("embedding_model")
+  embeddingDim      Int?              @map("embedding_dim")
+  embeddingUpdatedAt DateTime?        @map("embedding_updated_at") @db.Timestamptz
+  // embedding vector stored via raw SQL (pgvector); Prisma cannot represent vector natively
+  createdAt         DateTime          @default(now()) @map("created_at")
 
   document   ContentDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
   citations  AttemptCitation[]
   anchors    ObjectiveAnchor[]
 
   @@unique([documentId, ordinal], map: "content_chunks_doc_ordinal_key")
+  @@index([embeddingStatus])
   @@map("content_chunks")
 }
 
@@ -373,4 +379,80 @@ model OAuthState {
   expiresAt DateTime @map("expires_at")
 
   @@map("oauth_states")
+}
+
+// ---- AI Control Plane ----
+
+model AiCallLog {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  task          String   // EMBED_TEXTS | ANSWER_WITH_CITATIONS | GENERATE_VARIANT_QUESTION | SUGGEST_ERROR_TYPE
+  model         String
+  promptVersion String   @map("prompt_version")
+  cacheHit      Boolean  @map("cache_hit")
+  latencyMs     Int      @map("latency_ms")
+  tokenIn       Int?     @map("token_in")
+  tokenOut      Int?     @map("token_out")
+  costUsdMicros BigInt?  @map("cost_usd_micros")
+  status        String   // OK | ERROR
+  errorCode     String?  @map("error_code")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([task, createdAt])
+  @@map("ai_call_logs")
+}
+
+model AiCache {
+  keyHash          String   @id @map("key_hash")
+  task             String
+  model            String
+  promptVersion    String   @map("prompt_version")
+  inputFingerprint String   @map("input_fingerprint")
+  outputJson       Json     @map("output_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+  expiresAt        DateTime @map("expires_at")
+  hitCount         Int      @default(0) @map("hit_count")
+  lastHitAt        DateTime? @map("last_hit_at")
+
+  @@index([task, expiresAt])
+  @@map("ai_cache")
+}
+
+model JobQueue {
+  id          String    @id @default(uuid())
+  type        String    // EMBED_CHUNK_BATCH
+  payload     Json
+  status      String    @default("PENDING") // PENDING | RUNNING | SUCCEEDED | FAILED | RETRY
+  priority    Int       @default(100)
+  runAfter    DateTime  @default(now()) @map("run_after") @db.Timestamptz
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5) @map("max_attempts")
+  lockedAt    DateTime? @map("locked_at") @db.Timestamptz
+  lockedBy    String?   @map("locked_by")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, runAfter, priority])
+  @@index([type, status])
+  @@map("job_queue")
+}
+
+model ObjectiveMastery {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  courseName   String    @map("course_name")
+  objectiveKey String    @map("objective_key")
+  easeFactor   Float     @default(2.5) @map("ease_factor")
+  intervalDays Int       @default(0) @map("interval_days")
+  repetitions  Int       @default(0)
+  lastAccuracy Float?    @map("last_accuracy")
+  lastStudiedAt DateTime? @map("last_studied_at") @db.Timestamptz
+  nextDueAt    DateTime?  @map("next_due_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, courseName, objectiveKey], map: "objective_mastery_user_course_key")
+  @@index([userId, courseName, nextDueAt])
+  @@map("objective_mastery")
 }
