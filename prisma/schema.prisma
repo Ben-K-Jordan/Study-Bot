@@ -136,7 +136,8 @@ model StudyPlan {
   createdAt  DateTime        @default(now()) @map("created_at")
   updatedAt  DateTime        @updatedAt @map("updated_at")
 
-  items      StudyPlanItem[]
+  items         StudyPlanItem[]
+  publications  PlanCalendarPublication[]
 
   @@index([userId])
   @@map("study_plans")
@@ -290,15 +291,62 @@ model StudyPlanItem {
   dayIndex        Int       @map("day_index")
   startTime       DateTime  @map("start_time") @db.Timestamptz
   endTime         DateTime  @map("end_time") @db.Timestamptz
-  googleEventId   String?   @map("google_event_id")
-  googleCalendarId String?  @map("google_calendar_id")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  plan      StudyPlan @relation(fields: [planId], references: [planId])
+  plan            StudyPlan              @relation(fields: [planId], references: [planId])
+  externalEvents  PlanItemExternalEvent[]
 
   @@unique([planId, sessionId], map: "study_plan_items_plan_id_session_id_key")
   @@index([planId])
   @@map("study_plan_items")
+}
+
+// ---- Calendar Publication Tracking ----
+
+model PlanCalendarPublication {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  planId       String    @map("plan_id")
+  provider     String    @default("GOOGLE") // GOOGLE
+  calendarId   String    @map("calendar_id")
+  status       String    @default("NOT_PUBLISHED") // NOT_PUBLISHED | PUBLISHED | PARTIAL | FAILED | UNPUBLISHED
+  publishedAt  DateTime? @map("published_at") @db.Timestamptz
+  lastSyncedAt DateTime? @map("last_synced_at") @db.Timestamptz
+  lastError    String?   @map("last_error")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  plan         StudyPlan @relation(fields: [planId], references: [planId])
+
+  @@unique([provider, planId], map: "plan_calendar_publications_provider_plan_key")
+  @@index([userId, provider])
+  @@index([planId])
+  @@map("plan_calendar_publications")
+}
+
+model PlanItemExternalEvent {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  planId          String    @map("plan_id")
+  planItemId      String    @map("plan_item_id")
+  provider        String    @default("GOOGLE") // GOOGLE
+  calendarId      String    @map("calendar_id")
+  eventId         String    @map("event_id")
+  htmlLink        String?   @map("html_link")
+  etag            String?
+  remoteUpdatedAt DateTime? @map("remote_updated_at") @db.Timestamptz
+  lastSyncedHash  String    @map("last_synced_hash")
+  lastSyncedAt    DateTime  @map("last_synced_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  planItem        StudyPlanItem @relation(fields: [planItemId], references: [id])
+
+  @@unique([provider, planItemId], map: "plan_item_external_events_provider_item_key")
+  @@index([provider, planId])
+  @@index([userId, provider])
+  @@index([calendarId, eventId])
+  @@map("plan_item_external_events")
 }
 
 // ---- Google Calendar Integration ----
