@@ -3,6 +3,7 @@ import { sha256, saveFile, resolveStoragePath } from "@/lib/storage";
 import { extractDocumentText } from "@/lib/extractor";
 import { chunkText } from "@/lib/chunker";
 import { searchChunks, buildFeedbackQuery, type SearchResult } from "@/lib/search";
+import { enqueueJob } from "@/lib/jobs/queue";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
 
@@ -107,28 +108,34 @@ export async function processDocument(userId: string, documentId: string) {
     const extraction = await extractDocumentText(filePath, doc.mimeType);
     const chunks = chunkText(extraction.fullText, extraction.pages);
 
-    // Insert chunks in a transaction
+    // Insert chunks in a transaction, then enqueue embedding job
+    const chunkIds: string[] = [];
     await prisma.$transaction(async (tx) => {
       // Delete any existing chunks (from a previous failed attempt)
       await tx.contentChunk.deleteMany({ where: { documentId: doc.id } });
 
-      // Batch insert chunks
+      // Batch insert chunks with embedding status PENDING
       for (const chunk of chunks) {
-        await tx.contentChunk.create({
+        const created = await tx.contentChunk.create({
           data: {
             documentId: doc.id,
             ordinal: chunk.ordinal,
             pageNumber: chunk.pageNumber,
             text: chunk.text,
             textHash: chunk.textHash,
+            embeddingStatus: "PENDING",
           },
         });
+        chunkIds.push(created.id);
       }
 
       await tx.contentDocument.update({
         where: { id: doc.id },
         data: { status: "PROCESSED" },
       });
+
+      // Enqueue embedding job within the same transaction
+      await enqueueJob("EMBED_CHUNK_BATCH", { chunkIds, userId }, {}, tx);
     });
 
     logger.info("document.processed", {
