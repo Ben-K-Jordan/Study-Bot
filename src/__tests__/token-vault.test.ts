@@ -82,7 +82,7 @@ describe("token-vault", () => {
       delete process.env.TOKEN_ENC_KEY;
       delete process.env.GOOGLE_TOKEN_ENC_KEY;
       delete process.env.TEST_TOKEN_ENC_KEY;
-      process.env.NODE_ENV = "production";
+      (process.env as Record<string, string>).NODE_ENV = "production";
 
       vi.resetModules();
       try {
@@ -99,7 +99,7 @@ describe("token-vault", () => {
       delete process.env.TOKEN_ENC_KEY;
       delete process.env.GOOGLE_TOKEN_ENC_KEY;
       process.env.TEST_TOKEN_ENC_KEY = TEST_KEY_HEX;
-      process.env.NODE_ENV = "test";
+      (process.env as Record<string, string>).NODE_ENV = "test";
 
       vi.resetModules();
       try {

@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       busy: busyFlat,
       tz: integration.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      duration_ms: durationMs,
       // Legacy fields
       calendars: Array.from(
         busy.reduce((map, b) => {
