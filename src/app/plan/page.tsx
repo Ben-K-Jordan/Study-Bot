@@ -116,6 +116,11 @@ export default function PlanPage() {
   const [reflowPreview, setReflowPreview] = useState<ReflowPreview | null>(null);
   const [reflowLoading, setReflowLoading] = useState(false);
   const [reflowApplying, setReflowApplying] = useState(false);
+  const [reflowResult, setReflowResult] = useState<{
+    audit_id: string;
+    summary: { moved: number; kept: number; dropped: number };
+    calendar?: { status: string; summary?: { created: number; updated: number; unchanged: number; failed: number }; error?: string; duration_ms?: number } | null;
+  } | null>(null);
   const [itemUpdating, setItemUpdating] = useState<string | null>(null);
 
   // Check if Google Calendar is connected
@@ -342,11 +347,15 @@ export default function PlanPage() {
     if (!result) return;
     setReflowApplying(true);
     setError(null);
+    setReflowResult(null);
     try {
       const res = await fetch(`/api/plans/${result.plan_id}/reflow/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-User-Id": getOrCreateUserId() },
-        body: JSON.stringify({ reason: "MANUAL", republish: isPublished }),
+        body: JSON.stringify({
+          reason: "MANUAL",
+          calendar_update: isPublished ? "REPUBLISH" : "NONE",
+        }),
       });
       const data = await res.json();
       if (res.ok && data.applied) {
@@ -359,6 +368,15 @@ export default function PlanPage() {
           setResult({ ...result, items: planData.items });
         }
         setReflowPreview(null);
+        setReflowResult({
+          audit_id: data.audit_id,
+          summary: data.summary,
+          calendar: data.calendar,
+        });
+        // Refresh publish status if calendar was updated
+        if (data.calendar && googleConnected) {
+          await loadPublishStatus(result.plan_id);
+        }
       } else {
         setError(data.error || data.message || "No changes applied");
       }
@@ -633,12 +651,67 @@ export default function PlanPage() {
             <p style={{ fontSize: "0.8rem", color: "#888", marginTop: 0 }}>
               Mark items as Done/Missed/Skipped, then preview and apply a reflow to reschedule remaining sessions.
             </p>
+
+            {/* Reflow apply result banner */}
+            {reflowResult && (
+              <div data-testid="reflow-result" style={{ background: "#0a1a0a", border: "1px solid #00ff88", padding: "0.75rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+                <div style={{ color: "#00ff88", fontWeight: "bold", marginBottom: "0.4rem" }}>
+                  Reflow applied
+                </div>
+                <div style={{ color: "#aaa" }}>
+                  {reflowResult.summary.moved} moved, {reflowResult.summary.kept} kept
+                  {reflowResult.summary.dropped > 0 && <span style={{ color: "#ff4444" }}>, {reflowResult.summary.dropped} dropped</span>}
+                </div>
+                {reflowResult.audit_id && (
+                  <div style={{ color: "#666", fontSize: "0.78rem", marginTop: "0.25rem" }}>
+                    Audit: {reflowResult.audit_id.slice(0, 8)}...
+                  </div>
+                )}
+                {reflowResult.calendar && (
+                  <div data-testid="reflow-calendar-result" style={{ marginTop: "0.4rem", padding: "0.4rem", background: "#111", border: "1px solid #333" }}>
+                    {reflowResult.calendar.error ? (
+                      <div style={{ color: "#ff4444" }}>
+                        Calendar update failed: {reflowResult.calendar.error}
+                        <button onClick={handlePublish} style={{ ...smallBtnStyle("#4285f4"), marginLeft: "0.5rem" }}>
+                          Retry publish
+                        </button>
+                      </div>
+                    ) : reflowResult.calendar.status === "PARTIAL" ? (
+                      <div>
+                        <span style={{ color: "#ffaa00" }}>Calendar partially updated</span>
+                        {reflowResult.calendar.summary && (
+                          <span style={{ color: "#888" }}>
+                            {" "}— {reflowResult.calendar.summary.updated} updated, {reflowResult.calendar.summary.failed} failed
+                          </span>
+                        )}
+                        <button onClick={handlePublish} style={{ ...smallBtnStyle("#4285f4"), marginLeft: "0.5rem" }}>
+                          Retry publish
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ color: "#00ff88" }}>
+                        Calendar updated
+                        {reflowResult.calendar.summary && (
+                          <span style={{ color: "#888" }}>
+                            {" "}— {reflowResult.calendar.summary.created} created, {reflowResult.calendar.summary.updated} updated, {reflowResult.calendar.summary.unchanged} unchanged
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <button onClick={() => setReflowResult(null)} style={{ ...smallBtnStyle("#555"), marginTop: "0.4rem" }}>
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={handleReflowPreview} disabled={reflowLoading} style={secondaryBtnStyle}>
+              <button data-testid="preview-reflow-btn" onClick={handleReflowPreview} disabled={reflowLoading} style={secondaryBtnStyle}>
                 {reflowLoading ? "Computing..." : "Preview Reflow"}
               </button>
               {reflowPreview && reflowPreview.summary.moved > 0 && (
-                <button onClick={handleReflowApply} disabled={reflowApplying} style={primaryBtnStyle(reflowApplying)}>
+                <button data-testid="apply-reflow-btn" onClick={handleReflowApply} disabled={reflowApplying} style={primaryBtnStyle(reflowApplying)}>
                   {reflowApplying ? "Applying..." : `Apply Reflow (${reflowPreview.summary.moved} moves)`}
                 </button>
               )}
@@ -650,7 +723,7 @@ export default function PlanPage() {
             </div>
 
             {reflowPreview && (
-              <div style={{ marginTop: "0.75rem", background: "#111", padding: "0.75rem", border: "1px solid #333" }}>
+              <div data-testid="reflow-preview" style={{ marginTop: "0.75rem", background: "#111", padding: "0.75rem", border: "1px solid #333" }}>
                 <div style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
                   <span style={{ color: "#00ff88" }}>{reflowPreview.summary.moved} moved</span>
                   {", "}
@@ -659,13 +732,68 @@ export default function PlanPage() {
                     <span style={{ color: "#ff4444" }}>, {reflowPreview.summary.dropped} dropped</span>
                   )}
                 </div>
+
+                {/* Warnings */}
                 {reflowPreview.warnings.length > 0 && (
                   <div style={{ fontSize: "0.8rem", color: "#ffaa00", marginBottom: "0.5rem" }}>
                     {reflowPreview.warnings.map((w, i) => <div key={i}>{w.message}</div>)}
                   </div>
                 )}
+
+                {/* Moved items grouped by target day */}
+                {(() => {
+                  const moved = reflowPreview.changes.filter((c) => c.action === "MOVED");
+                  if (moved.length === 0) return null;
+                  const byDay = moved.reduce<Record<number, typeof moved>>((acc, c) => {
+                    const day = c.after?.dayIndex ?? -1;
+                    (acc[day] = acc[day] || []).push(c);
+                    return acc;
+                  }, {});
+                  return (
+                    <div style={{ marginBottom: "0.5rem" }}>
+                      <div style={{ fontSize: "0.8rem", color: "#4285f4", fontWeight: "bold", marginBottom: "0.25rem" }}>Moved items:</div>
+                      {Object.entries(byDay).sort(([a], [b]) => Number(a) - Number(b)).map(([day, changes]) => (
+                        <div key={day} style={{ marginBottom: "0.3rem" }}>
+                          <div style={{ fontSize: "0.78rem", color: "#888", fontWeight: "bold" }}>→ Day {day}</div>
+                          {changes.map((c, i) => (
+                            <div key={i} style={{ fontSize: "0.78rem", padding: "0.1rem 0 0.1rem 0.75rem", color: "#aaa" }}>
+                              {c.sessionId.slice(0, 8)}...{" "}
+                              <span style={{ color: "#666" }}>
+                                from Day {c.before?.dayIndex} {c.before && new Date(c.before.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                {" → "}
+                                {c.after && new Date(c.after.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Dropped items with reasons */}
+                {(() => {
+                  const dropped = reflowPreview.changes.filter((c) => c.action === "DROPPED");
+                  if (dropped.length === 0) return null;
+                  return (
+                    <div style={{ marginBottom: "0.5rem" }}>
+                      <div style={{ fontSize: "0.8rem", color: "#ff4444", fontWeight: "bold", marginBottom: "0.25rem" }}>Dropped items:</div>
+                      {dropped.map((c, i) => {
+                        const warning = reflowPreview.warnings.find((w) => w.itemId === c.itemId);
+                        return (
+                          <div key={i} style={{ fontSize: "0.78rem", padding: "0.1rem 0 0.1rem 0.75rem", color: "#ff8888" }}>
+                            {c.sessionId.slice(0, 8)}...
+                            {warning && <span style={{ color: "#888" }}> — {warning.message}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Full change details */}
                 <details>
-                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#aaa" }}>Change details</summary>
+                  <summary style={{ cursor: "pointer", fontSize: "0.8rem", color: "#aaa" }}>All changes ({reflowPreview.changes.length})</summary>
                   <div style={{ marginTop: "0.25rem", maxHeight: 200, overflowY: "auto" }}>
                     {reflowPreview.changes.map((c, i) => (
                       <div key={i} style={{ fontSize: "0.78rem", padding: "0.15rem 0", borderBottom: "1px solid #222", display: "flex", gap: "0.5rem" }}>
@@ -730,7 +858,7 @@ export default function PlanPage() {
                         <a href={item.gcal_link} target="_blank" rel="noopener noreferrer" style={{ color: "#4285f4", fontSize: "0.85rem" }}>
                           + Google Cal
                         </a>
-                        {item.status === "SCHEDULED" && (
+                        {(item.status === "SCHEDULED" || item.status === "RESCHEDULED") && (
                           <>
                             <button disabled={isUpdating} onClick={() => handleItemStatus(item.id, "DONE")} style={smallBtnStyle("#00ff88")}>
                               Done
@@ -743,7 +871,7 @@ export default function PlanPage() {
                             </button>
                           </>
                         )}
-                        {item.id && item.status === "SCHEDULED" && (
+                        {item.id && (item.status === "SCHEDULED" || item.status === "RESCHEDULED") && (
                           <button disabled={isUpdating} onClick={() => handleToggleLock(item)} style={smallBtnStyle(item.locked ? "#ffaa00" : "#555")}>
                             {item.locked ? "Unlock" : "Lock"}
                           </button>

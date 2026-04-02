@@ -150,7 +150,8 @@ export async function POST(
 
   let auditId: string | null = null;
 
-  await prisma.$transaction(async (tx: typeof prisma) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await prisma.$transaction(async (tx: any) => {
     // Apply MOVED items
     for (const change of movedChanges) {
       const item = plan.items.find((i) => i.id === change.itemId)!;
