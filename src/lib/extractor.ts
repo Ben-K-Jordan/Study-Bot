@@ -53,7 +53,7 @@ async function extractPdf(filePath: string): Promise<ExtractionResult> {
  * Normalize whitespace: collapse runs of whitespace to single space,
  * preserve paragraph breaks (double newline).
  */
-export function normalizeWhitespace(text: string): string {
+function normalizeWhitespace(text: string): string {
   return text
     .replace(/\r\n/g, "\n")
     .replace(/[ \t]+/g, " ")

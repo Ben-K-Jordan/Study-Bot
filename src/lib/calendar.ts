@@ -1,6 +1,6 @@
 import { SessionMode } from "./validation";
 
-const MODE_LABELS: Record<SessionMode, string> = {
+export const MODE_LABELS: Record<string, string> = {
   RETRIEVAL: "Retrieval",
   INTERLEAVED_PRACTICE: "Interleaved Practice",
   ERROR_REPAIR: "Error Repair",

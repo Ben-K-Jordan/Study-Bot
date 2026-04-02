@@ -202,9 +202,9 @@ export async function createPlan(userId: string, input: unknown) {
           examName: parsed.exam_name,
           mode: item.block.mode,
           topicScope: item.block.topicScope,
-          objectives: item.block.objectives as unknown as undefined,
-          targetOutcome: item.block.targetOutcome as unknown as undefined,
-          breakProtocol: { type: parsed.break_protocol_default, cycles: 1 } as unknown as undefined,
+          objectives: item.block.objectives as object,
+          targetOutcome: item.block.targetOutcome as object,
+          breakProtocol: { type: parsed.break_protocol_default, cycles: 1 },
           plannedMinutes: item.block.plannedMinutes,
         },
       });
