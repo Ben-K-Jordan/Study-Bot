@@ -101,16 +101,19 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
   });
 
   it("avoids busy slots when use_google_availability is true", async () => {
-    // Block 09:00-13:00 on the first day — forces all day-0 items into afternoon
-    const today = new Date();
-    today.setHours(9, 0, 0, 0);
-    const busyEnd = new Date(today);
+    // Block 09:00-13:00 on day 1 (tomorrow) — forces all day-1 items into afternoon.
+    // We use tomorrow because the plan service sends timeMin=now(), and if the
+    // current time is past 13:00 today, the FakeClient would filter out a same-day busy.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    const busyEnd = new Date(tomorrow);
     busyEnd.setHours(13, 0, 0, 0);
 
     fakeClient.setBusy([
       {
         calendarId: "primary",
-        start: today.toISOString(),
+        start: tomorrow.toISOString(),
         end: busyEnd.toISOString(),
       },
     ]);
@@ -122,11 +125,11 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     expect(result.plan_id).toBeTruthy();
 
-    // All day-0 items must start at or after 13:00 (the busy period end)
-    const day0Items = result.items.filter((i: any) => i.day_index === 0);
+    // All day-1 items must start at or after 13:00 (the busy period end)
+    const day1Items = result.items.filter((i: any) => i.day_index === 1);
     const busyEndMs = busyEnd.getTime();
 
-    for (const item of day0Items) {
+    for (const item of day1Items) {
       const itemStart = new Date(item.start_time).getTime();
       expect(itemStart).toBeGreaterThanOrEqual(busyEndMs);
     }
