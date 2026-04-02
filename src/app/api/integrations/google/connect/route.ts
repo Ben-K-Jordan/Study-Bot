@@ -4,8 +4,10 @@ import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 
 const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/calendar.freebusy",
+  "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
 
 export async function GET(request: NextRequest) {

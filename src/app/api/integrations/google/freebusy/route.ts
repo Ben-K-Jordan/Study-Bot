@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getGoogleClient, type BusyInterval } from "@/lib/google/calendar-client";
+import { getGoogleClient, GoogleReconnectError, type BusyInterval } from "@/lib/google/calendar-client";
 import { mergeBusy, type TimeInterval } from "@/lib/google/free-slots";
 import { z } from "zod/v4";
 import { logger } from "@/lib/logger";
 
 const freebusySchema = z.object({
-  timeMin: z.string().min(1),
-  timeMax: z.string().min(1),
-  calendarIds: z.array(z.string()).optional(),
+  calendar_ids: z.array(z.string()).optional(),
+  time_min: z.string().min(1),
+  time_max: z.string().min(1),
 });
 
 export async function POST(request: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   const integration = await prisma.googleIntegration.findUnique({
     where: { userId },
   });
-  if (!integration) {
+  if (!integration || integration.status !== "CONNECTED") {
     return NextResponse.json({ error: "Google Calendar not connected" }, { status: 400 });
   }
 
@@ -32,40 +32,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  let parsed;
-  try {
-    parsed = freebusySchema.parse(body);
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Validation failed", issues: err.issues }, { status: 400 });
-    }
-    throw err;
+  const parsed = freebusySchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Validation failed", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const calendarIds = parsed.calendarIds?.length
-    ? parsed.calendarIds
-    : [integration.calendarIdSelected || "primary"];
+  // Default to user's busy calendar preferences
+  const calendarIds = parsed.data.calendar_ids?.length
+    ? parsed.data.calendar_ids
+    : integration.busyCalendarIds.split(",").filter(Boolean);
+
+  const startMs = Date.now();
+  logger.info("google.freebusy.started", { user_id: userId, calendar_count: calendarIds.length });
 
   try {
-    const ftsStart = Date.now();
     const client = getGoogleClient(userId);
     const busy: BusyInterval[] = await client.freebusyQuery({
-      timeMin: parsed.timeMin,
-      timeMax: parsed.timeMax,
+      timeMin: parsed.data.time_min,
+      timeMax: parsed.data.time_max,
       calendarIds,
     });
-    const ftsMs = Date.now() - ftsStart;
 
-    // Group by calendar
-    const calendarMap = new Map<string, { start: string; end: string }[]>();
-    for (const b of busy) {
-      if (!calendarMap.has(b.calendarId)) calendarMap.set(b.calendarId, []);
-      calendarMap.get(b.calendarId)!.push({ start: b.start, end: b.end });
-    }
+    const durationMs = Date.now() - startMs;
 
-    const calendars = Array.from(calendarMap.entries()).map(([calId, intervals]) => ({
-      calendarId: calId,
-      busy: intervals,
+    // Flatten to {start,end,calendar_id} per spec
+    const busyFlat = busy.map((b) => ({
+      start: b.start,
+      end: b.end,
+      calendar_id: b.calendarId,
     }));
 
     // Merged busy (across all calendars)
@@ -79,18 +73,33 @@ export async function POST(request: NextRequest) {
       end: new Date(m.end).toISOString(),
     }));
 
-    logger.info("freebusy.queried", {
+    logger.info("google.freebusy.completed", {
       user_id: userId,
       calendar_count: calendarIds.length,
       busy_count: busy.length,
-      fts_ms: ftsMs,
+      duration_ms: durationMs,
     });
 
     return NextResponse.json({
-      calendars,
+      busy: busyFlat,
+      tz: integration.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      // Legacy fields
+      calendars: Array.from(
+        busy.reduce((map, b) => {
+          if (!map.has(b.calendarId)) map.set(b.calendarId, []);
+          map.get(b.calendarId)!.push({ start: b.start, end: b.end });
+          return map;
+        }, new Map<string, { start: string; end: string }[]>()).entries(),
+      ).map(([calId, intervals]) => ({ calendarId: calId, busy: intervals })),
       merged_busy: mergedBusy,
     });
   } catch (err) {
+    if (err instanceof GoogleReconnectError) {
+      return NextResponse.json(
+        { error: "GOOGLE_RECONNECT_REQUIRED", message: "Please reconnect your Google account." },
+        { status: 409 },
+      );
+    }
     logger.error("google_freebusy_query_failed", { error: String(err) });
     return NextResponse.json({ error: "Failed to query Google Calendar" }, { status: 500 });
   }

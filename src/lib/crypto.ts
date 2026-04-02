@@ -11,8 +11,13 @@ const TAG_LEN = 16;
 const ALGO = "aes-256-gcm";
 
 function getKey(): Buffer {
-  const raw = process.env.GOOGLE_TOKEN_ENC_KEY;
-  if (!raw) throw new Error("GOOGLE_TOKEN_ENC_KEY env var is not set");
+  const raw = process.env.TOKEN_ENC_KEY || process.env.GOOGLE_TOKEN_ENC_KEY;
+  if (!raw) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("TOKEN_ENC_KEY env var is required in production");
+    }
+    throw new Error("TOKEN_ENC_KEY (or GOOGLE_TOKEN_ENC_KEY) env var is not set");
+  }
   // Accept hex (64 chars) or base64 (44 chars)
   if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
   const buf = Buffer.from(raw, "base64");

@@ -12,7 +12,7 @@
  * Robust: handles 404 (manual deletion), rate limits, partial failure.
  */
 import { prisma } from "@/lib/db";
-import { getGoogleClient, GoogleApiError, type CalendarEventInput } from "@/lib/google/calendar-client";
+import { getGoogleClient, GoogleApiError, GoogleReconnectError, type CalendarEventInput } from "@/lib/google/calendar-client";
 import { buildEventPayload } from "@/lib/google/event-builder";
 import { logger } from "@/lib/logger";
 
@@ -136,6 +136,10 @@ export async function publishPlanToGoogle(
     where: { userId },
   });
   if (!integration) return { error: "GOOGLE_NOT_CONNECTED", status: 409 };
+
+  if (integration.status === "DISCONNECTED") {
+    return { error: "GOOGLE_RECONNECT_REQUIRED", status: 409 };
+  }
 
   const calendarId = options.calendarId || integration.calendarIdSelected || "primary";
 
@@ -361,6 +365,8 @@ export async function publishPlanToGoogle(
       });
       logger.info("plan.publish.item", { plan_item_id: item.id, action: "CREATED" });
     } catch (err) {
+      // Reconnect errors should abort the entire publish
+      if (err instanceof GoogleReconnectError) throw err;
       const message = err instanceof Error ? err.message : String(err);
       const code = err instanceof GoogleApiError ? `GOOGLE_${err.status}` : "UNKNOWN";
       itemResults.push({
@@ -377,7 +383,14 @@ export async function publishPlanToGoogle(
     }
   });
 
-  await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+  try {
+    await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+  } catch (err) {
+    if (err instanceof GoogleReconnectError) {
+      return { error: "GOOGLE_RECONNECT_REQUIRED", status: 409 };
+    }
+    throw err;
+  }
 
   // 4) Compute status + write publication row
   const counts = {
@@ -464,6 +477,9 @@ export async function unpublishPlanFromGoogle(
     where: { userId },
   });
   if (!integration) return { error: "GOOGLE_NOT_CONNECTED", status: 409 };
+  if (integration.status === "DISCONNECTED") {
+    return { error: "GOOGLE_RECONNECT_REQUIRED", status: 409 };
+  }
 
   const publication = await prisma.planCalendarPublication.findUnique({
     where: { provider_planId: { provider: "GOOGLE", planId } },

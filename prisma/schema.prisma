@@ -358,16 +358,26 @@ model PlanItemExternalEvent {
 // ---- Google Calendar Integration ----
 
 model GoogleIntegration {
-  id                    String   @id @default(uuid())
-  userId                String   @unique @map("user_id")
-  accessTokenEncrypted  String?  @map("access_token_encrypted")
-  refreshTokenEncrypted String   @map("refresh_token_encrypted")
-  tokenExpiryMs         BigInt   @map("token_expiry_ms")
-  scopeString           String   @default("") @map("scope_string")
-  calendarIdSelected    String   @default("primary") @map("calendar_id_selected")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                      String    @id @default(uuid())
+  userId                  String    @unique @map("user_id")
+  status                  String    @default("CONNECTED") // CONNECTED | DISCONNECTED | ERROR
+  connectedEmail          String?   @map("connected_email")
+  accessTokenEncrypted    String?   @map("access_token_encrypted")
+  refreshTokenEncrypted   String?   @map("refresh_token_encrypted")
+  tokenExpiryMs           BigInt    @default(0) @map("token_expiry_ms")
+  scopeString             String    @default("") @map("scope_string")
+  calendarIdSelected      String    @default("primary") @map("calendar_id_selected")
+  busyCalendarIds         String    @default("primary") @map("busy_calendar_ids") // comma-separated
+  availabilityLookaheadDays Int     @default(14) @map("availability_lookahead_days")
+  timezone                String?
+  lastRefreshAt           DateTime? @map("last_refresh_at") @db.Timestamptz
+  lastErrorCode           String?   @map("last_error_code")
+  lastErrorMessage        String?   @map("last_error_message")
+  lastHealthyAt           DateTime? @map("last_healthy_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
+  @@index([status])
   @@map("google_integrations")
 }
 

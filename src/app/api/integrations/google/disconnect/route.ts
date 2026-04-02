@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!integration) {
-    return NextResponse.json({ disconnected: true });
+    return NextResponse.json({ status: "DISCONNECTED" });
   }
 
   // Best-effort revoke token at Google
@@ -30,7 +31,20 @@ export async function POST(request: NextRequest) {
     // Best-effort — ignore revoke failures
   }
 
-  await prisma.googleIntegration.delete({ where: { id: integration.id } });
+  // Mark DISCONNECTED and clear tokens (leave row for reconnect)
+  await prisma.googleIntegration.update({
+    where: { id: integration.id },
+    data: {
+      status: "DISCONNECTED",
+      accessTokenEncrypted: null,
+      refreshTokenEncrypted: null,
+      tokenExpiryMs: BigInt(0),
+      lastErrorCode: null,
+      lastErrorMessage: null,
+    },
+  });
 
-  return NextResponse.json({ disconnected: true });
+  logger.info("google.integration.disconnected", { user_id: userId });
+
+  return NextResponse.json({ status: "DISCONNECTED" });
 }
