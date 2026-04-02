@@ -18,6 +18,7 @@ let prisma: any;
 let createPlan: any;
 let publishPlanToGoogle: any;
 let unpublishPlanFromGoogle: any;
+let getPublishStatus: any;
 
 describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
   const userId = "test_user_gcal";
@@ -33,12 +34,15 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     const publishService = await import("@/services/publish");
     publishPlanToGoogle = publishService.publishPlanToGoogle;
     unpublishPlanFromGoogle = publishService.unpublishPlanFromGoogle;
+    getPublishStatus = publishService.getPublishStatus;
 
     // Inject fake client
     fakeClient = new FakeGoogleCalendarClient();
     setGoogleClientFactory(() => fakeClient);
 
     // Clean up any existing data for test user
+    await prisma.planItemExternalEvent.deleteMany({ where: { userId } });
+    await prisma.planCalendarPublication.deleteMany({ where: { userId } });
     await prisma.googleIntegration.deleteMany({ where: { userId } });
 
     // Create a fake Google integration
@@ -47,7 +51,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
         userId,
         refreshTokenEncrypted: "fake-encrypted-token",
         tokenExpiryMs: BigInt(Date.now() + 3600000),
-        scopeString: "https://www.googleapis.com/auth/calendar.readonly",
+        scopeString: "https://www.googleapis.com/auth/calendar",
         calendarIdSelected: "primary",
       },
     });
@@ -55,8 +59,9 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
   afterAll(async () => {
     resetGoogleClientFactory();
+    await prisma.planItemExternalEvent.deleteMany({ where: { userId } });
+    await prisma.planCalendarPublication.deleteMany({ where: { userId } });
     await prisma.googleIntegration.deleteMany({ where: { userId } });
-    // Clean up sessions and plans
     await prisma.studyPlanItem.deleteMany({ where: { plan: { userId } } });
     await prisma.studyPlan.deleteMany({ where: { userId } });
     await prisma.session.deleteMany({ where: { userId } });
@@ -65,6 +70,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
   beforeEach(() => {
     fakeClient.setBusy([]);
+    fakeClient.clearCallLog();
   });
 
   const basePlanInput = {
@@ -86,11 +92,12 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     break_protocol_default: "50_10",
   };
 
+  // ---- Plan creation tests ----
+
   it("creates a plan without google availability (baseline)", async () => {
     const result = await createPlan(userId, basePlanInput);
     expect(result.plan_id).toBeTruthy();
     expect(result.items.length).toBeGreaterThan(0);
-    // All items should have start/end times
     for (const item of result.items) {
       expect(item.start_time).toBeTruthy();
       expect(item.end_time).toBeTruthy();
@@ -107,9 +114,6 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
   });
 
   it("avoids busy slots when use_google_availability is true", async () => {
-    // Block 09:00-13:00 on day 1 (tomorrow) — forces all day-1 items into afternoon.
-    // We use tomorrow because the plan service sends timeMin=now(), and if the
-    // current time is past 13:00 today, the FakeClient would filter out a same-day busy.
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(9, 0, 0, 0);
@@ -131,7 +135,6 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     expect(result.plan_id).toBeTruthy();
 
-    // All day-1 items must start at or after 13:00 (the busy period end)
     const day1Items = result.items.filter((i: any) => i.day_index === 1);
     const busyEndMs = busyEnd.getTime();
 
@@ -143,7 +146,6 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
   it("falls back to regular scheduling when integration missing", async () => {
     const otherUserId = "test_user_gcal_no_integration";
-    // No integration exists for this user — should still create plan
     const result = await createPlan(otherUserId, {
       ...basePlanInput,
       use_google_availability: true,
@@ -151,11 +153,12 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     expect(result.plan_id).toBeTruthy();
     expect(result.items.length).toBeGreaterThan(0);
 
-    // Clean up
     await prisma.studyPlanItem.deleteMany({ where: { plan: { userId: otherUserId } } });
     await prisma.studyPlan.deleteMany({ where: { userId: otherUserId } });
     await prisma.session.deleteMany({ where: { userId: otherUserId } });
   });
+
+  // ---- FakeClient unit tests ----
 
   it("FakeGoogleCalendarClient returns filtered busy intervals", async () => {
     const busy: BusyInterval[] = [
@@ -171,7 +174,6 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
       calendarIds: ["primary"],
     });
 
-    // Should only return primary calendar events within the time range
     expect(result).toHaveLength(1);
     expect(result[0].calendarId).toBe("primary");
     expect(result[0].start).toBe("2026-04-01T10:00:00Z");
@@ -185,57 +187,161 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
   // ---- Publish / Unpublish tests ----
 
-  it("publishes plan events to Google Calendar", async () => {
+  it("publishes plan events to Google Calendar with per-item results", async () => {
     const plan = await createPlan(userId, basePlanInput);
     const result = await publishPlanToGoogle(userId, plan.plan_id);
 
     expect(result.data).toBeDefined();
-    expect(result.data.published).toBe(true);
-    expect(result.data.events_created).toBeGreaterThan(0);
-    expect(result.data.events_updated).toBe(0);
+    expect(result.data.status).toBe("PUBLISHED");
+    expect(result.data.provider).toBe("GOOGLE");
+    expect(result.data.calendar_id).toBe("primary");
+    expect(result.data.results.created).toBeGreaterThan(0);
+    expect(result.data.results.failed).toBe(0);
+    expect(result.data.items.length).toBe(plan.items.length);
 
-    // Verify googleEventId was stored
+    // Each item should have an event_id and html_link
+    for (const item of result.data.items) {
+      expect(item.action).toBe("CREATED");
+      expect(item.event_id).toBeTruthy();
+      expect(item.html_link).toBeTruthy();
+    }
+
+    // Verify PlanItemExternalEvent rows created
+    const mappings = await prisma.planItemExternalEvent.findMany({
+      where: { planId: plan.plan_id },
+    });
+    expect(mappings.length).toBe(plan.items.length);
+    for (const m of mappings) {
+      expect(m.eventId).toBeTruthy();
+      expect(m.lastSyncedHash).toHaveLength(64);
+    }
+
+    // Verify PlanCalendarPublication row
+    const pub = await prisma.planCalendarPublication.findUnique({
+      where: { provider_planId: { provider: "GOOGLE", planId: plan.plan_id } },
+    });
+    expect(pub).toBeTruthy();
+    expect(pub.status).toBe("PUBLISHED");
+  });
+
+  it("idempotent republish: unchanged items skip API calls", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+
+    // First publish
+    const first = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(first.data.results.created).toBeGreaterThan(0);
+
+    // Clear call log
+    fakeClient.clearCallLog();
+
+    // Second publish — all items should be UNCHANGED (same hash)
+    const second = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(second.data.results.unchanged).toBe(first.data.results.created);
+    expect(second.data.results.created).toBe(0);
+    expect(second.data.results.updated).toBe(0);
+
+    // Verify no createEvent or updateEvent calls were made
+    const createCalls = fakeClient.callLog.filter((c) => c.method === "createEvent");
+    const updateCalls = fakeClient.callLog.filter((c) => c.method === "updateEvent");
+    expect(createCalls.length).toBe(0);
+    expect(updateCalls.length).toBe(0);
+  });
+
+  it("republish with changed plan times updates existing events", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    await publishPlanToGoogle(userId, plan.plan_id);
+
+    // Modify start times in the database to simulate plan change
     const items = await prisma.studyPlanItem.findMany({
       where: { planId: plan.plan_id },
     });
     for (const item of items) {
-      expect(item.googleEventId).toBeTruthy();
-      expect(item.googleCalendarId).toBe("primary");
+      const newStart = new Date(item.startTime);
+      newStart.setHours(newStart.getHours() + 1);
+      const newEnd = new Date(item.endTime);
+      newEnd.setHours(newEnd.getHours() + 1);
+      await prisma.studyPlanItem.update({
+        where: { id: item.id },
+        data: { startTime: newStart, endTime: newEnd },
+      });
     }
 
-    // Verify fake client has events
-    expect(fakeClient.getEvents().length).toBeGreaterThan(0);
+    fakeClient.clearCallLog();
+
+    // Republish — items should be UPDATED (hash changed)
+    const result = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(result.data.results.updated).toBe(items.length);
+    expect(result.data.results.created).toBe(0);
+
+    const updateCalls = fakeClient.callLog.filter((c) => c.method === "updateEvent");
+    expect(updateCalls.length).toBe(items.length);
   });
 
-  it("re-publishing is idempotent (updates, no duplicates)", async () => {
+  it("handles manually deleted events: recreates and updates mapping", async () => {
     const plan = await createPlan(userId, basePlanInput);
+    const pubResult = await publishPlanToGoogle(userId, plan.plan_id);
 
-    // Publish once
-    const first = await publishPlanToGoogle(userId, plan.plan_id);
-    const createdCount = first.data.events_created;
+    // Simulate manual deletion of first event in Google
+    const firstEventId = pubResult.data.items[0].event_id!;
+    fakeClient.simulateManualDelete(firstEventId);
 
-    // Publish again — should update, not create
-    const second = await publishPlanToGoogle(userId, plan.plan_id);
-    expect(second.data.events_created).toBe(0);
-    expect(second.data.events_updated).toBe(createdCount);
+    // Modify times to trigger update attempt
+    const items = await prisma.studyPlanItem.findMany({
+      where: { planId: plan.plan_id },
+      orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }],
+    });
+    const newStart = new Date(items[0].startTime);
+    newStart.setMinutes(newStart.getMinutes() + 5);
+    await prisma.studyPlanItem.update({
+      where: { id: items[0].id },
+      data: { startTime: newStart },
+    });
+
+    // Republish — should recreate the deleted event
+    const result = await publishPlanToGoogle(userId, plan.plan_id);
+    const firstItem = result.data.items.find((i: any) => i.plan_item_id === items[0].id);
+    expect(firstItem).toBeTruthy();
+    expect(firstItem!.action).toBe("CREATED");
+    expect(firstItem!.event_id).toBeTruthy();
+    expect(firstItem!.event_id).not.toBe(firstEventId); // New event ID
   });
 
-  it("unpublishes plan events from Google Calendar", async () => {
+  it("unpublishes plan events and clears mappings", async () => {
     const plan = await createPlan(userId, basePlanInput);
     await publishPlanToGoogle(userId, plan.plan_id);
 
     const result = await unpublishPlanFromGoogle(userId, plan.plan_id);
     expect(result.data).toBeDefined();
-    expect(result.data.published).toBe(false);
-    expect(result.data.events_deleted).toBeGreaterThan(0);
+    expect(result.data.status).toBe("UNPUBLISHED");
+    expect(result.data.deleted).toBeGreaterThan(0);
+    expect(result.data.failed).toBe(0);
 
-    // Verify googleEventId was cleared
-    const items = await prisma.studyPlanItem.findMany({
+    // Verify mappings are cleared
+    const mappings = await prisma.planItemExternalEvent.findMany({
       where: { planId: plan.plan_id },
     });
-    for (const item of items) {
-      expect(item.googleEventId).toBeNull();
-      expect(item.googleCalendarId).toBeNull();
+    expect(mappings.length).toBe(0);
+
+    // Verify publication status
+    const pub = await prisma.planCalendarPublication.findUnique({
+      where: { provider_planId: { provider: "GOOGLE", planId: plan.plan_id } },
+    });
+    expect(pub.status).toBe("UNPUBLISHED");
+  });
+
+  it("get publish status returns correct data", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    await publishPlanToGoogle(userId, plan.plan_id);
+
+    const result = await getPublishStatus(userId, plan.plan_id);
+    expect(result.data).toBeDefined();
+    expect(result.data.publication).toBeTruthy();
+    expect(result.data.publication!.status).toBe("PUBLISHED");
+    expect(result.data.publication!.calendar_id).toBe("primary");
+    expect(result.data.items.length).toBe(plan.items.length);
+    for (const item of result.data.items) {
+      expect(item.event_id).toBeTruthy();
+      expect(item.last_synced_hash).toHaveLength(64);
     }
   });
 
@@ -250,15 +356,36 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     expect(result.error).toBe("forbidden");
   });
 
-  it("publish returns google_not_connected when no integration", async () => {
+  it("publish returns GOOGLE_NOT_CONNECTED when no integration", async () => {
     const otherUserId = "test_user_gcal_no_google";
     const plan = await createPlan(otherUserId, basePlanInput);
     const result = await publishPlanToGoogle(otherUserId, plan.plan_id);
-    expect(result.error).toBe("google_not_connected");
+    expect(result.error).toBe("GOOGLE_NOT_CONNECTED");
 
     // Clean up
     await prisma.studyPlanItem.deleteMany({ where: { plan: { userId: otherUserId } } });
     await prisma.studyPlan.deleteMany({ where: { userId: otherUserId } });
     await prisma.session.deleteMany({ where: { userId: otherUserId } });
+  });
+
+  it("dry_run computes actions without calling Google", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    fakeClient.clearCallLog();
+
+    const result = await publishPlanToGoogle(userId, plan.plan_id, { dryRun: true });
+    expect(result.data).toBeDefined();
+    expect(result.data.results.created).toBeGreaterThan(0);
+
+    // No Google API calls should have been made
+    const apiCalls = fakeClient.callLog.filter((c) =>
+      ["createEvent", "updateEvent", "deleteEvent"].includes(c.method),
+    );
+    expect(apiCalls.length).toBe(0);
+
+    // No mappings should be created
+    const mappings = await prisma.planItemExternalEvent.findMany({
+      where: { planId: plan.plan_id },
+    });
+    expect(mappings.length).toBe(0);
   });
 });
