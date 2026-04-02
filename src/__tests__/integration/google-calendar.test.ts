@@ -16,6 +16,8 @@ const hasDb = !!process.env.DATABASE_URL;
 
 let prisma: any;
 let createPlan: any;
+let publishPlanToGoogle: any;
+let unpublishPlanFromGoogle: any;
 
 describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
   const userId = "test_user_gcal";
@@ -27,6 +29,10 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     const planService = await import("@/services/plan");
     createPlan = planService.createPlan;
+
+    const publishService = await import("@/services/publish");
+    publishPlanToGoogle = publishService.publishPlanToGoogle;
+    unpublishPlanFromGoogle = publishService.unpublishPlanFromGoogle;
 
     // Inject fake client
     fakeClient = new FakeGoogleCalendarClient();
@@ -175,5 +181,84 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     const calendars = await fakeClient.listCalendars();
     expect(calendars).toHaveLength(1);
     expect(calendars[0].id).toBe("primary");
+  });
+
+  // ---- Publish / Unpublish tests ----
+
+  it("publishes plan events to Google Calendar", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    const result = await publishPlanToGoogle(userId, plan.plan_id);
+
+    expect(result.data).toBeDefined();
+    expect(result.data.published).toBe(true);
+    expect(result.data.events_created).toBeGreaterThan(0);
+    expect(result.data.events_updated).toBe(0);
+
+    // Verify googleEventId was stored
+    const items = await prisma.studyPlanItem.findMany({
+      where: { planId: plan.plan_id },
+    });
+    for (const item of items) {
+      expect(item.googleEventId).toBeTruthy();
+      expect(item.googleCalendarId).toBe("primary");
+    }
+
+    // Verify fake client has events
+    expect(fakeClient.getEvents().length).toBeGreaterThan(0);
+  });
+
+  it("re-publishing is idempotent (updates, no duplicates)", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+
+    // Publish once
+    const first = await publishPlanToGoogle(userId, plan.plan_id);
+    const createdCount = first.data.events_created;
+
+    // Publish again — should update, not create
+    const second = await publishPlanToGoogle(userId, plan.plan_id);
+    expect(second.data.events_created).toBe(0);
+    expect(second.data.events_updated).toBe(createdCount);
+  });
+
+  it("unpublishes plan events from Google Calendar", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    await publishPlanToGoogle(userId, plan.plan_id);
+
+    const result = await unpublishPlanFromGoogle(userId, plan.plan_id);
+    expect(result.data).toBeDefined();
+    expect(result.data.published).toBe(false);
+    expect(result.data.events_deleted).toBeGreaterThan(0);
+
+    // Verify googleEventId was cleared
+    const items = await prisma.studyPlanItem.findMany({
+      where: { planId: plan.plan_id },
+    });
+    for (const item of items) {
+      expect(item.googleEventId).toBeNull();
+      expect(item.googleCalendarId).toBeNull();
+    }
+  });
+
+  it("publish returns not_found for missing plan", async () => {
+    const result = await publishPlanToGoogle(userId, "nonexistent_plan");
+    expect(result.error).toBe("not_found");
+  });
+
+  it("publish returns forbidden for other user's plan", async () => {
+    const plan = await createPlan(userId, basePlanInput);
+    const result = await publishPlanToGoogle("other_user", plan.plan_id);
+    expect(result.error).toBe("forbidden");
+  });
+
+  it("publish returns google_not_connected when no integration", async () => {
+    const otherUserId = "test_user_gcal_no_google";
+    const plan = await createPlan(otherUserId, basePlanInput);
+    const result = await publishPlanToGoogle(otherUserId, plan.plan_id);
+    expect(result.error).toBe("google_not_connected");
+
+    // Clean up
+    await prisma.studyPlanItem.deleteMany({ where: { plan: { userId: otherUserId } } });
+    await prisma.studyPlan.deleteMany({ where: { userId: otherUserId } });
+    await prisma.session.deleteMany({ where: { userId: otherUserId } });
   });
 });

@@ -284,13 +284,15 @@ model AttemptCitation {
 }
 
 model StudyPlanItem {
-  id        String    @id @default(uuid())
-  planId    String    @map("plan_id")
-  sessionId String    @map("session_id")
-  dayIndex  Int       @map("day_index")
-  startTime DateTime  @map("start_time") @db.Timestamptz
-  endTime   DateTime  @map("end_time") @db.Timestamptz
-  createdAt DateTime  @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  planId          String    @map("plan_id")
+  sessionId       String    @map("session_id")
+  dayIndex        Int       @map("day_index")
+  startTime       DateTime  @map("start_time") @db.Timestamptz
+  endTime         DateTime  @map("end_time") @db.Timestamptz
+  googleEventId   String?   @map("google_event_id")
+  googleCalendarId String?  @map("google_calendar_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   plan      StudyPlan @relation(fields: [planId], references: [planId])
 

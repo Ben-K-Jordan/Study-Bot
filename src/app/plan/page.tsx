@@ -15,10 +15,14 @@ interface PlanItem {
   topic_scope: string;
   planned_minutes: number;
   calendar: { title: string; description: string };
+  gcal_link: string;
 }
 
 interface PlanResult {
   plan_id: string;
+  ics_download_url: string;
+  feed_url: string;
+  webcal_url: string;
   items: PlanItem[];
 }
 
@@ -42,6 +46,8 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PlanResult | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState(false);
 
   // Check if Google Calendar is connected
   useEffect(() => {
@@ -69,6 +75,31 @@ export default function PlanPage() {
       next[index] = { ...next[index], [field]: value };
       return next;
     });
+  };
+
+  const handlePublish = async () => {
+    if (!result) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const endpoint = published
+        ? `/api/plans/${result.plan_id}/unpublish/google`
+        : `/api/plans/${result.plan_id}/publish/google`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "X-User-Id": getOrCreateUserId() },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to publish");
+        return;
+      }
+      setPublished(!published);
+    } catch {
+      setError("Network error");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -366,22 +397,43 @@ export default function PlanPage() {
               <span style={{ color: "#888" }}>Plan ID: </span>
               <span style={{ color: "#00ff88" }}>{result.plan_id}</span>
             </div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <a
-                href={`/api/plans/${result.plan_id}/ics`}
-                style={{
-                  background: "#00ff88",
-                  color: "#000",
-                  padding: "0.5rem 1rem",
-                  textDecoration: "none",
-                  fontFamily: "monospace",
-                  fontWeight: "bold",
-                }}
+                href={result.webcal_url}
+                style={actionBtnStyle}
+              >
+                Subscribe
+              </a>
+              <a
+                href={result.ics_download_url}
+                style={actionBtnStyle}
               >
                 Download .ics
               </a>
+              {googleConnected && (
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing}
+                  style={{
+                    background: published ? "#ff4444" : "#4285f4",
+                    color: "#fff",
+                    border: "none",
+                    padding: "0.5rem 1rem",
+                    fontFamily: "monospace",
+                    fontWeight: "bold",
+                    cursor: publishing ? "wait" : "pointer",
+                    opacity: publishing ? 0.6 : 1,
+                  }}
+                >
+                  {publishing
+                    ? "..."
+                    : published
+                      ? "Unpublish from Google"
+                      : "Publish to Google Cal"}
+                </button>
+              )}
               <button
-                onClick={() => setResult(null)}
+                onClick={() => { setResult(null); setPublished(false); }}
                 style={{
                   background: "#333",
                   color: "#e0e0e0",
@@ -455,19 +507,24 @@ export default function PlanPage() {
                     >
                       Topics: {item.topic_scope}
                     </div>
-                    <a
-                      href={item.session_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        color: "#00ff88",
-                        fontSize: "0.85rem",
-                        marginTop: "0.3rem",
-                        display: "inline-block",
-                      }}
-                    >
-                      Open session →
-                    </a>
+                    <div style={{ display: "flex", gap: "1rem", marginTop: "0.3rem" }}>
+                      <a
+                        href={item.session_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: "#00ff88", fontSize: "0.85rem" }}
+                      >
+                        Open session →
+                      </a>
+                      <a
+                        href={item.gcal_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: "#4285f4", fontSize: "0.85rem" }}
+                      >
+                        + Google Cal
+                      </a>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -478,6 +535,15 @@ export default function PlanPage() {
     </div>
   );
 }
+
+const actionBtnStyle: React.CSSProperties = {
+  background: "#00ff88",
+  color: "#000",
+  padding: "0.5rem 1rem",
+  textDecoration: "none",
+  fontFamily: "monospace",
+  fontWeight: "bold",
+};
 
 const inputStyle: React.CSSProperties = {
   background: "#111",
