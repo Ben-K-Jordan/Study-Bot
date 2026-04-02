@@ -617,5 +617,8 @@ export function resetGoogleClientFactory() {
 
 export function getGoogleClient(userId: string): GoogleCalendarClient {
   if (_clientFactory) return _clientFactory(userId);
+  if (process.env.GOOGLE_PROVIDER === "fake") {
+    return new FakeGoogleCalendarClient();
+  }
   return new RealGoogleCalendarClient(userId);
 }
