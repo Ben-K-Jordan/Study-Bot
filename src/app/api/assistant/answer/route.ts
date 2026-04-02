@@ -30,14 +30,16 @@ interface AnswerOutput {
   citations: { chunk_id: string; reason: string; quote_snippet: string }[];
 }
 
+const EMBED_MODEL = process.env.AI_MODEL_EMBED || "text-embedding-3-small";
+const ANSWER_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
+
 function getProvider(): AiProvider {
   const name = process.env.AI_PROVIDER || "mock";
   if (name === "mock") return new MockProvider();
   throw new Error(`Unknown AI_PROVIDER: ${name}`);
 }
 
-const EMBED_MODEL = process.env.AI_MODEL_EMBED || "text-embedding-3-small";
-const ANSWER_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
+const provider = getProvider();
 
 export async function POST(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -61,7 +63,6 @@ export async function POST(request: NextRequest) {
   }
 
   const { question, course_name, exam_name, verbosity, retrieval_mode, top_k } = parsed.data;
-  const provider = getProvider();
   const ctx: GatewayContext = { userId, provider };
 
   try {

@@ -3,7 +3,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { getMasterySummary, getDueObjectives } from "@/lib/mastery";
+import { getMasterySummary } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
@@ -18,10 +18,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [summary, dueObjectives] = await Promise.all([
-      getMasterySummary(userId, courseName),
-      getDueObjectives(userId, courseName, 10),
-    ]);
+    const summary = await getMasterySummary(userId, courseName);
+
+    // Derive top-10 due objectives from the already-fetched list (avoids a second query)
+    const dueObjectives = summary.objectives
+      .filter((o) => o.is_due)
+      .sort((a, b) => (a.next_due_at ?? "").localeCompare(b.next_due_at ?? ""))
+      .slice(0, 10);
 
     return NextResponse.json({
       course_name: courseName,
@@ -29,10 +32,10 @@ export async function GET(request: NextRequest) {
       mastered: summary.mastered,
       due: summary.due,
       due_objectives: dueObjectives.map((o) => ({
-        objective_key: o.objectiveKey,
-        next_due_at: o.nextDueAt?.toISOString() ?? null,
-        last_accuracy: o.lastAccuracy,
-        interval_days: o.intervalDays,
+        objective_key: o.objective_key,
+        next_due_at: o.next_due_at,
+        last_accuracy: o.last_accuracy,
+        interval_days: o.interval_days,
       })),
       objectives: summary.objectives,
     });

@@ -41,17 +41,18 @@ export async function handleEmbedChunkBatch(
     return;
   }
 
+  const fetchedIds = chunks.map((c) => c.id);
+
   // Mark as IN_PROGRESS
   await prisma.contentChunk.updateMany({
-    where: { id: { in: chunks.map((c) => c.id) } },
+    where: { id: { in: fetchedIds } },
     data: { embeddingStatus: "IN_PROGRESS" },
   });
 
   const ctx: GatewayContext = { userId, provider };
-  const texts = chunks.map((c) => c.text);
 
   try {
-    const result = await embed(ctx, texts, EMBED_MODEL, { skipBudget: true });
+    const result = await embed(ctx, chunks.map((c) => c.text), EMBED_MODEL, { skipBudget: true });
 
     // Store embeddings using raw SQL (pgvector)
     for (let i = 0; i < chunks.length; i++) {
@@ -75,9 +76,9 @@ export async function handleEmbedChunkBatch(
   } catch (err) {
     // Mark chunks as failed so they can be retried
     await prisma.contentChunk.updateMany({
-      where: { id: { in: chunks.map((c) => c.id) } },
+      where: { id: { in: fetchedIds } },
       data: { embeddingStatus: "FAILED" },
     });
-    throw err; // Let the worker handle retry logic
+    throw err;
   }
 }
