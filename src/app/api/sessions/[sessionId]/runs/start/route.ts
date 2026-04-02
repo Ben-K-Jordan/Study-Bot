@@ -45,7 +45,7 @@ export async function POST(
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Failed to start run:", err);
+    logger.error("run_start_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

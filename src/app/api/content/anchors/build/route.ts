@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { buildObjectiveAnchors } from "@/services/anchors";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 const buildAnchorsSchema = z.object({
   course_name: z.string().min(1),
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json(result);
   } catch (err) {
-    console.error("Failed to build anchors:", err);
+    logger.error("build_anchors_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

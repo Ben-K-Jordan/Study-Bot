@@ -24,7 +24,7 @@ export async function GET(
     });
     return NextResponse.json(result);
   } catch (err) {
-    console.error("Failed to generate feedback:", err);
+    logger.error("generate_feedback_failed", { error: String(err) });
     return NextResponse.json(
       { status: "UNAVAILABLE", excerpts: [] },
       { status: 200 }

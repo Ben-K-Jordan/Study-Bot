@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { searchChunks } from "@/lib/search";
 import { searchContentSchema } from "@/lib/validation-content";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.error("Search failed:", err);
+    logger.error("content_search_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

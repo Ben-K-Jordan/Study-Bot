@@ -176,7 +176,7 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
   );
 
   // Track remaining minutes per day
-  const dayRemaining = availability.map((a, i) =>
+  const dayRemaining = availability.map((a) =>
     Math.min(dailyCap, availableMinutes(a))
   );
 

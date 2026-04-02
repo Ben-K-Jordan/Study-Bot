@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createEvidenceCardSchema } from "@/lib/validation-content";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 export async function POST(
   request: NextRequest,
@@ -61,7 +62,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    console.error("Create evidence card failed:", err);
+    logger.error("create_evidence_card_failed", { error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

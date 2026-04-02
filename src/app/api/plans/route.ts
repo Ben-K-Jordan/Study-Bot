@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { createPlan } from "@/services/plan";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    console.error("Failed to create plan:", err);
+    logger.error("create_plan_failed", { error: String(err) });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
