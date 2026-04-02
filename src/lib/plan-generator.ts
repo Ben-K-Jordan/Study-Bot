@@ -14,7 +14,7 @@ export interface PlanBlock {
   };
 }
 
-export interface PlanGeneratorInput {
+interface PlanGeneratorInput {
   objectives: string[];
   dailyCap: number;
   breakProtocol: string;

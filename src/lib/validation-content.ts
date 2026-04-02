@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 
 // ---- Content Documents ----
 
-export const CONTENT_NAMESPACES = ["COURSE", "RESEARCH"] as const;
+const CONTENT_NAMESPACES = ["COURSE", "RESEARCH"] as const;
 
 export const uploadDocumentSchema = z
   .object({
@@ -19,8 +19,6 @@ export const uploadDocumentSchema = z
     { message: "course_name is required for COURSE namespace" }
   );
 
-export type UploadDocumentInput = z.infer<typeof uploadDocumentSchema>;
-
 export const searchContentSchema = z.object({
   q: z.string().min(1, "Search query is required"),
   namespace: z.enum(CONTENT_NAMESPACES),
@@ -28,8 +26,6 @@ export const searchContentSchema = z.object({
   exam_name: z.string().optional(),
   top_k: z.number().int().min(1).max(10).default(5),
 });
-
-export type SearchContentInput = z.infer<typeof searchContentSchema>;
 
 export const listDocumentsSchema = z.object({
   namespace: z.enum(CONTENT_NAMESPACES).optional(),
@@ -39,15 +35,13 @@ export const listDocumentsSchema = z.object({
 
 // ---- Practice Bank ----
 
-export const QUESTION_KINDS = ["SHORT_ANSWER", "MCQ", "CODING"] as const;
+const QUESTION_KINDS = ["SHORT_ANSWER", "MCQ", "CODING"] as const;
 
 export const createPracticeSetSchema = z.object({
   course_name: z.string().min(1, "course_name is required"),
   exam_name: z.string().optional(),
   title: z.string().min(1, "title is required"),
 });
-
-export type CreatePracticeSetInput = z.infer<typeof createPracticeSetSchema>;
 
 export const practiceQuestionSchema = z.object({
   kind: z.enum(QUESTION_KINDS),
@@ -61,11 +55,9 @@ export const importQuestionsSchema = z.object({
   questions: z.array(practiceQuestionSchema).min(1, "At least one question required"),
 });
 
-export type ImportQuestionsInput = z.infer<typeof importQuestionsSchema>;
-
 // ---- Evidence (SSKB) ----
 
-export const EVIDENCE_STRENGTHS = ["WEAK", "MODERATE", "STRONG"] as const;
+const EVIDENCE_STRENGTHS = ["WEAK", "MODERATE", "STRONG"] as const;
 
 export const createEvidencePaperSchema = z.object({
   title: z.string().min(1, "title is required"),
@@ -76,8 +68,6 @@ export const createEvidencePaperSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export type CreateEvidencePaperInput = z.infer<typeof createEvidencePaperSchema>;
-
 export const createEvidenceCardSchema = z.object({
   claim: z.string().min(1, "claim is required"),
   recommendation: z.string().min(1, "recommendation is required"),
@@ -85,5 +75,3 @@ export const createEvidenceCardSchema = z.object({
   strength: z.enum(EVIDENCE_STRENGTHS),
   tags: z.array(z.string()).optional(),
 });
-
-export type CreateEvidenceCardInput = z.infer<typeof createEvidenceCardSchema>;
