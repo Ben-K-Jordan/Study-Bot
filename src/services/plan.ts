@@ -7,6 +7,7 @@ import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
 import { getGoogleClient } from "@/lib/google/calendar-client";
 import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/google/free-slots";
+import { buildGoogleCalendarLink } from "@/lib/gcal-link";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -246,8 +247,15 @@ export async function createPlan(userId: string, input: unknown) {
     items_count: items.length,
   });
 
+  const baseUrl = getBaseUrl();
+  const feedUrl = `${baseUrl}/api/plans/${planId}/feed`;
+  const webcalUrl = feedUrl.replace(/^https?:\/\//, "webcal://");
+
   return {
     plan_id: planId,
+    ics_download_url: `${baseUrl}/api/plans/${planId}/ics`,
+    feed_url: feedUrl,
+    webcal_url: webcalUrl,
     items: items.map((item) => ({
       day_index: item.dayIndex,
       start_time: item.startTime.toISOString(),
@@ -258,6 +266,12 @@ export async function createPlan(userId: string, input: unknown) {
       topic_scope: item.block.topicScope,
       planned_minutes: item.block.plannedMinutes,
       calendar: item.calendar,
+      gcal_link: buildGoogleCalendarLink({
+        title: item.calendar.title,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        description: item.calendar.description,
+      }),
     })),
   };
 }
@@ -278,10 +292,16 @@ export async function getPlan(userId: string, planId: string) {
   });
   const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
 
+  const base = getBaseUrl();
+  const feedUrl = `${base}/api/plans/${plan.planId}/feed`;
+
   return {
     data: {
       plan_id: plan.planId,
       user_id: plan.userId,
+      ics_download_url: `${base}/api/plans/${plan.planId}/ics`,
+      feed_url: feedUrl,
+      webcal_url: feedUrl.replace(/^https?:\/\//, "webcal://"),
       course_name: plan.courseName,
       exam_name: plan.examName,
       exam_date: plan.examDate.toISOString().split("T")[0],
@@ -315,6 +335,23 @@ export async function getPlan(userId: string, planId: string) {
                   breaks: session.breakProtocol as Record<string, unknown> | null,
                 }),
               }
+            : null,
+          gcal_link: session
+            ? buildGoogleCalendarLink({
+                title: buildCalendarTitle({
+                  courseName: session.courseName,
+                  examName: session.examName,
+                  mode: session.mode as SessionMode,
+                  topicScope: session.topicScope,
+                }),
+                startTime: item.startTime,
+                endTime: item.endTime,
+                description: buildCalendarDescription({
+                  outcome: session.targetOutcome as Record<string, unknown> | null,
+                  sessionUrl: `${getBaseUrl()}/s/${item.sessionId}`,
+                  breaks: session.breakProtocol as Record<string, unknown> | null,
+                }),
+              })
             : null,
         };
       }),

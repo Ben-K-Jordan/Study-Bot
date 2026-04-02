@@ -28,11 +28,30 @@ export interface FreebusyInput {
   timeZone?: string;
 }
 
+export interface CalendarEventInput {
+  calendarId: string;
+  summary: string;
+  description?: string;
+  start: string; // ISO
+  end: string;   // ISO
+  extendedProperties?: Record<string, string>;
+}
+
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  start: string;
+  end: string;
+}
+
 // ---- Interface ----
 
 export interface GoogleCalendarClient {
   listCalendars(): Promise<CalendarEntry[]>;
   freebusyQuery(input: FreebusyInput): Promise<BusyInterval[]>;
+  createEvent(input: CalendarEventInput): Promise<CalendarEvent>;
+  updateEvent(calendarId: string, eventId: string, input: Partial<CalendarEventInput>): Promise<CalendarEvent>;
+  deleteEvent(calendarId: string, eventId: string): Promise<void>;
 }
 
 // ---- Real Implementation ----
@@ -143,6 +162,66 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     }
     return intervals;
   }
+
+  async createEvent(input: CalendarEventInput): Promise<CalendarEvent> {
+    const token = await this.getAccessToken();
+    const body: Record<string, unknown> = {
+      summary: input.summary,
+      description: input.description,
+      start: { dateTime: input.start },
+      end: { dateTime: input.end },
+      transparency: "opaque",
+      reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 10 }] },
+    };
+    if (input.extendedProperties) {
+      body.extendedProperties = { private: input.extendedProperties };
+    }
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(input.calendarId)}/events?fields=id,summary,start,end`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error(`CreateEvent failed: ${res.status}`);
+    const data = await res.json();
+    return { id: data.id, summary: data.summary, start: data.start?.dateTime ?? "", end: data.end?.dateTime ?? "" };
+  }
+
+  async updateEvent(calendarId: string, eventId: string, input: Partial<CalendarEventInput>): Promise<CalendarEvent> {
+    const token = await this.getAccessToken();
+    const body: Record<string, unknown> = {};
+    if (input.summary) body.summary = input.summary;
+    if (input.description) body.description = input.description;
+    if (input.start) body.start = { dateTime: input.start };
+    if (input.end) body.end = { dateTime: input.end };
+    if (input.extendedProperties) body.extendedProperties = { private: input.extendedProperties };
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,summary,start,end`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error(`UpdateEvent failed: ${res.status}`);
+    const data = await res.json();
+    return { id: data.id, summary: data.summary, start: data.start?.dateTime ?? "", end: data.end?.dateTime ?? "" };
+  }
+
+  async deleteEvent(calendarId: string, eventId: string): Promise<void> {
+    const token = await this.getAccessToken();
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    if (!res.ok && res.status !== 410) throw new Error(`DeleteEvent failed: ${res.status}`);
+  }
 }
 
 // ---- Fake Implementation (for tests) ----
@@ -176,6 +255,34 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
 
   setBusy(busy: BusyInterval[]) {
     this.busy = busy;
+  }
+
+  // ---- Event CRUD (fake) ----
+  private events: Map<string, CalendarEvent & { calendarId: string }> = new Map();
+  private nextId = 1;
+
+  async createEvent(input: CalendarEventInput): Promise<CalendarEvent> {
+    const id = `fake_event_${this.nextId++}`;
+    const event = { id, summary: input.summary, start: input.start, end: input.end, calendarId: input.calendarId };
+    this.events.set(id, event);
+    return { id, summary: input.summary, start: input.start, end: input.end };
+  }
+
+  async updateEvent(_calendarId: string, eventId: string, input: Partial<CalendarEventInput>): Promise<CalendarEvent> {
+    const existing = this.events.get(eventId);
+    if (!existing) throw new Error("Event not found");
+    if (input.summary) existing.summary = input.summary;
+    if (input.start) existing.start = input.start;
+    if (input.end) existing.end = input.end;
+    return { id: existing.id, summary: existing.summary, start: existing.start, end: existing.end };
+  }
+
+  async deleteEvent(_calendarId: string, eventId: string): Promise<void> {
+    this.events.delete(eventId);
+  }
+
+  getEvents(): CalendarEvent[] {
+    return [...this.events.values()];
   }
 }
 
