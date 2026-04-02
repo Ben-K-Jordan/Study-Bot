@@ -27,6 +27,8 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
+      - run: npm run assets:build
+      - run: npm run assets:check
       - run: npm run lint
       - run: npm run build
 
@@ -43,6 +45,7 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
+      - run: npm run assets:build
       - run: npm run test:unit
 
   integration-tests:
