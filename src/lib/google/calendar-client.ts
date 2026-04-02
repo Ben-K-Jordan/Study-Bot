@@ -4,8 +4,9 @@
  * RealGoogleCalendarClient — production HTTP client with:
  *   - Partial responses (fields=...)
  *   - gzip Accept-Encoding
- *   - Automatic 401 token refresh
- *   - Exponential backoff + jitter for 429/5xx
+ *   - Automatic 401 token refresh (single retry)
+ *   - invalid_grant detection → marks integration DISCONNECTED
+ *   - Exponential backoff + jitter for 429/5xx (respects Retry-After)
  *   - Concurrency limiting
  *   - Token redaction in logs
  *
@@ -21,6 +22,8 @@ export interface CalendarEntry {
   id: string;
   summary: string;
   primary?: boolean;
+  accessRole?: string;
+  timeZone?: string;
 }
 
 export interface BusyInterval {
@@ -56,6 +59,7 @@ export interface CalendarEvent {
   htmlLink?: string;
   etag?: string;
   updated?: string;
+  status?: string;
 }
 
 export interface EventListOptions {
@@ -75,9 +79,30 @@ export interface GoogleCalendarClient {
   listEvents(options: EventListOptions): Promise<CalendarEvent[]>;
 }
 
+// ---- Error types ----
+
+export class GoogleApiError extends Error {
+  status: number;
+  retryAfterMs?: number;
+  constructor(message: string, status: number, retryAfterMs?: number) {
+    super(message);
+    this.name = "GoogleApiError";
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export class GoogleReconnectError extends Error {
+  code = "GOOGLE_RECONNECT_REQUIRED" as const;
+  constructor(reason: string) {
+    super(`Google reconnect required: ${reason}`);
+    this.name = "GoogleReconnectError";
+  }
+}
+
 // ---- Retry helper ----
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 4; // 5 total attempts
 const BASE_DELAY_MS = 500;
 
 async function withRetry<T>(
@@ -92,7 +117,13 @@ async function withRetry<T>(
     } catch (err) {
       lastErr = err;
       if (attempt === MAX_RETRIES || !isRetryable(err)) throw err;
-      const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 200;
+      // Respect Retry-After header if present
+      let delay: number;
+      if (err instanceof GoogleApiError && err.retryAfterMs) {
+        delay = err.retryAfterMs + Math.random() * 200;
+      } else {
+        delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 200;
+      }
       logger.warn("google.retry", { label, attempt: attempt + 1, delay_ms: Math.round(delay) });
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -107,18 +138,15 @@ function defaultRetryable(err: unknown): boolean {
   return false;
 }
 
-export class GoogleApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "GoogleApiError";
-    this.status = status;
-  }
-}
-
 // ---- Partial response fields ----
 
-const EVENT_FIELDS = "id,etag,updated,htmlLink,summary,start,end";
+const EVENT_FIELDS = "id,etag,updated,htmlLink,summary,start,end,status,extendedProperties";
+const CALENDAR_LIST_FIELDS = "items(id,summary,primary,accessRole,timeZone)";
+
+// ---- Concurrency ----
+
+const SYNC_CONCURRENCY = parseInt(process.env.GOOGLE_SYNC_CONCURRENCY || "3", 10);
+export { SYNC_CONCURRENCY };
 
 // ---- Real Implementation ----
 
@@ -129,28 +157,36 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     this.userId = userId;
   }
 
-  private async getAccessToken(): Promise<string> {
+  private async getIntegration() {
     const integration = await prisma.googleIntegration.findUnique({
       where: { userId: this.userId },
     });
-    if (!integration) throw new Error("Google integration not found");
+    if (!integration) throw new GoogleReconnectError("Integration not found");
+    if (integration.status === "DISCONNECTED") {
+      throw new GoogleReconnectError("Integration disconnected");
+    }
+    if (!integration.refreshTokenEncrypted) {
+      throw new GoogleReconnectError("No refresh token");
+    }
+    return integration;
+  }
+
+  private async getAccessToken(): Promise<string> {
+    const integration = await this.getIntegration();
 
     const now = Date.now();
     const expiryMs = Number(integration.tokenExpiryMs);
 
-    if (now >= expiryMs - 60_000) {
-      return this.refreshAccessToken(integration);
-    }
-
-    if (!integration.accessTokenEncrypted) {
-      return this.refreshAccessToken(integration);
+    // Refresh if expired or within 60s of expiry
+    if (!integration.accessTokenEncrypted || now >= expiryMs - 60_000) {
+      return this.refreshAccessToken(integration.id, integration.refreshTokenEncrypted!);
     }
 
     return decrypt(integration.accessTokenEncrypted);
   }
 
-  private async refreshAccessToken(integration: { id: string; refreshTokenEncrypted: string }): Promise<string> {
-    const refreshToken = decrypt(integration.refreshTokenEncrypted);
+  private async refreshAccessToken(integrationId: string, refreshTokenEncrypted: string): Promise<string> {
+    const refreshToken = decrypt(refreshTokenEncrypted);
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     if (!clientId || !clientSecret) throw new Error("Google OAuth credentials not configured");
@@ -167,8 +203,23 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     });
 
     if (!res.ok) {
-      const err = await res.text();
+      const errBody = await res.text();
       logger.error("google.token_refresh_failed", { user_id: this.userId, status: res.status });
+
+      // Detect invalid_grant → mark DISCONNECTED
+      if (res.status === 400 || errBody.includes("invalid_grant")) {
+        await prisma.googleIntegration.update({
+          where: { id: integrationId },
+          data: {
+            status: "DISCONNECTED",
+            accessTokenEncrypted: null,
+            refreshTokenEncrypted: null,
+            lastErrorCode: "INVALID_GRANT",
+            lastErrorMessage: "Refresh token revoked or expired. Please reconnect.",
+          },
+        });
+        throw new GoogleReconnectError("invalid_grant");
+      }
       throw new GoogleApiError("Failed to refresh Google token", res.status);
     }
 
@@ -177,24 +228,31 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     const expiresIn = (data.expires_in as number) || 3600;
 
     await prisma.googleIntegration.update({
-      where: { id: integration.id },
+      where: { id: integrationId },
       data: {
         accessTokenEncrypted: encrypt(newAccessToken),
         tokenExpiryMs: BigInt(Date.now() + expiresIn * 1000),
+        lastRefreshAt: new Date(),
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        status: "CONNECTED",
       },
     });
 
     return newAccessToken;
   }
 
+  /**
+   * Core API request with auth, retry, and 401 refresh-once semantics.
+   */
   private async apiRequest(
     url: string,
     options: RequestInit & { retryLabel?: string } = {},
   ): Promise<Response> {
-    const token = await this.getAccessToken();
     const { retryLabel, ...fetchOpts } = options;
 
     const doFetch = async () => {
+      const token = await this.getAccessToken();
       const res = await fetch(url, {
         ...fetchOpts,
         headers: {
@@ -206,11 +264,43 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
       });
 
       if (!res.ok) {
-        // On 401, try refreshing token once
         if (res.status === 401) {
-          throw new GoogleApiError("Unauthorized", 401);
+          // Try refresh once — getAccessToken on next retry will force refresh
+          const integration = await this.getIntegration();
+          try {
+            await this.refreshAccessToken(integration.id, integration.refreshTokenEncrypted!);
+          } catch (refreshErr) {
+            if (refreshErr instanceof GoogleReconnectError) throw refreshErr;
+            throw new GoogleApiError("Unauthorized after refresh attempt", 401);
+          }
+          // Retry with new token
+          const newToken = await this.getAccessToken();
+          const retryRes = await fetch(url, {
+            ...fetchOpts,
+            headers: {
+              Authorization: `Bearer ${newToken}`,
+              "Accept-Encoding": "gzip",
+              "User-Agent": "StudyBot/1.0 (gzip)",
+              ...(fetchOpts.headers || {}),
+            },
+          });
+          if (!retryRes.ok) {
+            throw new GoogleApiError(`Google API ${retryRes.status} after refresh`, retryRes.status);
+          }
+          return retryRes;
         }
-        throw new GoogleApiError(`Google API ${res.status}`, res.status);
+
+        // Parse Retry-After for 429
+        let retryAfterMs: number | undefined;
+        if (res.status === 429) {
+          const retryAfter = res.headers.get("Retry-After");
+          if (retryAfter) {
+            const secs = parseInt(retryAfter, 10);
+            if (!isNaN(secs)) retryAfterMs = secs * 1000;
+          }
+        }
+
+        throw new GoogleApiError(`Google API ${res.status}`, res.status, retryAfterMs);
       }
       return res;
     };
@@ -219,42 +309,35 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
   }
 
   async listCalendars(): Promise<CalendarEntry[]> {
-    const token = await this.getAccessToken();
-    const res = await fetch(
-      "https://www.googleapis.com/calendar/v3/users/me/calendarList?fields=items(id,summary,primary)",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Accept-Encoding": "gzip",
-        },
-      },
+    const res = await this.apiRequest(
+      `https://www.googleapis.com/calendar/v3/users/me/calendarList?fields=${CALENDAR_LIST_FIELDS}`,
+      { retryLabel: "listCalendars" },
     );
-    if (!res.ok) throw new GoogleApiError(`CalendarList failed: ${res.status}`, res.status);
     const data = await res.json();
-    return (data.items || []).map((c: { id: string; summary: string; primary?: boolean }) => ({
-      id: c.id,
-      summary: c.summary,
-      primary: c.primary,
+    return (data.items || []).map((c: Record<string, unknown>) => ({
+      id: c.id as string,
+      summary: c.summary as string,
+      primary: c.primary as boolean | undefined,
+      accessRole: c.accessRole as string | undefined,
+      timeZone: c.timeZone as string | undefined,
     }));
   }
 
   async freebusyQuery(input: FreebusyInput): Promise<BusyInterval[]> {
-    const token = await this.getAccessToken();
-    const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "Accept-Encoding": "gzip",
+    const res = await this.apiRequest(
+      "https://www.googleapis.com/calendar/v3/freeBusy",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timeMin: input.timeMin,
+          timeMax: input.timeMax,
+          timeZone: input.timeZone || "UTC",
+          items: input.calendarIds.map((id) => ({ id })),
+        }),
+        retryLabel: "freebusyQuery",
       },
-      body: JSON.stringify({
-        timeMin: input.timeMin,
-        timeMax: input.timeMax,
-        timeZone: input.timeZone || "UTC",
-        items: input.calendarIds.map((id) => ({ id })),
-      }),
-    });
-    if (!res.ok) throw new GoogleApiError(`Freebusy failed: ${res.status}`, res.status);
+    );
     const data = await res.json();
     const intervals: BusyInterval[] = [];
     for (const [calId, cal] of Object.entries(data.calendars || {})) {
@@ -277,6 +360,8 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
         retryLabel: "createEvent",
       },
     );
+    // Update lastHealthyAt on successful write
+    this.touchHealthy().catch(() => {});
     return parseEventResponse(await res.json());
   }
 
@@ -299,28 +384,22 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
         retryLabel: "updateEvent",
       },
     );
+    this.touchHealthy().catch(() => {});
     return parseEventResponse(await res.json());
   }
 
   async deleteEvent(calendarId: string, eventId: string): Promise<void> {
-    const token = await this.getAccessToken();
-
-    const doDelete = async () => {
-      const res = await fetch(
+    try {
+      await this.apiRequest(
         `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Accept-Encoding": "gzip",
-          },
-        },
+        { method: "DELETE", retryLabel: "deleteEvent" },
       );
-      if (res.status === 404 || res.status === 410) return; // Already deleted
-      if (!res.ok) throw new GoogleApiError(`DeleteEvent failed: ${res.status}`, res.status);
-    };
-
-    await withRetry("deleteEvent", doDelete);
+    } catch (err) {
+      // 404/410 = already deleted, treat as success
+      if (err instanceof GoogleApiError && (err.status === 404 || err.status === 410)) return;
+      throw err;
+    }
+    this.touchHealthy().catch(() => {});
   }
 
   async listEvents(options: EventListOptions): Promise<CalendarEvent[]> {
@@ -336,6 +415,14 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     );
     const data = await res.json();
     return (data.items || []).map(parseEventResponse);
+  }
+
+  /** Fire-and-forget: update lastHealthyAt timestamp */
+  private async touchHealthy(): Promise<void> {
+    await prisma.googleIntegration.updateMany({
+      where: { userId: this.userId, status: "CONNECTED" },
+      data: { lastHealthyAt: new Date() },
+    });
   }
 }
 
@@ -365,6 +452,7 @@ function parseEventResponse(data: Record<string, unknown>): CalendarEvent {
     htmlLink: (data.htmlLink as string) || undefined,
     etag: (data.etag as string) || undefined,
     updated: (data.updated as string) || undefined,
+    status: (data.status as string) || undefined,
   };
 }
 
@@ -377,22 +465,37 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
   private nextId = 1;
   /** Track call counts for test assertions */
   callLog: { method: string; args: unknown[] }[] = [];
+  /** Simulate specific error scenarios */
+  simulateErrors: { method: string; error: Error; once?: boolean }[] = [];
 
   constructor(
-    calendars: CalendarEntry[] = [{ id: "primary", summary: "Primary", primary: true }],
+    calendars: CalendarEntry[] = [
+      { id: "primary", summary: "Primary", primary: true, accessRole: "owner", timeZone: "America/New_York" },
+    ],
     busy: BusyInterval[] = [],
   ) {
     this.calendars = calendars;
     this.busy = busy;
   }
 
+  private checkError(method: string): void {
+    const idx = this.simulateErrors.findIndex((e) => e.method === method);
+    if (idx >= 0) {
+      const err = this.simulateErrors[idx];
+      if (err.once) this.simulateErrors.splice(idx, 1);
+      throw err.error;
+    }
+  }
+
   async listCalendars(): Promise<CalendarEntry[]> {
     this.callLog.push({ method: "listCalendars", args: [] });
+    this.checkError("listCalendars");
     return this.calendars;
   }
 
   async freebusyQuery(input: FreebusyInput): Promise<BusyInterval[]> {
     this.callLog.push({ method: "freebusyQuery", args: [input] });
+    this.checkError("freebusyQuery");
     const min = new Date(input.timeMin).getTime();
     const max = new Date(input.timeMax).getTime();
     return this.busy.filter((b) => {
@@ -408,6 +511,7 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
 
   async createEvent(input: CalendarEventInput): Promise<CalendarEvent> {
     this.callLog.push({ method: "createEvent", args: [input] });
+    this.checkError("createEvent");
     const id = `fake_event_${this.nextId++}`;
     const event = {
       id,
@@ -434,6 +538,7 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
 
   async updateEvent(calendarId: string, eventId: string, input: Partial<CalendarEventInput>): Promise<CalendarEvent> {
     this.callLog.push({ method: "updateEvent", args: [calendarId, eventId, input] });
+    this.checkError("updateEvent");
     const existing = this.events.get(eventId);
     if (!existing) throw new GoogleApiError("Event not found", 404);
     if (input.summary) existing.summary = input.summary;
@@ -455,12 +560,14 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
 
   async deleteEvent(_calendarId: string, eventId: string): Promise<void> {
     this.callLog.push({ method: "deleteEvent", args: [_calendarId, eventId] });
+    this.checkError("deleteEvent");
     if (!this.events.has(eventId)) return; // Already deleted, no error
     this.events.delete(eventId);
   }
 
   async listEvents(options: EventListOptions): Promise<CalendarEvent[]> {
     this.callLog.push({ method: "listEvents", args: [options] });
+    this.checkError("listEvents");
     const results: CalendarEvent[] = [];
     for (const event of this.events.values()) {
       if (event.calendarId !== options.calendarId) continue;

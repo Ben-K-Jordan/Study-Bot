@@ -70,6 +70,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/settings/calendar?error=no_refresh_token`, 302);
     }
 
+    // Fetch connected email via userinfo
+    let connectedEmail: string | null = null;
+    try {
+      const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (userinfoRes.ok) {
+        const info = await userinfoRes.json();
+        connectedEmail = (info.email as string) || null;
+      }
+    } catch {
+      // Non-critical — email is cosmetic
+    }
+
     // Encrypt and store tokens
     const accessTokenEncrypted = encrypt(accessToken);
     const refreshTokenEncrypted = encrypt(refreshToken);
@@ -79,16 +93,24 @@ export async function GET(request: NextRequest) {
       where: { userId },
       create: {
         userId,
+        status: "CONNECTED",
+        connectedEmail,
         accessTokenEncrypted,
         refreshTokenEncrypted,
         tokenExpiryMs,
         scopeString: scope,
+        lastHealthyAt: new Date(),
       },
       update: {
+        status: "CONNECTED",
+        connectedEmail,
         accessTokenEncrypted,
         refreshTokenEncrypted,
         tokenExpiryMs,
         scopeString: scope,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        lastHealthyAt: new Date(),
       },
     });
 
