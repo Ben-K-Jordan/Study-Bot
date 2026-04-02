@@ -85,6 +85,9 @@ export default function PlanPage() {
   const [unpublishing, setUnpublishing] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
 
+  const [googleStatus, setGoogleStatus] = useState<string>("DISCONNECTED");
+  const [googleError, setGoogleError] = useState<{ code: string; message: string } | null>(null);
+
   // Check if Google Calendar is connected
   useEffect(() => {
     async function checkGoogle() {
@@ -93,7 +96,9 @@ export default function PlanPage() {
           headers: { "X-User-Id": getOrCreateUserId() },
         });
         const data = await res.json();
-        setGoogleConnected(data.connected);
+        setGoogleConnected(data.connected ?? data.status === "CONNECTED");
+        setGoogleStatus(data.status || "DISCONNECTED");
+        setGoogleError(data.last_error || null);
       } catch {
         // Non-critical
       }
@@ -146,7 +151,12 @@ export default function PlanPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to publish");
+        if (data.error === "GOOGLE_RECONNECT_REQUIRED") {
+          setError("Google Calendar token expired. Please reconnect in Settings.");
+          setGoogleStatus("ERROR");
+        } else {
+          setError(data.error || "Failed to publish");
+        }
         return;
       }
       setPublishResult(data);
@@ -385,9 +395,20 @@ export default function PlanPage() {
           </div>
 
           {/* Google Calendar Section */}
-          {googleConnected ? (
+          {googleConnected || googleStatus === "ERROR" ? (
             <fieldset style={{ border: "1px solid #333", padding: "1rem", marginBottom: "1.5rem" }}>
               <legend style={{ color: "#4285f4" }}>Google Calendar</legend>
+
+              {/* Reconnect banner */}
+              {(googleStatus === "ERROR" || googleError) && (
+                <div style={{ color: "#ff4444", border: "1px solid #ff4444", padding: "0.5rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+                  <strong>Reconnect required</strong>
+                  {googleError && <span> — {googleError.message}</span>}
+                  <div style={{ marginTop: "0.4rem" }}>
+                    <a href="/settings/calendar" style={{ color: "#4285f4", fontWeight: "bold" }}>Go to Settings to reconnect</a>
+                  </div>
+                </div>
+              )}
 
               {/* Status display */}
               {publishStatus?.publication && (
