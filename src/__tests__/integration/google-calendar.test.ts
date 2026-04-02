@@ -51,10 +51,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     resetGoogleClientFactory();
     await prisma.googleIntegration.deleteMany({ where: { userId } });
     // Clean up sessions and plans
-    const plans = await prisma.studyPlan.findMany({ where: { userId } });
-    for (const plan of plans) {
-      await prisma.planItem.deleteMany({ where: { planId: plan.id } });
-    }
+    await prisma.studyPlanItem.deleteMany({ where: { plan: { userId } } });
     await prisma.studyPlan.deleteMany({ where: { userId } });
     await prisma.session.deleteMany({ where: { userId } });
     await prisma.$disconnect();
@@ -104,11 +101,11 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
   });
 
   it("avoids busy slots when use_google_availability is true", async () => {
-    // Block 10:00-12:00 on the first day
+    // Block 09:00-13:00 on the first day — forces all day-0 items into afternoon
     const today = new Date();
-    today.setHours(10, 0, 0, 0);
+    today.setHours(9, 0, 0, 0);
     const busyEnd = new Date(today);
-    busyEnd.setHours(12, 0, 0, 0);
+    busyEnd.setHours(13, 0, 0, 0);
 
     fakeClient.setBusy([
       {
@@ -125,17 +122,13 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
 
     expect(result.plan_id).toBeTruthy();
 
-    // Check that no items on day 0 overlap with 10:00-12:00
+    // All day-0 items must start at or after 13:00 (the busy period end)
     const day0Items = result.items.filter((i: any) => i.day_index === 0);
-    const busyStart = today.getTime();
     const busyEndMs = busyEnd.getTime();
 
     for (const item of day0Items) {
       const itemStart = new Date(item.start_time).getTime();
-      const itemEnd = new Date(item.end_time).getTime();
-      // Item should not overlap with busy period
-      const overlaps = itemStart < busyEndMs && itemEnd > busyStart;
-      expect(overlaps).toBe(false);
+      expect(itemStart).toBeGreaterThanOrEqual(busyEndMs);
     }
   });
 
@@ -150,10 +143,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     expect(result.items.length).toBeGreaterThan(0);
 
     // Clean up
-    const plans = await prisma.studyPlan.findMany({ where: { userId: otherUserId } });
-    for (const plan of plans) {
-      await prisma.planItem.deleteMany({ where: { planId: plan.id } });
-    }
+    await prisma.studyPlanItem.deleteMany({ where: { plan: { userId: otherUserId } } });
     await prisma.studyPlan.deleteMany({ where: { userId: otherUserId } });
     await prisma.session.deleteMany({ where: { userId: otherUserId } });
   });
