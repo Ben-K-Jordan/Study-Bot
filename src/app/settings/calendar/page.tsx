@@ -117,6 +117,9 @@ export default function CalendarSettingsPage() {
       if (data.ok) {
         setMessage("Connection test passed!");
         await fetchStatus();
+      } else if (data.error === "GOOGLE_RECONNECT_REQUIRED") {
+        setError("Google token expired or revoked. Please reconnect your account.");
+        await fetchStatus();
       } else {
         setError(`Connection test failed: ${data.reason || "Unknown error"}`);
         await fetchStatus();
