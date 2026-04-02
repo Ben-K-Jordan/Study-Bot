@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       status: "DISCONNECTED",
       connected: false,
+      scopes: [],
       default_calendar_id: "primary",
       busy_calendar_ids: ["primary"],
     });
