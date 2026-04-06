@@ -167,7 +167,7 @@ describe("generatePlanWithResearch", () => {
 
       expect(result.aiGenerated).toBe(true);
       expect(result.blocks).toHaveLength(3); // Invalid mode filtered out
-      expect(result.blocks.every((b) => b.mode !== "INVALID_MODE")).toBe(true);
+      expect(result.blocks.every((b) => (b.mode as string) !== "INVALID_MODE")).toBe(true);
     });
 
     it("clamps duration to daily cap", async () => {
