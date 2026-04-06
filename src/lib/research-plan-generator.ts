@@ -15,12 +15,19 @@ import { AiTask } from "./ai/types";
 import { getPrompt } from "./ai/prompt-registry";
 import { logger } from "./logger";
 
+export interface StudyPreferences {
+  chronotype: "morning" | "evening" | "flexible";
+  preferredSessionMinutes: number;
+  studyStyle: "intensive" | "balanced" | "relaxed";
+}
+
 interface ResearchPlanInput {
   objectives: string[];
   dailyCap: number;
   breakProtocol: string;
   availability: { start: string; end: string }[];
   examDate: string;
+  preferences?: StudyPreferences;
 }
 
 interface AiPlanBlock {
@@ -161,6 +168,7 @@ export async function generatePlanWithResearch(
         availabilityByDay,
         researchContext,
         examDate: input.examDate,
+        preferences: input.preferences,
       },
       parseOutput: (raw: unknown) => {
         const data = raw as Record<string, unknown>;

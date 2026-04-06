@@ -191,6 +191,21 @@ export const createPlanSchema = z
       .optional()
       .default("50_10"),
     use_google_availability: z.boolean().optional(),
+    chronotype: z
+      .enum(["morning", "evening", "flexible"])
+      .optional()
+      .default("flexible"),
+    preferred_session_minutes: z
+      .number()
+      .int()
+      .min(15)
+      .max(120)
+      .optional()
+      .default(50),
+    study_style: z
+      .enum(["intensive", "balanced", "relaxed"])
+      .optional()
+      .default("balanced"),
   })
   .refine(
     (data) => {
