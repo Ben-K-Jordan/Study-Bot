@@ -71,6 +71,14 @@ export class MockProvider implements AiProvider {
       };
     }
 
+    if (systemPrompt.includes("GENERATE_STUDY_PLAN")) {
+      // Return null to signal "use deterministic fallback"
+      return {
+        json: { blocks: null, reasoning: "Mock provider — using deterministic fallback." },
+        usage: { tokenIn: 200, tokenOut: 50, costUsdMicros: 30 },
+      };
+    }
+
     // Fallback
     return {
       json: { text: "Mock response" },

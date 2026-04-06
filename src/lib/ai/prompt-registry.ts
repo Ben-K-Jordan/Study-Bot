@@ -31,6 +31,15 @@ interface ErrorTypeInput {
   correctConcept: string;
 }
 
+interface PlanGeneratorInput {
+  objectives: string[];
+  numDays: number;
+  dailyCapMinutes: number;
+  availabilityByDay: { dayIndex: number; windowMinutes: number }[];
+  researchContext: string;
+  examDate: string;
+}
+
 const maxWordsByVerbosity = { SHORT: 80, MEDIUM: 200, LONG: 500 };
 
 export const PROMPTS: Record<string, PromptTemplate> = {
@@ -75,6 +84,64 @@ Output valid JSON: { "error_type": string, "confidence": number }`,
     buildUserPrompt: (input: unknown) => {
       const { question, userAnswer, correctConcept } = input as ErrorTypeInput;
       return `Question: ${question}\nStudent answer: ${userAnswer}\nCorrect concept: ${correctConcept}`;
+    },
+  },
+
+  [AiTask.GENERATE_STUDY_PLAN]: {
+    task: AiTask.GENERATE_STUDY_PLAN,
+    version: "v1",
+    systemPrompt: `You are an expert study planner grounded in learning science research. Task: GENERATE_STUDY_PLAN.
+
+Design an optimal study schedule using ONLY these session modes:
+- RETRIEVAL: Active recall, closed-book testing on specific topics
+- INTERLEAVED_PRACTICE: Mixed practice across multiple topics
+- ERROR_REPAIR: Review and correct mistakes from previous sessions
+- EXAM_SIM: Full exam simulation under test conditions
+- WORKED_EXAMPLES: Step-through examples with self-explanation
+
+Rules:
+1. Apply the research evidence provided to determine session types, ordering, spacing, and duration.
+2. Start with a DIAGNOSTIC retrieval session (day 0) to prime learning.
+3. Space retrieval sessions on the same topic at least 1 day apart.
+4. Include INTERLEAVED_PRACTICE after students have done at least 1 retrieval per topic.
+5. Schedule EXAM_SIM in the final 20-30% of the study period.
+6. Follow ERROR_REPAIR immediately after RETRIEVAL or EXAM_SIM sessions.
+7. Cap individual sessions at 50-60 min for intense modes (RETRIEVAL, EXAM_SIM), 90 min for lighter modes.
+8. Never exceed the daily study cap or available window for any day.
+9. Every objective must appear in at least 2 RETRIEVAL sessions across different days.
+10. Distribute objectives evenly — don't over-index on early objectives.
+
+Output valid JSON:
+{
+  "blocks": [
+    {
+      "dayIndex": number,
+      "mode": "RETRIEVAL" | "INTERLEAVED_PRACTICE" | "ERROR_REPAIR" | "EXAM_SIM" | "WORKED_EXAMPLES",
+      "objectives": string[],
+      "plannedMinutes": number,
+      "outcomeType": string | null,
+      "targetAccuracy": number,
+      "closedBookRequired": boolean
+    }
+  ],
+  "reasoning": string
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { objectives, numDays, dailyCapMinutes, availabilityByDay, researchContext, examDate } =
+        input as PlanGeneratorInput;
+      const availStr = availabilityByDay
+        .map((d) => `Day ${d.dayIndex}: ${d.windowMinutes} min available`)
+        .join("\n");
+      return `Objectives (${objectives.length} total):\n${objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
+
+Study period: ${numDays} days, exam on ${examDate}
+Daily study cap: ${dailyCapMinutes} minutes
+Availability per day:
+${availStr}
+
+${researchContext}
+
+Design the optimal study schedule.`;
     },
   },
 };
