@@ -38,6 +38,11 @@ interface PlanGeneratorInput {
   availabilityByDay: { dayIndex: number; windowMinutes: number }[];
   researchContext: string;
   examDate: string;
+  preferences?: {
+    chronotype: "morning" | "evening" | "flexible";
+    preferredSessionMinutes: number;
+    studyStyle: "intensive" | "balanced" | "relaxed";
+  };
 }
 
 const maxWordsByVerbosity = { SHORT: 80, MEDIUM: 200, LONG: 500 };
@@ -89,7 +94,7 @@ Output valid JSON: { "error_type": string, "confidence": number }`,
 
   [AiTask.GENERATE_STUDY_PLAN]: {
     task: AiTask.GENERATE_STUDY_PLAN,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert study planner grounded in learning science research. Task: GENERATE_STUDY_PLAN.
 
 Design an optimal study schedule using ONLY these session modes:
@@ -127,18 +132,28 @@ Output valid JSON:
   "reasoning": string
 }`,
     buildUserPrompt: (input: unknown) => {
-      const { objectives, numDays, dailyCapMinutes, availabilityByDay, researchContext, examDate } =
+      const { objectives, numDays, dailyCapMinutes, availabilityByDay, researchContext, examDate, preferences } =
         input as PlanGeneratorInput;
       const availStr = availabilityByDay
         .map((d) => `Day ${d.dayIndex}: ${d.windowMinutes} min available`)
         .join("\n");
+
+      let prefsStr = "";
+      if (preferences) {
+        const lines: string[] = [];
+        lines.push(`Chronotype: ${preferences.chronotype} — schedule harder sessions (RETRIEVAL, EXAM_SIM) ${preferences.chronotype === "morning" ? "earlier" : preferences.chronotype === "evening" ? "later" : "at any time"} in the day.`);
+        lines.push(`Preferred session length: ${preferences.preferredSessionMinutes} minutes — target this duration for each session when possible.`);
+        lines.push(`Study style: ${preferences.studyStyle} — ${preferences.studyStyle === "intensive" ? "pack sessions densely, maximize daily study time" : preferences.studyStyle === "relaxed" ? "spread sessions out, allow generous breaks, fewer sessions per day" : "balance study load evenly across available days"}.`);
+        prefsStr = `\nStudent preferences:\n${lines.join("\n")}\n`;
+      }
+
       return `Objectives (${objectives.length} total):\n${objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
 
 Study period: ${numDays} days, exam on ${examDate}
 Daily study cap: ${dailyCapMinutes} minutes
 Availability per day:
 ${availStr}
-
+${prefsStr}
 ${researchContext}
 
 Design the optimal study schedule.`;

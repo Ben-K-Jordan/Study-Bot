@@ -3,7 +3,7 @@ import { generateSessionId } from "@/lib/session-id";
 import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
 import { createPlanSchema, SessionMode } from "@/lib/validation";
 import { generatePlan, PlanBlock } from "@/lib/plan-generator";
-import { generatePlanWithResearch } from "@/lib/research-plan-generator";
+import { generatePlanWithResearch, StudyPreferences } from "@/lib/research-plan-generator";
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
 import { getGoogleClient } from "@/lib/google/calendar-client";
@@ -43,6 +43,12 @@ export async function createPlan(userId: string, input: unknown) {
     gatewayCtx = { userId, provider: createProvider() };
   }
 
+  const preferences: StudyPreferences = {
+    chronotype: parsed.chronotype,
+    preferredSessionMinutes: parsed.preferred_session_minutes,
+    studyStyle: parsed.study_style,
+  };
+
   const planResult = await generatePlanWithResearch(
     {
       objectives: parsed.objectives,
@@ -50,6 +56,7 @@ export async function createPlan(userId: string, input: unknown) {
       breakProtocol: parsed.break_protocol_default,
       availability: parsed.availability,
       examDate: parsed.exam_date,
+      preferences,
     },
     gatewayCtx,
   );
@@ -243,6 +250,9 @@ export async function createPlan(userId: string, input: unknown) {
           availability: parsed.availability,
           daily_study_cap_minutes: parsed.daily_study_cap_minutes,
           break_protocol_default: parsed.break_protocol_default,
+          chronotype: parsed.chronotype,
+          preferred_session_minutes: parsed.preferred_session_minutes,
+          study_style: parsed.study_style,
         },
         items: {
           create: items.map((item) => ({
@@ -268,6 +278,8 @@ export async function createPlan(userId: string, input: unknown) {
 
   return {
     plan_id: planId,
+    ai_generated: planResult.aiGenerated,
+    reasoning: planResult.reasoning ?? null,
     ics_download_url: `${baseUrl}/api/plans/${planId}/ics`,
     feed_url: feedUrl,
     webcal_url: webcalUrl,

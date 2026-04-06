@@ -13,6 +13,8 @@
  */
 import { prisma } from "../src/lib/db";
 import { sha256 } from "../src/lib/storage";
+import { enqueueJob } from "../src/lib/jobs/queue";
+import type { EmbedChunkBatchPayload } from "../src/lib/jobs/handlers/embed-chunks";
 
 const SYSTEM_USER_ID = "__system__";
 
@@ -753,6 +755,36 @@ async function seed() {
   }
 
   console.log(`\nDone: ${papersCreated} papers, ${cardsCreated} cards, ${documentsCreated} documents, ${chunksCreated} chunks`);
+
+  // Enqueue embedding jobs for all PENDING system research chunks
+  if (process.env.AI_PROVIDER === "mock") {
+    console.log("\nSkipping embedding queue (AI_PROVIDER=mock)");
+  } else {
+    const pendingChunks = await prisma.contentChunk.findMany({
+      where: {
+        embeddingStatus: "PENDING",
+        document: { userId: SYSTEM_USER_ID },
+      },
+      select: { id: true },
+    });
+
+    if (pendingChunks.length > 0) {
+      const BATCH_SIZE = 15;
+      let jobsEnqueued = 0;
+      for (let i = 0; i < pendingChunks.length; i += BATCH_SIZE) {
+        const batch = pendingChunks.slice(i, i + BATCH_SIZE);
+        const payload: EmbedChunkBatchPayload = {
+          chunkIds: batch.map((c) => c.id),
+          userId: SYSTEM_USER_ID,
+        };
+        await enqueueJob("EMBED_CHUNK_BATCH", payload);
+        jobsEnqueued++;
+      }
+      console.log(`\nQueued ${pendingChunks.length} chunks for embedding (${jobsEnqueued} jobs)`);
+    } else {
+      console.log("\nNo pending chunks to embed");
+    }
+  }
 }
 
 seed()
