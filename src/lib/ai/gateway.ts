@@ -19,7 +19,8 @@ import { getPrompt } from "./prompt-registry";
 // ---------------------------------------------------------------------------
 
 const AI_CACHE_TTL_SECONDS = parseInt(process.env.AI_CACHE_TTL_SECONDS || "3600", 10);
-const AI_DAILY_COST_CAP_USD = parseFloat(process.env.AI_DAILY_COST_CAP_USD || "5.0");
+const AI_DAILY_COST_CAP_USD = parseFloat(process.env.AI_DAILY_COST_CAP_USD || "1.0");
+const AI_MONTHLY_COST_CAP_USD = parseFloat(process.env.AI_MONTHLY_COST_CAP_USD || "10.0");
 const AI_DISABLED = process.env.AI_DISABLED === "true";
 const CIRCUIT_BREAKER_THRESHOLD = 5; // consecutive failures before opening circuit
 const CIRCUIT_BREAKER_RESET_MS = 60_000; // 1 minute cooldown
@@ -76,26 +77,35 @@ interface BudgetCheckResult {
   capUsd: number;
 }
 
-async function checkDailyBudget(userId: string): Promise<BudgetCheckResult> {
+async function checkBudget(userId: string): Promise<BudgetCheckResult> {
   const startOfDay = new Date();
   startOfDay.setUTCHours(0, 0, 0, 0);
 
-  const result = await prisma.aiCallLog.aggregate({
-    where: {
-      userId,
-      createdAt: { gte: startOfDay },
-      status: "OK",
-    },
-    _sum: { costUsdMicros: true },
-  });
+  const startOfMonth = new Date();
+  startOfMonth.setUTCDate(1);
+  startOfMonth.setUTCHours(0, 0, 0, 0);
 
-  const spentMicros = Number(result._sum.costUsdMicros ?? 0);
-  const spentUsd = spentMicros / 1_000_000;
+  const [dailyResult, monthlyResult] = await Promise.all([
+    prisma.aiCallLog.aggregate({
+      where: { userId, createdAt: { gte: startOfDay }, status: "OK" },
+      _sum: { costUsdMicros: true },
+    }),
+    prisma.aiCallLog.aggregate({
+      where: { userId, createdAt: { gte: startOfMonth }, status: "OK" },
+      _sum: { costUsdMicros: true },
+    }),
+  ]);
+
+  const dailySpentUsd = Number(dailyResult._sum.costUsdMicros ?? 0) / 1_000_000;
+  const monthlySpentUsd = Number(monthlyResult._sum.costUsdMicros ?? 0) / 1_000_000;
+
+  const dailyExceeded = dailySpentUsd >= AI_DAILY_COST_CAP_USD;
+  const monthlyExceeded = monthlySpentUsd >= AI_MONTHLY_COST_CAP_USD;
 
   return {
-    allowed: spentUsd < AI_DAILY_COST_CAP_USD,
-    spentUsd,
-    capUsd: AI_DAILY_COST_CAP_USD,
+    allowed: !dailyExceeded && !monthlyExceeded,
+    spentUsd: dailySpentUsd,
+    capUsd: dailyExceeded ? AI_DAILY_COST_CAP_USD : AI_MONTHLY_COST_CAP_USD,
   };
 }
 
@@ -266,7 +276,7 @@ export async function runTask<T>(
 
   // --- Budget check ---
   if (!opts.skipBudget) {
-    const budget = await checkDailyBudget(ctx.userId);
+    const budget = await checkBudget(ctx.userId);
     if (!budget.allowed) {
       throw new GatewayError(
         "BUDGET_EXCEEDED",
@@ -364,7 +374,7 @@ export async function embed(
   }
 
   if (!opts.skipBudget) {
-    const budget = await checkDailyBudget(ctx.userId);
+    const budget = await checkBudget(ctx.userId);
     if (!budget.allowed) {
       throw new GatewayError(
         "BUDGET_EXCEEDED",
