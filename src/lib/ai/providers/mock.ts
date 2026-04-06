@@ -71,6 +71,46 @@ export class MockProvider implements AiProvider {
       };
     }
 
+    if (systemPrompt.includes("EXTRACT_OBJECTIVES")) {
+      return {
+        json: {
+          objectives: [
+            {
+              title: "Fundamental Concepts",
+              description: "Understand the core principles and definitions covered in the course material.",
+              difficulty: 1,
+              keywords: ["fundamentals", "definitions", "core concepts"],
+            },
+            {
+              title: "Applied Problem Solving",
+              description: "Apply theoretical knowledge to solve practical problems.",
+              difficulty: 3,
+              keywords: ["application", "problem solving", "practice"],
+            },
+            {
+              title: "Critical Analysis",
+              description: "Evaluate and analyze complex scenarios using course frameworks.",
+              difficulty: 4,
+              keywords: ["analysis", "evaluation", "critical thinking"],
+            },
+            {
+              title: "Integration and Synthesis",
+              description: "Synthesize concepts across multiple topics into cohesive understanding.",
+              difficulty: 5,
+              keywords: ["synthesis", "integration", "connections"],
+            },
+            {
+              title: "Key Terminology",
+              description: "Master domain-specific vocabulary and notation.",
+              difficulty: 2,
+              keywords: ["terminology", "vocabulary", "notation"],
+            },
+          ],
+        },
+        usage: { tokenIn: 800, tokenOut: 300, costUsdMicros: 150 },
+      };
+    }
+
     if (systemPrompt.includes("GENERATE_STUDY_PLAN")) {
       // Return null to signal "use deterministic fallback"
       return {

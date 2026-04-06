@@ -31,6 +31,12 @@ interface ErrorTypeInput {
   correctConcept: string;
 }
 
+interface ExtractObjectivesInput {
+  chunkTexts: string[];
+  courseName: string;
+  examName?: string;
+}
+
 interface PlanGeneratorInput {
   objectives: string[];
   numDays: number;
@@ -43,6 +49,7 @@ interface PlanGeneratorInput {
     preferredSessionMinutes: number;
     studyStyle: "intensive" | "balanced" | "relaxed";
   };
+  contentContext?: string;
 }
 
 const maxWordsByVerbosity = { SHORT: 80, MEDIUM: 200, LONG: 500 };
@@ -132,7 +139,7 @@ Output valid JSON:
   "reasoning": string
 }`,
     buildUserPrompt: (input: unknown) => {
-      const { objectives, numDays, dailyCapMinutes, availabilityByDay, researchContext, examDate, preferences } =
+      const { objectives, numDays, dailyCapMinutes, availabilityByDay, researchContext, examDate, preferences, contentContext } =
         input as PlanGeneratorInput;
       const availStr = availabilityByDay
         .map((d) => `Day ${d.dayIndex}: ${d.windowMinutes} min available`)
@@ -147,16 +154,64 @@ Output valid JSON:
         prefsStr = `\nStudent preferences:\n${lines.join("\n")}\n`;
       }
 
+      let contentStr = "";
+      if (contentContext) {
+        contentStr = `\nUploaded course material context:\n${contentContext}\nUse this context to inform topic difficulty and time allocation.\n`;
+      }
+
       return `Objectives (${objectives.length} total):\n${objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
 
 Study period: ${numDays} days, exam on ${examDate}
 Daily study cap: ${dailyCapMinutes} minutes
 Availability per day:
 ${availStr}
-${prefsStr}
+${prefsStr}${contentStr}
 ${researchContext}
 
 Design the optimal study schedule.`;
+    },
+  },
+
+  [AiTask.EXTRACT_OBJECTIVES]: {
+    task: AiTask.EXTRACT_OBJECTIVES,
+    version: "v1",
+    systemPrompt: `You are an expert curriculum analyst. Task: EXTRACT_OBJECTIVES.
+Given excerpts from uploaded course materials, extract key learning objectives that a student should master.
+
+Rules:
+1. Extract between 5 and 20 learning objectives from the provided content.
+2. Each objective should be specific and testable.
+3. Estimate difficulty on a 1-5 scale (1=introductory, 5=advanced).
+4. Include related keywords for each objective to aid search and matching.
+5. Order objectives from foundational to advanced.
+
+Output valid JSON:
+{
+  "objectives": [
+    {
+      "title": string,
+      "description": string,
+      "difficulty": number,
+      "keywords": string[]
+    }
+  ]
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { chunkTexts, courseName, examName } = input as ExtractObjectivesInput;
+      const contextStr = chunkTexts
+        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .join("\n\n");
+
+      let header = `Course: ${courseName}`;
+      if (examName) header += `\nExam: ${examName}`;
+
+      return `${header}
+
+The following excerpts are from the student's uploaded course materials:
+
+${contextStr}
+
+Extract key learning objectives from this content.`;
     },
   },
 };

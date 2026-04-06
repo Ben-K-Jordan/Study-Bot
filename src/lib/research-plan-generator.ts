@@ -28,6 +28,7 @@ interface ResearchPlanInput {
   availability: { start: string; end: string }[];
   examDate: string;
   preferences?: StudyPreferences;
+  contentContext?: string;
 }
 
 interface AiPlanBlock {
@@ -169,6 +170,7 @@ export async function generatePlanWithResearch(
         researchContext,
         examDate: input.examDate,
         preferences: input.preferences,
+        contentContext: input.contentContext,
       },
       parseOutput: (raw: unknown) => {
         const data = raw as Record<string, unknown>;
