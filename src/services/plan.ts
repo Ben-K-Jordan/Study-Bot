@@ -11,6 +11,7 @@ import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/g
 import { buildGoogleCalendarLink } from "@/lib/gcal-link";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
+import { buildContentAwarePlanInput } from "@/services/content-plan";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -49,6 +50,23 @@ export async function createPlan(userId: string, input: unknown) {
     studyStyle: parsed.study_style,
   };
 
+  // Check if the user has uploaded content for this course and enrich the plan input
+  let contentContext: string | undefined;
+  try {
+    const contentMeta = await buildContentAwarePlanInput(userId, parsed.course_name, parsed.exam_name);
+    if (contentMeta.hasContent) {
+      contentContext = contentMeta.contentContext;
+      logger.info("plan.content_aware", {
+        user_id: userId,
+        document_count: contentMeta.documentCount,
+        total_chunks: contentMeta.totalChunks,
+      });
+    }
+  } catch (err) {
+    // Content enrichment failure must not block plan creation
+    logger.warn("plan.content_aware_failed", { user_id: userId, error: String(err) });
+  }
+
   const planResult = await generatePlanWithResearch(
     {
       objectives: parsed.objectives,
@@ -57,6 +75,7 @@ export async function createPlan(userId: string, input: unknown) {
       availability: parsed.availability,
       examDate: parsed.exam_date,
       preferences,
+      contentContext,
     },
     gatewayCtx,
   );
