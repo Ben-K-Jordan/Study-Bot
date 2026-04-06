@@ -43,6 +43,8 @@ interface ReflowPreview {
 
 interface PlanResult {
   plan_id: string;
+  ai_generated?: boolean;
+  reasoning?: string | null;
   ics_download_url: string;
   feed_url: string;
   webcal_url: string;
@@ -537,6 +539,45 @@ export default function PlanPage() {
                 New Plan
               </button>
             </div>
+          </div>
+
+          {/* AI reasoning section */}
+          <div style={{ border: "1px solid #333", padding: "1rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: result.reasoning ? "0.75rem" : 0 }}>
+              <span style={{
+                fontSize: "0.75rem",
+                fontWeight: "bold",
+                padding: "0.2rem 0.5rem",
+                border: `1px solid ${result.ai_generated ? "#aa88ff" : "#888"}`,
+                color: result.ai_generated ? "#aa88ff" : "#888",
+              }}>
+                {result.ai_generated ? "Research-Informed Plan" : "Deterministic Plan"}
+              </span>
+              <span style={{ fontSize: "0.8rem", color: "#888" }}>
+                {result.ai_generated
+                  ? "Schedule was optimized using AI research on learning science and spaced repetition."
+                  : "Schedule was generated using a fixed algorithm."}
+              </span>
+            </div>
+            {result.reasoning && (
+              <details>
+                <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "#aa88ff" }}>
+                  View AI reasoning
+                </summary>
+                <div style={{
+                  marginTop: "0.5rem",
+                  padding: "0.75rem",
+                  background: "#111",
+                  border: "1px solid #333",
+                  fontSize: "0.85rem",
+                  color: "#ccc",
+                  whiteSpace: "pre-wrap",
+                  lineHeight: "1.5",
+                }}>
+                  {result.reasoning}
+                </div>
+              </details>
+            )}
           </div>
 
           {/* Google Calendar Section */}
