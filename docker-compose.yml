@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: studybot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/studybot?schema=public"
+      BASE_URL: "http://localhost:3000"
+      GOOGLE_PROVIDER: "fake"
+      AI_PROVIDER: "mock"
+      NODE_ENV: "development"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
