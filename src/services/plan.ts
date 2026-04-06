@@ -3,11 +3,14 @@ import { generateSessionId } from "@/lib/session-id";
 import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
 import { createPlanSchema, SessionMode } from "@/lib/validation";
 import { generatePlan, PlanBlock } from "@/lib/plan-generator";
+import { generatePlanWithResearch } from "@/lib/research-plan-generator";
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
 import { getGoogleClient } from "@/lib/google/calendar-client";
 import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/google/free-slots";
 import { buildGoogleCalendarLink } from "@/lib/gcal-link";
+import { createProvider } from "@/lib/ai/provider-factory";
+import type { GatewayContext } from "@/lib/ai/gateway";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -33,12 +36,24 @@ export async function createPlan(userId: string, input: unknown) {
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + 6);
 
-  const blocks = generatePlan({
-    objectives: parsed.objectives,
-    dailyCap: parsed.daily_study_cap_minutes,
-    breakProtocol: parsed.break_protocol_default,
-    availability: parsed.availability,
-  });
+  // Build AI gateway context (null if mock — will use deterministic fallback)
+  let gatewayCtx: GatewayContext | null = null;
+  const providerName = process.env.AI_PROVIDER || "mock";
+  if (providerName !== "mock") {
+    gatewayCtx = { userId, provider: createProvider() };
+  }
+
+  const planResult = await generatePlanWithResearch(
+    {
+      objectives: parsed.objectives,
+      dailyCap: parsed.daily_study_cap_minutes,
+      breakProtocol: parsed.break_protocol_default,
+      availability: parsed.availability,
+      examDate: parsed.exam_date,
+    },
+    gatewayCtx,
+  );
+  const blocks = planResult.blocks;
 
   // If Google availability is requested, fetch busy times and fit blocks into free slots
   let googleFreeSlotsByDay: Map<number, TimeInterval[]> | null = null;
