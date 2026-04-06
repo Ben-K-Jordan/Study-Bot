@@ -301,6 +301,324 @@ const PAPERS: PaperSeed[] = [
       },
     ],
   },
+  // ── Karpicke 2025 — Retrieval-Based Learning Review ────────────
+  {
+    title: "Retrieval-Based Learning: A Comprehensive Review",
+    authors: "Karpicke",
+    year: 2025,
+    venue: "Learning and Memory: A Comprehensive Reference (Elsevier)",
+    tags: ["retrieval-practice", "testing-effect", "spacing", "transfer", "review"],
+    summary:
+      "Comprehensive review of retrieval-based learning research from 2006-2023. Establishes that retrieval practice effects are most robust when initial retrieval success exceeds 75% and retrieval still requires effort. Repeated retrieval virtually eliminates forgetting, and benefits generalize across materials, contexts, and learner populations.",
+    cards: [
+      {
+        claim: "Retrieval practice effects are most robust when initial retrieval success is above 75% and retrieval still requires effort (e.g., spaced rather than massed).",
+        recommendation: "Design study sessions so retrieval attempts are spaced (not immediately after study) but material is well enough encoded that at least 75% can be successfully recalled. If initial recall is too low, provide a brief restudy before attempting retrieval again.",
+        boundaryConditions: "The conundrum is that conditions increasing retrieval success (more cues, shorter delays) also reduce retrieval effort, which is essential for the learning benefit.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "retrieval-effort", "retrieval-success", "spacing"],
+      },
+      {
+        claim: "Massed retrieval immediately after study produces very little learning relative to spaced retrieval.",
+        recommendation: "Space retrieval practice away from initial study. Do not test immediately after reading — wait at least some interval before the first retrieval attempt to ensure effortful retrieval.",
+        boundaryConditions: "Applies broadly; supported by multiple studies. Immediate testing feels productive but produces less durable learning.",
+        strength: "STRONG",
+        tags: ["spacing", "retrieval-effort", "massed-vs-spaced"],
+      },
+      {
+        claim: "Repeated retrieval virtually eliminates forgetting. Subjects who repeatedly recalled at increasing intervals showed little or no forgetting over 2 months.",
+        recommendation: "Schedule repeated retrieval practice sessions at expanding intervals to create a nearly flat forgetting curve for critical material.",
+        boundaryConditions: "Demonstrated with geometric line drawings and prose passages. Generalized widely across materials and contexts.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "repeated-testing", "forgetting-curve", "expanding-retrieval"],
+      },
+    ],
+  },
+
+  // ── Karpicke & Blunt 2011 — Retrieval vs Concept Mapping ─────
+  {
+    title: "Retrieval Practice Produces More Learning than Elaborative Studying with Concept Mapping",
+    authors: "Karpicke, Blunt",
+    year: 2011,
+    venue: "Science",
+    tags: ["retrieval-practice", "concept-mapping", "elaborative-study"],
+    summary:
+      "Found that retrieval practice (recall-restudy-recall cycle) produces substantially more learning than elaborative concept mapping when tested one week later. Retrieval group scored 67% vs 45% for concept mapping. The advantage held for both direct recall and inference questions.",
+    cards: [
+      {
+        claim: "Retrieval practice (recall-restudy-recall cycle) produces substantially more learning than elaborative studying with concept mapping (67% vs 45% one week later, r = 0.602).",
+        recommendation: "When studying complex material, prefer active recall (writing out what you remember) over elaborative techniques like concept mapping. A study-recall-restudy-recall cycle is more effective than spending equivalent time on concept mapping.",
+        boundaryConditions: "Tested with prose passages and undergraduate participants. The advantage held for both factual recall and inference questions, suggesting retrieval promotes meaningful learning.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "concept-mapping", "elaborative-study", "session-mode"],
+      },
+    ],
+  },
+
+  // ── Adesope et al. 2017 — Practice Testing Meta-Analysis ─────
+  {
+    title: "Rethinking the Use of Tests: A Meta-Analysis of Practice Testing",
+    authors: "Adesope, Trevisan, Sundararajan",
+    year: 2017,
+    venue: "Review of Educational Research",
+    tags: ["retrieval-practice", "testing-effect", "meta-analysis", "feedback", "test-format"],
+    summary:
+      "Meta-analysis of 118 articles (272 effect sizes, 15,427 participants). Practice testing vs restudying yields g = 0.51. Effects are larger at 1-6 day delays (g = 0.82). Mixed-format tests produce the largest effects (g = 0.80). Testing without feedback is also effective.",
+    cards: [
+      {
+        claim: "Practice testing produces a moderate, robust benefit over restudying (g = 0.51, k = 195 studies). Even when total study time is held constant, testing is superior.",
+        recommendation: "Replace rereading with self-testing as the primary study strategy. Simply replace some restudy time with testing — no extra time needed.",
+        boundaryConditions: "Effect is robust across classroom and laboratory settings, across education levels, and across retention and transfer outcomes.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "meta-analysis", "restudy-comparison", "study-efficiency"],
+      },
+      {
+        claim: "Testing effects are larger at longer retention intervals. Effect sizes peak at 1-6 day delays (g = 0.82) compared to same-day delays (g = 0.56).",
+        recommendation: "Schedule retrieval practice sessions at least 1 day before the target assessment to maximize the testing effect. The benefit of practice testing is most pronounced at delays of 1-6 days.",
+        boundaryConditions: "The 1-6 day peak may reflect the mix of studies at that interval rather than a true decline at longer intervals.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "retention-interval", "spacing", "scheduling"],
+      },
+      {
+        claim: "Multiple-choice practice tests produced large effect sizes (g = 0.70), comparable to free recall (g = 0.62). Mixed-format tests produced the largest effects (g = 0.80).",
+        recommendation: "Use mixed-format practice tests when possible. Multiple-choice practice is a viable and effective option when free-recall testing is impractical.",
+        boundaryConditions: "The advantage of multiple-choice may partly reflect lower cognitive load. Other studies suggest free recall may be superior for long-term retention.",
+        strength: "MODERATE",
+        tags: ["retrieval-practice", "test-format", "multiple-choice"],
+      },
+      {
+        claim: "Transfer-appropriate processing matters: testing effects are stronger when practice and final test formats match (g = 0.63) than when they differ (g = 0.53), but cross-format effects still exist.",
+        recommendation: "When possible, match the format of practice tests to the expected exam format. However, any form of practice testing is beneficial even when formats differ.",
+        boundaryConditions: "Both conditions showed substantial positive effects. The difference was statistically significant but practically modest.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "test-format", "transfer-appropriate-processing"],
+      },
+    ],
+  },
+
+  // ── Brunmair & Richter 2019 — Interleaving Meta-Analysis ─────
+  {
+    title: "Similarity Matters: A Meta-Analysis of Interleaved Learning and Its Moderators",
+    authors: "Brunmair, Richter",
+    year: 2019,
+    venue: "Psychological Bulletin",
+    tags: ["interleaving", "meta-analysis", "category-learning", "similarity"],
+    summary:
+      "Meta-analysis of 59 studies (238 effect sizes) on interleaving for inductive learning. Found a moderate overall effect (g = 0.42), but benefits vary by material type: strongest for visual materials (g = 0.67), moderate for math (g = 0.34), reversed for word-based categories. Interleaving is most effective when categories are highly similar.",
+    cards: [
+      {
+        claim: "Interleaving produces a moderate overall benefit for inductive learning (g = 0.42), but depends heavily on material type: visual materials g = 0.67, math g = 0.34, words g = -0.39 (blocking better).",
+        recommendation: "Use interleaved practice for discriminating between similar categories (problem types, visual classifications). Do not assume interleaving is universally beneficial — for word-based learning, blocking may be better.",
+        boundaryConditions: "Best for tasks requiring discrimination between categories. Reversed for word-based categories where within-category similarity matters more.",
+        strength: "STRONG",
+        tags: ["interleaving", "meta-analysis", "material-type", "discrimination-training"],
+      },
+      {
+        claim: "Interleaving is most effective when categories are highly similar to each other (low discriminability). Blocking is better when categories are highly dissimilar.",
+        recommendation: "When study material involves distinguishing between things that look or feel similar (e.g., math problem types requiring different formulas), interleave. When identifying common features within diverse examples, consider blocking.",
+        boundaryConditions: "Consistent with the sequential attention theory. Interleaving highlights differences; blocking highlights similarities.",
+        strength: "STRONG",
+        tags: ["interleaving", "similarity", "discrimination", "category-learning"],
+      },
+    ],
+  },
+
+  // ── Pan & Rickard 2018 — Transfer of Test-Enhanced Learning ───
+  {
+    title: "Transfer of Test-Enhanced Learning: Meta-Analytic Review and Synthesis",
+    authors: "Pan, Rickard",
+    year: 2018,
+    venue: "Psychological Bulletin",
+    tags: ["retrieval-practice", "testing-effect", "transfer", "meta-analysis", "feedback"],
+    summary:
+      "Meta-analysis of 192 effect sizes (N = 10,382) on transfer of practice testing benefits. Found moderate transfer (d = 0.40), strongly conditional on three factors: response congruency, elaborated retrieval practice, and initial test performance. When all three are present, transfer rises to d = 0.78.",
+    cards: [
+      {
+        claim: "Practice testing yields moderate transferable learning (d = 0.40), but when response congruency, elaborated retrieval, and adequate initial performance are all present, transfer rises to d = 0.78.",
+        recommendation: "Design practice tests to maximize transfer: test the same underlying concepts (response congruency), provide elaborative feedback with explanations, and calibrate difficulty so initial accuracy exceeds 50%.",
+        boundaryConditions: "When none of the three favorable factors are present, transfer may be near zero or negative.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "transfer", "meta-analysis", "difficulty-calibration"],
+      },
+      {
+        claim: "Elaborated retrieval practice (combining testing with free recall followed by restudy, or elaborative feedback with explanations) significantly enhances transfer (d increase of 0.22).",
+        recommendation: "After retrieval attempts, provide elaborative feedback that includes explanations or context, not just correct/incorrect. Pair retrieval with a restudy opportunity.",
+        boundaryConditions: "Without elaborated retrieval and response congruency, transfer estimate drops to only d = 0.21.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "feedback", "transfer", "elaborative-retrieval"],
+      },
+    ],
+  },
+
+  // ── Agarwal et al. 2021 — Classroom Retrieval Practice Review ─
+  {
+    title: "Retrieval Practice Consistently Benefits Student Learning: A Systematic Review of Applied Research in Schools and Classrooms",
+    authors: "Agarwal, Nunes, Blunt",
+    year: 2021,
+    venue: "Educational Psychology Review",
+    tags: ["retrieval-practice", "classroom-research", "systematic-review", "feedback"],
+    summary:
+      "Systematic review of 50 classroom experiments (n = 5,374). 57% showed medium or large effects (d > 0.50). Only 3 of 49 effect sizes were negative. Benefits held across K-12, undergraduate, medical school, and multiple content areas regardless of retrieval format.",
+    cards: [
+      {
+        claim: "Retrieval practice consistently benefits learning in real classroom settings, with 57% of experiments showing medium or large effects and only 3 of 49 being negative.",
+        recommendation: "Incorporate retrieval practice into regular study routines. Benefits are robust across education levels, content areas, and implementation formats.",
+        boundaryConditions: "94% of studies were in WEIRD countries. Limited data for mathematics and humanities specifically.",
+        strength: "STRONG",
+        tags: ["retrieval-practice", "classroom-research", "applied-research"],
+      },
+      {
+        claim: "Retrieval practice is effective at a variety of timings: single sessions, weekly, or every 2-3 weeks. No clear optimal timing emerged — doing it at all matters more than exact frequency.",
+        recommendation: "Provide retrieval practice at whatever frequency is feasible. The exact timing matters less than actually doing it.",
+        boundaryConditions: "Most common timing was weekly (k = 19) or every 2-3 weeks (k = 15). Single-session retrieval (k = 10) was also effective.",
+        strength: "MODERATE",
+        tags: ["retrieval-practice", "timing", "scheduling", "flexibility"],
+      },
+      {
+        claim: "Immediate feedback after retrieval was associated with a range of effect sizes (small to large). Studies without feedback resulted in mostly small effects.",
+        recommendation: "Provide feedback after retrieval practice, ideally immediately. Retrieval without any feedback is less effective.",
+        boundaryConditions: "34 of 50 experiments used immediate feedback. Unable to determine optimal feedback type from available data.",
+        strength: "MODERATE",
+        tags: ["retrieval-practice", "feedback", "classroom-research"],
+      },
+    ],
+  },
+
+  // ── Gollwitzer 1999 — Implementation Intentions ──────────────
+  {
+    title: "Implementation Intentions: Strong Effects of Simple Plans",
+    authors: "Gollwitzer",
+    year: 1999,
+    venue: "American Psychologist",
+    tags: ["implementation-intentions", "goal-setting", "self-regulation", "habit-formation"],
+    summary:
+      "Implementation intentions ('When situation X, I will do Y') dramatically increase goal completion from 22-32% to 62-71%. They delegate behavioral control to situational cues, creating 'instant habits' that trigger goal-directed behavior automatically. Effects are robust across populations including clinical groups.",
+    cards: [
+      {
+        claim: "Implementation intentions ('When situation X, I will do Y') increase completion of difficult goals from ~22-32% to ~62-71%.",
+        recommendation: "When scheduling study sessions, form explicit implementation intentions specifying exactly when and where you will study (e.g., 'When I finish dinner on Tuesday, I will go to my desk and study Chapter 5 for 45 minutes').",
+        boundaryConditions: "Works primarily for difficult-to-implement goals. Easy goals already have ~80% completion and show minimal additional benefit. Requires strong underlying goal commitment.",
+        strength: "STRONG",
+        tags: ["implementation-intentions", "goal-setting", "session-scheduling", "habit-formation"],
+      },
+      {
+        claim: "Implementation intentions create 'instant habits' — a single mental act of linking a situation to a behavior produces automatic action initiation equivalent to repeated behavioral practice.",
+        recommendation: "Rather than relying on willpower to start studying, pre-decide the exact time, place, and first action of each study session. This creates automatic initiation similar to habitual behavior.",
+        boundaryConditions: "Commitment matters — telling yourself 'I strongly intend to follow this plan' enhances the effect. Effects fade within 48 hours if the goal intention is abandoned.",
+        strength: "STRONG",
+        tags: ["implementation-intentions", "automaticity", "habit-formation", "session-structure"],
+      },
+      {
+        claim: "Distraction-inhibiting implementation intentions ('When distraction X arises, I will ignore it') outperform task-facilitating ones for protecting goal pursuit.",
+        recommendation: "For study sessions, form distraction-inhibiting intentions like 'When I feel the urge to check my phone, I will ignore it' rather than effort-increasing intentions.",
+        boundaryConditions: "Task-facilitating intentions can backfire when motivation is already high. Distraction-inhibiting intentions work regardless of motivation level.",
+        strength: "MODERATE",
+        tags: ["implementation-intentions", "distraction-management", "session-structure"],
+      },
+    ],
+  },
+
+  // ── Gollwitzer & Brandstatter 1997 — Implementation Intentions Experimental ─
+  {
+    title: "Implementation Intentions and Effective Goal Pursuit",
+    authors: "Gollwitzer, Brandstatter",
+    year: 1997,
+    venue: "Journal of Personality and Social Psychology",
+    tags: ["implementation-intentions", "goal-setting", "procrastination-prevention", "action-initiation"],
+    summary:
+      "Three studies establishing that implementation intentions dramatically increase goal completion rates. Difficult goals with implementation intentions were completed 3x more often (62% vs 22%). 83% of completers acted on the exact day specified in their plan. Lab study showed faster seizing of goal-relevant opportunities.",
+    cards: [
+      {
+        claim: "For difficult-to-implement goals, forming implementation intentions tripled the completion rate (62% vs 22% in Study 1; 71% vs 32% in Study 2).",
+        recommendation: "For challenging study tasks, always specify the exact day, time, and location you will begin. This simple planning step can triple the likelihood of actually completing the task.",
+        boundaryConditions: "Effect is strongest for difficult goals. Easy routine tasks already show ~80% completion. The effect was independent of goal importance and anticipated obstacles.",
+        strength: "STRONG",
+        tags: ["implementation-intentions", "goal-completion", "procrastination-prevention"],
+      },
+      {
+        claim: "83% of implementation intention participants who completed the task did so on the exact day they had specified in their plan.",
+        recommendation: "When planning study sessions, commit to a specific time slot and location. The act of committing binds execution to that exact context, making follow-through nearly automatic.",
+        boundaryConditions: "Demonstrated in field experiment with assigned goals. Works for both self-set and externally assigned implementation intentions.",
+        strength: "STRONG",
+        tags: ["implementation-intentions", "scheduling", "time-management"],
+      },
+    ],
+  },
+
+  // ── Zimmerman 2002 — Self-Regulated Learning ─────────────────
+  {
+    title: "Becoming a Self-Regulated Learner: An Overview",
+    authors: "Zimmerman",
+    year: 2002,
+    venue: "Theory Into Practice",
+    tags: ["self-regulation", "goal-setting", "metacognition", "self-efficacy", "study-strategies"],
+    summary:
+      "Presents a three-phase cyclical model of self-regulated learning: forethought (goal setting, strategic planning), performance (self-control, self-observation), and self-reflection (self-evaluation, causal attribution). Experts differ from novices in how they apply these processes. Setting specific proximal goals leads to superior achievement.",
+    cards: [
+      {
+        claim: "Setting specific, proximal goals leads to superior achievement and greater self-efficacy compared to vague or distal goals.",
+        recommendation: "Break study goals into specific, near-term targets (e.g., 'memorize 20 vocabulary words by Thursday' rather than 'study for the exam'). Each study session should have a concrete, measurable objective.",
+        boundaryConditions: "The principle applies broadly across academic tasks. Specific goal types may vary by domain.",
+        strength: "STRONG",
+        tags: ["goal-setting", "self-regulation", "session-structure", "self-efficacy"],
+      },
+      {
+        claim: "Self-regulated learning follows a three-phase cycle (forethought, performance, self-reflection) and students who engage in all three phases show high correlations with academic achievement.",
+        recommendation: "Structure each study session with all three phases: (1) set goals and plan strategy before starting, (2) use self-control and self-monitor during the session, (3) self-evaluate and reflect on what worked afterward.",
+        boundaryConditions: "Students at different skill levels need different levels of social support and scaffolding.",
+        strength: "STRONG",
+        tags: ["self-regulation", "session-structure", "metacognition", "study-strategies"],
+      },
+      {
+        claim: "Attributing poor performance to controllable processes (e.g., wrong strategy) sustains motivation, while attributing it to fixed ability damages motivation.",
+        recommendation: "When study sessions yield poor results, frame the outcome as a strategy problem ('I need a different approach') rather than an ability problem. Study systems should encourage strategy-focused reflection after each session.",
+        boundaryConditions: "Part of the self-reflection phase. Demonstrated across multiple studies in academic contexts.",
+        strength: "STRONG",
+        tags: ["self-regulation", "causal-attribution", "motivation", "self-reflection"],
+      },
+    ],
+  },
+
+  // ── Steel 2007 — Procrastination Meta-Analysis ───────────────
+  {
+    title: "The Nature of Procrastination: A Meta-Analytic and Theoretical Review of Quintessential Self-Regulatory Failure",
+    authors: "Steel",
+    year: 2007,
+    venue: "Psychological Bulletin",
+    tags: ["procrastination", "self-regulation", "meta-analysis", "temporal-discounting", "self-efficacy"],
+    summary:
+      "Meta-analysis of 691 correlations establishing that procrastination is best predicted by task aversiveness, temporal distance of deadlines, low self-efficacy, and impulsiveness. Supports Temporal Motivation Theory: task utility increases hyperbolically as deadlines approach. 80-95% of college students procrastinate.",
+    cards: [
+      {
+        claim: "Task aversiveness is a strong predictor of procrastination. The effect interacts with temporal distance — distant deadlines on aversive tasks produce the most procrastination.",
+        recommendation: "Begin study plans with or interleave the most aversive tasks with more enjoyable ones. Break large unpleasant tasks into smaller chunks. Pair aversive material with pleasant environments.",
+        boundaryConditions: "Individual perception of aversiveness varies. Task aversiveness alone predicts avoidance; it requires temporal distance to produce procrastination.",
+        strength: "STRONG",
+        tags: ["procrastination", "task-aversiveness", "session-structure", "scheduling"],
+      },
+      {
+        claim: "Temporal distance of deadlines is a fundamental driver of procrastination. Per Temporal Motivation Theory, task utility increases hyperbolically as the deadline approaches.",
+        recommendation: "Create artificial proximal deadlines and immediate rewards for study tasks. Break semester-long projects into weekly milestones. Schedule study sessions close to when material will be tested.",
+        boundaryConditions: "The effect is modulated by individual sensitivity to delay (impulsiveness). People can learn to counteract this tendency.",
+        strength: "STRONG",
+        tags: ["procrastination", "temporal-discounting", "scheduling", "deadline-management"],
+      },
+      {
+        claim: "Low self-efficacy is a strong predictor of procrastination, creating a potential failure spiral (procrastination → poor performance → lower self-efficacy → more procrastination).",
+        recommendation: "Build self-efficacy by scheduling early, achievable study wins before tackling harder material. Start sessions with review of previously mastered content to build confidence.",
+        boundaryConditions: "Self-efficacy is domain-specific. The failure spiral can be broken by strategy attribution.",
+        strength: "STRONG",
+        tags: ["procrastination", "self-efficacy", "session-structure", "motivation"],
+      },
+      {
+        claim: "Impulsiveness (not neuroticism or anxiety) is a strong predictor of procrastination. Impulsive individuals are more sensitive to immediate gratification and distractions.",
+        recommendation: "For highly impulsive students, structure environments to minimize distractions: remove phones, use website blockers. Use shorter study sessions with more frequent breaks.",
+        boundaryConditions: "Impulsiveness has a trait component but is modifiable through environmental control. Neuroticism showed only weak associations, contrary to popular belief.",
+        strength: "STRONG",
+        tags: ["procrastination", "impulsiveness", "distraction-management", "session-duration"],
+      },
+    ],
+  },
 ];
 
 // ── Seed Script ─────────────────────────────────────────────────
