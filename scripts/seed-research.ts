@@ -621,6 +621,114 @@ const PAPERS: PaperSeed[] = [
       },
     ],
   },
+
+  // ── Bloom's Taxonomy & Question Design ──────────────────────
+  {
+    title: "A Taxonomy for Learning, Teaching, and Assessing: A Revision of Bloom's Taxonomy of Educational Objectives",
+    authors: "Anderson, Krathwohl, Airasian, Cruikshank, Mayer, Pintrich, Rathis, Wittrock",
+    year: 2001,
+    venue: "Longman",
+    tags: ["question-design", "blooms-taxonomy", "higher-order-thinking"],
+    summary:
+      "Revised Bloom's taxonomy organizes cognitive processes into six levels: Remember, Understand, Apply, Analyze, Evaluate, Create. Questions targeting higher levels (Apply and above) produce better transfer and deeper understanding than lower-level recall questions, though recall questions are appropriate for initial learning stages.",
+    cards: [
+      {
+        claim: "Questions at the Apply, Analyze, and Evaluate levels of Bloom's taxonomy produce better transfer to novel problems than Remember-level questions, even when both are equally difficult.",
+        recommendation: "Generate practice questions across multiple Bloom's levels. Start sessions with Remember/Understand questions, then progress to Apply/Analyze. At least 40% of retrieval questions should be at Apply level or above. For exam simulation sessions, match the Bloom's level distribution to the expected exam.",
+        boundaryConditions: "Lower-level questions are necessary scaffolding for beginners. Jumping to Analyze-level questions without foundational knowledge is counterproductive. The optimal distribution depends on the subject — STEM benefits more from Apply/Analyze, humanities from Evaluate/Create.",
+        strength: "STRONG",
+        tags: ["question-design", "blooms-taxonomy", "question-difficulty", "transfer"],
+      },
+      {
+        claim: "Questions that require generation (producing an answer from memory) produce stronger memory traces than recognition-based questions (selecting from options), even when recognition questions are harder.",
+        recommendation: "Prefer short-answer and free-recall question formats over multiple-choice for retrieval practice. Use multiple-choice only as scaffolding for very difficult material or for diagnostic sessions. When multiple-choice is used, include plausible distractors based on common misconceptions.",
+        boundaryConditions: "Multiple-choice can be effective when distractors are designed to target specific misconceptions. The generation advantage is smaller for very complex material where students lack sufficient knowledge to generate any answer.",
+        strength: "STRONG",
+        tags: ["question-design", "generation-effect", "question-format", "retrieval-practice"],
+      },
+    ],
+  },
+
+  // ── Elaborative Interrogation ───────────────────────────────
+  {
+    title: "Using Elaborative Interrogation to Help Students Learn",
+    authors: "Pressley, McDaniel, Turnure, Wood, Ahmad",
+    year: 1987,
+    venue: "Journal of Educational Psychology",
+    tags: ["elaborative-interrogation", "question-design", "why-questions"],
+    summary:
+      "Elaborative interrogation — prompting learners to generate explanations for why stated facts are true — significantly enhances learning compared to reading alone or even reading with provided explanations. The 'why' prompt forces deeper processing and connection to prior knowledge.",
+    cards: [
+      {
+        claim: "'Why is this true?' and 'How does this work?' questions produce 30-50% better retention than factual recall questions alone, by forcing learners to connect new information to existing knowledge.",
+        recommendation: "After initial retrieval questions on a topic, follow up with elaborative 'why' and 'how' questions. For every 3 factual recall questions, include 1-2 elaborative questions. Use elaborative interrogation especially in ERROR_REPAIR sessions to deepen understanding of corrected answers.",
+        boundaryConditions: "Elaborative interrogation requires sufficient prior knowledge to generate explanations. For completely novel domains, provide some initial context before asking 'why' questions. Most effective for factual and conceptual learning; less studied for procedural skills.",
+        strength: "STRONG",
+        tags: ["question-design", "elaborative-interrogation", "why-questions", "deep-processing"],
+      },
+      {
+        claim: "Self-generated explanations are more effective than provided explanations, even when the provided explanations are more accurate.",
+        recommendation: "When generating practice questions, prefer open-ended 'explain why' formats over providing explanations for the student to read. After a student answers incorrectly, ask them to explain why the correct answer is right rather than just showing the explanation.",
+        boundaryConditions: "Students may generate incorrect explanations. Follow self-explanation with corrective feedback. The generation advantage decreases when students have very low prior knowledge.",
+        strength: "MODERATE",
+        tags: ["question-design", "self-explanation", "generation-effect"],
+      },
+    ],
+  },
+
+  // ── Error-Focused Question Design ───────────────────────────
+  {
+    title: "Learning from Errors",
+    authors: "Metcalfe",
+    year: 2017,
+    venue: "Annual Review of Psychology",
+    tags: ["error-correction", "question-design", "misconceptions", "feedback"],
+    summary:
+      "Research on learning from errors shows that errors committed with high confidence are corrected more effectively than low-confidence errors (the hypercorrection effect). Questions designed to elicit and then correct specific misconceptions produce stronger and more durable learning than questions that avoid errors.",
+    cards: [
+      {
+        claim: "High-confidence errors are corrected more effectively than low-confidence errors (hypercorrection effect). When students are confidently wrong, the surprise of correction creates a stronger memory trace.",
+        recommendation: "Design questions that target common misconceptions head-on rather than avoiding them. Include 'trap' questions that expose common errors. After a confident wrong answer, provide immediate corrective feedback with explanation. Track confidence levels to prioritize high-confidence errors for review.",
+        boundaryConditions: "The hypercorrection effect requires immediate or near-immediate feedback. Delayed feedback weakens the correction. Effect is strongest for factual knowledge; less clear for complex procedural errors.",
+        strength: "STRONG",
+        tags: ["question-design", "error-correction", "hypercorrection", "misconceptions", "feedback"],
+      },
+      {
+        claim: "Questions that elicit errors followed by corrective feedback produce better long-term retention than questions calibrated to produce only correct answers, provided feedback is given.",
+        recommendation: "Don't make all practice questions easy. Target 60-80% accuracy during retrieval practice. Include deliberately challenging questions that expose gaps. Always pair error-producing questions with immediate, elaborative feedback.",
+        boundaryConditions: "Errors without feedback can reinforce incorrect knowledge. This approach requires reliable corrective feedback. For very early learning stages, excessive errors can reduce motivation.",
+        strength: "STRONG",
+        tags: ["question-design", "desirable-difficulties", "error-correction", "target-accuracy"],
+      },
+    ],
+  },
+
+  // ── Question Sequencing & Adaptive Difficulty ───────────────
+  {
+    title: "Optimizing Learning Using Flashcards: Spacing Is More Effective Than Cramming",
+    authors: "Kornell",
+    year: 2009,
+    venue: "Applied Cognitive Psychology",
+    tags: ["question-sequencing", "adaptive-difficulty", "spacing", "flashcards"],
+    summary:
+      "Research on optimal question sequencing shows that interleaving question topics, spacing repetitions of the same question, and adapting difficulty based on performance all contribute to more efficient learning. Items answered incorrectly should be re-tested sooner than items answered correctly.",
+    cards: [
+      {
+        claim: "Adaptive spacing — re-testing missed items sooner and correctly answered items later — produces more efficient learning than fixed spacing schedules.",
+        recommendation: "After each retrieval session, immediately re-test items that were answered incorrectly. Items answered correctly should be spaced at increasing intervals. Use a simple algorithm: wrong → re-test same session or next day; right → re-test in 2-3 days; right twice → re-test in 5-7 days.",
+        boundaryConditions: "Requires item-level tracking of correct/incorrect responses. The optimal expanding schedule varies by material difficulty and individual learner. Fixed spacing still works — adaptive just optimizes efficiency.",
+        strength: "STRONG",
+        tags: ["question-sequencing", "adaptive-difficulty", "spacing", "error-tracking"],
+      },
+      {
+        claim: "Interleaving question topics within a practice session forces discrimination between problem types and improves the ability to select appropriate strategies on exams.",
+        recommendation: "Mix questions from different topics within each practice session rather than grouping by topic. Include at least 3 different topics per interleaved session. Interleave similar-but-distinct topics that students commonly confuse.",
+        boundaryConditions: "Interleaving is most beneficial after initial learning of each topic. Very early in learning, brief blocked practice may be needed. Interleaving works best for topics that share surface similarity but require different solutions.",
+        strength: "STRONG",
+        tags: ["question-sequencing", "interleaving", "discrimination-training"],
+      },
+    ],
+  },
 ];
 
 // ── Seed Script ─────────────────────────────────────────────────
