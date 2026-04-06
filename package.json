@@ -21,7 +21,8 @@
     "worker": "tsx scripts/worker.ts",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "db:seed-research": "tsx scripts/seed-research.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.6.0",

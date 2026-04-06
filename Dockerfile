@@ -9,4 +9,4 @@ RUN npx prisma generate
 EXPOSE 3000
 
 # Run migrations then start dev server
-CMD sh -c "npx prisma db push && npm run dev"
+CMD sh -c "npx prisma db push && npx tsx scripts/seed-research.ts && npm run dev"
