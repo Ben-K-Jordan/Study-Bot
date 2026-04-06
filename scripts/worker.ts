@@ -12,8 +12,7 @@
  */
 import { claimJobs, succeedJob, failJob, type ClaimedJob } from "../src/lib/jobs/queue";
 import { handleEmbedChunkBatch } from "../src/lib/jobs/handlers/embed-chunks";
-import { MockProvider } from "../src/lib/ai/providers/mock";
-import type { AiProvider } from "../src/lib/ai/provider";
+import { createProvider } from "../src/lib/ai/provider-factory";
 
 const CONCURRENCY = parseInt(process.env.JOB_WORKER_CONCURRENCY || "2", 10);
 const POLL_INTERVAL_MS = parseInt(process.env.JOB_POLL_INTERVAL_MS || "2000", 10);
@@ -21,14 +20,7 @@ const WORKER_ID = `worker-${process.pid}-${Date.now()}`;
 
 let running = true;
 
-function getProvider(): AiProvider {
-  const providerName = process.env.AI_PROVIDER || "mock";
-  if (providerName === "mock") return new MockProvider();
-  // Future: add OpenAI provider here
-  throw new Error(`Unknown AI_PROVIDER: ${providerName}`);
-}
-
-const provider = getProvider();
+const provider = createProvider();
 
 async function processJob(job: ClaimedJob): Promise<void> {
   console.log(`[${WORKER_ID}] Processing job ${job.id} (type=${job.type}, attempt=${job.attempts}/${job.maxAttempts})`);

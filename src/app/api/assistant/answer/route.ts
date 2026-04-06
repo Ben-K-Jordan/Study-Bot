@@ -12,8 +12,7 @@ import { hybridSearch } from "@/lib/search";
 import { runTask, embed, GatewayError, type GatewayContext } from "@/lib/ai/gateway";
 import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
-import { MockProvider } from "@/lib/ai/providers/mock";
-import type { AiProvider } from "@/lib/ai/provider";
+import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
 
 const answerRequestSchema = z.object({
@@ -33,13 +32,7 @@ interface AnswerOutput {
 const EMBED_MODEL = process.env.AI_MODEL_EMBED || "text-embedding-3-small";
 const ANSWER_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
 
-function getProvider(): AiProvider {
-  const name = process.env.AI_PROVIDER || "mock";
-  if (name === "mock") return new MockProvider();
-  throw new Error(`Unknown AI_PROVIDER: ${name}`);
-}
-
-const provider = getProvider();
+const provider = createProvider();
 
 export async function POST(request: NextRequest) {
   const userId = getUserId(request.headers);
