@@ -66,6 +66,9 @@ export interface EventListOptions {
   calendarId: string;
   privateExtendedProperty?: string; // e.g. "sb_item=<planItemId>"
   maxResults?: number;
+  timeMin?: string; // ISO RFC3339
+  timeMax?: string; // ISO RFC3339
+  singleEvents?: boolean; // expand recurring events
 }
 
 // ---- Interface ----
@@ -408,6 +411,12 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
       params.set("privateExtendedProperty", options.privateExtendedProperty);
     }
     params.set("maxResults", String(options.maxResults ?? 10));
+    if (options.timeMin) params.set("timeMin", options.timeMin);
+    if (options.timeMax) params.set("timeMax", options.timeMax);
+    if (options.singleEvents) {
+      params.set("singleEvents", "true");
+      params.set("orderBy", "startTime");
+    }
 
     const res = await this.apiRequest(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(options.calendarId)}/events?${params}`,
@@ -575,6 +584,9 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
         const [key, value] = options.privateExtendedProperty.split("=", 2);
         if (!event.extendedProperties || event.extendedProperties[key] !== value) continue;
       }
+      // Filter by time window if specified
+      if (options.timeMin && event.end <= options.timeMin) continue;
+      if (options.timeMax && event.start >= options.timeMax) continue;
       results.push({
         id: event.id,
         summary: event.summary,
