@@ -60,7 +60,9 @@ export async function GET(request: NextRequest) {
       }),
     }));
 
-    return NextResponse.json({ plans: result });
+    return NextResponse.json({ plans: result }, {
+      headers: { "Cache-Control": "private, max-age=30" },
+    });
   } catch (err) {
     logger.error("list_plans_failed", { error: String(err) });
     return NextResponse.json(

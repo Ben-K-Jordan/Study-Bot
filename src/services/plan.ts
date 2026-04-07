@@ -340,6 +340,24 @@ export async function getPlan(userId: string, planId: string) {
   const base = getBaseUrl();
   const feedUrl = `${base}/api/plans/${plan.planId}/feed`;
 
+  // Pre-compute calendar title + description per session (avoids recomputing in the item loop)
+  const calendarMeta = new Map<string, { title: string; description: string }>();
+  for (const session of sessions) {
+    calendarMeta.set(session.sessionId, {
+      title: buildCalendarTitle({
+        courseName: session.courseName,
+        examName: session.examName,
+        mode: session.mode as SessionMode,
+        topicScope: session.topicScope,
+      }),
+      description: buildCalendarDescription({
+        outcome: session.targetOutcome as Record<string, unknown> | null,
+        sessionUrl: `${base}/s/${session.sessionId}`,
+        breaks: session.breakProtocol as Record<string, unknown> | null,
+      }),
+    });
+  }
+
   return {
     data: {
       plan_id: plan.planId,
@@ -357,6 +375,7 @@ export async function getPlan(userId: string, planId: string) {
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {
         const session = sessionMap.get(item.sessionId);
+        const cal = calendarMeta.get(item.sessionId);
         return {
           id: item.id,
           day_index: item.dayIndex,
@@ -373,36 +392,13 @@ export async function getPlan(userId: string, planId: string) {
           mode: session?.mode ?? "",
           topic_scope: session?.topicScope ?? "",
           planned_minutes: session?.plannedMinutes ?? 0,
-          calendar: session
-            ? {
-                title: buildCalendarTitle({
-                  courseName: session.courseName,
-                  examName: session.examName,
-                  mode: session.mode as SessionMode,
-                  topicScope: session.topicScope,
-                }),
-                description: buildCalendarDescription({
-                  outcome: session.targetOutcome as Record<string, unknown> | null,
-                  sessionUrl: `${base}/s/${item.sessionId}`,
-                  breaks: session.breakProtocol as Record<string, unknown> | null,
-                }),
-              }
-            : null,
-          gcal_link: session
+          calendar: cal ?? null,
+          gcal_link: cal
             ? buildGoogleCalendarLink({
-                title: buildCalendarTitle({
-                  courseName: session.courseName,
-                  examName: session.examName,
-                  mode: session.mode as SessionMode,
-                  topicScope: session.topicScope,
-                }),
+                title: cal.title,
                 startTime: item.startTime,
                 endTime: item.endTime,
-                description: buildCalendarDescription({
-                  outcome: session.targetOutcome as Record<string, unknown> | null,
-                  sessionUrl: `${base}/s/${item.sessionId}`,
-                  breaks: session.breakProtocol as Record<string, unknown> | null,
-                }),
+                description: cal.description,
               })
             : null,
         };
