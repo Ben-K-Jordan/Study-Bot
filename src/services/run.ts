@@ -269,16 +269,21 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       break;
   }
 
-  // ---- Spaced Review Warm-ups ----
-  // Prepend 2-3 review questions on due objectives (from SM-2 mastery data).
+  // ---- Pre-test + Spaced Review Warm-ups ----
   // Skip for EXAM_SIM (fixed format) and ERROR_REPAIR (already targeted).
   if (mode !== "EXAM_SIM" && mode !== "ERROR_REPAIR") {
+    // Pre-test: generate diagnostic questions for new objectives with no mastery records
+    const pretestPrompts = await generatePretestPrompts(userId, session.courseName, objectives);
+    // Spaced review: prepend review questions on due objectives
     const warmupPrompts = await generateWarmupPrompts(userId, session.courseName, objectives);
-    if (warmupPrompts.length > 0) {
-      prompts = [...warmupPrompts, ...prompts];
+
+    const prependedPrompts = [...pretestPrompts, ...warmupPrompts];
+    if (prependedPrompts.length > 0) {
+      prompts = [...prependedPrompts, ...prompts];
       logger.info("run.warmup_prepended", {
         user_id: userId,
         session_id: sessionId,
+        pretest_count: pretestPrompts.length,
         warmup_count: warmupPrompts.length,
       });
     }
@@ -539,6 +544,7 @@ export async function getRun(userId: string, runId: string) {
         prompt_text: a.promptText,
         user_answer: a.userAnswer,
         self_score: a.selfScore,
+        confidence_rating: a.confidenceRating,
         time_to_answer_seconds: a.timeToAnswerSeconds,
         created_at: a.createdAt.toISOString(),
       })),
@@ -671,6 +677,9 @@ async function handleImmediateScoring(
           userAnswer: input.user_answer,
           selfScore: input.self_score,
           timeToAnswerSeconds: input.time_to_answer_seconds ?? null,
+          confidenceRating: input.confidence_rating ?? null,
+          selfExplanation: input.self_explanation ?? null,
+          generatedExample: input.generated_example ?? null,
         },
       });
 
@@ -789,6 +798,7 @@ async function handleExamAnswer(
 ) {
   const userAnswer = "user_answer" in input ? input.user_answer : "";
   const timeToAnswer = "time_to_answer_seconds" in input ? input.time_to_answer_seconds : undefined;
+  const confidenceRating = "confidence_rating" in input ? input.confidence_rating : undefined;
 
   // Check for duplicate
   const existing = await prisma.sessionAttempt.findUnique({
@@ -821,6 +831,7 @@ async function handleExamAnswer(
           userAnswer,
           selfScore: null,
           timeToAnswerSeconds: timeToAnswer ?? null,
+          confidenceRating: confidenceRating ?? null,
         },
       });
 
@@ -885,6 +896,8 @@ async function handleExamScore(
 ) {
   const selfScore = "self_score" in input ? input.self_score : null;
   const errorLog = "error_log" in input ? input.error_log : undefined;
+  const selfExplanation = "self_explanation" in input ? input.self_explanation : undefined;
+  const generatedExample = "generated_example" in input ? input.generated_example : undefined;
 
   if (!selfScore) return { error: "missing_score" as const };
 
@@ -916,10 +929,14 @@ async function handleExamScore(
   let attemptId: string;
   try {
     await prisma.$transaction(async (tx) => {
-      // Update existing attempt with score
+      // Update existing attempt with score and metacognitive fields
       await tx.sessionAttempt.update({
         where: { id: existing.id },
-        data: { selfScore },
+        data: {
+          selfScore,
+          selfExplanation: selfExplanation ?? undefined,
+          generatedExample: generatedExample ?? undefined,
+        },
       });
 
       // Insert error log if needed
@@ -1014,6 +1031,56 @@ async function handleExamScore(
   };
 }
 
+// ---- Pre-test Prompt Generator ----
+
+/**
+ * Generate diagnostic pre-test questions for objectives the student has never studied.
+ * Research (Richland et al. 2009): testing BEFORE studying enhances subsequent learning
+ * by 10-20%, even when students get pre-test questions wrong.
+ *
+ * Returns up to 2 pre-test prompts for never-seen objectives.
+ */
+async function generatePretestPrompts(
+  userId: string,
+  courseName: string,
+  objectives: { id: string; title: string }[] | null,
+): Promise<Prompt[]> {
+  if (!objectives || objectives.length === 0) return [];
+
+  try {
+    // Find which objectives already have mastery records
+    const existingMastery = await prisma.objectiveMastery.findMany({
+      where: { userId, courseName },
+      select: { objectiveKey: true },
+    });
+
+    const masteredKeys = new Set(existingMastery.map((m) => m.objectiveKey));
+    const newObjectives = objectives.filter((o) => !masteredKeys.has(o.id));
+
+    if (newObjectives.length === 0) return [];
+
+    // Generate up to 2 pre-test diagnostic questions
+    const maxPretest = Math.min(2, newObjectives.length);
+    const pretests: Prompt[] = [];
+
+    for (let i = 0; i < maxPretest; i++) {
+      const obj = newObjectives[i];
+      pretests.push({
+        id: `pretest_${i}`,
+        objective_id: obj.id,
+        text: `Diagnostic: Before we dive in — what do you already know about "${obj.title}"? Explain as much as you can from memory.`,
+        difficulty: 2,
+        meta: { pack: "PRE_TEST" },
+      });
+    }
+
+    return pretests;
+  } catch (err) {
+    logger.error("pretest.generation_failed", { user_id: userId, error: String(err) });
+    return [];
+  }
+}
+
 // ---- Spaced Review Warm-up Generator ----
 
 /**
@@ -1072,15 +1139,24 @@ async function generateWarmupPrompts(
 async function updateObjectiveMastery(userId: string, runId: string, courseName: string) {
   try {
     // Fetch all scored attempts with their objective IDs
-    const attempts = await prisma.sessionAttempt.findMany({
-      where: { runId, selfScore: { not: null } },
-      select: { selfScore: true, promptIndex: true },
-    });
+    const [attempts, promptRows, plan] = await Promise.all([
+      prisma.sessionAttempt.findMany({
+        where: { runId, selfScore: { not: null } },
+        select: { selfScore: true, promptIndex: true },
+      }),
+      prisma.sessionRunPrompt.findMany({
+        where: { runId },
+        select: { promptIndex: true, objectiveId: true },
+      }),
+      // Find nearest exam date for exam-aware spacing
+      prisma.studyPlan.findFirst({
+        where: { userId, courseName, examDate: { gte: new Date() } },
+        orderBy: { examDate: "asc" },
+        select: { examDate: true },
+      }),
+    ]);
 
-    const promptRows = await prisma.sessionRunPrompt.findMany({
-      where: { runId },
-      select: { promptIndex: true, objectiveId: true },
-    });
+    const examDate = plan?.examDate ?? undefined;
 
     // Build objective -> scores map
     const objectiveScores = new Map<string, { correct: number; total: number }>();
@@ -1095,11 +1171,11 @@ async function updateObjectiveMastery(userId: string, runId: string, courseName:
       objectiveScores.set(objId, entry);
     }
 
-    // Update mastery for each objective
+    // Update mastery for each objective (with exam-aware spacing)
     const updates = Array.from(objectiveScores.entries()).map(
       ([objectiveKey, { correct, total }]) => {
         const accuracy = total > 0 ? correct / total : 0;
-        return updateMastery(userId, courseName, objectiveKey, accuracy);
+        return updateMastery(userId, courseName, objectiveKey, accuracy, new Date(), examDate);
       }
     );
 

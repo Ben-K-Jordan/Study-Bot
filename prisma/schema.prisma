@@ -73,6 +73,9 @@ model SessionAttempt {
   userAnswer          String     @map("user_answer")
   selfScore           String?    @map("self_score") // CORRECT | PARTIAL | INCORRECT | null (EXAM phase)
   timeToAnswerSeconds Int?       @map("time_to_answer_seconds")
+  confidenceRating    Int?       @map("confidence_rating") // 1-5 pre-answer confidence
+  selfExplanation     String?    @map("self_explanation") // Student's explain-back after feedback
+  generatedExample    String?    @map("generated_example") // Student's own example (generation effect)
   createdAt           DateTime   @default(now()) @map("created_at")
 
   run                 SessionRun      @relation(fields: [runId], references: [runId])

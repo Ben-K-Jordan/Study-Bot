@@ -35,11 +35,16 @@ export function accuracyToQuality(accuracy: number): number {
 
 /**
  * Compute the next SM-2 state given current state and a quality score (0–5).
+ *
+ * Exam-aware spacing (Cepeda et al. 2008): when an exam date is provided,
+ * intervals are capped so all reviews complete before the exam. Closer exams
+ * compress intervals more aggressively.
  */
 export function sm2Next(
   current: SM2State,
   quality: number,
   now: Date = new Date(),
+  examDate?: Date,
 ): SM2Update {
   let { easeFactor, intervalDays, repetitions } = current;
 
@@ -65,6 +70,27 @@ export function sm2Next(
     easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)),
   );
 
+  // Exam-aware interval compression
+  if (examDate) {
+    const daysUntilExam = Math.max(1, Math.floor((examDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+    if (daysUntilExam <= 3) {
+      // Exam in 1-3 days: review everything daily
+      intervalDays = 1;
+    } else if (daysUntilExam <= 7) {
+      // Exam in 4-7 days: cap at 2 days
+      intervalDays = Math.min(intervalDays, 2);
+    } else if (daysUntilExam <= 14) {
+      // Exam in 1-2 weeks: cap at 3 days
+      intervalDays = Math.min(intervalDays, 3);
+    } else {
+      // More than 2 weeks: cap so next review is before exam
+      // Use ~20% of remaining time as max interval (Cepeda optimal gap ratio)
+      const maxInterval = Math.max(1, Math.floor(daysUntilExam * 0.2));
+      intervalDays = Math.min(intervalDays, maxInterval);
+    }
+  }
+
   const nextDueAt = new Date(now);
   nextDueAt.setDate(nextDueAt.getDate() + intervalDays);
 
@@ -85,6 +111,7 @@ export async function updateMastery(
   objectiveKey: string,
   accuracy: number,
   now: Date = new Date(),
+  examDate?: Date,
 ): Promise<SM2Update> {
   const existing = await prisma.objectiveMastery.findUnique({
     where: {
@@ -105,7 +132,7 @@ export async function updateMastery(
     : { easeFactor: 2.5, intervalDays: 0, repetitions: 0 };
 
   const quality = accuracyToQuality(accuracy);
-  const update = sm2Next(current, quality, now);
+  const update = sm2Next(current, quality, now, examDate);
 
   await prisma.objectiveMastery.upsert({
     where: {

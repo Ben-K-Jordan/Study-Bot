@@ -46,6 +46,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [patternAdvice, setPatternAdvice] = useState<string | null>(null);
   const [socraticFollowup, setSocraticFollowup] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<number>(3);
+  const [selfExplanation, setSelfExplanation] = useState("");
+  const [generatedExample, setGeneratedExample] = useState("");
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -125,6 +128,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setMnemonic(null);
     setPatternAdvice(null);
     setSocraticFollowup(null);
+    setConfidence(3);
+    setSelfExplanation("");
+    setGeneratedExample("");
     startTimeRef.current = Date.now();
     if (!isReviewPhase) {
       textareaRef.current?.focus();
@@ -168,6 +174,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       kind: "ANSWER",
       user_answer: answer,
       time_to_answer_seconds: elapsed,
+      confidence_rating: confidence,
     });
     setSubmitting(false);
   };
@@ -197,7 +204,11 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       user_answer: answer,
       self_score: s,
       time_to_answer_seconds: elapsed,
+      confidence_rating: confidence,
     };
+
+    if (selfExplanation.trim()) attempt.self_explanation = selfExplanation.trim();
+    if (generatedExample.trim()) attempt.generated_example = generatedExample.trim();
 
     if (s !== "CORRECT" && correctionRule.trim()) {
       attempt.error_log = {
@@ -378,6 +389,48 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               }
             }}
           />
+          {/* Confidence rating */}
+          {answer.trim() && (
+            <div
+              style={{
+                background: "#16213e",
+                border: "1px solid #333",
+                borderRadius: 6,
+                padding: "0.75rem 1rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "#ccc" }}>How confident are you?</span>
+                <span style={{ fontSize: "0.8rem", fontWeight: 600, color: confidenceColors[confidence - 1] }}>
+                  {confidenceLabels[confidence - 1]}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                {[1, 2, 3, 4, 5].map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setConfidence(level)}
+                    style={{
+                      flex: 1,
+                      padding: "0.4rem",
+                      fontSize: "0.8rem",
+                      fontWeight: confidence === level ? 700 : 400,
+                      background: confidence === level ? confidenceColors[level - 1] + "33" : "#0f3460",
+                      color: confidence === level ? confidenceColors[level - 1] : "#666",
+                      border: `1px solid ${confidence === level ? confidenceColors[level - 1] : "#333"}`,
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: "0.7rem", color: "#666" }}>Ctrl+Enter to submit</span>
             <button
@@ -734,8 +787,67 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           )}
 
+          {/* Self-explanation prompt (all scores, after feedback loads) */}
+          {!feedbackLoading && (aiExplanation || aiReinforcement || lastScore) && (
+            <div
+              style={{
+                background: "#16213e",
+                border: "1px solid #333",
+                borderRadius: 6,
+                padding: "0.75rem 1rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "#e0e0e0" }}>
+                Now explain this in your own words (optional):
+              </p>
+              <textarea
+                value={selfExplanation}
+                onChange={(e) => setSelfExplanation(e.target.value)}
+                placeholder="Restate the key concept as if teaching a friend..."
+                rows={2}
+                style={{ ...textareaStyle, marginBottom: 0 }}
+              />
+            </div>
+          )}
+
+          {/* Generation effect: create your own example (for correct answers) */}
+          {lastScore === "CORRECT" && !feedbackLoading && (
+            <div
+              style={{
+                background: "#16213e",
+                border: "1px solid #333",
+                borderRadius: 6,
+                padding: "0.75rem 1rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "#e0e0e0" }}>
+                Create your own example of this concept (optional):
+              </p>
+              <textarea
+                value={generatedExample}
+                onChange={(e) => setGeneratedExample(e.target.value)}
+                placeholder="Think of a new scenario where this concept applies..."
+                rows={2}
+                style={{ ...textareaStyle, marginBottom: 0 }}
+              />
+            </div>
+          )}
+
           <button
             onClick={() => {
+              // If user typed self-explanation or example, submit update
+              if (selfExplanation.trim() || generatedExample.trim()) {
+                onSubmit({
+                  prompt_index: currentIndex,
+                  user_answer: answer || "(review update)",
+                  self_score: lastScore || "CORRECT",
+                  self_explanation: selfExplanation.trim() || undefined,
+                  generated_example: generatedExample.trim() || undefined,
+                  _meta_update: true, // Signal this is a metadata-only update
+                });
+              }
               setFeedbackExcerpts([]);
               setFeedbackLoading(false);
               setLastScore(null);
@@ -747,6 +859,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               setMnemonic(null);
               setPatternAdvice(null);
               setSocraticFollowup(null);
+              setConfidence(3);
+              setSelfExplanation("");
+              setGeneratedExample("");
               if (isReviewPhase) {
                 setUIPhase("scoring");
               } else {
@@ -762,6 +877,11 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     </div>
   );
 }
+
+// --- Constants ---
+
+const confidenceLabels = ["Guessing", "Unsure", "Somewhat", "Confident", "Very Sure"];
+const confidenceColors = ["#e74c3c", "#f39c12", "#f1c40f", "#2ecc71", "#27ae60"];
 
 // --- Styles ---
 
