@@ -8,6 +8,9 @@ import {
   type Prompt,
   type ErrorLogForRepair,
 } from "@/lib/prompts";
+import { generateContentAwarePrompts } from "@/lib/content-prompts";
+import { createProvider } from "@/lib/ai/provider-factory";
+import type { GatewayContext } from "@/lib/ai/gateway";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
 import { logger } from "@/lib/logger";
@@ -169,22 +172,54 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
     topic_scope: session.topicScope,
   };
 
+  const promptCount = targetOutcome?.prompt_count as number | undefined ?? 10;
+
+  // Build AI gateway context for content-aware prompt generation
+  let gatewayCtx: GatewayContext | null = null;
+  const providerName = process.env.AI_PROVIDER || "mock";
+  if (providerName !== "mock") {
+    gatewayCtx = { userId, provider: createProvider() };
+  }
+
   let prompts: Prompt[];
 
   switch (mode) {
     case "INTERLEAVED_PRACTICE":
-      prompts = generateInterleavedPrompts({
-        ...sessionParams,
-        seed: session.sessionId,
-      });
-      break;
-
     case "EXAM_SIM":
-      prompts = generateExamSimPrompts(sessionParams);
+    case "RETRIEVAL": {
+      // Try content-aware AI-generated prompts first
+      const contentPrompts = await generateContentAwarePrompts({
+        userId,
+        courseName: session.courseName,
+        examName: session.examName || undefined,
+        mode,
+        topicScope: session.topicScope,
+        objectives: objectives || [{ id: "topic_0", title: session.topicScope }],
+        promptCount,
+        gatewayCtx,
+      });
+
+      if (contentPrompts) {
+        prompts = contentPrompts;
+        logger.info("run.content_aware_prompts", {
+          user_id: userId,
+          session_id: sessionId,
+          mode,
+          count: prompts.length,
+        });
+      } else {
+        // Fall back to deterministic prompts
+        if (mode === "INTERLEAVED_PRACTICE") {
+          prompts = generateInterleavedPrompts({ ...sessionParams, seed: session.sessionId });
+        } else {
+          prompts = generateRetrievalPrompts(sessionParams);
+        }
+      }
       break;
+    }
 
     case "ERROR_REPAIR": {
-      const count = (targetOutcome?.prompt_count as number) ?? 10;
+      const count = promptCount;
       // Fetch unresolved error logs for this user, newest first
       const errorLogs = await prisma.sessionErrorLog.findMany({
         where: {
@@ -228,7 +263,6 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       break;
     }
 
-    case "RETRIEVAL":
     default:
       prompts = generateRetrievalPrompts(sessionParams);
       break;
