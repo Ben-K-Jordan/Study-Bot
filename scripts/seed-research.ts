@@ -792,46 +792,40 @@ async function seed() {
     });
     documentsCreated++;
 
-    // Create chunks from the full text (one chunk per section for research docs)
-    // Summary chunk
-    await prisma.contentChunk.create({
-      data: {
+    // Create chunks in batch (summary + one per card)
+    const summaryText = `${paper.title}\n${paper.authors} (${paper.year})\n${paper.venue}\n\n${paper.summary}`;
+    const chunkDataList = [
+      {
         documentId: doc.id,
         ordinal: 0,
-        text: `${paper.title}\n${paper.authors} (${paper.year})\n${paper.venue}\n\n${paper.summary}`,
+        text: summaryText,
         textHash: sha256(Buffer.from(paper.summary)),
         embeddingStatus: "PENDING",
       },
-    });
-    chunksCreated++;
-
-    // One chunk per card (these are the key retrievable units)
-    for (let i = 0; i < paper.cards.length; i++) {
-      const card = paper.cards[i];
-      const chunkText = [
-        `Source: ${paper.title} (${paper.authors}, ${paper.year})`,
-        `Evidence Strength: ${card.strength}`,
-        "",
-        `Claim: ${card.claim}`,
-        "",
-        `Recommendation: ${card.recommendation}`,
-        "",
-        `Boundary Conditions: ${card.boundaryConditions}`,
-      ].join("\n");
-
-      await prisma.contentChunk.create({
-        data: {
+      ...paper.cards.map((card, i) => {
+        const chunkText = [
+          `Source: ${paper.title} (${paper.authors}, ${paper.year})`,
+          `Evidence Strength: ${card.strength}`,
+          "",
+          `Claim: ${card.claim}`,
+          "",
+          `Recommendation: ${card.recommendation}`,
+          "",
+          `Boundary Conditions: ${card.boundaryConditions}`,
+        ].join("\n");
+        return {
           documentId: doc.id,
           ordinal: i + 1,
           text: chunkText,
           textHash: sha256(Buffer.from(chunkText)),
           embeddingStatus: "PENDING",
-        },
-      });
-      chunksCreated++;
-    }
+        };
+      }),
+    ];
+    await prisma.contentChunk.createMany({ data: chunkDataList });
+    chunksCreated += chunkDataList.length;
 
-    // Create EvidencePaper + cards
+    // Create EvidencePaper + cards in batch
     const evidencePaper = await prisma.evidencePaper.create({
       data: {
         userId: SYSTEM_USER_ID,
@@ -845,19 +839,17 @@ async function seed() {
     });
     papersCreated++;
 
-    for (const card of paper.cards) {
-      await prisma.evidenceCard.create({
-        data: {
-          evidencePaperId: evidencePaper.id,
-          claim: card.claim,
-          recommendation: card.recommendation,
-          boundaryConditions: card.boundaryConditions,
-          strength: card.strength,
-          tags: card.tags,
-        },
-      });
-      cardsCreated++;
-    }
+    await prisma.evidenceCard.createMany({
+      data: paper.cards.map((card) => ({
+        evidencePaperId: evidencePaper.id,
+        claim: card.claim,
+        recommendation: card.recommendation,
+        boundaryConditions: card.boundaryConditions,
+        strength: card.strength,
+        tags: card.tags,
+      })),
+    });
+    cardsCreated += paper.cards.length;
 
     console.log(`  ✓ ${paper.title} (${paper.cards.length} cards)`);
   }

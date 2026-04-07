@@ -91,17 +91,13 @@ export async function queryEvidenceCards(
  * Get all unique tags across all evidence cards.
  */
 export async function listEvidenceTags(): Promise<string[]> {
-  const cards = await prisma.evidenceCard.findMany({
-    select: { tags: true },
-  });
-
-  const tagSet = new Set<string>();
-  for (const card of cards) {
-    const cardTags = Array.isArray(card.tags) ? (card.tags as string[]) : [];
-    for (const tag of cardTags) tagSet.add(tag);
-  }
-
-  return Array.from(tagSet).sort();
+  const rows = await prisma.$queryRaw<{ tag: string }[]>`
+    SELECT DISTINCT jsonb_array_elements_text(tags) AS tag
+    FROM evidence_cards
+    WHERE tags IS NOT NULL
+    ORDER BY tag
+  `;
+  return rows.map((r) => r.tag);
 }
 
 /**

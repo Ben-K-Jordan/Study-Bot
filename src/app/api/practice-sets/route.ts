@@ -89,5 +89,7 @@ export async function GET(request: NextRequest) {
       created_at: s.createdAt.toISOString(),
     })),
     next_cursor: nextCursor,
+  }, {
+    headers: { "Cache-Control": "private, max-age=60" },
   });
 }
