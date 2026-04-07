@@ -11,7 +11,7 @@ import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/g
 import { buildGoogleCalendarLink } from "@/lib/gcal-link";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
-import { buildContentAwarePlanInput } from "@/services/content-plan";
+import { buildContentAwarePlanInput, extractObjectivesFromContent } from "@/services/content-plan";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -50,6 +50,30 @@ export async function createPlan(userId: string, input: unknown) {
     studyStyle: parsed.study_style,
   };
 
+  // If no manual objectives, extract them from uploaded content via AI
+  let objectives = parsed.objectives;
+  if (objectives.length === 0 && parsed.document_ids.length > 0) {
+    try {
+      const suggested = await extractObjectivesFromContent(userId, parsed.course_name, parsed.exam_name);
+      objectives = suggested.map((s) => s.title);
+      if (objectives.length < 3) {
+        // Pad with generic fallbacks so the plan generator has enough to work with
+        const fallbacks = ["Review key concepts", "Practice problem solving", "Consolidate understanding"];
+        while (objectives.length < 3) {
+          objectives.push(fallbacks[objectives.length] || `Study topic ${objectives.length + 1}`);
+        }
+      }
+      logger.info("plan.objectives_extracted", {
+        user_id: userId,
+        count: objectives.length,
+        from_documents: parsed.document_ids.length,
+      });
+    } catch (err) {
+      logger.warn("plan.objectives_extraction_failed", { user_id: userId, error: String(err) });
+      objectives = ["Review key concepts", "Practice problem solving", "Consolidate understanding"];
+    }
+  }
+
   // Check if the user has uploaded content for this course and enrich the plan input
   let contentContext: string | undefined;
   try {
@@ -69,7 +93,7 @@ export async function createPlan(userId: string, input: unknown) {
 
   const planResult = await generatePlanWithResearch(
     {
-      objectives: parsed.objectives,
+      objectives,
       dailyCap: parsed.daily_study_cap_minutes,
       breakProtocol: parsed.break_protocol_default,
       availability: parsed.availability,

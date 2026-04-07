@@ -175,7 +175,12 @@ export const createPlanSchema = z
     timezone: z.string().optional().default("America/New_York"),
     objectives: z
       .array(z.string().min(1))
-      .min(3, "At least 3 objectives required"),
+      .optional()
+      .default([]),
+    document_ids: z
+      .array(z.string().min(1))
+      .optional()
+      .default([]),
     availability: z
       .array(dayAvailabilitySchema)
       .length(7, "Must provide availability for 7 days"),
@@ -212,4 +217,10 @@ export const createPlanSchema = z
       return data.availability.every((day) => day.start < day.end);
     },
     { message: "Each day's end time must be after start time" }
+  )
+  .refine(
+    (data) => {
+      return data.objectives.length >= 3 || data.document_ids.length > 0;
+    },
+    { message: "Provide at least 3 objectives or upload course content" }
   );
