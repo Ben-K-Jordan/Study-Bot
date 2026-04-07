@@ -87,6 +87,9 @@ export const submitAttemptSchema = z
     user_answer: z.string().min(1, "Answer is required"),
     self_score: z.enum(SELF_SCORES),
     time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
+    confidence_rating: z.number().int().min(1).max(5).optional(),
+    self_explanation: z.string().max(2000).optional(),
+    generated_example: z.string().max(2000).optional(),
     error_log: errorLogSchema.optional(),
   })
   .refine(
@@ -107,6 +110,7 @@ export const examAnswerSchema = z.object({
   kind: z.literal("ANSWER"),
   user_answer: z.string().min(1, "Answer is required"),
   time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
+  confidence_rating: z.number().int().min(1).max(5).optional(),
 });
 
 export type ExamAnswerInput = z.infer<typeof examAnswerSchema>;
@@ -119,6 +123,8 @@ export const examScoreSchema = z
     prompt_index: z.number().int().min(0),
     kind: z.literal("SCORE"),
     self_score: z.enum(SELF_SCORES),
+    self_explanation: z.string().max(2000).optional(),
+    generated_example: z.string().max(2000).optional(),
     error_log: errorLogSchema.optional(),
   })
   .refine(

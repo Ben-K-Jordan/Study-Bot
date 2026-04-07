@@ -102,7 +102,7 @@ export interface RunData {
   metrics: RunMetrics;
   break_state: BreakState;
   // Attempts are available on resumed runs (from GET /api/runs/:runId)
-  attempts?: { id: string; prompt_index: number; user_answer: string; self_score: string | null }[];
+  attempts?: { id: string; prompt_index: number; user_answer: string; self_score: string | null; confidence_rating?: number | null }[];
   // Deferred feedback: set by UI after fetching from /api/attempts/:attemptId/feedback
   feedback?: { excerpts: FeedbackExcerpt[] };
   // Last attempt info for deferred feedback
@@ -290,6 +290,12 @@ export function SessionRunner({ session }: Props) {
         setRun(updatedRun);
 
         if (data.status === "COMPLETED") {
+          // Fetch full run data with confidence ratings for calibration dashboard
+          try {
+            const full = await apiGet(`/api/runs/${run.run_id}`);
+            updatedRun.attempts = full.attempts;
+            setRun({ ...updatedRun });
+          } catch { /* non-fatal */ }
           setScreen("end");
         } else if (data.break_state?.on_break) {
           setScreen("break");
@@ -335,8 +341,11 @@ export function SessionRunner({ session }: Props) {
     if (!run) return;
     setError(null);
     try {
-      const data = await apiPost(`/api/runs/${run.run_id}/complete`);
-      setRun({ ...run, status: "COMPLETED", metrics: data.metrics });
+      const [data, full] = await Promise.all([
+        apiPost(`/api/runs/${run.run_id}/complete`),
+        apiGet(`/api/runs/${run.run_id}`),
+      ]);
+      setRun({ ...run, status: "COMPLETED", metrics: data.metrics, attempts: full.attempts });
       setScreen("end");
     } catch {
       setScreen("end");
