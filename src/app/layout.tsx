@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { NavBar, NAV_HEIGHT } from "@/ui/components/NavBar";
 
 export const metadata: Metadata = {
   title: "Study Bot",
@@ -12,7 +13,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <NavBar />
+        <main style={{ paddingTop: NAV_HEIGHT }}>
+          {children}
+        </main>
+      </body>
     </html>
   );
 }
