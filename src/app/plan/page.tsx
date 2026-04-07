@@ -201,10 +201,30 @@ export default function PlanPage() {
         });
         const data = await res.json();
         if (res.ok) {
+          const docId = data.document_id;
           setUploadedFiles((prev) => [
             ...prev,
-            { id: data.document_id, name: file.name, status: data.status || "PENDING" },
+            { id: docId, name: file.name, status: data.status || "PENDING" },
           ]);
+
+          // Trigger processing (chunking + embedding) unless already processed (deduped)
+          if (data.status !== "PROCESSED") {
+            fetch(`/api/content/documents/${docId}/process`, {
+              method: "POST",
+              headers: { "X-User-Id": getOrCreateUserId() },
+            })
+              .then((r) => r.json())
+              .then((d) => {
+                setUploadedFiles((prev) =>
+                  prev.map((f) => (f.id === docId ? { ...f, status: d.status || "PROCESSED" } : f)),
+                );
+              })
+              .catch(() => {
+                setUploadedFiles((prev) =>
+                  prev.map((f) => (f.id === docId ? { ...f, status: "FAILED" } : f)),
+                );
+              });
+          }
         } else {
           setError(`Failed to upload ${file.name}: ${data.error}`);
         }
