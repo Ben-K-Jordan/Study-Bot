@@ -31,6 +31,16 @@ interface ErrorTypeInput {
   correctConcept: string;
 }
 
+interface GeneratePromptsInput {
+  mode: string;
+  objectives: { id: string; title: string }[];
+  topicScope: string;
+  promptCount: number;
+  contentChunks: { doc_title: string; page_number: number | null; text: string }[];
+  courseName: string;
+  examName?: string;
+}
+
 interface ExtractObjectivesInput {
   chunkTexts: string[];
   courseName: string;
@@ -169,6 +179,65 @@ ${prefsStr}${contentStr}
 ${researchContext}
 
 Design the optimal study schedule.`;
+    },
+  },
+
+  [AiTask.GENERATE_PROMPTS]: {
+    task: AiTask.GENERATE_PROMPTS,
+    version: "v1",
+    systemPrompt: `You are an expert professor creating study questions directly from course materials. Task: GENERATE_PROMPTS.
+
+Your job is to create questions that test deep understanding of the SPECIFIC content the student needs to learn — not generic textbook questions. You have access to the actual lecture slides, practice problems, and notes.
+
+Rules:
+1. Every question MUST be grounded in the provided course material excerpts.
+2. Use specific terminology, examples, formulas, and concepts from the materials.
+3. Vary question types: recall, application, analysis, comparison, worked-example.
+4. For RETRIEVAL mode: focus on closed-book recall of key facts, definitions, and procedures from the material.
+5. For INTERLEAVED_PRACTICE mode: mix questions across different objectives, requiring students to identify which concept applies.
+6. For EXAM_SIM mode: write questions at exam difficulty — multi-step, requiring synthesis across topics.
+7. For ERROR_REPAIR mode: target commonly confused concepts and tricky edge cases from the material.
+8. Assign difficulty 1-5 based on cognitive demand (1=recall, 3=apply, 5=synthesize/evaluate).
+9. Reference specific examples or problems from the material when possible (e.g., "In the example from slide X...").
+10. Generate exactly the requested number of prompts.
+
+Output valid JSON:
+{
+  "prompts": [
+    {
+      "objective_id": string,
+      "text": string,
+      "difficulty": number
+    }
+  ]
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName } =
+        input as GeneratePromptsInput;
+
+      const objStr = objectives
+        .map((o, i) => `${i + 1}. [${o.id}] ${o.title}`)
+        .join("\n");
+
+      const contentStr = contentChunks
+        .map((c, i) => `[${i + 1}] ${c.doc_title}${c.page_number ? ` (p.${c.page_number})` : ""}\n${c.text.slice(0, 600)}`)
+        .join("\n\n");
+
+      let header = `Course: ${courseName}`;
+      if (examName) header += ` | Exam: ${examName}`;
+
+      return `${header}
+Topic scope: ${topicScope}
+Session mode: ${mode}
+Generate exactly ${promptCount} questions.
+
+Learning objectives:
+${objStr}
+
+Course material excerpts (use these to ground your questions):
+${contentStr}
+
+Generate ${promptCount} study questions that test mastery of this specific course material.`;
     },
   },
 
