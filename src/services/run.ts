@@ -13,6 +13,7 @@ import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
+import { updateMastery } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
 import type {
@@ -370,7 +371,7 @@ async function getPromptAt(runId: string, index: number, fallbackPrompts: Prompt
 export async function getRunPrompt(userId: string, runId: string, index: number) {
   const run = await prisma.sessionRun.findUnique({
     where: { runId },
-    select: { userId: true, promptCount: true, prompts: true },
+    select: { userId: true, promptCount: true, prompts: true, metrics: true, mode: true, phase: true },
   });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
@@ -378,8 +379,110 @@ export async function getRunPrompt(userId: string, runId: string, index: number)
   const count = run.promptCount || (run.prompts as unknown as Prompt[]).length;
   if (index < 0 || index >= count) return { error: "invalid_index" as const };
 
+  // Adaptive difficulty: reorder remaining prompts based on running accuracy
+  // Skip for EXAM_SIM (fixed order required) or REVIEW phase
+  const metrics = run.metrics as unknown as RunMetrics;
+  if (
+    run.mode !== "EXAM_SIM" &&
+    run.phase !== "REVIEW" &&
+    metrics.attempts_count >= 2 &&
+    index > 0
+  ) {
+    const adapted = await adaptPromptDifficulty(runId, index, count, metrics.accuracy);
+    if (adapted) return { data: adapted };
+  }
+
   const prompt = await getPromptAt(runId, index, run.prompts as unknown as Prompt[]);
   return { data: prompt };
+}
+
+/**
+ * Adaptive difficulty: select the best-fit prompt from remaining prompts
+ * based on the student's running accuracy.
+ *
+ * - accuracy >= 0.8 → prefer harder prompts (difficulty 4-5)
+ * - accuracy >= 0.5 → prefer medium prompts (difficulty 2-3)
+ * - accuracy < 0.5  → prefer easier prompts (difficulty 1-2)
+ *
+ * Returns null if the current prompt is already at the right difficulty,
+ * or if no better-fit prompt exists.
+ */
+async function adaptPromptDifficulty(
+  runId: string,
+  currentIndex: number,
+  totalCount: number,
+  accuracy: number,
+): Promise<PromptView | null> {
+  // Determine target difficulty range
+  let targetMin: number, targetMax: number;
+  if (accuracy >= 0.8) {
+    targetMin = 4; targetMax = 5;
+  } else if (accuracy >= 0.5) {
+    targetMin = 2; targetMax = 4;
+  } else {
+    targetMin = 1; targetMax = 2;
+  }
+
+  // Get current prompt and remaining prompts
+  const [currentPrompt, remainingPrompts] = await Promise.all([
+    prisma.sessionRunPrompt.findUnique({
+      where: { runId_promptIndex: { runId, promptIndex: currentIndex } },
+    }),
+    prisma.sessionRunPrompt.findMany({
+      where: {
+        runId,
+        promptIndex: { gt: currentIndex, lt: totalCount },
+      },
+      orderBy: { promptIndex: "asc" },
+    }),
+  ]);
+
+  if (!currentPrompt || remainingPrompts.length === 0) return null;
+
+  // If current prompt is already in target range, keep it
+  if (currentPrompt.difficulty >= targetMin && currentPrompt.difficulty <= targetMax) {
+    return null;
+  }
+
+  // Find a better-fit prompt among remaining prompts
+  const betterFit = remainingPrompts.find(
+    (p) => p.difficulty >= targetMin && p.difficulty <= targetMax
+  );
+
+  if (!betterFit) return null;
+
+  // Swap: move the better-fit prompt to currentIndex and current to betterFit's position
+  await prisma.$transaction([
+    prisma.sessionRunPrompt.update({
+      where: { runId_promptIndex: { runId, promptIndex: currentIndex } },
+      data: { promptIndex: -1 }, // temp index to avoid unique constraint
+    }),
+    prisma.sessionRunPrompt.update({
+      where: { runId_promptIndex: { runId, promptIndex: betterFit.promptIndex } },
+      data: { promptIndex: currentIndex },
+    }),
+    prisma.sessionRunPrompt.update({
+      where: { runId_promptIndex: { runId, promptIndex: -1 } },
+      data: { promptIndex: betterFit.promptIndex },
+    }),
+  ]);
+
+  logger.info("adaptive.swapped", {
+    run_id: runId,
+    index: currentIndex,
+    old_difficulty: currentPrompt.difficulty,
+    new_difficulty: betterFit.difficulty,
+    accuracy,
+    target_range: `${targetMin}-${targetMax}`,
+  });
+
+  return {
+    prompt_index: currentIndex,
+    text: betterFit.text,
+    objective_id: betterFit.objectiveId ?? undefined,
+    difficulty: betterFit.difficulty,
+    source_type: betterFit.sourceType,
+  };
 }
 
 // ---- Get Run ----
@@ -611,9 +714,7 @@ async function handleImmediateScoring(
   }
 
   const dbTxMs = Date.now() - txStart;
-  const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
-    ? "PENDING" as const
-    : "NONE" as const;
+  const feedbackStatus = "PENDING" as const;
 
   logger.info("prompt.submitted", {
     user_id: userId,
@@ -628,6 +729,12 @@ async function handleImmediateScoring(
   if (isLastPrompt) {
     const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
     logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
+
+    // Update SM-2 mastery records (fire-and-forget)
+    prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } })
+      .then((s) => { if (s) updateObjectiveMastery(userId, run.runId, s.courseName); })
+      .catch(() => {});
+
     return {
       data: {
         attempt_id: attemptId,
@@ -854,6 +961,12 @@ async function handleExamScore(
   if (isLastScore) {
     const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
     logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
+
+    // Update SM-2 mastery records (fire-and-forget)
+    prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } })
+      .then((s) => { if (s) updateObjectiveMastery(userId, run.runId, s.courseName); })
+      .catch(() => {});
+
     return {
       data: {
         attempt_id: attemptId,
@@ -886,10 +999,69 @@ async function handleExamScore(
   };
 }
 
+// ---- Mastery Update ----
+
+/**
+ * Compute per-objective accuracy from attempts and update SM-2 mastery records.
+ * Fire-and-forget: errors are logged but never thrown.
+ */
+async function updateObjectiveMastery(userId: string, runId: string, courseName: string) {
+  try {
+    // Fetch all scored attempts with their objective IDs
+    const attempts = await prisma.sessionAttempt.findMany({
+      where: { runId, selfScore: { not: null } },
+      select: { selfScore: true, promptIndex: true },
+    });
+
+    const promptRows = await prisma.sessionRunPrompt.findMany({
+      where: { runId },
+      select: { promptIndex: true, objectiveId: true },
+    });
+
+    // Build objective -> scores map
+    const objectiveScores = new Map<string, { correct: number; total: number }>();
+    for (const attempt of attempts) {
+      const promptRow = promptRows.find((p) => p.promptIndex === attempt.promptIndex);
+      const objId = promptRow?.objectiveId;
+      if (!objId) continue;
+
+      const entry = objectiveScores.get(objId) || { correct: 0, total: 0 };
+      entry.total++;
+      if (attempt.selfScore === "CORRECT") entry.correct++;
+      objectiveScores.set(objId, entry);
+    }
+
+    // Update mastery for each objective
+    const updates = Array.from(objectiveScores.entries()).map(
+      ([objectiveKey, { correct, total }]) => {
+        const accuracy = total > 0 ? correct / total : 0;
+        return updateMastery(userId, courseName, objectiveKey, accuracy);
+      }
+    );
+
+    await Promise.all(updates);
+
+    logger.info("mastery.updated", {
+      user_id: userId,
+      run_id: runId,
+      objectives_updated: objectiveScores.size,
+    });
+  } catch (err) {
+    logger.error("mastery.update_failed", {
+      user_id: userId,
+      run_id: runId,
+      error: String(err),
+    });
+  }
+}
+
 // ---- Complete Run (idempotent) ----
 
 export async function completeRun(userId: string, runId: string) {
-  const run = await prisma.sessionRun.findUnique({ where: { runId } });
+  const run = await prisma.sessionRun.findUnique({
+    where: { runId },
+    include: { session: { select: { courseName: true } } },
+  });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
 
@@ -920,6 +1092,9 @@ export async function completeRun(userId: string, runId: string) {
       metrics: finalMetrics as object,
     },
   });
+
+  // Update SM-2 mastery records (fire-and-forget)
+  updateObjectiveMastery(userId, runId, run.session.courseName).catch(() => {});
 
   logger.info("run.completed", {
     user_id: userId,
