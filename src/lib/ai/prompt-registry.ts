@@ -135,7 +135,7 @@ Output valid JSON: { "error_type": string, "confidence": number }`,
 
   [AiTask.GENERATE_STUDY_PLAN]: {
     task: AiTask.GENERATE_STUDY_PLAN,
-    version: "v2",
+    version: "v3",
     systemPrompt: `You are an expert study planner grounded in learning science research. Task: GENERATE_STUDY_PLAN.
 
 Design an optimal study schedule using ONLY these session modes:
@@ -152,10 +152,17 @@ Rules:
 4. Include INTERLEAVED_PRACTICE after students have done at least 1 retrieval per topic.
 5. Schedule EXAM_SIM in the final 20-30% of the study period.
 6. Follow ERROR_REPAIR immediately after RETRIEVAL or EXAM_SIM sessions.
-7. Cap individual sessions at 50-60 min for intense modes (RETRIEVAL, EXAM_SIM), 90 min for lighter modes.
+7. Cap individual sessions at 45-50 min for intense modes (RETRIEVAL, EXAM_SIM), 60 min for lighter modes (INTERLEAVED_PRACTICE, WORKED_EXAMPLES), 40 min for ERROR_REPAIR.
 8. Never exceed the daily study cap or available window for any day.
 9. Every objective must appear in at least 2 RETRIEVAL sessions across different days.
 10. Distribute objectives evenly — don't over-index on early objectives.
+
+Cognitive science scheduling rules:
+11. CIRCADIAN ALIGNMENT (Wieth & Zacks 2011): Schedule high-demand modes (RETRIEVAL, EXAM_SIM) during the student's chronotype peak hours. INTERLEAVED_PRACTICE can go at off-peak times — creative/insight tasks benefit from non-optimal circadian times.
+12. SLEEP PROXIMITY (Payne & Kensinger 2008): Schedule ERROR_REPAIR as the LAST session of the day when possible. Material studied within 3h of sleep has significantly better retention due to sleep consolidation.
+13. PRE-EXAM TAPER (Hockey 2013): In the final 48h before the exam, reduce total study volume by 40-50%. In the final 24h, only schedule one short RETRIEVAL session for confidence building — no new material.
+14. INTRADAY SPACING (Cepeda et al. 2008): If scheduling multiple sessions on the same topic within a day, ensure at least 1 hour gap between them. Cramming the same topic without spacing has minimal benefit.
+15. INTERLEAVING ORDER (Rohrer & Taylor 2007): When a day has multiple subjects, interleave them (ABCABC pattern) rather than blocking (AABBCC). This forces discrimination between problem types and improves test performance.
 
 Output valid JSON:
 {

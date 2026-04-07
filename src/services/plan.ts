@@ -12,6 +12,15 @@ import { buildGoogleCalendarLink } from "@/lib/gcal-link";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { buildContentAwarePlanInput, extractObjectivesFromContent } from "@/services/content-plan";
+import {
+  applyPreExamTaper,
+  adjustDurationByMode,
+  fitBlocksScored,
+  estimateBedtime,
+  type CalendarEvent as IntelEvent,
+  type Chronotype,
+  type SessionMode as IntelMode,
+} from "@/lib/schedule-intelligence";
 
 function getBaseUrl(): string {
   return process.env.BASE_URL || "http://localhost:3000";
@@ -103,10 +112,29 @@ export async function createPlan(userId: string, input: unknown) {
     },
     gatewayCtx,
   );
-  const blocks = planResult.blocks;
 
-  // If Google availability is requested, fetch busy times and fit blocks into free slots
+  // --- Schedule Intelligence: taper + dynamic duration ---
+
+  // 1. Apply pre-exam taper (reduce volume in final 48h before exam)
+  const examDateObj = new Date(parsed.exam_date);
+  let blocks = applyPreExamTaper(planResult.blocks, examDateObj, startDate);
+
+  // 2. Apply dynamic session duration caps by cognitive load
+  blocks = blocks.map((b) => ({
+    ...b,
+    plannedMinutes: adjustDurationByMode(b.plannedMinutes, b.mode),
+  }));
+
+  logger.info("plan.intelligence_applied", {
+    user_id: userId,
+    original_blocks: planResult.blocks.length,
+    tapered_blocks: blocks.length,
+  });
+
+  // If Google availability is requested, fetch busy times + events and use scored fitting
   let googleFreeSlotsByDay: Map<number, TimeInterval[]> | null = null;
+  let googleEventsByDay: Map<number, IntelEvent[]> | null = null;
+  let inferredBedtime = 23;
 
   if (parsed.use_google_availability) {
     const integration = await prisma.googleIntegration.findUnique({
@@ -116,6 +144,11 @@ export async function createPlan(userId: string, input: unknown) {
     if (integration) {
       const client = getGoogleClient(userId);
       const calendarId = integration.calendarIdSelected || "primary";
+      // Also check busy calendars for fatigue/exercise detection
+      const busyCalendarIds: string[] = integration.busyCalendarIds
+        ? integration.busyCalendarIds.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+      const allCalendarIds = [...new Set([calendarId, ...busyCalendarIds])];
 
       // Query 7-day window
       const timeMin = startDate.toISOString();
@@ -124,16 +157,44 @@ export async function createPlan(userId: string, input: unknown) {
       const timeMax = windowEnd.toISOString();
 
       try {
-        const busy = await client.freebusyQuery({
-          timeMin,
-          timeMax,
-          calendarIds: [calendarId],
-        });
+        // Fetch busy intervals AND actual events in parallel
+        const [busy, ...eventLists] = await Promise.all([
+          client.freebusyQuery({ timeMin, timeMax, calendarIds: allCalendarIds }),
+          ...allCalendarIds.map((cid) =>
+            client.listEvents({
+              calendarId: cid,
+              timeMin,
+              timeMax,
+              singleEvents: true,
+              maxResults: 250,
+            }).catch(() => []),
+          ),
+        ]);
 
         const busyIntervals: TimeInterval[] = busy.map((b) => ({
           start: new Date(b.start).getTime(),
           end: new Date(b.end).getTime(),
         }));
+
+        // Flatten all events into IntelEvent format, grouped by day
+        const allEvents: IntelEvent[] = eventLists.flat().map((e) => ({
+          summary: e.summary || "",
+          start: new Date(e.start).getTime(),
+          end: new Date(e.end).getTime(),
+        }));
+
+        // Estimate bedtime from event patterns
+        inferredBedtime = estimateBedtime(allEvents);
+
+        // Group events by day index
+        googleEventsByDay = new Map();
+        for (const event of allEvents) {
+          const eventDate = new Date(event.start);
+          const dayIdx = Math.floor((eventDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+          if (dayIdx < 0 || dayIdx >= 7) continue;
+          if (!googleEventsByDay.has(dayIdx)) googleEventsByDay.set(dayIdx, []);
+          googleEventsByDay.get(dayIdx)!.push(event);
+        }
 
         // Compute free slots per day
         googleFreeSlotsByDay = new Map();
@@ -148,6 +209,8 @@ export async function createPlan(userId: string, input: unknown) {
         logger.info("plan.google_availability", {
           user_id: userId,
           busy_count: busy.length,
+          events_fetched: allEvents.length,
+          inferred_bedtime: inferredBedtime,
         });
       } catch (err) {
         logger.error("plan.google_availability_failed", { user_id: userId, error: String(err) });
@@ -170,7 +233,7 @@ export async function createPlan(userId: string, input: unknown) {
     block: PlanBlock;
   }[] = [];
 
-  // If using Google availability, group blocks by day and fit into free slots
+  // If using Google availability, group blocks by day and use scored fitting
   if (googleFreeSlotsByDay) {
     // Group blocks by day
     const blocksByDay = new Map<number, PlanBlock[]>();
@@ -182,7 +245,19 @@ export async function createPlan(userId: string, input: unknown) {
     for (const [dayIdx, dayBlocks] of blocksByDay.entries()) {
       const freeSlots = googleFreeSlotsByDay.get(dayIdx) || [];
       const durations = dayBlocks.map((b) => b.plannedMinutes * 60000);
-      const scheduled = fitBlocksIntoSlots(durations, freeSlots);
+      const dayEvents = googleEventsByDay?.get(dayIdx) || [];
+
+      // Use cognitively-scored slot fitting when we have event data
+      const scheduled = dayEvents.length > 0
+        ? fitBlocksScored({
+            blockDurationsMs: durations,
+            blockModes: dayBlocks.map((b) => b.mode as IntelMode),
+            freeSlots,
+            chronotype: (parsed.chronotype || "flexible") as Chronotype,
+            dayEvents,
+            bedtimeHour: inferredBedtime,
+          })
+        : fitBlocksIntoSlots(durations, freeSlots);
 
       for (let i = 0; i < dayBlocks.length; i++) {
         const block = dayBlocks[i];
