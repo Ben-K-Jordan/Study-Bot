@@ -95,6 +95,9 @@ export default function PlanPage() {
   const [examId, setExamId] = useState("");
   const [examDate, setExamDate] = useState("");
   const [objectivesText, setObjectivesText] = useState("");
+  const [uploadedFiles, setUploadedFiles] = useState<{ id: string; name: string; status: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [useManualObjectives, setUseManualObjectives] = useState(false);
   const [availability, setAvailability] = useState(defaultAvailability);
   const [dailyCap, setDailyCap] = useState(180);
   const [breakProtocol, setBreakProtocol] = useState("50_10");
@@ -172,6 +175,73 @@ export default function PlanPage() {
     });
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    if (!courseName.trim()) {
+      setError("Please enter a course name before uploading files");
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+
+    for (const file of Array.from(files)) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("namespace", "COURSE");
+      formData.append("course_name", courseName);
+      if (examName.trim()) formData.append("exam_name", examName);
+
+      try {
+        const res = await fetch("/api/content/documents", {
+          method: "POST",
+          headers: { "X-User-Id": getOrCreateUserId() },
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          const docId = data.document_id;
+          setUploadedFiles((prev) => [
+            ...prev,
+            { id: docId, name: file.name, status: data.status || "PENDING" },
+          ]);
+
+          // Trigger processing (chunking + embedding) unless already processed (deduped)
+          if (data.status !== "PROCESSED") {
+            fetch(`/api/content/documents/${docId}/process`, {
+              method: "POST",
+              headers: { "X-User-Id": getOrCreateUserId() },
+            })
+              .then((r) => r.json())
+              .then((d) => {
+                setUploadedFiles((prev) =>
+                  prev.map((f) => (f.id === docId ? { ...f, status: d.status || "PROCESSED" } : f)),
+                );
+              })
+              .catch(() => {
+                setUploadedFiles((prev) =>
+                  prev.map((f) => (f.id === docId ? { ...f, status: "FAILED" } : f)),
+                );
+              });
+          }
+        } else {
+          setError(`Failed to upload ${file.name}: ${data.error}`);
+        }
+      } catch {
+        setError(`Network error uploading ${file.name}`);
+      }
+    }
+
+    setUploading(false);
+    // Reset the input so the same file can be re-selected
+    e.target.value = "";
+  };
+
+  const removeUploadedFile = (docId: string) => {
+    setUploadedFiles((prev) => prev.filter((f) => f.id !== docId));
+  };
+
   const handlePublish = async () => {
     if (!result) return;
     setPublishing(true);
@@ -238,10 +308,16 @@ export default function PlanPage() {
     setLoading(true);
     setError(null);
 
-    const objectives = objectivesText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const objectives = useManualObjectives
+      ? objectivesText.split("\n").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const document_ids = uploadedFiles.map((f) => f.id);
+
+    if (objectives.length < 3 && document_ids.length === 0) {
+      setError("Upload course content or switch to manual objectives (minimum 3)");
+      setLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/plans", {
@@ -256,7 +332,8 @@ export default function PlanPage() {
           exam_name: examName,
           exam_id: examId || undefined,
           exam_date: examDate,
-          objectives,
+          objectives: objectives.length > 0 ? objectives : undefined,
+          document_ids: document_ids.length > 0 ? document_ids : undefined,
           availability,
           daily_study_cap_minutes: dailyCap,
           break_protocol_default: breakProtocol,
@@ -461,16 +538,100 @@ export default function PlanPage() {
           </fieldset>
 
           <fieldset style={{ border: "1px solid #333", padding: "1rem", marginBottom: "1rem" }}>
-            <legend style={{ color: "#00ff88" }}>Objectives</legend>
-            <p style={{ fontSize: "0.8rem", color: "#888", marginTop: 0 }}>One per line (minimum 3)</p>
-            <textarea
-              value={objectivesText}
-              onChange={(e) => setObjectivesText(e.target.value)}
-              rows={6}
-              required
-              style={{ ...inputStyle, width: "100%", resize: "vertical" }}
-              placeholder={"Loops and invariants\nRecursion\nLinked lists\nStacks and queues\nBig-O analysis"}
-            />
+            <legend style={{ color: "#00ff88" }}>Course Content</legend>
+            <p style={{ fontSize: "0.8rem", color: "#888", marginTop: 0 }}>
+              Upload slides, practice questions, or notes. The AI will analyze your content and decide what to cover each day.
+            </p>
+
+            {/* File upload area */}
+            <div
+              style={{
+                border: "2px dashed #333",
+                padding: "1.5rem",
+                textAlign: "center",
+                marginBottom: "0.75rem",
+                cursor: uploading ? "wait" : "pointer",
+                opacity: uploading ? 0.6 : 1,
+              }}
+              onClick={() => !uploading && document.getElementById("file-upload-input")?.click()}
+            >
+              <input
+                id="file-upload-input"
+                type="file"
+                multiple
+                accept=".pdf,.txt,.md"
+                onChange={handleFileUpload}
+                style={{ display: "none" }}
+              />
+              <div style={{ color: "#00ff88", fontSize: "1.1rem", marginBottom: "0.3rem" }}>
+                {uploading ? "Uploading..." : "Click to upload files"}
+              </div>
+              <div style={{ color: "#666", fontSize: "0.8rem" }}>
+                PDF, text, or markdown files
+              </div>
+            </div>
+
+            {/* Uploaded files list */}
+            {uploadedFiles.length > 0 && (
+              <div style={{ marginBottom: "0.75rem" }}>
+                {uploadedFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "0.4rem 0.6rem",
+                      background: "#111",
+                      border: "1px solid #333",
+                      marginBottom: "0.25rem",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <span style={{ color: "#e0e0e0" }}>{file.name}</span>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <span style={{ color: file.status === "PROCESSED" ? "#00ff88" : "#ffaa00", fontSize: "0.75rem" }}>
+                        {file.status}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeUploadedFile(file.id)}
+                        style={{ background: "none", border: "none", color: "#ff4444", cursor: "pointer", fontFamily: "monospace", fontSize: "0.85rem" }}
+                      >
+                        x
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: "0.78rem", color: "#888", marginTop: "0.3rem" }}>
+                  {uploadedFiles.length} file{uploadedFiles.length !== 1 ? "s" : ""} uploaded — AI will extract objectives automatically
+                </div>
+              </div>
+            )}
+
+            {/* Manual objectives toggle */}
+            <div style={{ borderTop: "1px solid #222", paddingTop: "0.75rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "#888", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={useManualObjectives}
+                  onChange={(e) => setUseManualObjectives(e.target.checked)}
+                />
+                Set objectives manually instead
+              </label>
+              {useManualObjectives && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <p style={{ fontSize: "0.8rem", color: "#888", marginTop: 0 }}>One per line (minimum 3)</p>
+                  <textarea
+                    value={objectivesText}
+                    onChange={(e) => setObjectivesText(e.target.value)}
+                    rows={6}
+                    style={{ ...inputStyle, width: "100%", resize: "vertical" }}
+                    placeholder={"Loops and invariants\nRecursion\nLinked lists\nStacks and queues\nBig-O analysis"}
+                  />
+                </div>
+              )}
+            </div>
           </fieldset>
 
           <fieldset style={{ border: "1px solid #333", padding: "1rem", marginBottom: "1rem" }}>
