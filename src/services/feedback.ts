@@ -3,6 +3,11 @@ import { searchChunks, buildFeedbackQuery, type SearchResult } from "@/lib/searc
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
 import type { FeedbackExcerpt } from "@/services/content";
+import { runTask } from "@/lib/ai/gateway";
+import type { GatewayContext } from "@/lib/ai/gateway";
+import { AiTask } from "@/lib/ai/types";
+import { getPrompt } from "@/lib/ai/prompt-registry";
+import { createProvider } from "@/lib/ai/provider-factory";
 
 /**
  * Generate feedback for a scored attempt. Called via the deferred feedback endpoint.
@@ -10,12 +15,21 @@ import type { FeedbackExcerpt } from "@/services/content";
  * 1. If citations already exist, return them (idempotent).
  * 2. Otherwise, check objective anchors first, then fall back to FTS.
  * 3. Store AttemptCitation rows and return excerpts.
- * 4. On failure, return { status: "UNAVAILABLE" } — never throw.
+ * 4. For PARTIAL/INCORRECT: generate AI explanation of what went wrong.
+ * 5. For CORRECT: generate brief AI reinforcement.
+ * 6. On failure, return { status: "UNAVAILABLE" } — never throw.
  */
 export async function generateFeedback(
   userId: string,
   attemptId: string
-): Promise<{ status: "OK" | "UNAVAILABLE"; excerpts: FeedbackExcerpt[] }> {
+): Promise<{
+  status: "OK" | "UNAVAILABLE";
+  excerpts: FeedbackExcerpt[];
+  explanation?: string;
+  key_takeaway?: string;
+  reinforcement?: string;
+  deeper_insight?: string;
+}> {
   const ftsStart = Date.now();
 
   try {
@@ -57,14 +71,23 @@ export async function generateFeedback(
       return { status: "OK", excerpts };
     }
 
-    // Only generate feedback for PARTIAL/INCORRECT
-    if (attempt.selfScore === "CORRECT" || attempt.selfScore === null) {
-      return { status: "OK", excerpts: [] };
-    }
-
     const session = attempt.run.session;
     const courseName = session.courseName;
     const examName = session.examName;
+    const isCorrect = attempt.selfScore === "CORRECT";
+
+    // For CORRECT answers: generate reinforcement (no excerpts needed)
+    if (isCorrect) {
+      const reinforcement = await generateReinforcement(
+        userId, attempt.promptText, attempt.userAnswer || "", courseName, examName,
+      );
+      return { status: "OK", excerpts: [], ...reinforcement };
+    }
+
+    // For unscored: nothing to do
+    if (attempt.selfScore === null) {
+      return { status: "OK", excerpts: [] };
+    }
 
     // Fetch error log and prompt row in parallel (independent queries)
     const [errorLog, promptRow] = await Promise.all([
@@ -124,46 +147,182 @@ export async function generateFeedback(
       return { status: "OK", excerpts: [] };
     }
 
-    // Store citations
-    const excerpts: FeedbackExcerpt[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      await prisma.attemptCitation.upsert({
-        where: {
-          attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
-        },
-        create: {
-          attemptId,
-          chunkId: r.chunk_id,
-          rank: i + 1,
-          snippet: r.snippet,
-        },
-        update: {
-          rank: i + 1,
-          snippet: r.snippet,
-        },
-      });
+    // Store citations in parallel
+    const excerpts: FeedbackExcerpt[] = await Promise.all(
+      results.map(async (r, i) => {
+        await prisma.attemptCitation.upsert({
+          where: {
+            attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
+          },
+          create: {
+            attemptId,
+            chunkId: r.chunk_id,
+            rank: i + 1,
+            snippet: r.snippet,
+          },
+          update: {
+            rank: i + 1,
+            snippet: r.snippet,
+          },
+        });
 
-      excerpts.push({
-        chunk_id: r.chunk_id,
-        doc_title: r.doc_title,
-        page_number: r.page_number,
-        snippet: r.snippet,
-        rank: i + 1,
-      });
-    }
+        return {
+          chunk_id: r.chunk_id,
+          doc_title: r.doc_title,
+          page_number: r.page_number,
+          snippet: r.snippet,
+          rank: i + 1,
+        };
+      })
+    );
+
+    // Generate AI explanation using the found chunks
+    const aiExplanation = await generateAIExplanation(
+      userId,
+      attempt.promptText,
+      attempt.userAnswer || "",
+      attempt.selfScore || "INCORRECT",
+      errorLog?.errorType,
+      errorLog?.correctionRule,
+      results,
+    );
 
     logger.info("feedback.generated", {
       attempt_id: attemptId,
       count: excerpts.length,
+      has_explanation: !!aiExplanation?.explanation,
       fts_ms: ftsMs,
     });
 
-    return { status: "OK", excerpts };
+    return { status: "OK", excerpts, ...aiExplanation };
   } catch (err: unknown) {
     captureException(err, { user_id: userId, attempt_id: attemptId, action: "generateFeedback" });
     logger.error("feedback.failed", { user_id: userId, attempt_id: attemptId, error: String(err) });
     return { status: "UNAVAILABLE", excerpts: [] };
+  }
+}
+
+/**
+ * Generate an AI-powered explanation for wrong/partial answers.
+ * Returns null fields if AI is unavailable — never throws.
+ */
+async function generateAIExplanation(
+  userId: string,
+  question: string,
+  userAnswer: string,
+  selfScore: string,
+  errorType?: string | null,
+  correctionRule?: string | null,
+  searchResults: SearchResult[] = [],
+): Promise<{ explanation?: string; key_takeaway?: string }> {
+  const providerName = process.env.AI_PROVIDER || "mock";
+  if (providerName === "mock") return {};
+
+  try {
+    const gatewayCtx: GatewayContext = { userId, provider: createProvider() };
+    const prompt = getPrompt(AiTask.GENERATE_FEEDBACK);
+
+    const result = await runTask<{ explanation: string; key_takeaway: string; referenced_chunk_ids: string[] }>(
+      gatewayCtx,
+      {
+        task: AiTask.GENERATE_FEEDBACK,
+        model: process.env.AI_MODEL_ANSWER || "gpt-4o-mini",
+        promptVersion: prompt.version,
+        input: {
+          question,
+          userAnswer,
+          selfScore,
+          errorType: errorType || undefined,
+          correctionRule: correctionRule || undefined,
+          chunks: searchResults.map((r) => ({
+            chunk_id: r.chunk_id,
+            title: r.doc_title,
+            page: r.page_number,
+            text: r.snippet,
+          })),
+        },
+        parseOutput: (raw: unknown) => {
+          const data = raw as Record<string, unknown>;
+          return {
+            explanation: (data.explanation as string) || "",
+            key_takeaway: (data.key_takeaway as string) || "",
+            referenced_chunk_ids: (data.referenced_chunk_ids as string[]) || [],
+          };
+        },
+      },
+    );
+
+    return {
+      explanation: result.output.explanation,
+      key_takeaway: result.output.key_takeaway,
+    };
+  } catch (err) {
+    logger.error("feedback.ai_explanation_failed", { user_id: userId, error: String(err) });
+    return {};
+  }
+}
+
+/**
+ * Generate a brief AI reinforcement for correct answers.
+ * Returns empty fields if AI is unavailable — never throws.
+ */
+async function generateReinforcement(
+  userId: string,
+  question: string,
+  userAnswer: string,
+  courseName: string,
+  examName: string,
+): Promise<{ reinforcement?: string; deeper_insight?: string }> {
+  const providerName = process.env.AI_PROVIDER || "mock";
+  if (providerName === "mock") return {};
+
+  try {
+    // Quick search for relevant context
+    const results = await searchChunks({
+      userId,
+      q: question,
+      namespace: "COURSE",
+      courseName,
+      examName,
+      topK: 3,
+    });
+
+    const gatewayCtx: GatewayContext = { userId, provider: createProvider() };
+    const prompt = getPrompt(AiTask.REINFORCE_CORRECT);
+
+    const result = await runTask<{ reinforcement: string; deeper_insight: string }>(
+      gatewayCtx,
+      {
+        task: AiTask.REINFORCE_CORRECT,
+        model: process.env.AI_MODEL_ANSWER || "gpt-4o-mini",
+        promptVersion: prompt.version,
+        input: {
+          question,
+          userAnswer,
+          chunks: results.map((r) => ({
+            chunk_id: r.chunk_id,
+            title: r.doc_title,
+            page: r.page_number,
+            text: r.snippet,
+          })),
+        },
+        parseOutput: (raw: unknown) => {
+          const data = raw as Record<string, unknown>;
+          return {
+            reinforcement: (data.reinforcement as string) || "",
+            deeper_insight: (data.deeper_insight as string) || "",
+          };
+        },
+      },
+    );
+
+    return {
+      reinforcement: result.output.reinforcement,
+      deeper_insight: result.output.deeper_insight,
+    };
+  } catch (err) {
+    logger.error("feedback.reinforcement_failed", { user_id: userId, error: String(err) });
+    return {};
   }
 }
 

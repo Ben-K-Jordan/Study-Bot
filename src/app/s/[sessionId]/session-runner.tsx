@@ -66,6 +66,15 @@ export interface FeedbackExcerpt {
   rank: number;
 }
 
+export interface FeedbackResult {
+  status: string;
+  excerpts: FeedbackExcerpt[];
+  explanation?: string;
+  key_takeaway?: string;
+  reinforcement?: string;
+  deeper_insight?: string;
+}
+
 export interface RunData {
   run_id: string;
   status: string;
@@ -143,7 +152,7 @@ async function fetchPrompt(runId: string, index: number): Promise<PromptView> {
 }
 
 /** Fetch deferred feedback for an attempt */
-export async function fetchFeedback(attemptId: string): Promise<{ status: string; excerpts: FeedbackExcerpt[] }> {
+export async function fetchFeedback(attemptId: string): Promise<FeedbackResult> {
   return apiGet(`/api/attempts/${attemptId}/feedback`);
 }
 

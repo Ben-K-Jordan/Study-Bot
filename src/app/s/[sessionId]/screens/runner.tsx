@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { RunData, SessionData, FeedbackExcerpt } from "../session-runner";
+import type { RunData, SessionData, FeedbackExcerpt, FeedbackResult } from "../session-runner";
 import { fetchFeedback } from "../session-runner";
 
 const ERROR_TYPES = [
@@ -38,6 +38,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [feedbackExcerpts, setFeedbackExcerpts] = useState<FeedbackExcerpt[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [lastScore, setLastScore] = useState<string | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiKeyTakeaway, setAiKeyTakeaway] = useState<string | null>(null);
+  const [aiReinforcement, setAiReinforcement] = useState<string | null>(null);
+  const [aiDeeperInsight, setAiDeeperInsight] = useState<string | null>(null);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -60,28 +64,34 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     ? run.attempts.find((a) => a.prompt_index === currentIndex)?.user_answer ?? ""
     : "";
 
-  // Phase 1: Deferred feedback — fetch after scoring PARTIAL/INCORRECT
+  // Phase 1: Deferred feedback — fetch after scoring (all scores, including CORRECT)
   useEffect(() => {
-    if (
-      run.last_feedback_status === "PENDING" &&
+    const shouldFetch =
       run.last_attempt_id &&
       !feedbackLoading &&
       feedbackExcerpts.length === 0 &&
-      uiPhase === "review"
-    ) {
-      setFeedbackLoading(true);
-      fetchFeedback(run.last_attempt_id)
-        .then((result) => {
-          if (result.status === "OK" && result.excerpts.length > 0) {
-            setFeedbackExcerpts(result.excerpts);
-          }
-        })
-        .catch(() => {
-          // Feedback failure is non-fatal
-        })
-        .finally(() => setFeedbackLoading(false));
-    }
-  }, [run.last_feedback_status, run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length]);
+      !aiExplanation &&
+      !aiReinforcement &&
+      uiPhase === "review";
+
+    if (!shouldFetch) return;
+
+    setFeedbackLoading(true);
+    fetchFeedback(run.last_attempt_id!)
+      .then((result: FeedbackResult) => {
+        if (result.status === "OK") {
+          if (result.excerpts.length > 0) setFeedbackExcerpts(result.excerpts);
+          if (result.explanation) setAiExplanation(result.explanation);
+          if (result.key_takeaway) setAiKeyTakeaway(result.key_takeaway);
+          if (result.reinforcement) setAiReinforcement(result.reinforcement);
+          if (result.deeper_insight) setAiDeeperInsight(result.deeper_insight);
+        }
+      })
+      .catch(() => {
+        // Feedback failure is non-fatal
+      })
+      .finally(() => setFeedbackLoading(false));
+  }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, aiExplanation, aiReinforcement]);
 
   // Reset state when prompt changes
   useEffect(() => {
@@ -99,6 +109,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setFeedbackExcerpts([]);
     setFeedbackLoading(false);
     setLastScore(null);
+    setAiExplanation(null);
+    setAiKeyTakeaway(null);
+    setAiReinforcement(null);
+    setAiDeeperInsight(null);
     startTimeRef.current = Date.now();
     if (!isReviewPhase) {
       textareaRef.current?.focus();
@@ -184,10 +198,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     await onSubmit(attempt);
     setSubmitting(false);
 
-    // After submit, if PARTIAL/INCORRECT, show review phase for deferred feedback
-    if (s !== "CORRECT") {
-      setUIPhase("review");
-    }
+    // Show review phase for all scores (CORRECT gets reinforcement, others get explanation)
+    setUIPhase("review");
   };
 
   const doReviewScore = async (finalScore?: string) => {
@@ -213,10 +225,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     await onSubmit(attempt);
     setSubmitting(false);
 
-    // After submit, if PARTIAL/INCORRECT, show review phase for deferred feedback
-    if (s !== "CORRECT") {
-      setUIPhase("review");
-    }
+    // Show review phase for all scores
+    setUIPhase("review");
   };
 
   return (
@@ -476,92 +486,191 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {/* Review & Repair panel — shown AFTER scoring with deferred feedback */}
       {uiPhase === "review" && (
         <div data-testid="review-panel">
-          <div
-            style={{
-              background: "#1a2e1a",
-              border: "1px solid #2ecc71",
-              borderRadius: 6,
-              padding: "1rem",
-              marginBottom: "1rem",
-            }}
-          >
-            <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
-              REVIEW (from your materials)
-            </p>
-
-            {feedbackLoading && (
-              <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }} data-testid="feedback-loading">
-                Loading relevant excerpts...
+          {/* AI Reinforcement for CORRECT answers */}
+          {lastScore === "CORRECT" && (aiReinforcement || aiDeeperInsight) && (
+            <div
+              style={{
+                background: "#1a2e1a",
+                border: "1px solid #2ecc71",
+                borderRadius: 6,
+                padding: "1rem",
+                marginBottom: "1rem",
+              }}
+            >
+              <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
+                Nice work!
               </p>
-            )}
-
-            {feedbackExcerpts.map((excerpt, i) => (
-              <div
-                key={excerpt.chunk_id}
-                style={{
-                  background: "#16213e",
-                  border: "1px solid #333",
-                  borderRadius: 4,
-                  padding: "0.75rem",
-                  marginBottom: i < feedbackExcerpts.length - 1 ? "0.5rem" : 0,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#888", marginBottom: "0.4rem" }}>
-                  <span data-testid="excerpt-doc-title">{excerpt.doc_title}</span>
-                  {excerpt.page_number && <span>p. {excerpt.page_number}</span>}
-                </div>
-                <p
-                  style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
-                  dangerouslySetInnerHTML={{
-                    __html: excerpt.snippet
-                      .replace(/<<(.*?)>>/g, '<mark style="background:#4cc9f033;color:#4cc9f0">$1</mark>'),
+              {aiReinforcement && (
+                <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", lineHeight: 1.6 }}>
+                  {aiReinforcement}
+                </p>
+              )}
+              {aiDeeperInsight && (
+                <div
+                  style={{
+                    background: "#16213e",
+                    border: "1px solid #333",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    marginTop: "0.5rem",
                   }}
-                />
-              </div>
-            ))}
+                >
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#4cc9f0", marginBottom: "0.3rem" }}>
+                    Deeper Insight
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
+                    {aiDeeperInsight}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
-            {!feedbackLoading && feedbackExcerpts.length === 0 && (
-              <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }}>
-                No relevant excerpts found in your materials.
+          {/* CORRECT with no AI feedback yet — show brief loading or skip */}
+          {lastScore === "CORRECT" && !aiReinforcement && !aiDeeperInsight && (
+            <div
+              style={{
+                background: "#1a2e1a",
+                border: "1px solid #2ecc71",
+                borderRadius: 6,
+                padding: "1rem",
+                marginBottom: "1rem",
+              }}
+            >
+              <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
+                {feedbackLoading ? "Generating insight..." : "Correct!"}
               </p>
-            )}
+            </div>
+          )}
 
-            {/* Repair prompt for PARTIAL/INCORRECT */}
-            {lastScore && lastScore !== "CORRECT" && (correctionRule || variantQuestion) && (
-              <div
-                style={{
-                  background: "#2d1b1b",
-                  border: "1px solid #e74c3c55",
-                  borderRadius: 4,
-                  padding: "0.75rem",
-                  marginTop: "0.75rem",
-                }}
-              >
-                <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#e74c3c" }}>
-                  Repair Prompt
-                </p>
-                {correctionRule && (
-                  <p style={{ margin: "0 0 0.3rem", fontSize: "0.8rem" }}>
-                    <strong>Rule:</strong> {correctionRule}
+          {/* AI Explanation for PARTIAL/INCORRECT answers */}
+          {lastScore && lastScore !== "CORRECT" && (
+            <div
+              style={{
+                background: "#1a2e1a",
+                border: "1px solid #2ecc71",
+                borderRadius: 6,
+                padding: "1rem",
+                marginBottom: "1rem",
+              }}
+            >
+              <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
+                REVIEW (from your materials)
+              </p>
+
+              {/* AI-powered explanation */}
+              {aiExplanation && (
+                <div
+                  style={{
+                    background: "#1e293b",
+                    border: "1px solid #3b82f6",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    marginBottom: "0.75rem",
+                  }}
+                >
+                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#3b82f6" }}>
+                    Professor&apos;s Explanation
                   </p>
-                )}
-                {variantQuestion && (
-                  <p style={{ margin: "0 0 0.3rem", fontSize: "0.8rem" }}>
-                    <strong>Try this:</strong> {variantQuestion}
+                  <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6 }}>
+                    {aiExplanation}
                   </p>
-                )}
-                <p style={{ margin: "0.5rem 0 0", fontSize: "0.7rem", color: "#aaa", fontStyle: "italic" }}>
-                  Say the correct answer aloud once before moving on.
+                  {aiKeyTakeaway && (
+                    <div
+                      style={{
+                        background: "#172554",
+                        borderRadius: 4,
+                        padding: "0.5rem 0.75rem",
+                        marginTop: "0.5rem",
+                      }}
+                    >
+                      <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#fbbf24" }}>
+                        Key Takeaway: {aiKeyTakeaway}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {feedbackLoading && !aiExplanation && (
+                <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }} data-testid="feedback-loading">
+                  Loading feedback...
                 </p>
-              </div>
-            )}
-          </div>
+              )}
+
+              {/* Raw excerpts from course materials */}
+              {feedbackExcerpts.map((excerpt, i) => (
+                <div
+                  key={excerpt.chunk_id}
+                  style={{
+                    background: "#16213e",
+                    border: "1px solid #333",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    marginBottom: i < feedbackExcerpts.length - 1 ? "0.5rem" : 0,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#888", marginBottom: "0.4rem" }}>
+                    <span data-testid="excerpt-doc-title">{excerpt.doc_title}</span>
+                    {excerpt.page_number && <span>p. {excerpt.page_number}</span>}
+                  </div>
+                  <p
+                    style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{
+                      __html: excerpt.snippet
+                        .replace(/<<(.*?)>>/g, '<mark style="background:#4cc9f033;color:#4cc9f0">$1</mark>'),
+                    }}
+                  />
+                </div>
+              ))}
+
+              {!feedbackLoading && feedbackExcerpts.length === 0 && !aiExplanation && (
+                <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }}>
+                  No relevant excerpts found in your materials.
+                </p>
+              )}
+
+              {/* Repair prompt for PARTIAL/INCORRECT */}
+              {(correctionRule || variantQuestion) && (
+                <div
+                  style={{
+                    background: "#2d1b1b",
+                    border: "1px solid #e74c3c55",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    marginTop: "0.75rem",
+                  }}
+                >
+                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#e74c3c" }}>
+                    Repair Prompt
+                  </p>
+                  {correctionRule && (
+                    <p style={{ margin: "0 0 0.3rem", fontSize: "0.8rem" }}>
+                      <strong>Rule:</strong> {correctionRule}
+                    </p>
+                  )}
+                  {variantQuestion && (
+                    <p style={{ margin: "0 0 0.3rem", fontSize: "0.8rem" }}>
+                      <strong>Try this:</strong> {variantQuestion}
+                    </p>
+                  )}
+                  <p style={{ margin: "0.5rem 0 0", fontSize: "0.7rem", color: "#aaa", fontStyle: "italic" }}>
+                    Say the correct answer aloud once before moving on.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             onClick={() => {
               setFeedbackExcerpts([]);
               setFeedbackLoading(false);
               setLastScore(null);
+              setAiExplanation(null);
+              setAiKeyTakeaway(null);
+              setAiReinforcement(null);
+              setAiDeeperInsight(null);
               if (isReviewPhase) {
                 setUIPhase("scoring");
               } else {

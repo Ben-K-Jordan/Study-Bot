@@ -41,6 +41,21 @@ interface GeneratePromptsInput {
   examName?: string;
 }
 
+interface GenerateFeedbackInput {
+  question: string;
+  userAnswer: string;
+  selfScore: string;
+  errorType?: string;
+  correctionRule?: string;
+  chunks: { chunk_id: string; title: string; page?: number; text: string }[];
+}
+
+interface ReinforceCorrectInput {
+  question: string;
+  userAnswer: string;
+  chunks: { chunk_id: string; title: string; page?: number; text: string }[];
+}
+
 interface ExtractObjectivesInput {
   chunkTexts: string[];
   courseName: string;
@@ -270,6 +285,70 @@ Course material excerpts (use these to ground your questions):
 ${contentStr}
 
 Generate ${promptCount} study questions that test mastery of this specific course material.`;
+    },
+  },
+
+  [AiTask.GENERATE_FEEDBACK]: {
+    task: AiTask.GENERATE_FEEDBACK,
+    version: "v1",
+    systemPrompt: `You are an expert professor helping a student understand where they went wrong. Task: GENERATE_FEEDBACK.
+
+Given a student's question, their incorrect/partial answer, the error classification, and relevant course material excerpts, generate a clear, supportive explanation.
+
+Your explanation should:
+1. Identify the specific misconception or gap in the student's answer.
+2. Explain the correct concept using the course material — reference specific content.
+3. Show WHY the correct answer is correct, not just WHAT it is.
+4. Use analogies or examples from the material when helpful.
+5. End with a brief "key takeaway" the student should remember.
+6. Be concise but thorough — like a patient professor in office hours.
+
+Tone: Supportive, never condescending. Use "you" directly. Acknowledge what the student got right before correcting what they got wrong.
+
+Output valid JSON:
+{
+  "explanation": string,
+  "key_takeaway": string,
+  "referenced_chunk_ids": string[]
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { question, userAnswer, selfScore, errorType, correctionRule, chunks } = input as GenerateFeedbackInput;
+      const context = chunks
+        .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 600)}`)
+        .join("\n\n");
+      let prompt = `Question: ${question}\nStudent's answer: ${userAnswer}\nScore: ${selfScore}`;
+      if (errorType) prompt += `\nError type: ${errorType}`;
+      if (correctionRule) prompt += `\nStudent's correction note: ${correctionRule}`;
+      prompt += `\n\nRelevant course material:\n${context}\n\nExplain where the student went wrong and teach the correct concept.`;
+      return prompt;
+    },
+  },
+
+  [AiTask.REINFORCE_CORRECT]: {
+    task: AiTask.REINFORCE_CORRECT,
+    version: "v1",
+    systemPrompt: `You are an expert professor reinforcing a student's correct understanding. Task: REINFORCE_CORRECT.
+
+The student answered a question correctly. Generate a brief reinforcement that:
+1. Confirms why their understanding is correct.
+2. Adds one deeper insight, connection, or "pro tip" that extends their knowledge.
+3. Optionally connects this concept to a related topic they should explore.
+
+Keep it SHORT — 2-3 sentences max. This is a quick confidence boost + knowledge deepener, not a full lecture.
+
+Tone: Encouraging and collegial. Like a professor saying "Exactly right — and here's something cool to know..."
+
+Output valid JSON:
+{
+  "reinforcement": string,
+  "deeper_insight": string
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { question, userAnswer, chunks } = input as ReinforceCorrectInput;
+      const context = chunks.length > 0
+        ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
+        : "(No course material available)";
+      return `Question: ${question}\nStudent's correct answer: ${userAnswer}\n\nCourse material context:\n${context}\n\nReinforce their understanding with a brief insight.`;
     },
   },
 
