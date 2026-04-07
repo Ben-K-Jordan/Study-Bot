@@ -233,24 +233,23 @@ export async function createPlan(userId: string, input: unknown) {
 
   // Transactional: create all sessions + plan + items atomically
   await prisma.$transaction(async (tx) => {
-    for (const item of items) {
-      await tx.session.create({
-        data: {
-          sessionId: item.sessionId,
-          userId,
-          courseId: parsed.course_id ?? "",
-          courseName: parsed.course_name,
-          examId: parsed.exam_id ?? "",
-          examName: parsed.exam_name,
-          mode: item.block.mode,
-          topicScope: item.block.topicScope,
-          objectives: item.block.objectives as object,
-          targetOutcome: item.block.targetOutcome as object,
-          breakProtocol: { type: parsed.break_protocol_default, cycles: 1 },
-          plannedMinutes: item.block.plannedMinutes,
-        },
-      });
-    }
+    // Batch-create all sessions in one query instead of N sequential creates
+    await tx.session.createMany({
+      data: items.map((item) => ({
+        sessionId: item.sessionId,
+        userId,
+        courseId: parsed.course_id ?? "",
+        courseName: parsed.course_name,
+        examId: parsed.exam_id ?? "",
+        examName: parsed.exam_name,
+        mode: item.block.mode,
+        topicScope: item.block.topicScope,
+        objectives: item.block.objectives as object,
+        targetOutcome: item.block.targetOutcome as object,
+        breakProtocol: { type: parsed.break_protocol_default, cycles: 1 },
+        plannedMinutes: item.block.plannedMinutes,
+      })),
+    });
 
     await tx.studyPlan.create({
       data: {
@@ -370,7 +369,7 @@ export async function getPlan(userId: string, planId: string) {
           original_start_at: item.originalStartAt?.toISOString() ?? null,
           original_end_at: item.originalEndAt?.toISOString() ?? null,
           session_id: item.sessionId,
-          session_url: `${getBaseUrl()}/s/${item.sessionId}`,
+          session_url: `${base}/s/${item.sessionId}`,
           mode: session?.mode ?? "",
           topic_scope: session?.topicScope ?? "",
           planned_minutes: session?.plannedMinutes ?? 0,
@@ -384,7 +383,7 @@ export async function getPlan(userId: string, planId: string) {
                 }),
                 description: buildCalendarDescription({
                   outcome: session.targetOutcome as Record<string, unknown> | null,
-                  sessionUrl: `${getBaseUrl()}/s/${item.sessionId}`,
+                  sessionUrl: `${base}/s/${item.sessionId}`,
                   breaks: session.breakProtocol as Record<string, unknown> | null,
                 }),
               }
@@ -401,7 +400,7 @@ export async function getPlan(userId: string, planId: string) {
                 endTime: item.endTime,
                 description: buildCalendarDescription({
                   outcome: session.targetOutcome as Record<string, unknown> | null,
-                  sessionUrl: `${getBaseUrl()}/s/${item.sessionId}`,
+                  sessionUrl: `${base}/s/${item.sessionId}`,
                   breaks: session.breakProtocol as Record<string, unknown> | null,
                 }),
               })

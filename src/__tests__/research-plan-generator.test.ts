@@ -11,6 +11,7 @@ vi.mock("@/lib/db", () => ({
     evidenceCard: {
       findMany: vi.fn(async () => []),
     },
+    $queryRawUnsafe: vi.fn(async () => []),
     aiCallLog: {
       create: vi.fn(async () => ({})),
       aggregate: vi.fn(async () => ({ _sum: { costUsdMicros: 0n } })),

@@ -81,13 +81,7 @@ export async function extractObjectivesFromContent(
   if (chunks.length === 0) return [];
 
   // Build AI gateway context
-  const providerName = process.env.AI_PROVIDER || "mock";
-  let gatewayCtx: GatewayContext | null = null;
-  if (providerName !== "mock") {
-    gatewayCtx = { userId, provider: createProvider() };
-  } else {
-    gatewayCtx = { userId, provider: createProvider() };
-  }
+  const gatewayCtx: GatewayContext = { userId, provider: createProvider() };
 
   const chunkTexts = chunks.map((c) => c.text);
   const prompt = getPrompt(AiTask.EXTRACT_OBJECTIVES);

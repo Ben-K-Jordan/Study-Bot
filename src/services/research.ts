@@ -26,43 +26,64 @@ export async function queryEvidenceCards(
 
   const limit = options?.limit ?? 20;
 
-  const cards = await prisma.evidenceCard.findMany({
-    where: {
-      ...(options?.strength ? { strength: options.strength } : {}),
+  // Build WHERE conditions to filter in SQL instead of loading all cards
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let paramIdx = 1;
+
+  // Filter by tags using JSONB ?| operator (matches ANY tag in the array)
+  conditions.push(`c.tags ?| $${paramIdx}::text[]`);
+  values.push(tags);
+  paramIdx++;
+
+  if (options?.strength) {
+    conditions.push(`c.strength = $${paramIdx}`);
+    values.push(options.strength);
+    paramIdx++;
+  }
+
+  const whereClause = conditions.join(" AND ");
+
+  // Use raw SQL for tag filtering + sorting, then map to typed results
+  const rows = await prisma.$queryRawUnsafe<
+    {
+      id: string;
+      claim: string;
+      recommendation: string;
+      boundary_conditions: string | null;
+      strength: string;
+      tags: unknown;
+      paper_title: string;
+      paper_authors: string | null;
+      paper_year: number | null;
+    }[]
+  >(
+    `SELECT c.id, c.claim, c.recommendation, c.boundary_conditions, c.strength, c.tags,
+            p.title AS paper_title, p.authors AS paper_authors, p.year AS paper_year
+     FROM evidence_cards c
+     JOIN evidence_papers p ON c.evidence_paper_id = p.id
+     WHERE ${whereClause}
+     ORDER BY
+       CASE c.strength WHEN 'STRONG' THEN 3 WHEN 'MODERATE' THEN 2 WHEN 'WEAK' THEN 1 ELSE 0 END DESC,
+       -- Count matching tags for secondary sort
+       (SELECT COUNT(*) FROM jsonb_array_elements_text(c.tags) t WHERE t = ANY($1::text[])) DESC
+     LIMIT $${paramIdx}`,
+    ...values,
+    limit,
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    claim: row.claim,
+    recommendation: row.recommendation,
+    boundaryConditions: row.boundary_conditions,
+    strength: row.strength,
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+    paper: {
+      title: row.paper_title,
+      authors: row.paper_authors,
+      year: row.paper_year,
     },
-    include: {
-      paper: {
-        select: { title: true, authors: true, year: true },
-      },
-    },
-  });
-
-  // Filter cards that have at least one matching tag
-  const matched = cards
-    .map((card) => {
-      const cardTags = Array.isArray(card.tags) ? (card.tags as string[]) : [];
-      const matchCount = tags.filter((t) => cardTags.includes(t)).length;
-      return { card, matchCount };
-    })
-    .filter(({ matchCount }) => matchCount > 0);
-
-  // Sort: STRONG > MODERATE > WEAK, then by match count desc
-  const strengthOrder: Record<string, number> = { STRONG: 3, MODERATE: 2, WEAK: 1 };
-  matched.sort((a, b) => {
-    const sa = strengthOrder[a.card.strength] ?? 0;
-    const sb = strengthOrder[b.card.strength] ?? 0;
-    if (sb !== sa) return sb - sa;
-    return b.matchCount - a.matchCount;
-  });
-
-  return matched.slice(0, limit).map(({ card }) => ({
-    id: card.id,
-    claim: card.claim,
-    recommendation: card.recommendation,
-    boundaryConditions: card.boundaryConditions,
-    strength: card.strength,
-    tags: Array.isArray(card.tags) ? (card.tags as string[]) : [],
-    paper: card.paper,
   }));
 }
 
