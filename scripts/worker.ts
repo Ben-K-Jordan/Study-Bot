@@ -46,18 +46,26 @@ async function processJob(job: ClaimedJob): Promise<void> {
 async function pollLoop(): Promise<void> {
   console.log(`[${WORKER_ID}] Starting worker (concurrency=${CONCURRENCY}, poll=${POLL_INTERVAL_MS}ms)`);
 
+  const MAX_BACKOFF_MS = 30_000;
+  let currentInterval = POLL_INTERVAL_MS;
+
   while (running) {
     try {
       const jobs = await claimJobs(WORKER_ID, CONCURRENCY);
 
       if (jobs.length > 0) {
         await Promise.allSettled(jobs.map(processJob));
+        currentInterval = POLL_INTERVAL_MS; // Reset on work found
+      } else {
+        // Exponential backoff when idle: ramp up to MAX_BACKOFF_MS
+        currentInterval = Math.min(Math.round(currentInterval * 1.5), MAX_BACKOFF_MS);
       }
     } catch (err) {
       console.error(`[${WORKER_ID}] Poll error:`, err);
+      currentInterval = Math.min(Math.round(currentInterval * 2), MAX_BACKOFF_MS);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    await new Promise((resolve) => setTimeout(resolve, currentInterval));
   }
 
   console.log(`[${WORKER_ID}] Worker stopped`);

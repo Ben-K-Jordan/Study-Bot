@@ -53,20 +53,6 @@ function isCircuitOpen(): boolean {
   return true;
 }
 
-/** Reset circuit breaker state — exposed for tests. */
-export function resetCircuitBreaker() {
-  consecutiveFailures = 0;
-  circuitOpenUntil = 0;
-}
-
-// ---------------------------------------------------------------------------
-// Hashing helpers
-// ---------------------------------------------------------------------------
-
-function sha256(data: string): string {
-  return createHash("sha256").update(data).digest("hex");
-}
-
 // ---------------------------------------------------------------------------
 // Budget enforcement
 // ---------------------------------------------------------------------------
@@ -77,7 +63,32 @@ interface BudgetCheckResult {
   capUsd: number;
 }
 
+// In-memory budget cache to avoid aggregate queries on every AI call
+const BUDGET_CACHE_TTL_MS = 60_000; // 1 minute
+const budgetCache = new Map<string, { result: BudgetCheckResult; expiresAt: number }>();
+
+/** Reset circuit breaker and budget cache state — exposed for tests. */
+export function resetCircuitBreaker() {
+  consecutiveFailures = 0;
+  circuitOpenUntil = 0;
+  budgetCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Hashing helpers
+// ---------------------------------------------------------------------------
+
+function sha256(data: string): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
 async function checkBudget(userId: string): Promise<BudgetCheckResult> {
+  // Return cached result if still fresh
+  const cached = budgetCache.get(userId);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.result;
+  }
+
   const startOfDay = new Date();
   startOfDay.setUTCHours(0, 0, 0, 0);
 
@@ -102,11 +113,14 @@ async function checkBudget(userId: string): Promise<BudgetCheckResult> {
   const dailyExceeded = dailySpentUsd >= AI_DAILY_COST_CAP_USD;
   const monthlyExceeded = monthlySpentUsd >= AI_MONTHLY_COST_CAP_USD;
 
-  return {
+  const result: BudgetCheckResult = {
     allowed: !dailyExceeded && !monthlyExceeded,
     spentUsd: dailySpentUsd,
     capUsd: dailyExceeded ? AI_DAILY_COST_CAP_USD : AI_MONTHLY_COST_CAP_USD,
   };
+
+  budgetCache.set(userId, { result, expiresAt: Date.now() + BUDGET_CACHE_TTL_MS });
+  return result;
 }
 
 // ---------------------------------------------------------------------------

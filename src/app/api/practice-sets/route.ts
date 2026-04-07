@@ -60,6 +60,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const courseName = searchParams.get("course_name") || undefined;
   const examName = searchParams.get("exam_name") || undefined;
+  const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
+  const cursor = searchParams.get("cursor") || undefined;
 
   const where: Record<string, unknown> = { userId };
   if (courseName) where.courseName = courseName;
@@ -69,10 +71,16 @@ export async function GET(request: NextRequest) {
     where,
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { questions: true } } },
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
 
+  const hasMore = sets.length > limit;
+  const items = hasMore ? sets.slice(0, limit) : sets;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+
   return NextResponse.json({
-    practice_sets: sets.map((s) => ({
+    practice_sets: items.map((s) => ({
       practice_set_id: s.id,
       course_name: s.courseName,
       exam_name: s.examName,
@@ -80,5 +88,6 @@ export async function GET(request: NextRequest) {
       question_count: s._count.questions,
       created_at: s.createdAt.toISOString(),
     })),
+    next_cursor: nextCursor,
   });
 }

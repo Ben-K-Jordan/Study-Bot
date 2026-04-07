@@ -10,6 +10,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const tagsParam = searchParams.get("tags");
+  const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
+  const cursor = searchParams.get("cursor") || undefined;
 
   // Build query — cards are accessed through papers which have userId
   const where: Record<string, unknown> = {
@@ -33,10 +35,16 @@ export async function GET(request: NextRequest) {
         select: { id: true, title: true, authors: true, year: true },
       },
     },
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
 
+  const hasMore = cards.length > limit;
+  const items = hasMore ? cards.slice(0, limit) : cards;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+
   return NextResponse.json({
-    cards: cards.map((c) => ({
+    cards: items.map((c) => ({
       card_id: c.id,
       paper_id: c.evidencePaperId,
       paper_title: c.paper.title,
@@ -49,5 +57,6 @@ export async function GET(request: NextRequest) {
       tags: c.tags,
       created_at: c.createdAt.toISOString(),
     })),
+    next_cursor: nextCursor,
   });
 }

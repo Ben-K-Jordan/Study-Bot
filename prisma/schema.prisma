@@ -28,6 +28,7 @@ model Session {
   runs           SessionRun[]
 
   @@index([userId])
+  @@index([userId, createdAt(sort: Desc)], map: "sessions_user_created_idx")
   @@map("sessions")
 }
 
@@ -58,6 +59,7 @@ model SessionRun {
   runPrompts    SessionRunPrompt[]
 
   @@index([userId, status])
+  @@index([userId, createdAt(sort: Desc)], map: "session_runs_user_created_idx")
   @@index([sessionId])
   @@map("session_runs")
 }
@@ -140,6 +142,7 @@ model StudyPlan {
   publications  PlanCalendarPublication[]
 
   @@index([userId])
+  @@index([userId, examDate], map: "study_plans_user_exam_date_idx")
   @@map("study_plans")
 }
 
@@ -270,6 +273,7 @@ model EvidenceCard {
   paper              EvidencePaper @relation(fields: [evidencePaperId], references: [id], onDelete: Cascade)
 
   @@index([evidencePaperId])
+  @@index([strength], map: "evidence_cards_strength_idx")
   @@map("evidence_cards")
 }
 
