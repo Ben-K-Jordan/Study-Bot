@@ -47,12 +47,21 @@ interface GenerateFeedbackInput {
   selfScore: string;
   errorType?: string;
   correctionRule?: string;
+  mistakePatterns?: { error_type: string; count: number }[];
   chunks: { chunk_id: string; title: string; page?: number; text: string }[];
 }
 
 interface ReinforceCorrectInput {
   question: string;
   userAnswer: string;
+  chunks: { chunk_id: string; title: string; page?: number; text: string }[];
+}
+
+interface SocraticFollowupInput {
+  question: string;
+  userAnswer: string;
+  selfScore: string;
+  explanation?: string;
   chunks: { chunk_id: string; title: string; page?: number; text: string }[];
 }
 
@@ -290,7 +299,7 @@ Generate ${promptCount} study questions that test mastery of this specific cours
 
   [AiTask.GENERATE_FEEDBACK]: {
     task: AiTask.GENERATE_FEEDBACK,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert professor helping a student understand where they went wrong. Task: GENERATE_FEEDBACK.
 
 Given a student's question, their incorrect/partial answer, the error classification, and relevant course material excerpts, generate a clear, supportive explanation.
@@ -303,52 +312,107 @@ Your explanation should:
 5. End with a brief "key takeaway" the student should remember.
 6. Be concise but thorough — like a patient professor in office hours.
 
+CONCEPT CONNECTIONS: Identify how this concept relates to other topics in the course material. A great professor always says "Remember when we covered X? This is the same idea applied to Y." If the chunks contain related concepts, connect them.
+
+MEMORY AIDS: If this concept involves something easily confused or hard to remember (formulas, definitions, distinctions between similar terms), provide a brief mnemonic, acronym, or memory trick. Only include one if it's genuinely helpful — don't force it.
+
+MISTAKE PATTERNS: If the student has a pattern of making similar errors (provided in mistake_patterns), address the pattern directly. E.g., "I notice you keep confusing X with Y — here's a reliable way to tell them apart."
+
 Tone: Supportive, never condescending. Use "you" directly. Acknowledge what the student got right before correcting what they got wrong.
 
 Output valid JSON:
 {
   "explanation": string,
   "key_takeaway": string,
+  "concept_connection": string | null,
+  "mnemonic": string | null,
+  "pattern_advice": string | null,
   "referenced_chunk_ids": string[]
 }`,
     buildUserPrompt: (input: unknown) => {
-      const { question, userAnswer, selfScore, errorType, correctionRule, chunks } = input as GenerateFeedbackInput;
+      const { question, userAnswer, selfScore, errorType, correctionRule, mistakePatterns, chunks } = input as GenerateFeedbackInput;
       const context = chunks
         .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 600)}`)
         .join("\n\n");
       let prompt = `Question: ${question}\nStudent's answer: ${userAnswer}\nScore: ${selfScore}`;
       if (errorType) prompt += `\nError type: ${errorType}`;
       if (correctionRule) prompt += `\nStudent's correction note: ${correctionRule}`;
-      prompt += `\n\nRelevant course material:\n${context}\n\nExplain where the student went wrong and teach the correct concept.`;
+      if (mistakePatterns && mistakePatterns.length > 0) {
+        prompt += `\nStudent's mistake patterns (across recent sessions): ${mistakePatterns.map((p) => `${p.error_type}: ${p.count} occurrences`).join(", ")}`;
+      }
+      prompt += `\n\nRelevant course material:\n${context}\n\nExplain where the student went wrong and teach the correct concept. Include concept connections and a memory aid if appropriate.`;
       return prompt;
     },
   },
 
   [AiTask.REINFORCE_CORRECT]: {
     task: AiTask.REINFORCE_CORRECT,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert professor reinforcing a student's correct understanding. Task: REINFORCE_CORRECT.
 
 The student answered a question correctly. Generate a brief reinforcement that:
 1. Confirms why their understanding is correct.
 2. Adds one deeper insight, connection, or "pro tip" that extends their knowledge.
-3. Optionally connects this concept to a related topic they should explore.
+3. Connects this concept to a related topic from the course material — like saying "Remember how this relates to X from Chapter Y? Same principle."
 
-Keep it SHORT — 2-3 sentences max. This is a quick confidence boost + knowledge deepener, not a full lecture.
+CONCEPT CONNECTION: Always try to link the current concept to another concept in the provided course material. Great professors constantly weave ideas together. If the excerpts contain related topics, explicitly connect them.
+
+Keep it SHORT — 2-3 sentences for reinforcement, 1-2 for the concept connection. Quick confidence boost + knowledge web building, not a lecture.
 
 Tone: Encouraging and collegial. Like a professor saying "Exactly right — and here's something cool to know..."
 
 Output valid JSON:
 {
   "reinforcement": string,
-  "deeper_insight": string
+  "deeper_insight": string,
+  "concept_connection": string | null
 }`,
     buildUserPrompt: (input: unknown) => {
       const { question, userAnswer, chunks } = input as ReinforceCorrectInput;
       const context = chunks.length > 0
         ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
         : "(No course material available)";
-      return `Question: ${question}\nStudent's correct answer: ${userAnswer}\n\nCourse material context:\n${context}\n\nReinforce their understanding with a brief insight.`;
+      return `Question: ${question}\nStudent's correct answer: ${userAnswer}\n\nCourse material context:\n${context}\n\nReinforce their understanding with a brief insight and connect to related concepts.`;
+    },
+  },
+
+  [AiTask.SOCRATIC_FOLLOWUP]: {
+    task: AiTask.SOCRATIC_FOLLOWUP,
+    version: "v1",
+    systemPrompt: `You are an expert professor using the Socratic method. Task: SOCRATIC_FOLLOWUP.
+
+After a student answers a question (correctly or incorrectly), generate a brief probing follow-up question that deepens their understanding. This is what great professors do — they don't just move on, they push you to think harder.
+
+For CORRECT answers:
+- Push toward deeper understanding: "Why does that work?" "What would happen if we changed X?"
+- Ask them to generalize: "Can you think of another case where this applies?"
+- Connect to related concepts: "How does this relate to [related concept]?"
+
+For INCORRECT/PARTIAL answers:
+- Guide toward the right answer without giving it away: "What if you considered X?"
+- Challenge their assumption: "You said X — but what happens when Y?"
+- Narrow the focus: "Let's think about just this part — what do you know about Z?"
+
+Rules:
+1. Generate exactly ONE follow-up question — short, pointed, and thought-provoking.
+2. The question should be answerable from the course material.
+3. Never be condescending. Frame as genuine intellectual curiosity.
+4. Match the difficulty to the student's demonstrated level.
+
+Output valid JSON:
+{
+  "followup_question": string,
+  "purpose": string
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { question, userAnswer, selfScore, explanation, chunks } = input as SocraticFollowupInput;
+      const context = chunks.length > 0
+        ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
+        : "(No course material available)";
+      let prompt = `Question: ${question}\nStudent's answer: ${userAnswer}\nScore: ${selfScore}`;
+      if (explanation) prompt += `\nExplanation given: ${explanation}`;
+      prompt += `\n\nCourse material:\n${context}\n\nGenerate a Socratic follow-up question to deepen understanding.`;
+      return prompt;
     },
   },
 
