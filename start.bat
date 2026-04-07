@@ -4,6 +4,11 @@ echo   Study Bot - Starting up...
 echo ============================================
 echo.
 
+:: Kill any old Node processes hogging ports
+echo [0/4] Cleaning up old processes...
+taskkill /F /IM node.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+
 :: Check if Docker Desktop is running
 docker info >nul 2>&1
 if %errorlevel% neq 0 (
