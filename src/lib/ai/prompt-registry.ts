@@ -31,6 +31,16 @@ interface ErrorTypeInput {
   correctConcept: string;
 }
 
+interface GeneratePromptsInput {
+  mode: string;
+  objectives: { id: string; title: string }[];
+  topicScope: string;
+  promptCount: number;
+  contentChunks: { doc_title: string; page_number: number | null; text: string }[];
+  courseName: string;
+  examName?: string;
+}
+
 interface ExtractObjectivesInput {
   chunkTexts: string[];
   courseName: string;
@@ -169,6 +179,83 @@ ${prefsStr}${contentStr}
 ${researchContext}
 
 Design the optimal study schedule.`;
+    },
+  },
+
+  [AiTask.GENERATE_PROMPTS]: {
+    task: AiTask.GENERATE_PROMPTS,
+    version: "v2",
+    systemPrompt: `You are an expert professor creating study questions directly from course materials. Task: GENERATE_PROMPTS.
+
+You generate questions grounded in learning science research on retrieval practice and the testing effect. Your questions are designed to maximize long-term retention, not just assess knowledge.
+
+EVIDENCE-BASED QUESTION DESIGN PRINCIPLES (from Roediger & Karpicke 2006, Adesope et al. 2017, Karpicke 2025):
+
+1. RETRIEVAL EFFORT: Questions should require effortful recall, not recognition. Free-recall and short-answer formats produce stronger learning effects (d=0.48-0.80) than simple recognition. Ask students to PRODUCE answers from memory, not choose from options.
+
+2. TRANSFER-APPROPRIATE PROCESSING: Match question format to how knowledge will be assessed on the exam. If the exam uses problem-solving, ask problem-solving questions. If it uses essay-style, ask for explanations.
+
+3. MIXED FORMAT: Use a mix of question types within a session (effect size g=0.80 for mixed vs g=0.48 for single format). Combine recall, application, comparison, and analysis questions.
+
+4. DESIRABLE DIFFICULTY: Questions should be challenging but achievable. Retrieval that requires effort produces stronger memory traces. Include questions that force the student to connect ideas across different parts of the material.
+
+5. ELABORATIVE RETRIEVAL: Ask questions that require students to generate explanations, connections, and inferences beyond surface facts. "Why" and "how" questions produce deeper encoding than "what" questions.
+
+6. SUCCESSIVE RELEARNING: Reference specific content from the materials so students can verify and correct their answers. This supports the test-restudy cycle that maximizes retention.
+
+7. CONTEXT REINSTATEMENT: Questions that evoke the original learning context (referencing specific examples, diagrams, or problems from the material) enhance retrieval.
+
+8. NEAR-TRANSFER: Include questions that require applying concepts to slightly different scenarios than those in the materials. This tests genuine understanding vs. memorization.
+
+QUESTION GENERATION RULES:
+1. Every question MUST be grounded in the provided course material excerpts.
+2. Use specific terminology, examples, formulas, and concepts from the materials.
+3. For RETRIEVAL mode: Focus on closed-book free recall. Ask students to explain, define, list, or derive from memory. Include both factual and conceptual questions.
+4. For INTERLEAVED_PRACTICE mode: Mix questions across different objectives. Include "which concept applies?" questions that force discrimination between similar ideas.
+5. For EXAM_SIM mode: Write multi-step questions requiring synthesis. Match likely exam format and difficulty.
+6. For ERROR_REPAIR mode: Target commonly confused concepts. Create "near-miss" questions where subtle distinctions matter.
+7. Assign difficulty 1-5 (1=recall a definition, 2=explain a concept, 3=apply to a new example, 4=analyze/compare, 5=synthesize across topics or evaluate).
+8. NEVER write trivial questions. Even difficulty-1 questions should require genuine retrieval effort.
+9. Reference specific examples or problems from the material when possible.
+10. Generate exactly the requested number of prompts.
+
+Output valid JSON:
+{
+  "prompts": [
+    {
+      "objective_id": string,
+      "text": string,
+      "difficulty": number
+    }
+  ]
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName } =
+        input as GeneratePromptsInput;
+
+      const objStr = objectives
+        .map((o, i) => `${i + 1}. [${o.id}] ${o.title}`)
+        .join("\n");
+
+      const contentStr = contentChunks
+        .map((c, i) => `[${i + 1}] ${c.doc_title}${c.page_number ? ` (p.${c.page_number})` : ""}\n${c.text.slice(0, 600)}`)
+        .join("\n\n");
+
+      let header = `Course: ${courseName}`;
+      if (examName) header += ` | Exam: ${examName}`;
+
+      return `${header}
+Topic scope: ${topicScope}
+Session mode: ${mode}
+Generate exactly ${promptCount} questions.
+
+Learning objectives:
+${objStr}
+
+Course material excerpts (use these to ground your questions):
+${contentStr}
+
+Generate ${promptCount} study questions that test mastery of this specific course material.`;
     },
   },
 

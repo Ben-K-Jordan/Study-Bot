@@ -27,7 +27,7 @@ export interface SearchResult {
  */
 export async function searchChunks(params: SearchParams): Promise<SearchResult[]> {
   const { userId, q, namespace, courseName, examName, topK = 5 } = params;
-  const limit = Math.min(Math.max(topK, 1), 10);
+  const limit = Math.min(Math.max(topK, 1), 50);
 
   if (!q.trim()) return [];
 
@@ -113,7 +113,7 @@ export interface VectorSearchParams extends Omit<SearchParams, "q"> {
  */
 export async function vectorSearchChunks(params: VectorSearchParams): Promise<SearchResult[]> {
   const { userId, embedding, namespace, courseName, examName, topK = 5 } = params;
-  const limit = Math.min(Math.max(topK, 1), 10);
+  const limit = Math.min(Math.max(topK, 1), 50);
   const vectorStr = `[${embedding.join(",")}]`;
 
   const conditions: string[] = [

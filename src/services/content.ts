@@ -109,30 +109,34 @@ export async function processDocument(userId: string, documentId: string) {
     const chunks = chunkText(extraction.fullText, extraction.pages);
 
     // Insert chunks in a transaction, then enqueue embedding job
-    const chunkIds: string[] = [];
     await prisma.$transaction(async (tx) => {
       // Delete any existing chunks (from a previous failed attempt)
       await tx.contentChunk.deleteMany({ where: { documentId: doc.id } });
 
       // Batch insert chunks with embedding status PENDING
-      for (const chunk of chunks) {
-        const created = await tx.contentChunk.create({
-          data: {
-            documentId: doc.id,
-            ordinal: chunk.ordinal,
-            pageNumber: chunk.pageNumber,
-            text: chunk.text,
-            textHash: chunk.textHash,
-            embeddingStatus: "PENDING",
-          },
-        });
-        chunkIds.push(created.id);
-      }
+      await tx.contentChunk.createMany({
+        data: chunks.map((chunk) => ({
+          documentId: doc.id,
+          ordinal: chunk.ordinal,
+          pageNumber: chunk.pageNumber,
+          text: chunk.text,
+          textHash: chunk.textHash,
+          embeddingStatus: "PENDING",
+        })),
+      });
 
       await tx.contentDocument.update({
         where: { id: doc.id },
         data: { status: "PROCESSED" },
       });
+
+      // Fetch inserted chunk IDs for the embedding job
+      const inserted = await tx.contentChunk.findMany({
+        where: { documentId: doc.id },
+        select: { id: true },
+        orderBy: { ordinal: "asc" },
+      });
+      const chunkIds = inserted.map((c) => c.id);
 
       // Enqueue embedding job within the same transaction
       await enqueueJob("EMBED_CHUNK_BATCH", { chunkIds, userId }, {}, tx);
@@ -262,35 +266,32 @@ async function storeCitations(
   attemptId: string,
   results: SearchResult[]
 ): Promise<FeedbackExcerpt[]> {
-  const excerpts: FeedbackExcerpt[] = [];
+  // Run all upserts in parallel
+  await Promise.all(
+    results.map((r, i) =>
+      prisma.attemptCitation.upsert({
+        where: {
+          attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
+        },
+        create: {
+          attemptId,
+          chunkId: r.chunk_id,
+          rank: i + 1,
+          snippet: r.snippet,
+        },
+        update: {
+          rank: i + 1,
+          snippet: r.snippet,
+        },
+      })
+    )
+  );
 
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    // Upsert to handle idempotent calls
-    await prisma.attemptCitation.upsert({
-      where: {
-        attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
-      },
-      create: {
-        attemptId,
-        chunkId: r.chunk_id,
-        rank: i + 1,
-        snippet: r.snippet,
-      },
-      update: {
-        rank: i + 1,
-        snippet: r.snippet,
-      },
-    });
-
-    excerpts.push({
-      chunk_id: r.chunk_id,
-      doc_title: r.doc_title,
-      page_number: r.page_number,
-      snippet: r.snippet,
-      rank: i + 1,
-    });
-  }
-
-  return excerpts;
+  return results.map((r, i) => ({
+    chunk_id: r.chunk_id,
+    doc_title: r.doc_title,
+    page_number: r.page_number,
+    snippet: r.snippet,
+    rank: i + 1,
+  }));
 }
