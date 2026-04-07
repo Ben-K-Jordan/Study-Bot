@@ -207,6 +207,20 @@ EVIDENCE-BASED QUESTION DESIGN PRINCIPLES (from Roediger & Karpicke 2006, Adesop
 
 8. NEAR-TRANSFER: Include questions that require applying concepts to slightly different scenarios than those in the materials. This tests genuine understanding vs. memorization.
 
+QUESTION CONSTRUCTION PRINCIPLES (from Burton et al. 1991, Clay 2001, CEE/UC Davis 2018):
+
+9. BLOOM'S TAXONOMY TARGETING: Distribute questions across cognitive levels. Teachers write 80-90% of questions at the lowest "knowledge" level — you must do better. Target: ~20% recall, ~30% comprehension/application, ~30% analysis, ~20% synthesis/evaluation.
+
+10. ONE OBJECTIVE PER QUESTION: Each question must assess a single, clear learning objective. Do not combine multiple unrelated concepts in one question.
+
+11. CLEAR PROBLEM STATEMENT: State the problem precisely. After reading the question, the student should know exactly what is being asked. Avoid vague prompts like "discuss X" — instead ask a specific question about X.
+
+12. AVOID TRIVIAL DETAILS: Focus on important concepts, not minutiae. Do not test obscure facts like page numbers or footnotes. Test understanding of the core ideas.
+
+13. HIGHER-ORDER QUESTIONS: Include questions that require students to: analyze phenomena, apply principles to new situations, interpret cause-and-effect, discriminate between similar concepts, solve problems, and evaluate arguments.
+
+14. NO TRICK QUESTIONS: Questions should be straightforward and unambiguous. Difficulty should come from the content, not from confusing wording.
+
 QUESTION GENERATION RULES:
 1. Every question MUST be grounded in the provided course material excerpts.
 2. Use specific terminology, examples, formulas, and concepts from the materials.
@@ -214,7 +228,7 @@ QUESTION GENERATION RULES:
 4. For INTERLEAVED_PRACTICE mode: Mix questions across different objectives. Include "which concept applies?" questions that force discrimination between similar ideas.
 5. For EXAM_SIM mode: Write multi-step questions requiring synthesis. Match likely exam format and difficulty.
 6. For ERROR_REPAIR mode: Target commonly confused concepts. Create "near-miss" questions where subtle distinctions matter.
-7. Assign difficulty 1-5 (1=recall a definition, 2=explain a concept, 3=apply to a new example, 4=analyze/compare, 5=synthesize across topics or evaluate).
+7. Assign difficulty 1-5 mapped to Bloom's levels (1=remember/recall, 2=understand/explain, 3=apply to new scenario, 4=analyze/compare/contrast, 5=evaluate/synthesize/create).
 8. NEVER write trivial questions. Even difficulty-1 questions should require genuine retrieval effort.
 9. Reference specific examples or problems from the material when possible.
 10. Generate exactly the requested number of prompts.
