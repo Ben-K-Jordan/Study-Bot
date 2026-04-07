@@ -42,6 +42,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [aiKeyTakeaway, setAiKeyTakeaway] = useState<string | null>(null);
   const [aiReinforcement, setAiReinforcement] = useState<string | null>(null);
   const [aiDeeperInsight, setAiDeeperInsight] = useState<string | null>(null);
+  const [conceptConnection, setConceptConnection] = useState<string | null>(null);
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [patternAdvice, setPatternAdvice] = useState<string | null>(null);
+  const [socraticFollowup, setSocraticFollowup] = useState<string | null>(null);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -85,6 +89,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           if (result.key_takeaway) setAiKeyTakeaway(result.key_takeaway);
           if (result.reinforcement) setAiReinforcement(result.reinforcement);
           if (result.deeper_insight) setAiDeeperInsight(result.deeper_insight);
+          if (result.concept_connection) setConceptConnection(result.concept_connection);
+          if (result.mnemonic) setMnemonic(result.mnemonic);
+          if (result.pattern_advice) setPatternAdvice(result.pattern_advice);
+          if (result.socratic_followup) setSocraticFollowup(result.socratic_followup);
         }
       })
       .catch(() => {
@@ -113,6 +121,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setAiKeyTakeaway(null);
     setAiReinforcement(null);
     setAiDeeperInsight(null);
+    setConceptConnection(null);
+    setMnemonic(null);
+    setPatternAdvice(null);
+    setSocraticFollowup(null);
     startTimeRef.current = Date.now();
     if (!isReviewPhase) {
       textareaRef.current?.focus();
@@ -487,7 +499,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {uiPhase === "review" && (
         <div data-testid="review-panel">
           {/* AI Reinforcement for CORRECT answers */}
-          {lastScore === "CORRECT" && (aiReinforcement || aiDeeperInsight) && (
+          {lastScore === "CORRECT" && (aiReinforcement || aiDeeperInsight || conceptConnection || socraticFollowup) && (
             <div
               style={{
                 background: "#1a2e1a",
@@ -506,15 +518,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </p>
               )}
               {aiDeeperInsight && (
-                <div
-                  style={{
-                    background: "#16213e",
-                    border: "1px solid #333",
-                    borderRadius: 4,
-                    padding: "0.75rem",
-                    marginTop: "0.5rem",
-                  }}
-                >
+                <div style={insightBox}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#4cc9f0", marginBottom: "0.3rem" }}>
                     Deeper Insight
                   </p>
@@ -523,11 +527,31 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   </p>
                 </div>
               )}
+              {conceptConnection && (
+                <div style={{ ...insightBox, borderColor: "#a78bfa" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#a78bfa", marginBottom: "0.3rem" }}>
+                    Connection
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
+                    {conceptConnection}
+                  </p>
+                </div>
+              )}
+              {socraticFollowup && (
+                <div style={{ ...insightBox, borderColor: "#fbbf24" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#fbbf24", marginBottom: "0.3rem" }}>
+                    Think Deeper
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
+                    {socraticFollowup}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
           {/* CORRECT with no AI feedback yet — show brief loading or skip */}
-          {lastScore === "CORRECT" && !aiReinforcement && !aiDeeperInsight && (
+          {lastScore === "CORRECT" && !aiReinforcement && !aiDeeperInsight && !conceptConnection && !socraticFollowup && (
             <div
               style={{
                 background: "#1a2e1a",
@@ -630,6 +654,54 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </p>
               )}
 
+              {/* Concept connection */}
+              {conceptConnection && (
+                <div style={{ ...insightBox, borderColor: "#a78bfa", marginTop: "0.75rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#a78bfa", marginBottom: "0.3rem" }}>
+                    Connection
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
+                    {conceptConnection}
+                  </p>
+                </div>
+              )}
+
+              {/* Mnemonic / memory aid */}
+              {mnemonic && (
+                <div style={{ ...insightBox, borderColor: "#34d399", marginTop: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#34d399", marginBottom: "0.3rem" }}>
+                    Memory Aid
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
+                    {mnemonic}
+                  </p>
+                </div>
+              )}
+
+              {/* Mistake pattern advice */}
+              {patternAdvice && (
+                <div style={{ ...insightBox, borderColor: "#f97316", marginTop: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#f97316", marginBottom: "0.3rem" }}>
+                    Pattern Noticed
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
+                    {patternAdvice}
+                  </p>
+                </div>
+              )}
+
+              {/* Socratic follow-up */}
+              {socraticFollowup && (
+                <div style={{ ...insightBox, borderColor: "#fbbf24", marginTop: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#fbbf24", marginBottom: "0.3rem" }}>
+                    Think Deeper
+                  </p>
+                  <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
+                    {socraticFollowup}
+                  </p>
+                </div>
+              )}
+
               {/* Repair prompt for PARTIAL/INCORRECT */}
               {(correctionRule || variantQuestion) && (
                 <div
@@ -671,6 +743,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               setAiKeyTakeaway(null);
               setAiReinforcement(null);
               setAiDeeperInsight(null);
+              setConceptConnection(null);
+              setMnemonic(null);
+              setPatternAdvice(null);
+              setSocraticFollowup(null);
               if (isReviewPhase) {
                 setUIPhase("scoring");
               } else {
@@ -688,6 +764,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 }
 
 // --- Styles ---
+
+const insightBox: React.CSSProperties = {
+  background: "#16213e",
+  border: "1px solid #333",
+  borderRadius: 4,
+  padding: "0.75rem",
+  marginTop: "0.5rem",
+};
 
 const primaryBtn: React.CSSProperties = {
   width: "100%",

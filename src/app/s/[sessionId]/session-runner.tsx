@@ -69,10 +69,21 @@ export interface FeedbackExcerpt {
 export interface FeedbackResult {
   status: string;
   excerpts: FeedbackExcerpt[];
+  // AI explanation (wrong/partial)
   explanation?: string;
   key_takeaway?: string;
+  // Concept connections (all scores)
+  concept_connection?: string;
+  // Mnemonic (wrong/partial)
+  mnemonic?: string;
+  // Mistake pattern advice
+  pattern_advice?: string;
+  // Reinforcement (correct)
   reinforcement?: string;
   deeper_insight?: string;
+  // Socratic follow-up (all scores)
+  socratic_followup?: string;
+  socratic_purpose?: string;
 }
 
 export interface RunData {

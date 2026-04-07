@@ -13,7 +13,7 @@ import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
-import { updateMastery } from "@/lib/mastery";
+import { updateMastery, getDueObjectives } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
 import type {
@@ -267,6 +267,21 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
     default:
       prompts = generateRetrievalPrompts(sessionParams);
       break;
+  }
+
+  // ---- Spaced Review Warm-ups ----
+  // Prepend 2-3 review questions on due objectives (from SM-2 mastery data).
+  // Skip for EXAM_SIM (fixed format) and ERROR_REPAIR (already targeted).
+  if (mode !== "EXAM_SIM" && mode !== "ERROR_REPAIR") {
+    const warmupPrompts = await generateWarmupPrompts(userId, session.courseName, objectives);
+    if (warmupPrompts.length > 0) {
+      prompts = [...warmupPrompts, ...prompts];
+      logger.info("run.warmup_prepended", {
+        user_id: userId,
+        session_id: sessionId,
+        warmup_count: warmupPrompts.length,
+      });
+    }
   }
 
   const runId = generateSessionId();
@@ -997,6 +1012,55 @@ async function handleExamScore(
       break_state: breakState,
     },
   };
+}
+
+// ---- Spaced Review Warm-up Generator ----
+
+/**
+ * Generate 2-3 warm-up review prompts from due objectives.
+ * Uses SM-2 mastery data to find objectives that are overdue for review,
+ * then creates brief recall questions for them.
+ */
+async function generateWarmupPrompts(
+  userId: string,
+  courseName: string,
+  objectives: { id: string; title: string }[] | null,
+): Promise<Prompt[]> {
+  try {
+    const dueObjectives = await getDueObjectives(userId, courseName, 5);
+    if (dueObjectives.length === 0) return [];
+
+    // Match due objectives to session objectives for titles
+    const objMap = new Map((objectives || []).map((o) => [o.id, o.title]));
+
+    const warmups: Prompt[] = [];
+    const maxWarmups = Math.min(3, dueObjectives.length);
+
+    for (let i = 0; i < maxWarmups; i++) {
+      const due = dueObjectives[i];
+      const title = objMap.get(due.objectiveKey) || due.objectiveKey;
+      const daysSince = due.lastStudiedAt
+        ? Math.floor((Date.now() - due.lastStudiedAt.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      const timeContext = daysSince !== null
+        ? ` (last studied ${daysSince} day${daysSince !== 1 ? "s" : ""} ago)`
+        : "";
+
+      warmups.push({
+        id: `warmup_${i}`,
+        objective_id: due.objectiveKey,
+        text: `Quick review${timeContext}: From memory, explain the key concept behind "${title}". What are the most important things to remember?`,
+        difficulty: Math.min(due.repetitions + 1, 3), // easier for less-practiced items
+        meta: { pack: "WARMUP" },
+      });
+    }
+
+    return warmups;
+  } catch (err) {
+    logger.error("warmup.generation_failed", { user_id: userId, error: String(err) });
+    return [];
+  }
 }
 
 // ---- Mastery Update ----
