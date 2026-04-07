@@ -176,23 +176,26 @@ export default function DashboardPage() {
       accuracyCount > 0 ? Math.round((totalAccuracy / accuracyCount) * 100) : null;
 
     // Study streak: consecutive days with completed sessions, counting back from today
+    // Pre-compute a Set of date strings for O(1) lookup instead of O(n) .some() per day
+    const completedDateSet = new Set(
+      completed.map((i) => {
+        const d = new Date(i.completed_at || i.end_time);
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      }),
+    );
+    const dateKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
     let streak = 0;
     const checkDate = new Date(today);
     while (true) {
-      const hasCompleted = completed.some((i) =>
-        isSameDay(new Date(i.completed_at || i.end_time), checkDate),
-      );
-      if (hasCompleted) {
+      if (completedDateSet.has(dateKey(checkDate))) {
         streak++;
         checkDate.setDate(checkDate.getDate() - 1);
       } else {
-        // If today has no completed sessions yet, check if there are scheduled ones
+        // If today has no completed sessions yet, check yesterday
         if (streak === 0) {
           checkDate.setDate(checkDate.getDate() - 1);
-          const yesterdayCompleted = completed.some((i) =>
-            isSameDay(new Date(i.completed_at || i.end_time), checkDate),
-          );
-          if (yesterdayCompleted) {
+          if (completedDateSet.has(dateKey(checkDate))) {
             streak++;
             checkDate.setDate(checkDate.getDate() - 1);
             continue;
@@ -360,7 +363,9 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {todaySessions.map((item) => (
+            {todaySessions.map((item) => {
+              const mc = modeColor(item.mode);
+              return (
               <div key={item.id} style={sessionCardStyle}>
                 <div
                   style={{
@@ -376,9 +381,9 @@ export default function DashboardPage() {
                   <span
                     style={{
                       ...badgeStyle,
-                      backgroundColor: modeColor(item.mode) + "22",
-                      color: modeColor(item.mode),
-                      borderColor: modeColor(item.mode) + "44",
+                      backgroundColor: mc + "22",
+                      color: mc,
+                      borderColor: mc + "44",
                     }}
                   >
                     {MODE_LABELS[item.mode] || item.mode}
@@ -416,7 +421,7 @@ export default function DashboardPage() {
                   </a>
                 )}
               </div>
-            ))}
+            );})}
           </div>
         )}
       </section>
@@ -527,6 +532,7 @@ export default function DashboardPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {selectedDaySessions.map((item) => {
                   const totalMinutes = item.planned_minutes;
+                  const mc = modeColor(item.mode);
                   return (
                     <div key={item.id} style={dayDetailSessionStyle}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -536,9 +542,9 @@ export default function DashboardPage() {
                         <span
                           style={{
                             ...badgeStyle,
-                            backgroundColor: modeColor(item.mode) + "22",
-                            color: modeColor(item.mode),
-                            borderColor: modeColor(item.mode) + "44",
+                            backgroundColor: mc + "22",
+                            color: mc,
+                            borderColor: mc + "44",
                           }}
                         >
                           {MODE_LABELS[item.mode] || item.mode}

@@ -66,15 +66,15 @@ export async function generateFeedback(
     const courseName = session.courseName;
     const examName = session.examName;
 
-    // Get error log for this attempt (correction rule + variant question)
-    const errorLog = await prisma.sessionErrorLog.findFirst({
-      where: { runId: attempt.runId, promptIndex: attempt.promptIndex },
-    });
-
-    // Get objective title if the prompt has an objective_id
-    const promptRow = await prisma.sessionRunPrompt.findUnique({
-      where: { runId_promptIndex: { runId: attempt.runId, promptIndex: attempt.promptIndex } },
-    });
+    // Fetch error log and prompt row in parallel (independent queries)
+    const [errorLog, promptRow] = await Promise.all([
+      prisma.sessionErrorLog.findFirst({
+        where: { runId: attempt.runId, promptIndex: attempt.promptIndex },
+      }),
+      prisma.sessionRunPrompt.findUnique({
+        where: { runId_promptIndex: { runId: attempt.runId, promptIndex: attempt.promptIndex } },
+      }),
+    ]);
     const objectives = session.objectives as { id: string; title: string }[] | null;
     const objectiveTitle = promptRow?.objectiveId
       ? objectives?.find((o) => o.id === promptRow.objectiveId)?.title

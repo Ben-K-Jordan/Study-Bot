@@ -19,8 +19,10 @@ const BREAK_MAP: Record<string, BreakConfig> = {
   TEST_3_2: { workMinutes: 3 / 60, breakMinutes: 2 / 60 },
 };
 
+const DEFAULT_BREAK: BreakConfig = { workMinutes: 50, breakMinutes: 10 };
+
 export function getBreakConfig(type: string): BreakConfig {
-  return BREAK_MAP[type] ?? { workMinutes: 50, breakMinutes: 10 };
+  return BREAK_MAP[type] ?? DEFAULT_BREAK;
 }
 
 interface BreakProtocol {
