@@ -11,7 +11,9 @@ const GOOGLE_SCOPES = [
 ].join(" ");
 
 export async function GET(request: NextRequest) {
-  const userId = getUserId(request.headers);
+  // Support user ID from query param since this is a browser redirect (no custom headers)
+  const userId = getUserId(request.headers)
+    || request.nextUrl.searchParams.get("x_user_id");
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
