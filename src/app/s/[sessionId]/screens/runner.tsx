@@ -38,14 +38,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [feedbackExcerpts, setFeedbackExcerpts] = useState<FeedbackExcerpt[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [lastScore, setLastScore] = useState<string | null>(null);
-  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
-  const [aiKeyTakeaway, setAiKeyTakeaway] = useState<string | null>(null);
-  const [aiReinforcement, setAiReinforcement] = useState<string | null>(null);
-  const [aiDeeperInsight, setAiDeeperInsight] = useState<string | null>(null);
-  const [conceptConnection, setConceptConnection] = useState<string | null>(null);
-  const [mnemonic, setMnemonic] = useState<string | null>(null);
-  const [patternAdvice, setPatternAdvice] = useState<string | null>(null);
-  const [socraticFollowup, setSocraticFollowup] = useState<string | null>(null);
+  // Consolidated AI feedback content — avoids 8 separate setState calls
+  const emptyFeedback: FeedbackResult = { status: "", excerpts: [] };
+  const [fb, setFb] = useState<FeedbackResult>(emptyFeedback);
   const [confidence, setConfidence] = useState<number>(3);
   const [selfExplanation, setSelfExplanation] = useState("");
   const [generatedExample, setGeneratedExample] = useState("");
@@ -77,8 +72,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       run.last_attempt_id &&
       !feedbackLoading &&
       feedbackExcerpts.length === 0 &&
-      !aiExplanation &&
-      !aiReinforcement &&
+      !fb.explanation &&
+      !fb.reinforcement &&
       uiPhase === "review";
 
     if (!shouldFetch) return;
@@ -88,21 +83,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       .then((result: FeedbackResult) => {
         if (result.status === "OK") {
           if (result.excerpts.length > 0) setFeedbackExcerpts(result.excerpts);
-          if (result.explanation) setAiExplanation(result.explanation);
-          if (result.key_takeaway) setAiKeyTakeaway(result.key_takeaway);
-          if (result.reinforcement) setAiReinforcement(result.reinforcement);
-          if (result.deeper_insight) setAiDeeperInsight(result.deeper_insight);
-          if (result.concept_connection) setConceptConnection(result.concept_connection);
-          if (result.mnemonic) setMnemonic(result.mnemonic);
-          if (result.pattern_advice) setPatternAdvice(result.pattern_advice);
-          if (result.socratic_followup) setSocraticFollowup(result.socratic_followup);
+          setFb(result);
         }
       })
       .catch(() => {
         // Feedback failure is non-fatal
       })
       .finally(() => setFeedbackLoading(false));
-  }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, aiExplanation, aiReinforcement]);
+  }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, fb.explanation, fb.reinforcement]);
 
   // Reset state when prompt changes
   useEffect(() => {
@@ -120,14 +108,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setFeedbackExcerpts([]);
     setFeedbackLoading(false);
     setLastScore(null);
-    setAiExplanation(null);
-    setAiKeyTakeaway(null);
-    setAiReinforcement(null);
-    setAiDeeperInsight(null);
-    setConceptConnection(null);
-    setMnemonic(null);
-    setPatternAdvice(null);
-    setSocraticFollowup(null);
+    setFb(emptyFeedback);
     setConfidence(3);
     setSelfExplanation("");
     setGeneratedExample("");
@@ -552,7 +533,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {uiPhase === "review" && (
         <div data-testid="review-panel">
           {/* AI Reinforcement for CORRECT answers */}
-          {lastScore === "CORRECT" && (aiReinforcement || aiDeeperInsight || conceptConnection || socraticFollowup) && (
+          {lastScore === "CORRECT" && (fb.reinforcement || fb.deeper_insight || fb.concept_connection || fb.socratic_followup) && (
             <div
               style={{
                 background: "#1a2e1a",
@@ -565,38 +546,38 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#2ecc71" }}>
                 Nice work!
               </p>
-              {aiReinforcement && (
+              {fb.reinforcement && (
                 <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", lineHeight: 1.6 }}>
-                  {aiReinforcement}
+                  {fb.reinforcement}
                 </p>
               )}
-              {aiDeeperInsight && (
+              {fb.deeper_insight && (
                 <div style={insightBox}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#4cc9f0", marginBottom: "0.3rem" }}>
                     Deeper Insight
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                    {aiDeeperInsight}
+                    {fb.deeper_insight}
                   </p>
                 </div>
               )}
-              {conceptConnection && (
+              {fb.concept_connection && (
                 <div style={{ ...insightBox, borderColor: "#a78bfa" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#a78bfa", marginBottom: "0.3rem" }}>
                     Connection
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                    {conceptConnection}
+                    {fb.concept_connection}
                   </p>
                 </div>
               )}
-              {socraticFollowup && (
+              {fb.socratic_followup && (
                 <div style={{ ...insightBox, borderColor: "#fbbf24" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#fbbf24", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
                   <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
-                    {socraticFollowup}
+                    {fb.socratic_followup}
                   </p>
                 </div>
               )}
@@ -604,7 +585,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           {/* CORRECT with no AI feedback yet — show brief loading or skip */}
-          {lastScore === "CORRECT" && !aiReinforcement && !aiDeeperInsight && !conceptConnection && !socraticFollowup && (
+          {lastScore === "CORRECT" && !fb.reinforcement && !fb.deeper_insight && !fb.concept_connection && !fb.socratic_followup && (
             <div
               style={{
                 background: "#1a2e1a",
@@ -636,7 +617,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               </p>
 
               {/* AI-powered explanation */}
-              {aiExplanation && (
+              {fb.explanation && (
                 <div
                   style={{
                     background: "#1e293b",
@@ -650,9 +631,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     Professor&apos;s Explanation
                   </p>
                   <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6 }}>
-                    {aiExplanation}
+                    {fb.explanation}
                   </p>
-                  {aiKeyTakeaway && (
+                  {fb.key_takeaway && (
                     <div
                       style={{
                         background: "#172554",
@@ -662,14 +643,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                       }}
                     >
                       <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#fbbf24" }}>
-                        Key Takeaway: {aiKeyTakeaway}
+                        Key Takeaway: {fb.key_takeaway}
                       </p>
                     </div>
                   )}
                 </div>
               )}
 
-              {feedbackLoading && !aiExplanation && (
+              {feedbackLoading && !fb.explanation && (
                 <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }} data-testid="feedback-loading">
                   Loading feedback...
                 </p>
@@ -701,56 +682,56 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </div>
               ))}
 
-              {!feedbackLoading && feedbackExcerpts.length === 0 && !aiExplanation && (
+              {!feedbackLoading && feedbackExcerpts.length === 0 && !fb.explanation && (
                 <p style={{ fontSize: "0.8rem", color: "#aaa", fontStyle: "italic" }}>
                   No relevant excerpts found in your materials.
                 </p>
               )}
 
               {/* Concept connection */}
-              {conceptConnection && (
+              {fb.concept_connection && (
                 <div style={{ ...insightBox, borderColor: "#a78bfa", marginTop: "0.75rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#a78bfa", marginBottom: "0.3rem" }}>
                     Connection
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                    {conceptConnection}
+                    {fb.concept_connection}
                   </p>
                 </div>
               )}
 
               {/* Mnemonic / memory aid */}
-              {mnemonic && (
+              {fb.mnemonic && (
                 <div style={{ ...insightBox, borderColor: "#34d399", marginTop: "0.5rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#34d399", marginBottom: "0.3rem" }}>
                     Memory Aid
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                    {mnemonic}
+                    {fb.mnemonic}
                   </p>
                 </div>
               )}
 
               {/* Mistake pattern advice */}
-              {patternAdvice && (
+              {fb.pattern_advice && (
                 <div style={{ ...insightBox, borderColor: "#f97316", marginTop: "0.5rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#f97316", marginBottom: "0.3rem" }}>
                     Pattern Noticed
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                    {patternAdvice}
+                    {fb.pattern_advice}
                   </p>
                 </div>
               )}
 
               {/* Socratic follow-up */}
-              {socraticFollowup && (
+              {fb.socratic_followup && (
                 <div style={{ ...insightBox, borderColor: "#fbbf24", marginTop: "0.5rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#fbbf24", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
                   <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
-                    {socraticFollowup}
+                    {fb.socratic_followup}
                   </p>
                 </div>
               )}
@@ -788,7 +769,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           {/* Self-explanation prompt (all scores, after feedback loads) */}
-          {!feedbackLoading && (aiExplanation || aiReinforcement || lastScore) && (
+          {!feedbackLoading && (fb.explanation || fb.reinforcement || lastScore) && (
             <div
               style={{
                 background: "#16213e",
@@ -851,14 +832,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               setFeedbackExcerpts([]);
               setFeedbackLoading(false);
               setLastScore(null);
-              setAiExplanation(null);
-              setAiKeyTakeaway(null);
-              setAiReinforcement(null);
-              setAiDeeperInsight(null);
-              setConceptConnection(null);
-              setMnemonic(null);
-              setPatternAdvice(null);
-              setSocraticFollowup(null);
+              setFb(emptyFeedback);
               setConfidence(3);
               setSelfExplanation("");
               setGeneratedExample("");

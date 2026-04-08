@@ -140,24 +140,12 @@ export async function generateFeedback(
         objectiveTitle
       );
 
-      results = await searchChunks({
-        userId,
-        q: query,
-        namespace: "COURSE",
-        courseName,
-        examName,
-        topK: 5,
-      });
-
-      if (results.length === 0) {
-        results = await searchChunks({
-          userId,
-          q: query,
-          namespace: "COURSE",
-          courseName,
-          topK: 5,
-        });
-      }
+      // Run both scoped (with examName) and unscoped searches in parallel
+      const [scopedResults, unscopedResults] = await Promise.all([
+        searchChunks({ userId, q: query, namespace: "COURSE", courseName, examName, topK: 5 }),
+        searchChunks({ userId, q: query, namespace: "COURSE", courseName, topK: 5 }),
+      ]);
+      results = scopedResults.length > 0 ? scopedResults : unscopedResults;
     }
 
     const ftsMs = Date.now() - ftsStart;
@@ -167,32 +155,23 @@ export async function generateFeedback(
       return { status: "OK", excerpts: [] };
     }
 
-    // Store citations in parallel
-    const excerpts: FeedbackExcerpt[] = await Promise.all(
-      results.map(async (r, i) => {
-        await prisma.attemptCitation.upsert({
-          where: {
-            attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
-          },
-          create: {
-            attemptId,
-            chunkId: r.chunk_id,
-            rank: i + 1,
-            snippet: r.snippet,
-          },
-          update: {
-            rank: i + 1,
-            snippet: r.snippet,
-          },
-        });
-        return {
-          chunk_id: r.chunk_id,
-          doc_title: r.doc_title,
-          page_number: r.page_number,
-          snippet: r.snippet,
-          rank: i + 1,
-        };
-      })
+    // Build excerpts and store citations in a single batch transaction
+    const excerpts: FeedbackExcerpt[] = results.map((r, i) => ({
+      chunk_id: r.chunk_id,
+      doc_title: r.doc_title,
+      page_number: r.page_number,
+      snippet: r.snippet,
+      rank: i + 1,
+    }));
+
+    await prisma.$transaction(
+      results.map((r, i) =>
+        prisma.attemptCitation.upsert({
+          where: { attemptId_chunkId: { attemptId, chunkId: r.chunk_id } },
+          create: { attemptId, chunkId: r.chunk_id, rank: i + 1, snippet: r.snippet },
+          update: { rank: i + 1, snippet: r.snippet },
+        }),
+      ),
     );
 
     // Generate AI explanation and Socratic follow-up in parallel

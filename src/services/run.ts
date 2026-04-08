@@ -757,7 +757,7 @@ async function handleImmediateScoring(
     // Update SM-2 mastery records (fire-and-forget)
     prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } })
       .then((s) => { if (s) updateObjectiveMastery(userId, run.runId, s.courseName); })
-      .catch(() => {});
+      .catch((err) => { logger.error("mastery.update_failed_async", { error: String(err) }); });
 
     return {
       data: {
@@ -997,7 +997,7 @@ async function handleExamScore(
     // Update SM-2 mastery records (fire-and-forget)
     prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } })
       .then((s) => { if (s) updateObjectiveMastery(userId, run.runId, s.courseName); })
-      .catch(() => {});
+      .catch((err) => { logger.error("mastery.update_failed_async", { error: String(err) }); });
 
     return {
       data: {
