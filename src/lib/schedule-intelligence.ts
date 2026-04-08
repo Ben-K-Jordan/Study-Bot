@@ -13,6 +13,8 @@
  * - Pre-exam taper: Mujika & Padilla 2003 (adapted from athletic tapering)
  * - Intraday spacing: Cepeda et al. 2008
  * - Session duration by cognitive load: Cognitive Research 2020
+ * - Post-class consolidation timing: Dewar et al. 2012, Wixted 2004
+ * - Retroactive interference avoidance: Underwood 1957
  */
 
 import type { TimeInterval } from "@/lib/google/free-slots";
@@ -42,6 +44,10 @@ export interface SlotScoreInput {
   dayEvents: CalendarEvent[];
   /** User's typical bedtime hour (0-23). If unknown, defaults to 23. */
   bedtimeHour: number;
+  /** The course name for this study session (for class-matching). Optional. */
+  courseName?: string;
+  /** The topic scope for this study session (for class-matching). Optional. */
+  topicScope?: string;
 }
 
 // ---- Constants ----
@@ -73,6 +79,13 @@ const EXERCISE_KEYWORDS = [
   "lifting", "weights", "pilates", "martial arts", "boxing",
 ];
 
+/** Keywords that identify class/lecture events in calendar */
+const CLASS_KEYWORDS = [
+  "class", "lecture", "lab", "recitation", "section", "seminar",
+  "tutorial", "workshop", "discussion", "office hours",
+  // Common course code patterns are handled by regex in isClassEvent()
+];
+
 /**
  * Max recommended session duration (minutes) by mode.
  * Based on cognitive encoding efficiency research.
@@ -98,13 +111,14 @@ export const MIN_SESSION_MINUTES = 15;
  * Returns a value in [0, 1] range.
  *
  * Components:
- * 1. Circadian alignment (0.35 weight) — does the slot align with chronotype peak?
- * 2. Fatigue score (0.25 weight) — how cognitively tired is the student from prior events?
- * 3. Post-exercise boost (0.20 weight) — is there a workout within 30-60 min before?
- * 4. Sleep proximity (0.20 weight) — is ERROR_REPAIR near bedtime?
+ * 1. Circadian alignment (0.25 weight) — does the slot align with chronotype peak?
+ * 2. Fatigue score (0.20 weight) — how cognitively tired is the student from prior events?
+ * 3. Post-exercise boost (0.15 weight) — is there a workout within 30-60 min before?
+ * 4. Sleep proximity (0.15 weight) — is ERROR_REPAIR near bedtime?
+ * 5. Post-class timing (0.25 weight) — respect consolidation window after related classes
  */
 export function scoreSlot(input: SlotScoreInput): number {
-  const { slot, mode, chronotype, dayEvents, bedtimeHour } = input;
+  const { slot, mode, chronotype, dayEvents, bedtimeHour, courseName, topicScope } = input;
 
   const slotHour = new Date(slot.start).getHours();
   const slotMinute = new Date(slot.start).getMinutes();
@@ -122,11 +136,15 @@ export function scoreSlot(input: SlotScoreInput): number {
   // 4. Sleep proximity (0-1, only relevant for ERROR_REPAIR)
   const sleepScore = computeSleepProximityScore(slotTimeDecimal, mode, bedtimeHour);
 
+  // 5. Post-class timing (0-1) — avoid same-subject study right after class
+  const classScore = computePostClassScore(slot.start, dayEvents, courseName, topicScope);
+
   return (
-    circadianScore * 0.35 +
-    fatigueScore * 0.25 +
-    exerciseScore * 0.20 +
-    sleepScore * 0.20
+    circadianScore * 0.25 +
+    fatigueScore * 0.20 +
+    exerciseScore * 0.15 +
+    sleepScore * 0.15 +
+    classScore * 0.25
   );
 }
 
@@ -245,7 +263,144 @@ function computeSleepProximityScore(
   return 0.4; // Far from bedtime — less consolidation benefit
 }
 
+/**
+ * Post-class consolidation timing.
+ *
+ * Research (Dewar et al. 2012, Wixted 2004, Underwood 1957):
+ * - 0-30 min after a related class: consolidation window — studying the same
+ *   subject causes retroactive interference. PENALIZE heavily.
+ * - 30-60 min after: still risky, mild penalty.
+ * - 1-2 hours after: OPTIMAL window for same-subject retrieval practice.
+ *   Spacing effect gives best same-day review (Cepeda et al. 2006).
+ * - 2+ hours after: neutral — spacing benefit plateaus for same-day.
+ * - No related class: neutral score (no penalty or bonus).
+ *
+ * If the slot is BEFORE a related class, that's fine — no interference issue.
+ * Unrelated subjects are not penalized after class.
+ */
+function computePostClassScore(
+  slotStartMs: number,
+  dayEvents: CalendarEvent[],
+  courseName?: string,
+  topicScope?: string,
+): number {
+  if (!courseName && !topicScope) return 0.6; // no topic info — neutral
+
+  // Find class/lecture events that might be related to this study session
+  let closestRelatedClassEndMs: number | null = null;
+  let closestAnyClassEndMs: number | null = null;
+
+  for (const event of dayEvents) {
+    if (event.end > slotStartMs) continue; // class hasn't ended yet
+    if (!isClassEvent(event.summary)) continue;
+
+    const gapMs = slotStartMs - event.end;
+    const gapHours = gapMs / (1000 * 60 * 60);
+    if (gapHours > 4) continue; // too far back to matter
+
+    // Check if this class is related to the study session
+    const related = isRelatedClass(event.summary, courseName, topicScope);
+
+    if (related) {
+      if (closestRelatedClassEndMs === null || event.end > closestRelatedClassEndMs) {
+        closestRelatedClassEndMs = event.end;
+      }
+    }
+    if (closestAnyClassEndMs === null || event.end > closestAnyClassEndMs) {
+      closestAnyClassEndMs = event.end;
+    }
+  }
+
+  // If there's a related class before this slot, apply consolidation timing rules
+  if (closestRelatedClassEndMs !== null) {
+    const gapMinutes = (slotStartMs - closestRelatedClassEndMs) / (1000 * 60);
+
+    if (gapMinutes < 30) {
+      // 0-30 min: consolidation window — retroactive interference risk
+      return 0.1; // Strong penalty
+    }
+    if (gapMinutes < 60) {
+      // 30-60 min: still some interference risk
+      return 0.35;
+    }
+    if (gapMinutes <= 120) {
+      // 1-2 hours: OPTIMAL retrieval practice window
+      return 1.0; // Strong bonus
+    }
+    // 2-4 hours: good but not optimal
+    return 0.7;
+  }
+
+  // If there's an unrelated class before this slot, check for general fatigue
+  // (already handled by fatigue score) — no additional penalty
+  if (closestAnyClassEndMs !== null) {
+    const gapMinutes = (slotStartMs - closestAnyClassEndMs) / (1000 * 60);
+    if (gapMinutes < 15) {
+      // Very short gap after ANY class — need a breather (Boksem et al. 2005)
+      return 0.4;
+    }
+  }
+
+  return 0.6; // No nearby class — neutral
+}
+
 // ---- Helpers ----
+
+/**
+ * Detect if a calendar event is a class/lecture.
+ * Checks for class keywords AND common course code patterns (e.g., "CS 101", "MATH 240").
+ */
+export function isClassEvent(summary: string): boolean {
+  const lower = summary.toLowerCase();
+
+  // Check class keywords
+  if (CLASS_KEYWORDS.some((kw) => lower.includes(kw))) return true;
+
+  // Check for course code patterns: 2-4 uppercase letters followed by digits
+  // e.g., "CS 101", "MATH240", "PHYS 2A", "BIO 101L"
+  if (/\b[A-Z]{2,4}\s*\d{1,4}[A-Z]?\b/.test(summary)) return true;
+
+  return false;
+}
+
+/**
+ * Check if a class event is related to the study session's course/topic.
+ * Uses fuzzy word matching between the event summary and the course name / topic scope.
+ */
+export function isRelatedClass(
+  eventSummary: string,
+  courseName?: string,
+  topicScope?: string,
+): boolean {
+  const summaryLower = eventSummary.toLowerCase();
+
+  // Direct course name match (e.g., "CS 101" in event, "CS 101" as course)
+  if (courseName) {
+    const courseWords = courseName.toLowerCase().split(/[\s,]+/).filter((w) => w.length > 1);
+    // If the course name appears as a substring, it's a match
+    if (summaryLower.includes(courseName.toLowerCase())) return true;
+    // Check if most course name words appear in the event summary
+    const matchCount = courseWords.filter((w) => summaryLower.includes(w)).length;
+    if (courseWords.length > 0 && matchCount >= Math.ceil(courseWords.length * 0.6)) return true;
+  }
+
+  // Topic scope word overlap
+  if (topicScope) {
+    const topicWords = new Set(
+      topicScope.toLowerCase().split(/[,\s]+/).filter((w) => w.length > 3),
+    );
+    const summaryWords = new Set(
+      summaryLower.split(/[\s:,\-/]+/).filter((w) => w.length > 3),
+    );
+    let overlap = 0;
+    for (const w of topicWords) {
+      if (summaryWords.has(w)) overlap++;
+    }
+    if (overlap >= 1) return true;
+  }
+
+  return false;
+}
 
 function isExerciseEvent(summaryLower: string): boolean {
   return EXERCISE_KEYWORDS.some((kw) => summaryLower.includes(kw));
@@ -409,6 +564,10 @@ export interface ScoredFitInput {
   chronotype: Chronotype;
   dayEvents: CalendarEvent[];
   bedtimeHour: number;
+  /** Course name for class-matching (applied to all blocks). Optional. */
+  courseName?: string;
+  /** Per-block topic scopes for class-matching. Optional. */
+  blockTopicScopes?: string[];
 }
 
 /**
@@ -420,7 +579,7 @@ export interface ScoredFitInput {
  * Returns scheduled time intervals in the same order as input blocks.
  */
 export function fitBlocksScored(input: ScoredFitInput): (TimeInterval | null)[] {
-  const { blockDurationsMs, blockModes, freeSlots, chronotype, dayEvents, bedtimeHour } = input;
+  const { blockDurationsMs, blockModes, freeSlots, chronotype, dayEvents, bedtimeHour, courseName, blockTopicScopes } = input;
 
   // Track remaining capacity in each slot
   const slotStarts = freeSlots.map((s) => s.start);
@@ -454,6 +613,8 @@ export function fitBlocksScored(input: ScoredFitInput): (TimeInterval | null)[] 
         chronotype,
         dayEvents,
         bedtimeHour,
+        courseName,
+        topicScope: blockTopicScopes?.[idx],
       });
 
       if (score > bestScore) {
