@@ -1,12 +1,31 @@
 /**
  * Compute free slots from busy intervals within preferred availability windows.
  * Used by availability-aware plan generation.
+ *
+ * Enhanced with:
+ * - Event filtering (declined/transparent events excluded from busy time)
+ * - Buffer time between events (context-switching padding)
+ * - Travel time estimation from event locations
  */
+
+import type { CalendarEvent } from "@/lib/google/calendar-client";
 
 export interface TimeInterval {
   start: number; // unix ms
   end: number;   // unix ms
 }
+
+/** Default buffer time (minutes) added after each busy block for context switching */
+const DEFAULT_BUFFER_MINUTES = 10;
+
+/** Extra travel buffer (minutes) when an event has a physical location */
+const TRAVEL_BUFFER_MINUTES = 15;
+
+/** Keywords suggesting a physical location (not virtual) */
+const VIRTUAL_KEYWORDS = [
+  "zoom", "meet", "teams", "webex", "hangout", "virtual",
+  "online", "remote", "http", "https", "call",
+];
 
 /**
  * Merge overlapping/adjacent busy intervals into a sorted, non-overlapping list.
@@ -24,6 +43,78 @@ export function mergeBusy(intervals: TimeInterval[]): TimeInterval[] {
     }
   }
   return merged;
+}
+
+/**
+ * Filter calendar events to only those that actually block time.
+ * Removes:
+ * - Declined events (selfResponseStatus === "declined")
+ * - Cancelled events (status === "cancelled")
+ * - Transparent/free events (transparency === "transparent")
+ *
+ * Returns events that should be treated as busy.
+ */
+export function filterBusyEvents(events: CalendarEvent[]): CalendarEvent[] {
+  return events.filter((e) => {
+    // Skip cancelled events
+    if (e.status === "cancelled") return false;
+    // Skip events the user declined
+    if (e.selfResponseStatus === "declined") return false;
+    // Skip events marked as "free" / transparent
+    if (e.transparency === "transparent") return false;
+    // Skip events with empty start/end (shouldn't happen but defensive)
+    if (!e.start || !e.end) return false;
+    return true;
+  });
+}
+
+/**
+ * Convert filtered calendar events to busy intervals with buffer time.
+ *
+ * For each event:
+ * - Adds DEFAULT_BUFFER_MINUTES after the event for context switching
+ * - Adds TRAVEL_BUFFER_MINUTES before events with physical locations
+ * - All-day events block the entire day
+ */
+export function eventsToBufferedIntervals(
+  events: CalendarEvent[],
+  bufferMinutes: number = DEFAULT_BUFFER_MINUTES,
+): TimeInterval[] {
+  const MS_PER_MIN = 60 * 1000;
+  const intervals: TimeInterval[] = [];
+
+  for (const event of events) {
+    const start = new Date(event.start).getTime();
+    const end = new Date(event.end).getTime();
+
+    if (isNaN(start) || isNaN(end) || end <= start) continue;
+
+    // Determine if event has a physical location requiring travel
+    const hasPhysicalLocation = event.location
+      ? !VIRTUAL_KEYWORDS.some((kw) => event.location!.toLowerCase().includes(kw))
+      : false;
+
+    // Add travel buffer before events with physical locations
+    const effectiveStart = hasPhysicalLocation
+      ? start - TRAVEL_BUFFER_MINUTES * MS_PER_MIN
+      : start;
+
+    // Add context-switching buffer after the event
+    const effectiveEnd = end + bufferMinutes * MS_PER_MIN;
+
+    intervals.push({ start: effectiveStart, end: effectiveEnd });
+  }
+
+  return intervals;
+}
+
+/**
+ * Check if a location string indicates a physical (non-virtual) location.
+ * Exported for testing.
+ */
+export function isPhysicalLocation(location: string | undefined): boolean {
+  if (!location) return false;
+  return !VIRTUAL_KEYWORDS.some((kw) => location.toLowerCase().includes(kw));
 }
 
 /**
