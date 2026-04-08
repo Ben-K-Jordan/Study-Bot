@@ -1,21 +1,23 @@
 import { test, expect } from "@playwright/test";
-import { PrismaClient } from "../generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-const prisma = new PrismaClient({ adapter });
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 /** Seed mastery records so pre-test diagnostic prompts are not prepended */
 async function seedMastery(userId: string, courseName: string, objectiveKeys: string[]) {
-  await prisma.objectiveMastery.createMany({
-    data: objectiveKeys.map((key) => ({ userId, courseName, objectiveKey: key })),
-    skipDuplicates: true,
-  });
+  for (const key of objectiveKeys) {
+    await pool.query(
+      `INSERT INTO objective_mastery (id, user_id, course_name, objective_key, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, NOW())
+       ON CONFLICT (user_id, course_name, objective_key) DO NOTHING`,
+      [userId, courseName, key]
+    );
+  }
 }
 
 async function cleanupMastery(userId: string) {
-  await prisma.objectiveMastery.deleteMany({ where: { userId } });
+  await pool.query(`DELETE FROM objective_mastery WHERE user_id = $1`, [userId]);
 }
 
 // ============================================================
@@ -312,7 +314,7 @@ test.describe.serial("E2E: Error Repair runner", () => {
 
   test.afterAll(async () => {
     await cleanupMastery(USER_ID);
-    await prisma.$disconnect();
+    await pool.end();
   });
 
   // Step 1: Create retrieval session and generate error log

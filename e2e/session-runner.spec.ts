@@ -1,11 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { PrismaClient } from "../generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const USER_ID = "e2e_test_user";
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-const prisma = new PrismaClient({ adapter });
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 const SESSION_PAYLOAD = {
   course_name: "E2E 101",
@@ -27,18 +25,19 @@ let sessionUrl: string;
 
 test.describe.serial("E2E: Full Retrieval Session Runner", () => {
   test.beforeAll(async () => {
-    await prisma.objectiveMastery.createMany({
-      data: [
-        { userId: USER_ID, courseName: "E2E 101", objectiveKey: "obj_1" },
-        { userId: USER_ID, courseName: "E2E 101", objectiveKey: "obj_2" },
-      ],
-      skipDuplicates: true,
-    });
+    for (const key of ["obj_1", "obj_2"]) {
+      await pool.query(
+        `INSERT INTO objective_mastery (id, user_id, course_name, objective_key, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, NOW())
+         ON CONFLICT (user_id, course_name, objective_key) DO NOTHING`,
+        [USER_ID, "E2E 101", key]
+      );
+    }
   });
 
   test.afterAll(async () => {
-    await prisma.objectiveMastery.deleteMany({ where: { userId: USER_ID } });
-    await prisma.$disconnect();
+    await pool.query(`DELETE FROM objective_mastery WHERE user_id = $1`, [USER_ID]);
+    await pool.end();
   });
 
   test("create session via API", async ({ request }) => {
