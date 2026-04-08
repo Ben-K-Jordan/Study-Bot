@@ -38,6 +38,15 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
     completeRun = runService.completeRun;
     getRun = runService.getRun;
     endBreak = runService.endBreak;
+
+    // Seed mastery records so pre-test diagnostic prompts are not prepended
+    await prisma.objectiveMastery.createMany({
+      data: [
+        { userId, courseName: "TEST 101", objectiveKey: "obj_1" },
+        { userId, courseName: "TEST 101", objectiveKey: "obj_2" },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   afterAll(async () => {
@@ -47,6 +56,7 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
     await prisma.sessionAttempt.deleteMany({ where: { run: { userId } } });
     await prisma.sessionRun.deleteMany({ where: { userId } });
     await prisma.session.deleteMany({ where: { userId } });
+    await prisma.objectiveMastery.deleteMany({ where: { userId } });
     await prisma.$disconnect();
   });
 

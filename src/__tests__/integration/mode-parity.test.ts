@@ -34,6 +34,15 @@ describe.skipIf(!hasDb)("Integration: INTERLEAVED_PRACTICE mode", () => {
     startOrResumeRun = runService.startOrResumeRun;
     submitAttempt = runService.submitAttempt;
     getRun = runService.getRun;
+
+    // Seed mastery records so pre-test diagnostic prompts are not prepended
+    await prisma.objectiveMastery.createMany({
+      data: [
+        { userId, courseName: "TEST 201", objectiveKey: "obj_a" },
+        { userId, courseName: "TEST 201", objectiveKey: "obj_b" },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   afterAll(async () => {
@@ -42,6 +51,7 @@ describe.skipIf(!hasDb)("Integration: INTERLEAVED_PRACTICE mode", () => {
     await prisma.sessionAttempt.deleteMany({ where: { run: { userId } } });
     await prisma.sessionRun.deleteMany({ where: { userId } });
     await prisma.session.deleteMany({ where: { userId } });
+    await prisma.objectiveMastery.deleteMany({ where: { userId } });
   });
 
   it("creates an interleaved session", async () => {

@@ -442,6 +442,11 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
   const tapered: T[] = [];
   let hasSessionInFinal24h = false;
 
+  // If exam is already in the past relative to plan start, skip tapering entirely
+  if (examTime <= planStartMs) {
+    return [...blocks];
+  }
+
   for (const block of blocks) {
     // Compute block midday timestamp without creating intermediate Date objects
     const blockMiddayMs = planStartMs + block.dayIndex * 86400000 + 43200000; // +12h

@@ -738,7 +738,9 @@ async function handleImmediateScoring(
   }
 
   const dbTxMs = Date.now() - txStart;
-  const feedbackStatus = "PENDING" as const;
+  const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
+    ? "PENDING" as const
+    : "NONE" as const;
 
   logger.info("prompt.submitted", {
     user_id: userId,
