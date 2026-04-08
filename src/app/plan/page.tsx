@@ -155,6 +155,24 @@ export default function PlanPage() {
       return;
     }
 
+    // Read saved preferences (availability + daily cap) from settings
+    let availability = Array.from({ length: 7 }, () => ({ start: "09:00", end: "17:00" }));
+    let dailyCap = 180;
+    try {
+      const raw = localStorage.getItem("study_bot_prefs");
+      if (raw) {
+        const prefs = JSON.parse(raw);
+        if (prefs.availability) {
+          availability = prefs.availability.map((d: { start: string; end: string; enabled: boolean }) =>
+            d.enabled ? { start: d.start, end: d.end } : { start: "00:00", end: "00:00" }
+          );
+        }
+        if (prefs.dailyCap) dailyCap = prefs.dailyCap;
+      }
+    } catch {
+      // Use defaults
+    }
+
     try {
       const res = await fetch("/api/plans", {
         method: "POST",
@@ -165,8 +183,8 @@ export default function PlanPage() {
           exam_date: examDate,
           objectives: objectives.length > 0 ? objectives : undefined,
           document_ids: document_ids.length > 0 ? document_ids : undefined,
-          availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "17:00" })),
-          daily_study_cap_minutes: 180,
+          availability,
+          daily_study_cap_minutes: dailyCap,
           break_protocol_default: "25_5",
         }),
       });
