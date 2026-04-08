@@ -155,23 +155,22 @@ export default function PlanPage() {
       return;
     }
 
-    // Read saved preferences (availability + daily cap) from settings
-    let availability = Array.from({ length: 7 }, () => ({ start: "09:00", end: "17:00" }));
+    // Read saved preferences (study hours + daily cap) from settings
+    let studyStart = "09:00";
+    let studyEnd = "17:00";
     let dailyCap = 180;
     try {
       const raw = localStorage.getItem("study_bot_prefs");
       if (raw) {
         const prefs = JSON.parse(raw);
-        if (prefs.availability) {
-          availability = prefs.availability.map((d: { start: string; end: string; enabled: boolean }) =>
-            d.enabled ? { start: d.start, end: d.end } : { start: "00:00", end: "00:00" }
-          );
-        }
+        if (prefs.studyStart) studyStart = prefs.studyStart;
+        if (prefs.studyEnd) studyEnd = prefs.studyEnd;
         if (prefs.dailyCap) dailyCap = prefs.dailyCap;
       }
     } catch {
       // Use defaults
     }
+    const availability = Array.from({ length: 7 }, () => ({ start: studyStart, end: studyEnd }));
 
     try {
       const res = await fetch("/api/plans", {
