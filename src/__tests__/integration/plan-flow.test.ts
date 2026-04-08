@@ -24,10 +24,15 @@ describe.skipIf(!hasDb)("Integration: plan creation and retrieval", () => {
   let itemCount: number;
   let firstSessionId: string;
 
+  // Exam date must be in the future for schedule-intelligence taper logic
+  const futureExam = new Date();
+  futureExam.setDate(futureExam.getDate() + 30);
+  const examDateStr = futureExam.toISOString().split("T")[0];
+
   const planInput = {
     course_name: "PLAN 201",
     exam_name: "Midterm",
-    exam_date: "2025-06-15",
+    exam_date: examDateStr,
     objectives: [
       "Data structures",
       "Algorithms",

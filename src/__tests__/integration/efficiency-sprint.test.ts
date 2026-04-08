@@ -91,6 +91,7 @@ The loop invariant for binary search is that the target element, if present, mus
       where: { document: { userId: USER } },
     });
     await prisma.contentDocument.deleteMany({ where: { userId: USER } });
+    await prisma.objectiveMastery.deleteMany({ where: { userId: USER } });
     await prisma.$disconnect();
   });
 
@@ -108,6 +109,12 @@ The loop invariant for binary search is that the target element, if present, mus
         target_outcome: { prompt_count: 3 },
       });
       sessionId = sess.session_id;
+
+      // Seed mastery so pre-test diagnostic prompts are not prepended
+      await prisma.objectiveMastery.createMany({
+        data: [{ userId: USER, courseName: COURSE, objectiveKey: "obj_1" }],
+        skipDuplicates: true,
+      });
 
       const result = await startOrResumeRun(USER, sessionId);
       expect("data" in result).toBe(true);

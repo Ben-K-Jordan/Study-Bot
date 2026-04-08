@@ -136,11 +136,12 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     expect(result.plan_id).toBeTruthy();
 
     const day1Items = result.items.filter((i: any) => i.day_index === 1);
-    const busyEndMs = busyEnd.getTime();
+    // Account for 10-minute context-switching buffer after busy events
+    const busyEndWithBufferMs = busyEnd.getTime() + 10 * 60 * 1000;
 
     for (const item of day1Items) {
       const itemStart = new Date(item.start_time).getTime();
-      expect(itemStart).toBeGreaterThanOrEqual(busyEndMs);
+      expect(itemStart).toBeGreaterThanOrEqual(busyEndWithBufferMs);
     }
   });
 
