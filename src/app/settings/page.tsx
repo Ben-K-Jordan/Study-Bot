@@ -15,7 +15,7 @@ const DEFAULTS: { availability: Availability[]; dailyCap: number } = {
   availability: DAY_NAMES.map((_, i) => ({
     start: "09:00",
     end: "17:00",
-    enabled: i < 5, // Mon–Fri on by default
+    enabled: true, // All days on by default
   })),
   dailyCap: 180,
 };
