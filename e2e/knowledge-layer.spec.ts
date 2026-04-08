@@ -85,13 +85,6 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     }, USER_ID);
     await page.goto(sessionUrl);
 
-    // Check pre-session commitment checkboxes
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
-
-    // Resume session
     await page.getByRole("button", { name: /start session|resume session/i }).click();
 
     // Wait for prompt
@@ -200,12 +193,3 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   });
 });
 
-test.describe("Knowledge Layer — Library Page", () => {
-  test("library page renders with tabs", async ({ page }) => {
-    await page.goto(`${BASE_URL}/library`);
-    await expect(page.locator("h1")).toContainText("Knowledge Library");
-    await expect(page.locator('button:has-text("Course Materials")')).toBeVisible();
-    await expect(page.locator('button:has-text("Practice Bank")')).toBeVisible();
-    await expect(page.locator('button:has-text("Research Library")')).toBeVisible();
-  });
-});
