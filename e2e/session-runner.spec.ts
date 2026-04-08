@@ -1,7 +1,11 @@
 import { test, expect } from "@playwright/test";
+import { PrismaClient } from "../generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const USER_ID = "e2e_test_user";
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 const SESSION_PAYLOAD = {
   course_name: "E2E 101",
@@ -22,6 +26,21 @@ let sessionId: string;
 let sessionUrl: string;
 
 test.describe.serial("E2E: Full Retrieval Session Runner", () => {
+  test.beforeAll(async () => {
+    await prisma.objectiveMastery.createMany({
+      data: [
+        { userId: USER_ID, courseName: "E2E 101", objectiveKey: "obj_1" },
+        { userId: USER_ID, courseName: "E2E 101", objectiveKey: "obj_2" },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  test.afterAll(async () => {
+    await prisma.objectiveMastery.deleteMany({ where: { userId: USER_ID } });
+    await prisma.$disconnect();
+  });
+
   test("create session via API", async ({ request }) => {
     const response = await request.post(`${BASE_URL}/api/sessions`, {
       headers: {

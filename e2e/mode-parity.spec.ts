@@ -1,6 +1,22 @@
 import { test, expect } from "@playwright/test";
+import { PrismaClient } from "../generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
+
+/** Seed mastery records so pre-test diagnostic prompts are not prepended */
+async function seedMastery(userId: string, courseName: string, objectiveKeys: string[]) {
+  await prisma.objectiveMastery.createMany({
+    data: objectiveKeys.map((key) => ({ userId, courseName, objectiveKey: key })),
+    skipDuplicates: true,
+  });
+}
+
+async function cleanupMastery(userId: string) {
+  await prisma.objectiveMastery.deleteMany({ where: { userId } });
+}
 
 // ============================================================
 // E2E: Interleaved Practice runner
@@ -11,6 +27,14 @@ test.describe.serial("E2E: Interleaved Practice runner", () => {
   let sessionId: string;
   let runId: string;
   let promptCount: number;
+
+  test.beforeAll(async () => {
+    await seedMastery(USER_ID, "E2E Interleaved", ["obj_a", "obj_b"]);
+  });
+
+  test.afterAll(async () => {
+    await cleanupMastery(USER_ID);
+  });
 
   test("create INTERLEAVED_PRACTICE session", async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/sessions`, {
@@ -103,6 +127,14 @@ test.describe.serial("E2E: Exam Sim runner", () => {
   const USER_ID = "e2e_examsim_user";
   let sessionId: string;
   let runId: string;
+
+  test.beforeAll(async () => {
+    await seedMastery(USER_ID, "E2E ExamSim", ["obj_1", "obj_2"]);
+  });
+
+  test.afterAll(async () => {
+    await cleanupMastery(USER_ID);
+  });
 
   test("create EXAM_SIM session with 3 prompts", async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/sessions`, {
@@ -273,6 +305,15 @@ test.describe.serial("E2E: Error Repair runner", () => {
   let retrievalRunId: string;
   let repairSessionId: string;
   let repairRunId: string;
+
+  test.beforeAll(async () => {
+    await seedMastery(USER_ID, "E2E Repair", ["obj_1"]);
+  });
+
+  test.afterAll(async () => {
+    await cleanupMastery(USER_ID);
+    await prisma.$disconnect();
+  });
 
   // Step 1: Create retrieval session and generate error log
   test("create retrieval session and submit INCORRECT with error log", async ({ request }) => {
