@@ -603,7 +603,26 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
   async listEvents(options: EventListOptions): Promise<CalendarEvent[]> {
     this.callLog.push({ method: "listEvents", args: [options] });
     this.checkError("listEvents");
+    const maxResults = options.maxResults ?? 10;
     const results: CalendarEvent[] = [];
+
+    // Include synthesized events from busy intervals (for availability detection)
+    if (!options.privateExtendedProperty) {
+      for (const b of this.busy) {
+        if (b.calendarId !== options.calendarId) continue;
+        if (options.timeMin && b.end <= options.timeMin) continue;
+        if (options.timeMax && b.start >= options.timeMax) continue;
+        results.push({
+          id: `busy_synth_${results.length}`,
+          summary: "Busy",
+          start: b.start,
+          end: b.end,
+          status: "confirmed",
+        });
+        if (results.length >= maxResults) return results;
+      }
+    }
+
     for (const event of this.events.values()) {
       if (event.calendarId !== options.calendarId) continue;
       if (options.privateExtendedProperty) {
@@ -622,7 +641,7 @@ export class FakeGoogleCalendarClient implements GoogleCalendarClient {
         etag: event.etag,
         updated: event.updated,
       });
-      if (results.length >= (options.maxResults ?? 10)) break;
+      if (results.length >= maxResults) break;
     }
     return results;
   }
