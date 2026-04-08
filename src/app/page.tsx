@@ -311,12 +311,6 @@ export default function DashboardPage() {
           <a href="/plan" style={actionBtnStyle}>
             + Create New Plan
           </a>
-          <a href="/library" style={actionBtnStyle}>
-            Upload Content
-          </a>
-          <a href="/settings/calendar" style={actionBtnStyle}>
-            Calendar Settings
-          </a>
         </div>
       </section>
 
