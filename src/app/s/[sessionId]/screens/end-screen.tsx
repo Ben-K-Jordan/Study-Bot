@@ -179,100 +179,7 @@ export function EndScreen({ run, session, onNewRun }: Props) {
       </div>
 
       {/* Calibration Dashboard */}
-      {(() => {
-        const calibrationData = buildCalibrationData(run?.attempts);
-        if (calibrationData.length === 0) return null;
-        const { gap, overconfidentCount, underconfidentCount } = computeCalibrationGap(calibrationData);
-        const calibrationLabel = gap < 0.15 ? "Well Calibrated" : gap < 0.3 ? "Slightly Miscalibrated" : "Needs Work";
-        const calibrationColor = gap < 0.15 ? "#2ecc71" : gap < 0.3 ? "#f39c12" : "#e74c3c";
-        const confColors = ["#e74c3c", "#f39c12", "#f1c40f", "#2ecc71", "#27ae60"];
-
-        return (
-          <div
-            style={{
-              background: "#16213e",
-              border: "1px solid #333",
-              borderRadius: 6,
-              padding: "1rem",
-              marginBottom: "1.5rem",
-            }}
-          >
-            <h2 style={sectionTitle}>CONFIDENCE CALIBRATION</h2>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-              <span style={{ fontSize: "0.85rem", color: calibrationColor, fontWeight: 600 }}>
-                {calibrationLabel}
-              </span>
-              <span style={{ fontSize: "0.7rem", color: "#888" }}>
-                Gap: {(gap * 100).toFixed(0)}%
-              </span>
-            </div>
-
-            {/* Per-question confidence vs score */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", marginBottom: "0.75rem" }}>
-              {calibrationData.map((p) => (
-                <div key={p.prompt_index} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem" }}>
-                  <span style={{ width: 30, color: "#888" }}>{p.label}</span>
-                  <div style={{ flex: 1, position: "relative", height: 16, background: "#0f3460", borderRadius: 3 }}>
-                    {/* Confidence bar */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        height: "100%",
-                        width: `${(p.confidence / 5) * 100}%`,
-                        background: confColors[p.confidence - 1] + "55",
-                        borderRadius: 3,
-                      }}
-                    />
-                    {/* Score marker */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 2,
-                        left: `${p.score * 100}%`,
-                        width: 3,
-                        height: 12,
-                        background: p.score === 1 ? "#2ecc71" : p.score === 0.5 ? "#f39c12" : "#e74c3c",
-                        borderRadius: 1,
-                        transform: "translateX(-1px)",
-                      }}
-                    />
-                  </div>
-                  <span style={{ width: 16, textAlign: "center" }}>
-                    {p.score === 1 ? "✓" : p.score === 0.5 ? "~" : "✗"}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#888", marginBottom: "0.5rem" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ width: 12, height: 8, background: "#2ecc7155", borderRadius: 2, display: "inline-block" }} /> Confidence
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ width: 3, height: 8, background: "#2ecc71", borderRadius: 1, display: "inline-block" }} /> Actual score
-              </span>
-            </div>
-
-            {/* Insight */}
-            {(overconfidentCount > 0 || underconfidentCount > 0) && (
-              <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#ccc", lineHeight: 1.5 }}>
-                {overconfidentCount > 0 && (
-                  <span style={{ color: "#e74c3c" }}>
-                    Overconfident on {overconfidentCount} question{overconfidentCount > 1 ? "s" : ""} — these are your blind spots.{" "}
-                  </span>
-                )}
-                {underconfidentCount > 0 && (
-                  <span style={{ color: "#2ecc71" }}>
-                    Underconfident on {underconfidentCount} question{underconfidentCount > 1 ? "s" : ""} — you know more than you think!
-                  </span>
-                )}
-              </p>
-            )}
-          </div>
-        );
-      })()}
+      <CalibrationDashboard attempts={run?.attempts} />
 
       {/* Recommendations */}
       {metrics.recommended_followups && metrics.recommended_followups.length > 0 && (
@@ -302,6 +209,101 @@ export function EndScreen({ run, session, onNewRun }: Props) {
       <button onClick={onNewRun} style={primaryBtn}>
         Start New Run
       </button>
+    </div>
+  );
+}
+
+function CalibrationDashboard({ attempts }: { attempts?: RunData["attempts"] }) {
+  const calibrationData = buildCalibrationData(attempts);
+  if (calibrationData.length === 0) return null;
+  const { gap, overconfidentCount, underconfidentCount } = computeCalibrationGap(calibrationData);
+  const calibrationLabel = gap < 0.15 ? "Well Calibrated" : gap < 0.3 ? "Slightly Miscalibrated" : "Needs Work";
+  const calibrationColor = gap < 0.15 ? "#2ecc71" : gap < 0.3 ? "#f39c12" : "#e74c3c";
+  const confColors = ["#e74c3c", "#f39c12", "#f1c40f", "#2ecc71", "#27ae60"];
+
+  return (
+    <div
+      style={{
+        background: "#16213e",
+        border: "1px solid #333",
+        borderRadius: 6,
+        padding: "1rem",
+        marginBottom: "1.5rem",
+      }}
+    >
+      <h2 style={sectionTitle}>CONFIDENCE CALIBRATION</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+        <span style={{ fontSize: "0.85rem", color: calibrationColor, fontWeight: 600 }}>
+          {calibrationLabel}
+        </span>
+        <span style={{ fontSize: "0.7rem", color: "#888" }}>
+          Gap: {(gap * 100).toFixed(0)}%
+        </span>
+      </div>
+
+      {/* Per-question confidence vs score */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", marginBottom: "0.75rem" }}>
+        {calibrationData.map((p) => (
+          <div key={p.prompt_index} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem" }}>
+            <span style={{ width: 30, color: "#888" }}>{p.label}</span>
+            <div style={{ flex: 1, position: "relative", height: 16, background: "#0f3460", borderRadius: 3 }}>
+              {/* Confidence bar */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: "100%",
+                  width: `${(p.confidence / 5) * 100}%`,
+                  background: confColors[p.confidence - 1] + "55",
+                  borderRadius: 3,
+                }}
+              />
+              {/* Score marker */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  left: `${p.score * 100}%`,
+                  width: 3,
+                  height: 12,
+                  background: p.score === 1 ? "#2ecc71" : p.score === 0.5 ? "#f39c12" : "#e74c3c",
+                  borderRadius: 1,
+                  transform: "translateX(-1px)",
+                }}
+              />
+            </div>
+            <span style={{ width: 16, textAlign: "center" }}>
+              {p.score === 1 ? "✓" : p.score === 0.5 ? "~" : "✗"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#888", marginBottom: "0.5rem" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 12, height: 8, background: "#2ecc7155", borderRadius: 2, display: "inline-block" }} /> Confidence
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 3, height: 8, background: "#2ecc71", borderRadius: 1, display: "inline-block" }} /> Actual score
+        </span>
+      </div>
+
+      {/* Insight */}
+      {(overconfidentCount > 0 || underconfidentCount > 0) && (
+        <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#ccc", lineHeight: 1.5 }}>
+          {overconfidentCount > 0 && (
+            <span style={{ color: "#e74c3c" }}>
+              Overconfident on {overconfidentCount} question{overconfidentCount > 1 ? "s" : ""} — these are your blind spots.{" "}
+            </span>
+          )}
+          {underconfidentCount > 0 && (
+            <span style={{ color: "#2ecc71" }}>
+              Underconfident on {underconfidentCount} question{underconfidentCount > 1 ? "s" : ""} — you know more than you think!
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

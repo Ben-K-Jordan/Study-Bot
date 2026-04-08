@@ -120,9 +120,8 @@ export const MIN_SESSION_MINUTES = 15;
 export function scoreSlot(input: SlotScoreInput): number {
   const { slot, mode, chronotype, dayEvents, bedtimeHour, courseName, topicScope } = input;
 
-  const slotHour = new Date(slot.start).getHours();
-  const slotMinute = new Date(slot.start).getMinutes();
-  const slotTimeDecimal = slotHour + slotMinute / 60;
+  const slotDate = new Date(slot.start);
+  const slotTimeDecimal = slotDate.getHours() + slotDate.getMinutes() / 60;
 
   // 1. Circadian alignment (0-1)
   const circadianScore = computeCircadianScore(slotTimeDecimal, mode, chronotype);
@@ -376,10 +375,10 @@ export function isRelatedClass(
 
   // Direct course name match (e.g., "CS 101" in event, "CS 101" as course)
   if (courseName) {
-    const courseWords = courseName.toLowerCase().split(/[\s,]+/).filter((w) => w.length > 1);
-    // If the course name appears as a substring, it's a match
-    if (summaryLower.includes(courseName.toLowerCase())) return true;
+    const courseNameLower = courseName.toLowerCase();
+    if (summaryLower.includes(courseNameLower)) return true;
     // Check if most course name words appear in the event summary
+    const courseWords = courseNameLower.split(/[\s,]+/).filter((w) => w.length > 1);
     const matchCount = courseWords.filter((w) => summaryLower.includes(w)).length;
     if (courseWords.length > 0 && matchCount >= Math.ceil(courseWords.length * 0.6)) return true;
   }
@@ -439,15 +438,15 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
   planStartDate: Date,
 ): T[] {
   const examTime = examDate.getTime();
+  const planStartMs = planStartDate.getTime();
   const tapered: T[] = [];
+  let hasSessionInFinal24h = false;
 
   for (const block of blocks) {
-    const blockDate = new Date(planStartDate);
-    blockDate.setDate(blockDate.getDate() + block.dayIndex);
-    // Set to midday to avoid timezone edge cases
-    blockDate.setHours(12, 0, 0, 0);
+    // Compute block midday timestamp without creating intermediate Date objects
+    const blockMiddayMs = planStartMs + block.dayIndex * 86400000 + 43200000; // +12h
 
-    const hoursUntilExam = (examTime - blockDate.getTime()) / (1000 * 60 * 60);
+    const hoursUntilExam = (examTime - blockMiddayMs) / 3600000;
 
     if (hoursUntilExam <= 0) {
       // Exam day or after — skip study sessions
@@ -456,16 +455,8 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
 
     if (hoursUntilExam <= 24) {
       // Final 24h: only 1 short confidence-building retrieval
-      if (tapered.some((b) => {
-        const d = new Date(planStartDate);
-        d.setDate(d.getDate() + b.dayIndex);
-        d.setHours(12, 0, 0, 0);
-        const h = (examTime - d.getTime()) / (1000 * 60 * 60);
-        return h <= 24 && h > 0;
-      })) {
-        // Already have a session in the final 24h — skip additional ones
-        continue;
-      }
+      if (hasSessionInFinal24h) continue;
+      hasSessionInFinal24h = true;
       tapered.push({
         ...block,
         mode: "RETRIEVAL",
@@ -500,43 +491,43 @@ export function findIntradaySpacingViolations(
   blocks: { dayIndex: number; topicScope: string; startMinuteOfDay?: number }[],
   minGapMinutes: number = 60,
 ): number[] {
-  const violations: number[] = [];
-  const dayGroups = new Map<number, typeof blocks>();
+  // Pre-compute word sets once to avoid recreating in O(n²) pair comparisons
+  const wordSets = blocks.map((b) =>
+    new Set(b.topicScope.toLowerCase().split(/[,\s]+/).filter((w) => w.length > 3)),
+  );
 
-  for (const [i, block] of blocks.entries()) {
-    if (!dayGroups.has(block.dayIndex)) dayGroups.set(block.dayIndex, []);
-    dayGroups.get(block.dayIndex)!.push({ ...block, _idx: i } as typeof block & { _idx: number });
+  const violations: number[] = [];
+  const dayGroups = new Map<number, number[]>();
+
+  for (let i = 0; i < blocks.length; i++) {
+    const day = blocks[i].dayIndex;
+    if (!dayGroups.has(day)) dayGroups.set(day, []);
+    dayGroups.get(day)!.push(i);
   }
 
-  for (const dayBlocks of dayGroups.values()) {
-    for (let i = 0; i < dayBlocks.length; i++) {
-      for (let j = i + 1; j < dayBlocks.length; j++) {
-        const a = dayBlocks[i];
-        const b = dayBlocks[j];
-        // Check topic overlap (simple: check if any objective words overlap)
-        if (!hasTopicOverlap(a.topicScope, b.topicScope)) continue;
+  for (const indices of dayGroups.values()) {
+    for (let i = 0; i < indices.length; i++) {
+      for (let j = i + 1; j < indices.length; j++) {
+        const idxA = indices[i];
+        const idxB = indices[j];
 
-        const startA = a.startMinuteOfDay ?? 0;
-        const startB = b.startMinuteOfDay ?? 0;
-        const gap = Math.abs(startB - startA);
+        // Check topic overlap using pre-computed sets
+        let hasOverlap = false;
+        for (const w of wordSets[idxA]) {
+          if (wordSets[idxB].has(w)) { hasOverlap = true; break; }
+        }
+        if (!hasOverlap) continue;
 
-        if (gap < minGapMinutes) {
-          violations.push((b as typeof b & { _idx: number })._idx);
+        const startA = blocks[idxA].startMinuteOfDay ?? 0;
+        const startB = blocks[idxB].startMinuteOfDay ?? 0;
+        if (Math.abs(startB - startA) < minGapMinutes) {
+          violations.push(idxB);
         }
       }
     }
   }
 
   return violations;
-}
-
-function hasTopicOverlap(scopeA: string, scopeB: string): boolean {
-  const wordsA = new Set(scopeA.toLowerCase().split(/[,\s]+/).filter((w) => w.length > 3));
-  const wordsB = new Set(scopeB.toLowerCase().split(/[,\s]+/).filter((w) => w.length > 3));
-  for (const w of wordsA) {
-    if (wordsB.has(w)) return true;
-  }
-  return false;
 }
 
 // ---- Dynamic Session Duration ----

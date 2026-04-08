@@ -90,9 +90,7 @@ export function eventsToBufferedIntervals(
     if (isNaN(start) || isNaN(end) || end <= start) continue;
 
     // Determine if event has a physical location requiring travel
-    const hasPhysicalLocation = event.location
-      ? !VIRTUAL_KEYWORDS.some((kw) => event.location!.toLowerCase().includes(kw))
-      : false;
+    const hasPhysicalLocation = isPhysicalLocation(event.location);
 
     // Add travel buffer before events with physical locations
     const effectiveStart = hasPhysicalLocation
