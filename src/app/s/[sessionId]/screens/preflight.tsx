@@ -15,14 +15,14 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 
   return (
     <div>
-      <h1 style={{ fontSize: "1.4rem", margin: "0 0 0.25rem" }}>
+      <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display), 'Caveat', cursive", color: "#f0dc4e" }}>
         {session.course_name} | {session.exam_name}
       </h1>
-      <p style={{ color: "#888", margin: "0 0 1.5rem" }}>
+      <p style={{ color: "#a89a82", margin: "0 0 1.5rem", fontSize: "1rem" }}>
         {session.mode_label}: {session.topic_scope}
       </p>
 
-      <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem", fontSize: "0.85rem" }}>
+      <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem", fontSize: "0.95rem" }}>
         {outcome?.prompt_count != null && (
           <div>
             <span style={metaLabel}>Prompts</span>
@@ -64,8 +64,8 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 }
 
 const metaLabel: React.CSSProperties = {
-  color: "#666",
-  fontSize: "0.7rem",
+  color: "#7a7060",
+  fontSize: "0.8rem",
   textTransform: "uppercase",
   letterSpacing: "0.06em",
   display: "block",
@@ -73,23 +73,23 @@ const metaLabel: React.CSSProperties = {
 };
 
 const examBanner: React.CSSProperties = {
-  background: "#2d1b4e",
-  border: "1px solid #6c3fc0",
+  background: "#3d3050",
+  border: "1px solid #9a70d0",
   borderRadius: 6,
   padding: "0.75rem 1rem",
   marginBottom: "1.5rem",
-  fontSize: "0.85rem",
-  color: "#c9a0ff",
+  fontSize: "0.95rem",
+  color: "#c4a0ff",
 };
 
 const buttonStyle: React.CSSProperties = {
   width: "100%",
   padding: "0.85rem",
-  fontSize: "1rem",
-  fontFamily: "inherit",
+  fontSize: "1.1rem",
+  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
   fontWeight: 600,
-  background: "#4cc9f0",
-  color: "#1a1a2e",
+  background: "#f0dc4e",
+  color: "#1f2e1f",
   border: "none",
   borderRadius: 6,
 };

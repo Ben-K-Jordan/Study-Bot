@@ -73,7 +73,7 @@ export default function SettingsPage() {
         <p style={hintStyle}>Sessions will be scheduled between these times.</p>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <input type="time" value={studyStart} onChange={(e) => setStudyStart(e.target.value)} style={timeInputStyle} />
-          <span style={{ color: "#555" }}>to</span>
+          <span style={{ color: "#a89a82" }}>to</span>
           <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} style={timeInputStyle} />
         </div>
       </section>
@@ -89,9 +89,9 @@ export default function SettingsPage() {
             step={15}
             value={dailyCap}
             onChange={(e) => setDailyCap(Number(e.target.value))}
-            style={{ flex: 1, accentColor: "#00ff88" }}
+            style={{ flex: 1, accentColor: "#f0dc4e" }}
           />
-          <span style={{ color: "#00ff88", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
+          <span style={{ color: "#f0dc4e", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
             {Math.floor(dailyCap / 60)}h{dailyCap % 60 > 0 ? ` ${dailyCap % 60}m` : ""}
           </span>
         </div>
@@ -103,8 +103,8 @@ export default function SettingsPage() {
           <p style={hintStyle}>Checking connection...</p>
         ) : googleStatus === "connected" ? (
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span style={{ color: "#00ff88", fontSize: "0.85rem" }}>Connected</span>
-            <span style={{ color: "#555", fontSize: "0.8rem" }}>Plans can be published to your calendar.</span>
+            <span style={{ color: "#88cc88", fontSize: "0.95rem" }}>Connected</span>
+            <span style={{ color: "#7a7060", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
           </div>
         ) : (
           <div>
@@ -126,9 +126,9 @@ export default function SettingsPage() {
 // ---- Styles ----
 
 const pageStyle: React.CSSProperties = {
-  fontFamily: "'SF Mono', 'Fira Code', monospace",
-  background: "#0a0a0a",
-  color: "#e0e0e0",
+  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  background: "#2a3d2a",
+  color: "#e8dcc8",
   minHeight: "100vh",
   padding: "2rem",
   maxWidth: 600,
@@ -136,55 +136,57 @@ const pageStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  color: "#00ff88",
-  fontSize: "1.4rem",
+  color: "#f0dc4e",
+  fontSize: "2rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
+  fontFamily: "var(--font-display), 'Caveat', cursive",
 };
 
 const sectionStyle: React.CSSProperties = {
-  color: "#e0e0e0",
-  fontSize: "1rem",
+  color: "#e8dcc8",
+  fontSize: "1.2rem",
   margin: "0 0 0.25rem",
   fontWeight: 600,
+  fontFamily: "var(--font-display), 'Caveat', cursive",
 };
 
 const hintStyle: React.CSSProperties = {
-  color: "#666",
-  fontSize: "0.8rem",
+  color: "#7a7060",
+  fontSize: "0.9rem",
   margin: "0 0 0.75rem",
 };
 
 const timeInputStyle: React.CSSProperties = {
-  background: "#111",
-  color: "#e0e0e0",
-  border: "1px solid #333",
+  background: "#2d422d",
+  color: "#e8dcc8",
+  border: "1px solid #4a6a4a",
   padding: "0.35rem 0.5rem",
   fontFamily: "inherit",
-  fontSize: "0.85rem",
+  fontSize: "0.95rem",
   borderRadius: "4px",
 };
 
 const saveBtnStyle: React.CSSProperties = {
-  background: "#00ff88",
-  color: "#000",
+  background: "#f0dc4e",
+  color: "#1f2e1f",
   border: "none",
   padding: "0.6rem 1.5rem",
   fontFamily: "inherit",
   fontWeight: "bold",
-  fontSize: "0.95rem",
+  fontSize: "1.05rem",
   cursor: "pointer",
   borderRadius: "4px",
 };
 
 const connectBtnStyle: React.CSSProperties = {
-  background: "#4285f4",
-  color: "#fff",
+  background: "#7ec8e3",
+  color: "#1f2e1f",
   border: "none",
   padding: "0.5rem 1rem",
   fontFamily: "inherit",
   fontWeight: "bold",
-  fontSize: "0.85rem",
+  fontSize: "0.95rem",
   cursor: "pointer",
   borderRadius: "4px",
 };

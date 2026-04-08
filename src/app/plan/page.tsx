@@ -215,7 +215,6 @@ export default function PlanPage() {
       <div style={pageStyle}>
         <h1 style={headingStyle}>New Study Plan</h1>
         <form onSubmit={handleSubmit} style={{ maxWidth: 500 }}>
-          {/* Course + Exam basics */}
           <div style={{ marginBottom: "1.25rem" }}>
             <label style={labelStyle}>
               Course
@@ -257,7 +256,7 @@ export default function PlanPage() {
 
           {/* Content upload */}
           <div style={{ marginBottom: "1.5rem" }}>
-            <div style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.5rem" }}>
+            <div style={{ fontSize: "0.95rem", color: "#a89a82", marginBottom: "0.5rem" }}>
               Upload your course materials and we&apos;ll build a plan around them.
             </div>
             <div
@@ -272,10 +271,10 @@ export default function PlanPage() {
                 onChange={handleFileUpload}
                 style={{ display: "none" }}
               />
-              <span style={{ color: "#00ff88" }}>
+              <span style={{ color: "#f0dc4e" }}>
                 {uploading ? "Uploading..." : "Click to upload files"}
               </span>
-              <span style={{ color: "#555", fontSize: "0.8rem" }}>PDF, text, or markdown</span>
+              <span style={{ color: "#7a7060", fontSize: "0.9rem" }}>PDF, text, or markdown</span>
             </div>
 
             {uploadedFiles.length > 0 && (
@@ -283,7 +282,7 @@ export default function PlanPage() {
                 {uploadedFiles.map((file) => (
                   <div key={file.id} style={fileRowStyle}>
                     <span>{file.name}</span>
-                    <span style={{ color: file.status === "PROCESSED" ? "#00ff88" : "#ffaa00", fontSize: "0.75rem" }}>
+                    <span style={{ color: file.status === "PROCESSED" ? "#88cc88" : "#e8a040", fontSize: "0.85rem" }}>
                       {file.status}
                     </span>
                   </div>
@@ -292,7 +291,7 @@ export default function PlanPage() {
             )}
 
             <div style={{ marginTop: "0.75rem" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "#666", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.95rem", color: "#7a7060", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={useManualObjectives}
@@ -334,7 +333,7 @@ export default function PlanPage() {
             </button>
           )}
           {publishDone && (
-            <span style={{ color: "#00ff88", fontSize: "0.85rem", padding: "0.5rem" }}>Added to calendar</span>
+            <span style={{ color: "#88cc88", fontSize: "0.95rem", padding: "0.5rem" }}>Added to calendar</span>
           )}
           <a href={result.ics_download_url} style={btnStyle}>Download .ics</a>
           <button onClick={() => { setResult(null); setPublishDone(false); }} style={btnStyle}>
@@ -343,7 +342,7 @@ export default function PlanPage() {
         </div>
       </div>
 
-      <div style={{ fontSize: "0.85rem", color: "#888", marginBottom: "1rem" }}>
+      <div style={{ fontSize: "0.95rem", color: "#a89a82", marginBottom: "1rem" }}>
         {result.items.length} sessions across 7 days
       </div>
 
@@ -354,7 +353,7 @@ export default function PlanPage() {
         if (!dayItems || dayItems.length === 0) return null;
         return (
           <div key={dayIdx} style={{ marginBottom: "1.25rem" }}>
-            <h2 style={{ color: "#00ff88", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+            <h2 style={{ color: "#f0dc4e", fontSize: "1.3rem", margin: "0 0 0.5rem", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
               {DAY_LABELS[dayIdx]}
             </h2>
             {dayItems.map((item) => (
@@ -366,16 +365,16 @@ export default function PlanPage() {
                 style={sessionCardStyle}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontWeight: "bold", color: "#e0e0e0" }}>
+                  <span style={{ fontWeight: "bold", color: "#e8dcc8" }}>
                     {MODE_LABELS[item.mode] || item.mode}
                   </span>
-                  <span style={{ fontSize: "0.8rem", color: "#666" }}>
+                  <span style={{ fontSize: "0.9rem", color: "#7a7060" }}>
                     {new Date(item.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     {" - "}
                     {new Date(item.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
-                <div style={{ fontSize: "0.8rem", color: "#888", marginTop: "0.2rem" }}>
+                <div style={{ fontSize: "0.9rem", color: "#a89a82", marginTop: "0.2rem" }}>
                   {item.topic_scope}
                 </div>
               </a>
@@ -390,9 +389,9 @@ export default function PlanPage() {
 // ---- Styles ----
 
 const pageStyle: React.CSSProperties = {
-  fontFamily: "'SF Mono', 'Fira Code', monospace",
-  background: "#0a0a0a",
-  color: "#e0e0e0",
+  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  background: "#2a3d2a",
+  color: "#e8dcc8",
   minHeight: "100vh",
   padding: "2rem",
   maxWidth: 700,
@@ -400,33 +399,34 @@ const pageStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  color: "#00ff88",
-  fontSize: "1.4rem",
+  color: "#f0dc4e",
+  fontSize: "2rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
+  fontFamily: "var(--font-display), 'Caveat', cursive",
 };
 
 const labelStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "0.3rem",
-  fontSize: "0.85rem",
-  color: "#aaa",
+  fontSize: "0.95rem",
+  color: "#c8bca8",
 };
 
 const inputStyle: React.CSSProperties = {
-  background: "#111",
-  color: "#e0e0e0",
-  border: "1px solid #333",
+  background: "#2d422d",
+  color: "#e8dcc8",
+  border: "1px solid #4a6a4a",
   padding: "0.5rem 0.75rem",
   fontFamily: "inherit",
-  fontSize: "0.95rem",
+  fontSize: "1rem",
   borderRadius: "4px",
 };
 
 function dropZoneStyle(busy: boolean): React.CSSProperties {
   return {
-    border: "2px dashed #333",
+    border: "2px dashed #4a6a4a",
     borderRadius: "6px",
     padding: "1.25rem",
     textAlign: "center",
@@ -442,31 +442,31 @@ const fileRowStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   padding: "0.35rem 0.5rem",
-  background: "#111",
-  border: "1px solid #222",
-  fontSize: "0.85rem",
+  background: "#334d33",
+  border: "1px solid #4a6a4a",
+  fontSize: "0.95rem",
   marginBottom: "0.2rem",
   borderRadius: "3px",
 };
 
 const errorStyle: React.CSSProperties = {
-  color: "#ff4444",
+  color: "#e88888",
   padding: "0.5rem",
   marginBottom: "1rem",
-  border: "1px solid #ff4444",
+  border: "1px solid #e88888",
   borderRadius: "4px",
-  fontSize: "0.85rem",
+  fontSize: "0.95rem",
 };
 
 function primaryBtnStyle(disabled: boolean): React.CSSProperties {
   return {
-    background: "#00ff88",
-    color: "#000",
+    background: "#f0dc4e",
+    color: "#1f2e1f",
     border: "none",
     padding: "0.75rem 1.5rem",
     fontFamily: "inherit",
     fontWeight: "bold",
-    fontSize: "1rem",
+    fontSize: "1.1rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
     borderRadius: "4px",
@@ -475,12 +475,12 @@ function primaryBtnStyle(disabled: boolean): React.CSSProperties {
 }
 
 const btnStyle: React.CSSProperties = {
-  background: "#222",
-  color: "#ccc",
-  border: "1px solid #444",
+  background: "#334d33",
+  color: "#c8bca8",
+  border: "1px solid #4a6a4a",
   padding: "0.4rem 0.75rem",
   fontFamily: "inherit",
-  fontSize: "0.8rem",
+  fontSize: "0.9rem",
   cursor: "pointer",
   textDecoration: "none",
   borderRadius: "4px",
@@ -488,13 +488,13 @@ const btnStyle: React.CSSProperties = {
 
 function googleBtnStyle(disabled: boolean): React.CSSProperties {
   return {
-    background: "#4285f4",
-    color: "#fff",
+    background: "#7ec8e3",
+    color: "#1f2e1f",
     border: "none",
     padding: "0.4rem 0.75rem",
     fontFamily: "inherit",
     fontWeight: "bold",
-    fontSize: "0.8rem",
+    fontSize: "0.9rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
     borderRadius: "4px",
@@ -503,10 +503,10 @@ function googleBtnStyle(disabled: boolean): React.CSSProperties {
 
 const sessionCardStyle: React.CSSProperties = {
   display: "block",
-  background: "#111",
+  background: "#334d33",
   padding: "0.65rem 0.75rem",
   marginBottom: "0.4rem",
-  borderLeft: "3px solid #00ff88",
+  borderLeft: "3px solid #f0dc4e",
   textDecoration: "none",
   borderRadius: "2px",
 };

@@ -22,18 +22,18 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
   primary: {
-    background: "#00ff88",
-    color: "#000",
+    background: "#f0dc4e",
+    color: "#1f2e1f",
     border: "none",
   },
   secondary: {
-    background: "#333",
-    color: "#e0e0e0",
-    border: "1px solid #555",
+    background: "#334d33",
+    color: "#e8dcc8",
+    border: "1px solid #4a6a4a",
   },
   danger: {
-    background: "#ff4444",
-    color: "#fff",
+    background: "#e88888",
+    color: "#1f2e1f",
     border: "none",
   },
 };
@@ -54,7 +54,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const baseStyle: React.CSSProperties = {
-    fontFamily: "monospace",
+    fontFamily: "var(--font-body), 'Patrick Hand', cursive",
     fontWeight: "bold",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.6 : 1,
