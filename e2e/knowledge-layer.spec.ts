@@ -65,13 +65,6 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     }, USER_ID);
     await page.goto(sessionUrl);
 
-    // Check pre-session commitment checkboxes
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
-
-    // Start the session
     await page.getByRole("button", { name: /start session|resume session/i }).click();
 
     // Wait for the prompt to appear

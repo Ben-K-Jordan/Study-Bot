@@ -59,25 +59,13 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     sessionUrl = `/s/${sessionId}`;
   });
 
-  test("preflight screen shows session details and commitments", async ({ page }) => {
+  test("preflight screen shows session details", async ({ page }) => {
     await page.goto(sessionUrl);
-    // Session info should be visible
     await expect(page.getByText("E2E 101")).toBeVisible();
     await expect(page.getByText("Final Exam")).toBeVisible();
     await expect(page.getByText(/Retrieval: End-to-end testing/)).toBeVisible();
 
-    // Start button should be disabled initially
     const startBtn = page.getByRole("button", { name: /start session/i });
-    await expect(startBtn).toBeDisabled();
-
-    // Check all three commitments
-    const checkboxes = page.locator('input[type="checkbox"]');
-    await expect(checkboxes).toHaveCount(3);
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
-
-    // Now start button should be enabled
     await expect(startBtn).toBeEnabled();
   });
 
@@ -89,11 +77,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     }, USER_ID);
     await page.goto(sessionUrl);
 
-    // Check commitments and start
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
     await page.getByRole("button", { name: /start session/i }).click();
 
     // Should see the first prompt
@@ -108,11 +91,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     }, USER_ID);
     await page.goto(sessionUrl);
 
-    // Check commitments and start/resume
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
     await page.getByRole("button", { name: /start session|resume session/i }).click();
 
     // Should be on prompt 1 (or wherever we left off)
@@ -137,11 +115,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     }, USER_ID);
     await page.goto(sessionUrl);
 
-    // Resume
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
     await page.getByRole("button", { name: /start session|resume session/i }).click();
     await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
 
@@ -179,11 +152,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
       timeout: 5000,
     });
 
-    // Resume
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
     await page.getByRole("button", { name: /resume session/i }).click();
 
     // Should be on prompt 3 (last one)
@@ -197,11 +165,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     }, USER_ID);
     await page.goto(sessionUrl);
 
-    // Resume
-    const checkboxes = page.locator('input[type="checkbox"]');
-    for (let i = 0; i < 3; i++) {
-      await checkboxes.nth(i).check();
-    }
     await page.getByRole("button", { name: /start session|resume session/i }).click();
     await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
 

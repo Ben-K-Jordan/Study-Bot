@@ -15,18 +15,14 @@ interface RunInfo {
 
 interface PlanItem {
   id: string;
-  day_index: number;
   start_time: string;
   end_time: string;
   status: string;
   completed_at: string | null;
-  missed_at: string | null;
   session_id: string;
   mode: string;
   topic_scope: string;
   planned_minutes: number;
-  course_name: string;
-  exam_name: string;
   runs: RunInfo[];
 }
 
@@ -34,50 +30,18 @@ interface Plan {
   plan_id: string;
   course_name: string;
   exam_name: string;
-  exam_date: string;
-  start_date: string;
-  end_date: string;
-  timezone: string;
-  created_at: string;
   items: PlanItem[];
 }
 
 // ---- Helpers ----
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
-
-function getWeekDays(): Date[] {
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
-  monday.setHours(0, 0, 0, 0);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
-  });
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  SCHEDULED: "#4cc9f0",
-  DONE: "#00ff88",
-  MISSED: "#ff4444",
-  IN_PROGRESS: "#ffcc00",
-  SKIPPED: "#888",
-  RESCHEDULED: "#a855f7",
-};
 
 const MODE_COLORS: Record<string, string> = {
   RETRIEVAL: "#4cc9f0",
@@ -88,21 +52,12 @@ const MODE_COLORS: Record<string, string> = {
   OFFICE_HOURS_PREP: "#ff8844",
 };
 
-function statusColor(status: string): string {
-  return STATUS_COLORS[status] || "#888";
-}
-
-function modeColor(mode: string): string {
-  return MODE_COLORS[mode] || "#4cc9f0";
-}
-
 // ---- Component ----
 
 export default function DashboardPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   useEffect(() => {
     async function fetchPlans() {
@@ -131,36 +86,15 @@ export default function DashboardPage() {
   const todaySessions = useMemo(() => {
     return allItems
       .filter((item) => isSameDay(new Date(item.start_time), today))
-      .sort(
-        (a, b) =>
-          new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
-      );
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
   }, [allItems, today]);
-
-  // Weekly overview
-  const weekDays = useMemo(() => getWeekDays(), []);
-  const weekData = useMemo(() => {
-    return weekDays.map((day) => {
-      const sessions = allItems.filter((item) =>
-        isSameDay(new Date(item.start_time), day),
-      );
-      return { day, sessions };
-    });
-  }, [weekDays, allItems]);
 
   // Stats
   const stats = useMemo(() => {
     const completed = allItems.filter((i) => i.status === "DONE");
-    const totalCompleted = completed.length;
+    const totalMinutes = completed.reduce((sum, i) => sum + i.planned_minutes, 0);
+    const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
 
-    // Total study time (from planned_minutes of completed sessions)
-    const totalMinutes = completed.reduce(
-      (sum, i) => sum + i.planned_minutes,
-      0,
-    );
-    const totalHours = Math.round(totalMinutes / 60 * 10) / 10;
-
-    // Average accuracy from runs with metrics
     let totalAccuracy = 0;
     let accuracyCount = 0;
     for (const item of allItems) {
@@ -172,97 +106,26 @@ export default function DashboardPage() {
         }
       }
     }
-    const avgAccuracy =
-      accuracyCount > 0 ? Math.round((totalAccuracy / accuracyCount) * 100) : null;
+    const avgAccuracy = accuracyCount > 0 ? Math.round((totalAccuracy / accuracyCount) * 100) : null;
 
-    // Study streak: consecutive days with completed sessions, counting back from today
-    // Pre-compute a Set of date strings for O(1) lookup instead of O(n) .some() per day
-    const completedDateSet = new Set(
+    // Streak
+    const completedDates = new Set(
       completed.map((i) => {
-        const d = new Date(i.completed_at || i.end_time);
+        const d = new Date(i.completed_at || i.start_time);
         return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       }),
     );
-    const dateKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-
+    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     let streak = 0;
-    const checkDate = new Date(today);
-    while (true) {
-      if (completedDateSet.has(dateKey(checkDate))) {
-        streak++;
-        checkDate.setDate(checkDate.getDate() - 1);
-      } else {
-        // If today has no completed sessions yet, check yesterday
-        if (streak === 0) {
-          checkDate.setDate(checkDate.getDate() - 1);
-          if (completedDateSet.has(dateKey(checkDate))) {
-            streak++;
-            checkDate.setDate(checkDate.getDate() - 1);
-            continue;
-          }
-        }
-        break;
-      }
+    const check = new Date(today);
+    if (!completedDates.has(key(check))) check.setDate(check.getDate() - 1);
+    while (completedDates.has(key(check))) {
+      streak++;
+      check.setDate(check.getDate() - 1);
     }
 
-    return { totalCompleted, totalHours, avgAccuracy, streak };
+    return { completed: completed.length, totalHours, avgAccuracy, streak };
   }, [allItems, today]);
-
-  // Selected day sessions
-  const selectedDaySessions = useMemo(() => {
-    if (!selectedDay) return [];
-    return allItems
-      .filter((item) => isSameDay(new Date(item.start_time), selectedDay))
-      .sort(
-        (a, b) =>
-          new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
-      );
-  }, [allItems, selectedDay]);
-
-  // Unique courses
-  const courses = useMemo(() => {
-    const courseMap = new Map<
-      string,
-      {
-        courseName: string;
-        examName: string;
-        examDate: string;
-        total: number;
-        completed: number;
-        totalMinutes: number;
-      }
-    >();
-    for (const plan of plans) {
-      const key = `${plan.course_name}::${plan.exam_name}`;
-      const existing = courseMap.get(key);
-      const completed = plan.items.filter((i) => i.status === "DONE").length;
-      if (existing) {
-        existing.total += plan.items.length;
-        existing.completed += completed;
-        existing.totalMinutes += plan.items.reduce(
-          (s, i) => s + i.planned_minutes,
-          0,
-        );
-        // Use the latest exam date
-        if (plan.exam_date > existing.examDate) {
-          existing.examDate = plan.exam_date;
-        }
-      } else {
-        courseMap.set(key, {
-          courseName: plan.course_name,
-          examName: plan.exam_name,
-          examDate: plan.exam_date,
-          total: plan.items.length,
-          completed,
-          totalMinutes: plan.items.reduce(
-            (s, i) => s + i.planned_minutes,
-            0,
-          ),
-        });
-      }
-    }
-    return Array.from(courseMap.values());
-  }, [plans]);
 
   // ---- Render ----
 
@@ -272,7 +135,7 @@ export default function DashboardPage() {
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
         <div style={{ textAlign: "center", padding: "4rem 0", color: "#888" }}>
           <div style={spinnerStyle} />
-          <p style={{ marginTop: "1rem" }}>Loading dashboard...</p>
+          <p style={{ marginTop: "1rem" }}>Loading...</p>
         </div>
       </main>
     );
@@ -281,19 +144,10 @@ export default function DashboardPage() {
   if (error) {
     return (
       <main style={mainStyle}>
-        <div
-          style={{
-            textAlign: "center",
-            padding: "4rem 0",
-            color: "#ff4444",
-          }}
-        >
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "#ff4444" }}>
           <p style={{ fontSize: "1.2rem" }}>Failed to load dashboard</p>
           <p style={{ color: "#888", marginTop: "0.5rem" }}>{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            style={{ ...actionBtnStyle, marginTop: "1rem" }}
-          >
+          <button onClick={() => window.location.reload()} style={actionBtnStyle}>
             Retry
           </button>
         </div>
@@ -305,346 +159,96 @@ export default function DashboardPage() {
     <main style={mainStyle}>
       <h1 style={headingStyle}>Dashboard</h1>
 
-      {/* Quick Actions */}
-      <section style={{ marginBottom: "2rem" }}>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <a href="/plan" style={actionBtnStyle}>
-            + Create New Plan
-          </a>
-        </div>
-      </section>
-
       {/* Progress Stats */}
       <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionHeadingStyle}>Progress</h2>
         <div style={statsGridStyle}>
           <div style={statCardStyle}>
-            <span style={statNumberStyle}>{stats.totalCompleted}</span>
-            <span style={statLabelStyle}>Sessions Completed</span>
+            <span style={statNumberStyle}>{stats.completed}</span>
+            <span style={statLabelStyle}>Sessions</span>
           </div>
           <div style={statCardStyle}>
             <span style={statNumberStyle}>
               {stats.avgAccuracy !== null ? `${stats.avgAccuracy}%` : "--"}
             </span>
-            <span style={statLabelStyle}>Avg Accuracy</span>
+            <span style={statLabelStyle}>Accuracy</span>
           </div>
           <div style={statCardStyle}>
-            <span style={{ ...statNumberStyle, color: "#ffcc00" }}>
-              {stats.streak}
-            </span>
-            <span style={statLabelStyle}>Day Streak</span>
+            <span style={{ ...statNumberStyle, color: "#ffcc00" }}>{stats.streak}</span>
+            <span style={statLabelStyle}>Streak</span>
           </div>
           <div style={statCardStyle}>
             <span style={statNumberStyle}>{stats.totalHours}h</span>
-            <span style={statLabelStyle}>Study Time</span>
+            <span style={statLabelStyle}>Total</span>
           </div>
         </div>
       </section>
 
       {/* Today's Sessions */}
       <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionHeadingStyle}>Today&apos;s Sessions</h2>
+        <h2 style={sectionHeadingStyle}>Today</h2>
         {todaySessions.length === 0 ? (
           <div style={emptyCardStyle}>
-            <p style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
-              No sessions scheduled for today
+            <p style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>
+              {plans.length === 0 ? "No study plans yet" : "No sessions today"}
             </p>
-            <p style={{ color: "#888", fontSize: "0.85rem" }}>
+            <p style={{ color: "#666", fontSize: "0.8rem", margin: 0 }}>
               {plans.length === 0
-                ? "Create your first study plan to get started!"
-                : "Enjoy your free day -- rest is part of effective learning."}
+                ? "Create a plan to get started."
+                : "Rest is part of effective learning."}
             </p>
+            {plans.length === 0 && (
+              <a href="/plan" style={{ ...actionBtnStyle, marginTop: "1rem", display: "inline-block" }}>
+                Create Plan
+              </a>
+            )}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {todaySessions.map((item) => {
-              const mc = modeColor(item.mode);
-              return (
-              <div key={item.id} style={sessionCardStyle}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.75rem",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ color: "#888", fontSize: "0.85rem", minWidth: "6.5rem" }}>
-                    {formatTime(item.start_time)} - {formatTime(item.end_time)}
-                  </span>
-                  <span
-                    style={{
-                      ...badgeStyle,
-                      backgroundColor: mc + "22",
-                      color: mc,
-                      borderColor: mc + "44",
-                    }}
-                  >
-                    {MODE_LABELS[item.mode] || item.mode}
-                  </span>
-                  <span style={{ color: "#e0e0e0", flex: 1 }}>
-                    {item.topic_scope}
-                  </span>
-                  <span style={{ color: "#888", fontSize: "0.8rem" }}>
-                    {item.planned_minutes}min
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      color: statusColor(item.status),
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    {item.status.replace("_", " ")}
-                  </span>
-                </div>
-                {(item.status === "SCHEDULED" || item.status === "IN_PROGRESS") && (
-                  <a
-                    href={`/s/${item.session_id}`}
-                    style={{
-                      ...actionBtnSmallStyle,
-                      marginTop: "0.5rem",
-                      display: "inline-block",
-                    }}
-                  >
-                    {item.status === "IN_PROGRESS"
-                      ? "Continue Session"
-                      : "Start Session"}
-                  </a>
-                )}
-              </div>
-            );})}
-          </div>
-        )}
-      </section>
-
-      {/* Weekly Overview */}
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionHeadingStyle}>This Week</h2>
-        <div style={weekGridStyle}>
-          {weekData.map(({ day, sessions }, idx) => {
-            const isToday = isSameDay(day, today);
-            const isSelected = selectedDay !== null && isSameDay(day, selectedDay);
-            const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-            return (
-              <div
-                key={idx}
-                onClick={() => setSelectedDay(isSelected ? null : day)}
-                style={{
-                  ...weekDayStyle,
-                  borderColor: isSelected ? "#00ff88" : isToday ? "#4cc9f0" : "#333",
-                  backgroundColor: isSelected ? "#00ff8811" : isToday ? "#4cc9f011" : "transparent",
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "0.75rem",
-                    color: isSelected ? "#00ff88" : isToday ? "#4cc9f0" : "#888",
-                    fontWeight: isSelected || isToday ? 700 : 400,
-                    marginBottom: "0.25rem",
-                  }}
-                >
-                  {dayNames[idx]}
-                </span>
-                <span
-                  style={{
-                    fontSize: "0.7rem",
-                    color: isSelected ? "#00ff88" : "#666",
-                    marginBottom: "0.5rem",
-                  }}
-                >
-                  {day.getDate()}
-                </span>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "3px",
-                    alignItems: "center",
-                    flex: 1,
-                    justifyContent: "flex-end",
-                  }}
-                >
-                  {sessions.length === 0 && (
-                    <span style={{ fontSize: "0.65rem", color: "#444" }}>--</span>
-                  )}
-                  {sessions.map((s) => (
-                    <div
-                      key={s.id}
-                      title={`${MODE_LABELS[s.mode] || s.mode}: ${s.topic_scope} (${s.status})`}
-                      style={{
-                        width: "100%",
-                        height: "6px",
-                        borderRadius: "3px",
-                        backgroundColor:
-                          s.status === "DONE"
-                            ? "#00ff88"
-                            : s.status === "MISSED"
-                              ? "#ff4444"
-                              : modeColor(s.mode),
-                        opacity: s.status === "DONE" ? 1 : 0.6,
-                      }}
-                    />
-                  ))}
-                </div>
-                {sessions.length > 0 && (
-                  <span
-                    style={{
-                      fontSize: "0.7rem",
-                      color: "#888",
-                      marginTop: "0.35rem",
-                    }}
-                  >
-                    {sessions.length}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Selected Day Detail Panel */}
-        {selectedDay && (
-          <div style={dayDetailPanelStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-              <h3 style={{ margin: 0, fontSize: "0.95rem", color: "#00ff88" }}>
-                {selectedDay.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
-              </h3>
-              <button
-                onClick={() => setSelectedDay(null)}
-                style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: "1rem", fontFamily: "inherit" }}
-              >
-                close
-              </button>
-            </div>
-            {selectedDaySessions.length === 0 ? (
-              <p style={{ color: "#888", fontSize: "0.85rem", margin: 0 }}>No sessions scheduled for this day.</p>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {selectedDaySessions.map((item) => {
-                  const totalMinutes = item.planned_minutes;
-                  const mc = modeColor(item.mode);
-                  return (
-                    <div key={item.id} style={dayDetailSessionStyle}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                        <span style={{ color: "#888", fontSize: "0.85rem", minWidth: "6.5rem" }}>
-                          {formatTime(item.start_time)} - {formatTime(item.end_time)}
-                        </span>
-                        <span
-                          style={{
-                            ...badgeStyle,
-                            backgroundColor: mc + "22",
-                            color: mc,
-                            borderColor: mc + "44",
-                          }}
-                        >
-                          {MODE_LABELS[item.mode] || item.mode}
-                        </span>
-                        <span style={{ color: statusColor(item.status), fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase" }}>
-                          {item.status.replace("_", " ")}
-                        </span>
-                      </div>
-                      <div style={{ marginTop: "0.4rem", color: "#ccc", fontSize: "0.85rem" }}>
-                        {item.topic_scope}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.4rem" }}>
-                        <span style={{ color: "#888", fontSize: "0.8rem" }}>
-                          {totalMinutes} min
-                        </span>
-                        <span style={{ color: "#666", fontSize: "0.8rem" }}>
-                          {item.course_name}
-                        </span>
-                        {(item.status === "SCHEDULED" || item.status === "IN_PROGRESS") && (
-                          <a href={`/s/${item.session_id}`} style={actionBtnSmallStyle}>
-                            {item.status === "IN_PROGRESS" ? "Continue" : "Start"}
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{ marginTop: "0.25rem", fontSize: "0.8rem", color: "#888", textAlign: "right" }}>
-                  {selectedDaySessions.length} session{selectedDaySessions.length !== 1 ? "s" : ""} &middot;{" "}
-                  {selectedDaySessions.reduce((s, i) => s + i.planned_minutes, 0)} min total
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* Course Cards */}
-      {courses.length > 0 && (
-        <section style={{ marginBottom: "2rem" }}>
-          <h2 style={sectionHeadingStyle}>Courses</h2>
-          <div style={courseGridStyle}>
-            {courses.map((c, idx) => {
-              const pct =
-                c.total > 0 ? Math.round((c.completed / c.total) * 100) : 0;
+              const mc = MODE_COLORS[item.mode] || "#4cc9f0";
+              const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
               return (
                 <a
-                  key={idx}
-                  href="/plan"
-                  style={{ textDecoration: "none", color: "inherit" }}
+                  key={item.id}
+                  href={actionable ? `/s/${item.session_id}` : undefined}
+                  style={{
+                    ...sessionCardStyle,
+                    textDecoration: "none",
+                    cursor: actionable ? "pointer" : "default",
+                    borderLeft: `3px solid ${mc}`,
+                  }}
                 >
-                  <div style={courseCardStyle}>
-                    <div
-                      style={{
-                        fontSize: "1rem",
-                        fontWeight: 600,
-                        color: "#e0e0e0",
-                        marginBottom: "0.25rem",
-                      }}
-                    >
-                      {c.courseName}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "0.8rem",
-                        color: "#888",
-                        marginBottom: "0.75rem",
-                      }}
-                    >
-                      {c.examName}
-                      {c.examDate && (
-                        <span style={{ marginLeft: "0.5rem", color: "#666" }}>
-                          Exam: {c.examDate}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Progress bar */}
-                    <div style={progressBarBgStyle}>
-                      <div
-                        style={{
-                          ...progressBarFillStyle,
-                          width: `${pct}%`,
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginTop: "0.35rem",
-                        fontSize: "0.75rem",
-                        color: "#888",
-                      }}
-                    >
-                      <span>
-                        {c.completed} / {c.total} sessions
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <span style={{ color: "#666", fontSize: "0.8rem", minWidth: "6rem" }}>
+                      {formatTime(item.start_time)} - {formatTime(item.end_time)}
+                    </span>
+                    <span style={{ fontWeight: 600, color: "#e0e0e0" }}>
+                      {MODE_LABELS[item.mode] || item.mode}
+                    </span>
+                    <span style={{ color: "#888", flex: 1, fontSize: "0.85rem" }}>
+                      {item.topic_scope}
+                    </span>
+                    {actionable && (
+                      <span style={{ color: "#00ff88", fontSize: "0.8rem", fontWeight: 600 }}>
+                        {item.status === "IN_PROGRESS" ? "Continue" : "Start"}
                       </span>
-                      <span style={{ color: "#00ff88" }}>{pct}%</span>
-                    </div>
+                    )}
+                    {item.status === "DONE" && (
+                      <span style={{ color: "#00ff88", fontSize: "0.75rem" }}>Done</span>
+                    )}
                   </div>
                 </a>
               );
             })}
           </div>
-        </section>
+        )}
+      </section>
+
+      {/* Create plan shortcut if plans exist */}
+      {plans.length > 0 && (
+        <a href="/plan" style={{ ...actionBtnStyle, display: "inline-block" }}>
+          + New Plan
+        </a>
       )}
     </main>
   );
@@ -653,10 +257,10 @@ export default function DashboardPage() {
 // ---- Styles ----
 
 const mainStyle: React.CSSProperties = {
-  maxWidth: 960,
+  maxWidth: 700,
   margin: "0 auto",
   padding: "1.5rem 1rem",
-  fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+  fontFamily: "'SF Mono', 'Fira Code', monospace",
   color: "#e0e0e0",
   backgroundColor: "#0a0a0a",
   minHeight: "100vh",
@@ -670,8 +274,8 @@ const headingStyle: React.CSSProperties = {
 };
 
 const sectionHeadingStyle: React.CSSProperties = {
-  fontSize: "0.95rem",
-  color: "#4cc9f0",
+  fontSize: "0.85rem",
+  color: "#888",
   marginBottom: "0.75rem",
   fontWeight: 600,
   textTransform: "uppercase",
@@ -680,50 +284,40 @@ const sectionHeadingStyle: React.CSSProperties = {
 
 const statsGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-  gap: "0.75rem",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: "0.5rem",
 };
 
 const statCardStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
-  padding: "1.25rem 1rem",
-  border: "1px solid #333",
-  borderRadius: "8px",
-  backgroundColor: "#16213e",
+  padding: "1rem 0.5rem",
+  border: "1px solid #222",
+  borderRadius: "6px",
+  backgroundColor: "#111",
 };
 
 const statNumberStyle: React.CSSProperties = {
-  fontSize: "2rem",
+  fontSize: "1.5rem",
   fontWeight: 700,
   color: "#00ff88",
   lineHeight: 1,
 };
 
 const statLabelStyle: React.CSSProperties = {
-  fontSize: "0.75rem",
-  color: "#888",
-  marginTop: "0.5rem",
+  fontSize: "0.65rem",
+  color: "#666",
+  marginTop: "0.4rem",
   textTransform: "uppercase",
-  letterSpacing: "0.06em",
+  letterSpacing: "0.05em",
 };
 
 const sessionCardStyle: React.CSSProperties = {
   padding: "0.75rem 1rem",
-  border: "1px solid #333",
-  borderRadius: "8px",
-  backgroundColor: "#1a1a2e",
-  transition: "border-color 0.15s",
-};
-
-const badgeStyle: React.CSSProperties = {
-  fontSize: "0.7rem",
-  padding: "0.15rem 0.5rem",
-  borderRadius: "4px",
-  border: "1px solid",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
+  border: "1px solid #222",
+  borderRadius: "6px",
+  backgroundColor: "#111",
 };
 
 const emptyCardStyle: React.CSSProperties = {
@@ -734,54 +328,7 @@ const emptyCardStyle: React.CSSProperties = {
   color: "#ccc",
 };
 
-const weekGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(7, 1fr)",
-  gap: "0.5rem",
-};
-
-const weekDayStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  padding: "0.5rem 0.25rem",
-  border: "1px solid #333",
-  borderRadius: "6px",
-  minHeight: "80px",
-};
-
-const courseGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-  gap: "0.75rem",
-};
-
-const courseCardStyle: React.CSSProperties = {
-  padding: "1rem",
-  border: "1px solid #333",
-  borderRadius: "8px",
-  backgroundColor: "#1a1a2e",
-  cursor: "pointer",
-  transition: "border-color 0.15s, transform 0.15s",
-};
-
-const progressBarBgStyle: React.CSSProperties = {
-  width: "100%",
-  height: "6px",
-  backgroundColor: "#333",
-  borderRadius: "3px",
-  overflow: "hidden",
-};
-
-const progressBarFillStyle: React.CSSProperties = {
-  height: "100%",
-  backgroundColor: "#00ff88",
-  borderRadius: "3px",
-  transition: "width 0.3s ease",
-};
-
 const actionBtnStyle: React.CSSProperties = {
-  display: "inline-block",
   padding: "0.5rem 1rem",
   fontSize: "0.8rem",
   color: "#00ff88",
@@ -790,35 +337,7 @@ const actionBtnStyle: React.CSSProperties = {
   backgroundColor: "#00ff8811",
   textDecoration: "none",
   cursor: "pointer",
-  transition: "background-color 0.15s, border-color 0.15s",
   fontFamily: "inherit",
-};
-
-const actionBtnSmallStyle: React.CSSProperties = {
-  padding: "0.3rem 0.75rem",
-  fontSize: "0.75rem",
-  color: "#4cc9f0",
-  border: "1px solid #4cc9f044",
-  borderRadius: "4px",
-  backgroundColor: "#4cc9f011",
-  textDecoration: "none",
-  cursor: "pointer",
-  fontFamily: "inherit",
-};
-
-const dayDetailPanelStyle: React.CSSProperties = {
-  marginTop: "0.75rem",
-  padding: "1rem",
-  border: "1px solid #00ff8833",
-  borderRadius: "8px",
-  backgroundColor: "#0d1117",
-};
-
-const dayDetailSessionStyle: React.CSSProperties = {
-  padding: "0.75rem",
-  border: "1px solid #333",
-  borderRadius: "6px",
-  backgroundColor: "#1a1a2e",
 };
 
 const spinnerStyle: React.CSSProperties = {
