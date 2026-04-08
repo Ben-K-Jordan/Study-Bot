@@ -7,7 +7,7 @@ import { generatePlanWithResearch, StudyPreferences } from "@/lib/research-plan-
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
 import { getGoogleClient } from "@/lib/google/calendar-client";
-import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/google/free-slots";
+import { computeFreeSlots, fitBlocksIntoSlots, filterBusyEvents, eventsToBufferedIntervals, type TimeInterval } from "@/lib/google/free-slots";
 import { buildGoogleCalendarLink } from "@/lib/gcal-link";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
@@ -144,11 +144,23 @@ export async function createPlan(userId: string, input: unknown) {
     if (integration) {
       const client = getGoogleClient(userId);
       const calendarId = integration.calendarIdSelected || "primary";
-      // Also check busy calendars for fatigue/exercise detection
+      // Check busy calendars for availability blocking
       const busyCalendarIds: string[] = integration.busyCalendarIds
         ? integration.busyCalendarIds.split(",").map((s) => s.trim()).filter(Boolean)
         : [];
-      const allCalendarIds = [...new Set([calendarId, ...busyCalendarIds])];
+      // Scrape ALL accessible calendars for comprehensive exercise/meeting detection
+      let allCalendarIds: string[];
+      try {
+        const calendars = await client.listCalendars();
+        allCalendarIds = calendars.map((c) => c.id);
+        // Ensure the primary + busy calendars are always included
+        for (const cid of [calendarId, ...busyCalendarIds]) {
+          if (!allCalendarIds.includes(cid)) allCalendarIds.push(cid);
+        }
+      } catch {
+        // Fallback: just use selected + busy calendars
+        allCalendarIds = [...new Set([calendarId, ...busyCalendarIds])];
+      }
 
       // Query 7-day window
       const timeMin = startDate.toISOString();
@@ -157,10 +169,9 @@ export async function createPlan(userId: string, input: unknown) {
       const timeMax = windowEnd.toISOString();
 
       try {
-        // Fetch busy intervals AND actual events in parallel
-        const [busy, ...eventLists] = await Promise.all([
-          client.freebusyQuery({ timeMin, timeMax, calendarIds: allCalendarIds }),
-          ...allCalendarIds.map((cid) =>
+        // Fetch events from ALL calendars (for exercise/meeting/fatigue detection)
+        const eventLists = await Promise.all(
+          allCalendarIds.map((cid) =>
             client.listEvents({
               calendarId: cid,
               timeMin,
@@ -169,19 +180,25 @@ export async function createPlan(userId: string, input: unknown) {
               maxResults: 250,
             }).catch(() => []),
           ),
-        ]);
+        );
 
-        const busyIntervals: TimeInterval[] = busy.map((b) => ({
-          start: new Date(b.start).getTime(),
-          end: new Date(b.end).getTime(),
-        }));
+        const rawEvents = eventLists.flat();
 
-        // Flatten all events into IntelEvent format, grouped by day
-        const allEvents: IntelEvent[] = eventLists.flat().map((e) => ({
-          summary: e.summary || "",
-          start: new Date(e.start).getTime(),
-          end: new Date(e.end).getTime(),
-        }));
+        // Filter out declined, cancelled, and transparent (free) events
+        const busyEvents = filterBusyEvents(rawEvents);
+
+        // Convert to buffered intervals (adds context-switching + travel time)
+        const busyIntervals = eventsToBufferedIntervals(busyEvents);
+
+        // Keep ALL events (including declined) for intelligence scoring
+        // (exercise detection doesn't care about acceptance status)
+        const allEvents: IntelEvent[] = rawEvents
+          .filter((e) => e.start && e.end && e.status !== "cancelled")
+          .map((e) => ({
+            summary: e.summary || "",
+            start: new Date(e.start).getTime(),
+            end: new Date(e.end).getTime(),
+          }));
 
         // Estimate bedtime from event patterns
         inferredBedtime = estimateBedtime(allEvents);
@@ -196,7 +213,7 @@ export async function createPlan(userId: string, input: unknown) {
           googleEventsByDay.get(dayIdx)!.push(event);
         }
 
-        // Compute free slots per day
+        // Compute free slots per day using buffered busy intervals
         googleFreeSlotsByDay = new Map();
         for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
           const dayAvail = parsed.availability[dayIdx];
@@ -208,8 +225,10 @@ export async function createPlan(userId: string, input: unknown) {
 
         logger.info("plan.google_availability", {
           user_id: userId,
-          busy_count: busy.length,
-          events_fetched: allEvents.length,
+          total_events_scraped: rawEvents.length,
+          busy_events: busyEvents.length,
+          declined_filtered: rawEvents.length - busyEvents.length,
+          calendars_scraped: allCalendarIds.length,
           inferred_bedtime: inferredBedtime,
         });
       } catch (err) {

@@ -59,7 +59,13 @@ export interface CalendarEvent {
   htmlLink?: string;
   etag?: string;
   updated?: string;
-  status?: string;
+  status?: string;           // "confirmed" | "tentative" | "cancelled"
+  transparency?: string;     // "opaque" (busy) | "transparent" (free)
+  location?: string;         // event location (for travel time estimation)
+  selfResponseStatus?: string; // "accepted" | "declined" | "tentative" | "needsAction"
+  allDay?: boolean;          // true if this is an all-day event (date, not dateTime)
+  description?: string;      // event description (for category detection)
+  colorId?: string;          // Google Calendar color ID
 }
 
 export interface EventListOptions {
@@ -143,7 +149,7 @@ function defaultRetryable(err: unknown): boolean {
 
 // ---- Partial response fields ----
 
-const EVENT_FIELDS = "id,etag,updated,htmlLink,summary,start,end,status,extendedProperties";
+const EVENT_FIELDS = "id,etag,updated,htmlLink,summary,description,start,end,status,transparency,location,colorId,attendees(self,responseStatus),extendedProperties";
 const CALENDAR_LIST_FIELDS = "items(id,summary,primary,accessRole,timeZone)";
 
 // ---- Concurrency ----
@@ -451,17 +457,37 @@ function buildEventBody(input: CalendarEventInput): Record<string, unknown> {
 }
 
 function parseEventResponse(data: Record<string, unknown>): CalendarEvent {
-  const start = data.start as { dateTime?: string } | undefined;
-  const end = data.end as { dateTime?: string } | undefined;
+  const startObj = data.start as { dateTime?: string; date?: string } | undefined;
+  const endObj = data.end as { dateTime?: string; date?: string } | undefined;
+
+  // All-day events use "date" (YYYY-MM-DD), timed events use "dateTime" (ISO)
+  const allDay = !startObj?.dateTime && !!startObj?.date;
+  const startStr = startObj?.dateTime ?? (startObj?.date ? `${startObj.date}T00:00:00` : "");
+  const endStr = endObj?.dateTime ?? (endObj?.date ? `${endObj.date}T23:59:59` : "");
+
+  // Extract self attendance status from attendees array
+  let selfResponseStatus: string | undefined;
+  const attendees = data.attendees as { self?: boolean; responseStatus?: string }[] | undefined;
+  if (attendees) {
+    const self = attendees.find((a) => a.self === true);
+    if (self) selfResponseStatus = self.responseStatus;
+  }
+
   return {
     id: data.id as string,
     summary: (data.summary as string) || "",
-    start: start?.dateTime ?? "",
-    end: end?.dateTime ?? "",
+    start: startStr,
+    end: endStr,
     htmlLink: (data.htmlLink as string) || undefined,
     etag: (data.etag as string) || undefined,
     updated: (data.updated as string) || undefined,
     status: (data.status as string) || undefined,
+    transparency: (data.transparency as string) || undefined,
+    location: (data.location as string) || undefined,
+    selfResponseStatus,
+    allDay,
+    description: (data.description as string) || undefined,
+    colorId: (data.colorId as string) || undefined,
   };
 }
 
