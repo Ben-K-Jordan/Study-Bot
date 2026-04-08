@@ -363,18 +363,17 @@ export function SessionRunner({ session }: Props) {
         maxWidth: 700,
         margin: "0 auto",
         padding: "1.5rem 1rem",
-        fontFamily:
-          "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-        color: "#e0e0e0",
-        backgroundColor: "#1a1a2e",
+        fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+        color: "#e8dcc8",
+        backgroundColor: "#2a3d2a",
         minHeight: "100vh",
       }}
     >
       {error && (
         <div
           style={{
-            background: "#ff4444",
-            color: "#fff",
+            background: "#e88888",
+            color: "#1f2e1f",
             padding: "0.5rem 1rem",
             borderRadius: 4,
             marginBottom: "1rem",

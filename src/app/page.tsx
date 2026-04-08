@@ -44,12 +44,12 @@ function isSameDay(a: Date, b: Date): boolean {
 }
 
 const MODE_COLORS: Record<string, string> = {
-  RETRIEVAL: "#4cc9f0",
-  INTERLEAVED_PRACTICE: "#a855f7",
-  ERROR_REPAIR: "#ff4444",
-  EXAM_SIM: "#ffcc00",
-  WORKED_EXAMPLES: "#00ff88",
-  OFFICE_HOURS_PREP: "#ff8844",
+  RETRIEVAL: "#7ec8e3",
+  INTERLEAVED_PRACTICE: "#c4a0ff",
+  ERROR_REPAIR: "#e88888",
+  EXAM_SIM: "#f0dc4e",
+  WORKED_EXAMPLES: "#88cc88",
+  OFFICE_HOURS_PREP: "#e8a040",
 };
 
 // ---- Component ----
@@ -133,7 +133,7 @@ export default function DashboardPage() {
     return (
       <main style={mainStyle}>
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "#888" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "#a89a82" }}>
           <div style={spinnerStyle} />
           <p style={{ marginTop: "1rem" }}>Loading...</p>
         </div>
@@ -144,9 +144,9 @@ export default function DashboardPage() {
   if (error) {
     return (
       <main style={mainStyle}>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "#ff4444" }}>
-          <p style={{ fontSize: "1.2rem" }}>Failed to load dashboard</p>
-          <p style={{ color: "#888", marginTop: "0.5rem" }}>{error}</p>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "#e88888" }}>
+          <p style={{ fontSize: "1.3rem" }}>Failed to load dashboard</p>
+          <p style={{ color: "#a89a82", marginTop: "0.5rem" }}>{error}</p>
           <button onClick={() => window.location.reload()} style={actionBtnStyle}>
             Retry
           </button>
@@ -173,7 +173,7 @@ export default function DashboardPage() {
             <span style={statLabelStyle}>Accuracy</span>
           </div>
           <div style={statCardStyle}>
-            <span style={{ ...statNumberStyle, color: "#ffcc00" }}>{stats.streak}</span>
+            <span style={{ ...statNumberStyle, color: "#e8a040" }}>{stats.streak}</span>
             <span style={statLabelStyle}>Streak</span>
           </div>
           <div style={statCardStyle}>
@@ -188,10 +188,10 @@ export default function DashboardPage() {
         <h2 style={sectionHeadingStyle}>Today</h2>
         {todaySessions.length === 0 ? (
           <div style={emptyCardStyle}>
-            <p style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>
+            <p style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
               {plans.length === 0 ? "No study plans yet" : "No sessions today"}
             </p>
-            <p style={{ color: "#666", fontSize: "0.8rem", margin: 0 }}>
+            <p style={{ color: "#7a7060", fontSize: "0.9rem", margin: 0 }}>
               {plans.length === 0
                 ? "Create a plan to get started."
                 : "Rest is part of effective learning."}
@@ -205,7 +205,7 @@ export default function DashboardPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {todaySessions.map((item) => {
-              const mc = MODE_COLORS[item.mode] || "#4cc9f0";
+              const mc = MODE_COLORS[item.mode] || "#7ec8e3";
               const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
               return (
                 <a
@@ -219,22 +219,22 @@ export default function DashboardPage() {
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                    <span style={{ color: "#666", fontSize: "0.8rem", minWidth: "6rem" }}>
+                    <span style={{ color: "#7a7060", fontSize: "0.9rem", minWidth: "6rem" }}>
                       {formatTime(item.start_time)} - {formatTime(item.end_time)}
                     </span>
-                    <span style={{ fontWeight: 600, color: "#e0e0e0" }}>
+                    <span style={{ fontWeight: 600, color: "#e8dcc8" }}>
                       {MODE_LABELS[item.mode] || item.mode}
                     </span>
-                    <span style={{ color: "#888", flex: 1, fontSize: "0.85rem" }}>
+                    <span style={{ color: "#a89a82", flex: 1, fontSize: "0.95rem" }}>
                       {item.topic_scope}
                     </span>
                     {actionable && (
-                      <span style={{ color: "#00ff88", fontSize: "0.8rem", fontWeight: 600 }}>
+                      <span style={{ color: "#f0dc4e", fontSize: "0.9rem", fontWeight: 600 }}>
                         {item.status === "IN_PROGRESS" ? "Continue" : "Start"}
                       </span>
                     )}
                     {item.status === "DONE" && (
-                      <span style={{ color: "#00ff88", fontSize: "0.75rem" }}>Done</span>
+                      <span style={{ color: "#88cc88", fontSize: "0.85rem" }}>Done</span>
                     )}
                   </div>
                 </a>
@@ -260,22 +260,23 @@ const mainStyle: React.CSSProperties = {
   maxWidth: 700,
   margin: "0 auto",
   padding: "1.5rem 1rem",
-  fontFamily: "'SF Mono', 'Fira Code', monospace",
-  color: "#e0e0e0",
-  backgroundColor: "#0a0a0a",
+  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  color: "#e8dcc8",
+  backgroundColor: "#2a3d2a",
   minHeight: "100vh",
 };
 
 const headingStyle: React.CSSProperties = {
-  fontSize: "1.4rem",
+  fontSize: "2rem",
   margin: "0 0 1.5rem",
-  color: "#00ff88",
+  color: "#f0dc4e",
   fontWeight: 700,
+  fontFamily: "var(--font-display), 'Caveat', cursive",
 };
 
 const sectionHeadingStyle: React.CSSProperties = {
-  fontSize: "0.85rem",
-  color: "#888",
+  fontSize: "1rem",
+  color: "#a89a82",
   marginBottom: "0.75rem",
   fontWeight: 600,
   textTransform: "uppercase",
@@ -293,21 +294,22 @@ const statCardStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   padding: "1rem 0.5rem",
-  border: "1px solid #222",
+  border: "1px solid #4a6a4a",
   borderRadius: "6px",
-  backgroundColor: "#111",
+  backgroundColor: "#334d33",
 };
 
 const statNumberStyle: React.CSSProperties = {
   fontSize: "1.5rem",
   fontWeight: 700,
-  color: "#00ff88",
+  color: "#f0dc4e",
   lineHeight: 1,
+  fontFamily: "var(--font-display), 'Caveat', cursive",
 };
 
 const statLabelStyle: React.CSSProperties = {
-  fontSize: "0.65rem",
-  color: "#666",
+  fontSize: "0.75rem",
+  color: "#7a7060",
   marginTop: "0.4rem",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
@@ -315,26 +317,26 @@ const statLabelStyle: React.CSSProperties = {
 
 const sessionCardStyle: React.CSSProperties = {
   padding: "0.75rem 1rem",
-  border: "1px solid #222",
+  border: "1px solid #4a6a4a",
   borderRadius: "6px",
-  backgroundColor: "#111",
+  backgroundColor: "#334d33",
 };
 
 const emptyCardStyle: React.CSSProperties = {
   padding: "2rem",
-  border: "1px dashed #333",
+  border: "1px dashed #5a7a5a",
   borderRadius: "8px",
   textAlign: "center",
-  color: "#ccc",
+  color: "#c8bca8",
 };
 
 const actionBtnStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
-  fontSize: "0.8rem",
-  color: "#00ff88",
-  border: "1px solid #00ff8844",
+  fontSize: "0.9rem",
+  color: "#f0dc4e",
+  border: "1px solid #f0dc4e44",
   borderRadius: "6px",
-  backgroundColor: "#00ff8811",
+  backgroundColor: "#f0dc4e11",
   textDecoration: "none",
   cursor: "pointer",
   fontFamily: "inherit",
@@ -343,8 +345,8 @@ const actionBtnStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: "32px",
   height: "32px",
-  border: "3px solid #333",
-  borderTop: "3px solid #00ff88",
+  border: "3px solid #4a6a4a",
+  borderTop: "3px solid #f0dc4e",
   borderRadius: "50%",
   margin: "0 auto",
   animation: "dash-spin 0.8s linear infinite",

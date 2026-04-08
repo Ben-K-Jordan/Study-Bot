@@ -30,10 +30,11 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
     <div style={{ textAlign: "center", padding: "3rem 0" }}>
       <div
         style={{
-          fontSize: "0.75rem",
+          fontSize: "0.85rem",
           letterSpacing: "0.1em",
-          color: "#f39c12",
+          color: "#e8a040",
           marginBottom: "1rem",
+          fontFamily: "var(--font-display), 'Caveat', cursive",
         }}
       >
         BREAK TIME
@@ -45,7 +46,8 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
           marginBottom: "1.5rem",
-          color: "#f39c12",
+          color: "#e8a040",
+          fontFamily: "var(--font-display), 'Caveat', cursive",
         }}
       >
         {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
@@ -53,8 +55,8 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
 
       <div
         style={{
-          background: "#16213e",
-          border: "1px solid #333",
+          background: "#334d33",
+          border: "1px solid #4a6a4a",
           borderRadius: 6,
           padding: "1.25rem",
           marginBottom: "2rem",
@@ -64,14 +66,14 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         <p
           style={{
             margin: "0 0 0.75rem",
-            fontSize: "0.8rem",
+            fontSize: "0.9rem",
             fontWeight: 600,
-            color: "#4cc9f0",
+            color: "#7ec8e3",
           }}
         >
           DO THIS NOW:
         </p>
-        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.85rem", lineHeight: 1.8 }}>
+        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.95rem", lineHeight: 1.8 }}>
           <li>Stand up and stretch</li>
           <li>Get water</li>
           <li>Look at something far away (20-20-20 rule)</li>
@@ -79,7 +81,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         </ul>
       </div>
 
-      <p style={{ fontSize: "0.75rem", color: "#666", marginBottom: "1rem" }}>
+      <p style={{ fontSize: "0.85rem", color: "#7a7060", marginBottom: "1rem" }}>
         Cycle {breakState.current_cycle + 1} of {breakState.total_cycles}
       </p>
 
@@ -87,11 +89,11 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         onClick={onBreakEnd}
         style={{
           padding: "0.5rem 1.5rem",
-          fontSize: "0.8rem",
-          fontFamily: "inherit",
+          fontSize: "0.9rem",
+          fontFamily: "var(--font-body), 'Patrick Hand', cursive",
           background: "transparent",
-          color: "#666",
-          border: "1px solid #444",
+          color: "#7a7060",
+          border: "1px solid #4a6a4a",
           borderRadius: 6,
           cursor: "pointer",
         }}

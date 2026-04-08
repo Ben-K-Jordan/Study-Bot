@@ -25,23 +25,23 @@ export function NavBar() {
     left: 0,
     right: 0,
     height: NAV_HEIGHT,
-    background: "#0d1117",
-    borderBottom: "1px solid #1e2a3a",
+    background: "#1f2e1f",
+    borderBottom: "1px solid #3a5a3a",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 1.25rem",
-    fontFamily: "monospace",
+    fontFamily: "var(--font-body), 'Patrick Hand', cursive",
     zIndex: 9999,
   };
 
   const brandStyle: React.CSSProperties = {
-    color: "#00ff88",
-    fontSize: "1.1rem",
+    color: "#f0dc4e",
+    fontSize: "1.4rem",
     fontWeight: "bold",
     textDecoration: "none",
-    fontFamily: "monospace",
-    letterSpacing: "0.05em",
+    fontFamily: "var(--font-display), 'Caveat', cursive",
+    letterSpacing: "0.02em",
     flexShrink: 0,
   };
 
@@ -66,12 +66,12 @@ export function NavBar() {
           const linkStyle: React.CSSProperties = {
             display: "block",
             padding: "0.35rem 0.75rem",
-            color: active ? "#00ff88" : "#888",
+            color: active ? "#f0dc4e" : "#a89a82",
             textDecoration: "none",
-            fontFamily: "monospace",
-            fontSize: "0.85rem",
+            fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+            fontSize: "1rem",
             fontWeight: active ? "bold" : "normal",
-            borderBottom: active ? "2px solid #00ff88" : "2px solid transparent",
+            borderBottom: active ? "2px solid #f0dc4e" : "2px solid transparent",
             transition: "color 0.15s, border-color 0.15s",
             whiteSpace: "nowrap",
           };
@@ -82,10 +82,10 @@ export function NavBar() {
                 href={href}
                 style={linkStyle}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.color = "#ccc";
+                  if (!active) e.currentTarget.style.color = "#e8dcc8";
                 }}
                 onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.color = "#888";
+                  if (!active) e.currentTarget.style.color = "#a89a82";
                 }}
               >
                 {label}
