@@ -6,6 +6,8 @@ import {
   fitBlocksScored,
   estimateBedtime,
   findIntradaySpacingViolations,
+  isClassEvent,
+  isRelatedClass,
   MAX_DURATION_BY_MODE,
   type CalendarEvent,
 } from "@/lib/schedule-intelligence";
@@ -341,5 +343,161 @@ describe("findIntradaySpacingViolations", () => {
     ];
     const violations = findIntradaySpacingViolations(blocks, 60);
     expect(violations).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isClassEvent
+// ---------------------------------------------------------------------------
+
+describe("isClassEvent", () => {
+  it("detects events with class keywords", () => {
+    expect(isClassEvent("Organic Chemistry Lecture")).toBe(true);
+    expect(isClassEvent("Math discussion section")).toBe(true);
+    expect(isClassEvent("Physics lab")).toBe(true);
+    expect(isClassEvent("CS 101 recitation")).toBe(true);
+  });
+
+  it("detects course code patterns", () => {
+    expect(isClassEvent("CS 101")).toBe(true);
+    expect(isClassEvent("MATH 240")).toBe(true);
+    expect(isClassEvent("PHYS 2A")).toBe(true);
+    expect(isClassEvent("BIO 101L")).toBe(true);
+    expect(isClassEvent("EE 120")).toBe(true);
+  });
+
+  it("does not match non-class events", () => {
+    expect(isClassEvent("Gym workout")).toBe(false);
+    expect(isClassEvent("Dinner with friends")).toBe(false);
+    expect(isClassEvent("Doctor appointment")).toBe(false);
+    expect(isClassEvent("Team standup")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRelatedClass
+// ---------------------------------------------------------------------------
+
+describe("isRelatedClass", () => {
+  it("matches exact course name in event summary", () => {
+    expect(isRelatedClass("CS 101 Lecture", "CS 101")).toBe(true);
+  });
+
+  it("matches partial course name words", () => {
+    expect(isRelatedClass("Organic Chemistry Lab", "Organic Chemistry")).toBe(true);
+  });
+
+  it("matches topic scope keywords", () => {
+    expect(isRelatedClass(
+      "Linear Algebra Discussion",
+      undefined,
+      "Linear Algebra, Matrices, Determinants",
+    )).toBe(true);
+  });
+
+  it("does not match unrelated classes", () => {
+    expect(isRelatedClass("Biology 101 Lecture", "CS 101")).toBe(false);
+  });
+
+  it("does not match with no course/topic info", () => {
+    expect(isRelatedClass("CS 101", undefined, undefined)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Post-class timing in scoreSlot
+// ---------------------------------------------------------------------------
+
+describe("post-class timing", () => {
+  it("penalizes same-subject study immediately after class", () => {
+    // Class ends at 10:00, study slot at 10:15 (15 min gap)
+    const classEvent = makeEvent("CS 101 Lecture", 9, 60);
+
+    const immediateScore = scoreSlot({
+      slot: makeSlot(10, 45), // 10:00-10:45, right after class
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [classEvent],
+      bedtimeHour: 23,
+      courseName: "CS 101",
+      topicScope: "Data Structures",
+    });
+
+    const delayedScore = scoreSlot({
+      slot: makeSlot(12, 45), // 12:00-12:45, 2 hours after class
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [classEvent],
+      bedtimeHour: 23,
+      courseName: "CS 101",
+      topicScope: "Data Structures",
+    });
+
+    // Delayed slot should score much better than immediate
+    expect(delayedScore).toBeGreaterThan(immediateScore);
+  });
+
+  it("gives optimal score to 1-2 hour post-class window", () => {
+    const classEvent = makeEvent("MATH 240 Lecture", 9, 60);
+
+    const optimalWindow = scoreSlot({
+      slot: makeSlot(11, 45), // 1.5 hours after class ends at 10
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [classEvent],
+      bedtimeHour: 23,
+      courseName: "MATH 240",
+    });
+
+    const tooSoon = scoreSlot({
+      slot: makeSlot(10, 45), // 0 hours after class
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [classEvent],
+      bedtimeHour: 23,
+      courseName: "MATH 240",
+    });
+
+    expect(optimalWindow).toBeGreaterThan(tooSoon);
+  });
+
+  it("allows different-subject study right after class", () => {
+    const classEvent = makeEvent("Biology 101 Lecture", 9, 60);
+
+    const differentSubject = scoreSlot({
+      slot: makeSlot(10, 45), // right after bio class
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [classEvent],
+      bedtimeHour: 23,
+      courseName: "CS 101", // different course
+      topicScope: "Data Structures",
+    });
+
+    const sameSubject = scoreSlot({
+      slot: makeSlot(10, 45),
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [classEvent],
+      bedtimeHour: 23,
+      courseName: "Biology 101", // same course
+      topicScope: "Cell Biology",
+    });
+
+    // Different subject should score better than same subject right after class
+    expect(differentSubject).toBeGreaterThan(sameSubject);
+  });
+
+  it("handles no class events gracefully (neutral score)", () => {
+    const score = scoreSlot({
+      slot: makeSlot(10, 45),
+      mode: "RETRIEVAL",
+      chronotype: "flexible",
+      dayEvents: [], // no events
+      bedtimeHour: 23,
+      courseName: "CS 101",
+    });
+    // Should produce a reasonable score (not penalized)
+    expect(score).toBeGreaterThan(0.3);
   });
 });

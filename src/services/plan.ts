@@ -275,6 +275,8 @@ export async function createPlan(userId: string, input: unknown) {
             chronotype: (parsed.chronotype || "flexible") as Chronotype,
             dayEvents,
             bedtimeHour: inferredBedtime,
+            courseName: parsed.course_name,
+            blockTopicScopes: dayBlocks.map((b) => b.topicScope),
           })
         : fitBlocksIntoSlots(durations, freeSlots);
 
