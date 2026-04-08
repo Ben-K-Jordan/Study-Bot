@@ -3,20 +3,9 @@
 import { useState, useEffect } from "react";
 import { getOrCreateUserId } from "@/lib/client-utils";
 
-const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-interface Availability {
-  start: string;
-  end: string;
-  enabled: boolean;
-}
-
-const DEFAULTS: { availability: Availability[]; dailyCap: number } = {
-  availability: DAY_NAMES.map((_, i) => ({
-    start: "09:00",
-    end: "17:00",
-    enabled: true, // All days on by default
-  })),
+const DEFAULTS = {
+  studyStart: "09:00",
+  studyEnd: "17:00",
   dailyCap: 180,
 };
 
@@ -36,16 +25,17 @@ function savePrefs(prefs: typeof DEFAULTS) {
 }
 
 export default function SettingsPage() {
-  const [availability, setAvailability] = useState<Availability[]>(DEFAULTS.availability);
+  const [studyStart, setStudyStart] = useState(DEFAULTS.studyStart);
+  const [studyEnd, setStudyEnd] = useState(DEFAULTS.studyEnd);
   const [dailyCap, setDailyCap] = useState(DEFAULTS.dailyCap);
   const [saved, setSaved] = useState(false);
 
-  // Google Calendar
   const [googleStatus, setGoogleStatus] = useState<"loading" | "connected" | "disconnected">("loading");
 
   useEffect(() => {
     const prefs = loadPrefs();
-    setAvailability(prefs.availability);
+    setStudyStart(prefs.studyStart);
+    setStudyEnd(prefs.studyEnd);
     setDailyCap(prefs.dailyCap);
   }, []);
 
@@ -65,17 +55,9 @@ export default function SettingsPage() {
   }, []);
 
   const handleSave = () => {
-    savePrefs({ availability, dailyCap });
+    savePrefs({ studyStart, studyEnd, dailyCap });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  };
-
-  const updateDay = (i: number, field: keyof Availability, value: string | boolean) => {
-    setAvailability((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
   };
 
   const handleGoogleConnect = () => {
@@ -86,44 +68,19 @@ export default function SettingsPage() {
     <div style={pageStyle}>
       <h1 style={headingStyle}>Settings</h1>
 
-      {/* Study Time Preferences */}
       <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Study availability</h2>
-        <p style={hintStyle}>When are you free to study each day?</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-          {availability.map((day, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", opacity: day.enabled ? 1 : 0.4 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", width: 130, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={day.enabled}
-                  onChange={(e) => updateDay(i, "enabled", e.target.checked)}
-                />
-                <span style={{ fontSize: "0.85rem" }}>{DAY_NAMES[i]}</span>
-              </label>
-              <input
-                type="time"
-                value={day.start}
-                onChange={(e) => updateDay(i, "start", e.target.value)}
-                disabled={!day.enabled}
-                style={timeInputStyle}
-              />
-              <span style={{ color: "#555" }}>to</span>
-              <input
-                type="time"
-                value={day.end}
-                onChange={(e) => updateDay(i, "end", e.target.value)}
-                disabled={!day.enabled}
-                style={timeInputStyle}
-              />
-            </div>
-          ))}
+        <h2 style={sectionStyle}>Study hours</h2>
+        <p style={hintStyle}>Sessions will be scheduled between these times.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <input type="time" value={studyStart} onChange={(e) => setStudyStart(e.target.value)} style={timeInputStyle} />
+          <span style={{ color: "#555" }}>to</span>
+          <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} style={timeInputStyle} />
         </div>
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Daily study cap</h2>
-        <p style={hintStyle}>Maximum minutes of study per day.</p>
+        <p style={hintStyle}>Maximum study time per day.</p>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <input
             type="range"
@@ -135,12 +92,11 @@ export default function SettingsPage() {
             style={{ flex: 1, accentColor: "#00ff88" }}
           />
           <span style={{ color: "#00ff88", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
-            {Math.floor(dailyCap / 60)}h {dailyCap % 60 > 0 ? `${dailyCap % 60}m` : ""}
+            {Math.floor(dailyCap / 60)}h{dailyCap % 60 > 0 ? ` ${dailyCap % 60}m` : ""}
           </span>
         </div>
       </section>
 
-      {/* Google Calendar */}
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Google Calendar</h2>
         {googleStatus === "loading" ? (
@@ -160,7 +116,6 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {/* Save */}
       <button onClick={handleSave} style={saveBtnStyle}>
         {saved ? "Saved" : "Save Preferences"}
       </button>
