@@ -27,11 +27,15 @@ interface CourseOption {
 
 // --- API helpers ---
 
+let msgCounter = 0;
+
 async function apiGet(url: string) {
   const res = await fetch(url, {
     headers: { "X-User-Id": getOrCreateUserId() },
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
 }
 
 async function apiPost(url: string, body: unknown) {
@@ -43,7 +47,9 @@ async function apiPost(url: string, body: unknown) {
     },
     body: JSON.stringify(body),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
 }
 
 export default function ChatPage() {
@@ -102,7 +108,7 @@ export default function ChatPage() {
     const [courseName, examName] = selectedCourse.split("||");
 
     const userMsg: Message = {
-      id: `u-${Date.now()}`,
+      id: `u-${++msgCounter}`,
       role: "user",
       content: question,
     };
@@ -121,21 +127,21 @@ export default function ChatPage() {
       });
 
       const assistantMsg: Message = {
-        id: `a-${Date.now()}`,
+        id: `a-${++msgCounter}`,
         role: "assistant",
-        content: response.answer_markdown || response.error || "No response received.",
+        content: response.answer_markdown || "No response received.",
         citations: response.citations || [],
         meta: response.meta,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch {
+    } catch (err) {
       setMessages((prev) => [
         ...prev,
         {
-          id: `e-${Date.now()}`,
+          id: `e-${++msgCounter}`,
           role: "assistant",
-          content: "Something went wrong. Please try again.",
+          content: err instanceof Error ? err.message : "Something went wrong. Please try again.",
         },
       ]);
     } finally {
@@ -264,7 +270,7 @@ export default function ChatPage() {
             {/* Meta info */}
             {msg.meta && (
               <div style={{ fontSize: "0.65rem", color: "#5a5040", marginTop: "0.25rem", marginLeft: "0.5rem" }}>
-                {msg.meta.chunks_retrieved} sources searched
+                {msg.meta.chunks_retrieved ?? 0} sources searched
                 {msg.meta.latency_ms ? ` · ${(msg.meta.latency_ms / 1000).toFixed(1)}s` : ""}
               </div>
             )}

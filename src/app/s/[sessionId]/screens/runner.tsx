@@ -670,7 +670,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 return (
                   <div
                     key={excerpt.chunk_id}
-                    ref={(el) => { if (el) excerptRefs.current.set(i, el); }}
+                    ref={(el) => { if (el) excerptRefs.current.set(i, el); else excerptRefs.current.delete(i); }}
                     style={{
                       background: isHighlighted ? "#3d5d3d" : "#334d33",
                       border: isHighlighted ? "1px solid #7ec8e3" : "1px solid #4a6a4a",
@@ -978,7 +978,7 @@ function renderExplanationWithCitations(
   excerpts: FeedbackExcerpt[],
   onCitationClick: (index: number) => void,
 ): React.ReactNode {
-  if (excerpts.length === 0) return text;
+  if (!text || excerpts.length === 0) return text || "";
 
   // Split on [N] patterns
   const parts = text.split(/(\[\d+\])/g);
@@ -995,7 +995,7 @@ function renderExplanationWithCitations(
             style={inlineCitationStyle}
             title={`Source: ${excerpts[num - 1].doc_title}${excerpts[num - 1].page_number ? ` p.${excerpts[num - 1].page_number}` : ""}`}
             onClick={() => onCitationClick(num - 1)}
-            onKeyDown={(e) => { if (e.key === "Enter") onCitationClick(num - 1); }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onCitationClick(num - 1); } }}
           >
             {num}
           </span>

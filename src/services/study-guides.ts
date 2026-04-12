@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { searchChunks } from "@/lib/search";
 import { runTask, type GatewayContext } from "@/lib/ai/gateway";
 import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
@@ -40,21 +39,38 @@ export async function generateStudyGuide(
   examName: string | undefined,
   guideType: GuideType,
 ): Promise<StudyGuideData> {
-  // Fetch course chunks for context
-  const chunks = await searchChunks({
+  // Fetch course chunks directly from DB for comprehensive coverage
+  const docFilter: Record<string, unknown> = {
     userId,
-    q: `${courseName} ${examName || ""} key concepts study guide`,
     namespace: "COURSE",
     courseName,
-    examName,
-    topK: 10,
+    status: "PROCESSED",
+  };
+  if (examName) docFilter.examName = examName;
+
+  const allChunks = await prisma.contentChunk.findMany({
+    where: { document: docFilter },
+    orderBy: [{ documentId: "asc" }, { ordinal: "asc" }],
+    select: { text: true },
   });
 
-  if (chunks.length === 0) {
+  if (allChunks.length === 0) {
     throw new Error("No course materials found. Upload documents first.");
   }
 
-  const chunkTexts = chunks.map((c) => c.snippet);
+  // Sample evenly across the corpus (max 20 chunks to stay within token budget)
+  const MAX_CHUNKS = 20;
+  let sampled: { text: string }[];
+  if (allChunks.length <= MAX_CHUNKS) {
+    sampled = allChunks;
+  } else {
+    const step = allChunks.length / MAX_CHUNKS;
+    sampled = Array.from({ length: MAX_CHUNKS }, (_, i) =>
+      allChunks[Math.floor(i * step)]
+    );
+  }
+
+  const chunkTexts = sampled.map((c) => c.text);
 
   // Fetch objectives if available
   let objectives: string[] | undefined;

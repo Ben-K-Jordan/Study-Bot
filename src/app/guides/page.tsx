@@ -39,7 +39,9 @@ async function apiGet(url: string) {
   const res = await fetch(url, {
     headers: { "X-User-Id": getOrCreateUserId() },
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
 }
 
 async function apiPost(url: string, body: unknown) {
@@ -258,18 +260,24 @@ export default function GuidesPage() {
 // --- Render guide content by type ---
 
 function renderGuideContent(guide: StudyGuide): React.ReactNode {
+  if (!guide.sections || guide.sections.length === 0) {
+    return <p style={{ color: "#a89a82", fontStyle: "italic" }}>No content generated.</p>;
+  }
+
   switch (guide.guide_type) {
     case "KEY_CONCEPTS":
       return (
         <div>
           {guide.sections.map((s, i) => (
-            <div key={i} style={conceptCard}>
+            <div key={`concept-${i}`} style={conceptCard}>
               <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", color: "#f0dc4e" }}>
-                {s.concept}
+                {s.concept || `Concept ${i + 1}`}
               </h3>
-              <p style={{ margin: "0 0 0.3rem", fontSize: "0.85rem", lineHeight: 1.6 }}>
-                {s.explanation}
-              </p>
+              {s.explanation && (
+                <p style={{ margin: "0 0 0.3rem", fontSize: "0.85rem", lineHeight: 1.6 }}>
+                  {s.explanation}
+                </p>
+              )}
               {s.importance && (
                 <p style={{ margin: 0, fontSize: "0.75rem", color: "#7ec8e3", fontStyle: "italic" }}>
                   Why it matters: {s.importance}
@@ -284,13 +292,15 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
       return (
         <div>
           {guide.sections.map((s, i) => (
-            <div key={i} style={conceptCard}>
+            <div key={`faq-${i}`} style={conceptCard}>
               <p style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", fontWeight: 600, color: "#e8dcc8" }}>
-                Q: {s.question}
+                Q: {s.question || `Question ${i + 1}`}
               </p>
-              <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "#c8bca8" }}>
-                {s.answer}
-              </p>
+              {s.answer && (
+                <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "#c8bca8" }}>
+                  {s.answer}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -300,15 +310,17 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
       return (
         <div>
           {guide.sections.map((s, i) => (
-            <div key={i} style={conceptCard}>
+            <div key={`cheat-${i}`} style={conceptCard}>
               <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", color: "#e8a040" }}>
-                {s.topic}
+                {s.topic || `Topic ${i + 1}`}
               </h3>
-              <div
-                style={{ fontSize: "0.8rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "monospace" }}
-              >
-                {s.content}
-              </div>
+              {s.content && (
+                <div
+                  style={{ fontSize: "0.8rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "monospace" }}
+                >
+                  {s.content}
+                </div>
+              )}
             </div>
           ))}
         </div>
