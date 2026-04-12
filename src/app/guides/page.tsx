@@ -122,7 +122,9 @@ export default function GuidesPage() {
     if (examName) params.set("exam_name", examName);
     apiGet(`/api/guides?${params.toString()}`).then((data) => {
       if (mounted && data.guides) setGuides(data.guides);
-    }).catch(() => {}).finally(() => {
+    }).catch(() => {
+      if (mounted) setGuides([]);
+    }).finally(() => {
       if (mounted) setLoadingGuides(false);
     });
     return () => { mounted = false; };
@@ -187,6 +189,7 @@ export default function GuidesPage() {
             {GUIDE_TYPES.map((t) => (
               <button
                 key={t.value}
+                aria-pressed={selectedType === t.value}
                 onClick={() => setSelectedType(t.value)}
                 style={{
                   ...typeButton,
@@ -214,7 +217,7 @@ export default function GuidesPage() {
           </button>
 
           {error && (
-            <p style={{ color: "#e88888", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>
+            <p role="alert" style={{ color: "#e88888", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>
           )}
         </div>
       ) : (
@@ -245,6 +248,7 @@ export default function GuidesPage() {
           {guides.map((guide) => (
             <div key={guide.id} style={{ marginBottom: "0.75rem" }}>
               <button
+                aria-expanded={expandedGuide === guide.id}
                 onClick={() =>
                   setExpandedGuide(expandedGuide === guide.id ? null : guide.id)
                 }

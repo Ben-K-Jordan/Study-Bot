@@ -117,7 +117,8 @@ export default function ChatPage() {
       }
     }).catch(() => {});
     return () => { mounted = false; };
-  }, [selectedCourse]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -195,6 +196,7 @@ export default function ChatPage() {
         {/* Course selector */}
         {courses.length > 0 ? (
           <select
+            aria-label="Select course"
             value={selectedCourse}
             onChange={(e) => setSelectedCourse(e.target.value)}
             style={selectStyle}
@@ -279,6 +281,7 @@ export default function ChatPage() {
                 {msg.citations.map((c, i) => (
                   <div key={c.chunk_id} style={{ marginBottom: "0.3rem" }}>
                     <button
+                      aria-expanded={expandedCitation === `${msg.id}-${i}`}
                       onClick={() =>
                         setExpandedCitation(
                           expandedCitation === `${msg.id}-${i}`
@@ -345,6 +348,7 @@ export default function ChatPage() {
       <div style={inputContainer}>
         <textarea
           ref={inputRef}
+          aria-label="Ask a question"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={

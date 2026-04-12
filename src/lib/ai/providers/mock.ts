@@ -134,8 +134,9 @@ export class MockProvider implements AiProvider {
     }
 
     if (systemPrompt.includes("GENERATE_STUDY_GUIDE")) {
-      // Detect guide type from user prompt
-      if (userPrompt.includes("FAQ")) {
+      // Detect guide type from user prompt (case-insensitive — prompt-registry lowercases the type)
+      const promptLower = userPrompt.toLowerCase();
+      if (promptLower.includes("faq")) {
         return {
           json: {
             guide_type: "FAQ",
@@ -148,7 +149,7 @@ export class MockProvider implements AiProvider {
           usage: { tokenIn: 600, tokenOut: 200, costUsdMicros: 150 },
         };
       }
-      if (userPrompt.includes("CHEAT_SHEET")) {
+      if (promptLower.includes("cheat sheet") || promptLower.includes("cheat_sheet")) {
         return {
           json: {
             guide_type: "CHEAT_SHEET",

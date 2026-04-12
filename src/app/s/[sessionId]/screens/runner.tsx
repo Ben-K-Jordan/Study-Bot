@@ -80,9 +80,11 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
     if (!shouldFetch) return;
 
+    let mounted = true;
     setFeedbackLoading(true);
     fetchFeedback(run.last_attempt_id!)
       .then((result: FeedbackResult) => {
+        if (!mounted) return;
         if (result.status === "OK") {
           if (result.excerpts.length > 0) setFeedbackExcerpts(result.excerpts);
           setFb(result);
@@ -91,7 +93,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       .catch(() => {
         // Feedback failure is non-fatal
       })
-      .finally(() => setFeedbackLoading(false));
+      .finally(() => { if (mounted) setFeedbackLoading(false); });
+    return () => { mounted = false; };
   }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, fb.explanation, fb.reinforcement]);
 
   // Reset state when prompt changes
@@ -692,8 +695,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     <p
                       style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
                       dangerouslySetInnerHTML={{
-                        __html: excerpt.snippet
-                          .replace(/<<(.*?)>>/g, '<mark style="background:#7ec8e333;color:#7ec8e3">$1</mark>'),
+                        __html: escapeHtml(excerpt.snippet)
+                          .replace(/&lt;&lt;(.*?)&gt;&gt;/g, '<mark style="background:#7ec8e333;color:#7ec8e3">$1</mark>'),
                       }}
                     />
                   </div>
@@ -868,6 +871,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       )}
     </div>
   );
+}
+
+// --- Helpers ---
+
+/** Escape HTML entities to prevent XSS when using dangerouslySetInnerHTML */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // --- Constants ---
