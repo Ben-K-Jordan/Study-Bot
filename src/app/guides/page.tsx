@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { getOrCreateUserId } from "@/lib/client-utils";
 
@@ -74,6 +74,8 @@ export default function GuidesPage() {
   const [expandedGuide, setExpandedGuide] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingGuides, setLoadingGuides] = useState(false);
+  const selectedCourseRef = useRef(selectedCourse);
+  selectedCourseRef.current = selectedCourse;
 
   // Fetch available courses on mount
   useEffect(() => {
@@ -132,6 +134,7 @@ export default function GuidesPage() {
 
   const handleGenerate = async () => {
     if (!selectedCourse || generating) return;
+    const courseAtStart = selectedCourse;
     setGenerating(true);
     setError(null);
 
@@ -143,10 +146,15 @@ export default function GuidesPage() {
         exam_name: examName || undefined,
         guide_type: selectedType,
       });
-      setGuides((prev) => [guide, ...prev]);
-      setExpandedGuide(guide.id);
+      // Only update list if user hasn't switched courses during generation
+      if (selectedCourseRef.current === courseAtStart) {
+        setGuides((prev) => [guide, ...prev]);
+        setExpandedGuide(guide.id);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
+      if (selectedCourseRef.current === courseAtStart) {
+        setError(err instanceof Error ? err.message : "Generation failed");
+      }
     } finally {
       setGenerating(false);
     }
