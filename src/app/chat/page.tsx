@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { getOrCreateUserId } from "@/lib/client-utils";
 
 // --- Types ---
@@ -178,7 +179,17 @@ export default function ChatPage() {
     <div style={pageContainer}>
       {/* Header */}
       <div style={headerStyle}>
-        <h1 style={titleStyle}>Source Chat</h1>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <h1 style={titleStyle}>Source Chat</h1>
+          {messages.length > 0 && (
+            <button
+              onClick={() => { setMessages([]); sessionStorage.removeItem("chat_messages"); }}
+              style={clearButton}
+            >
+              Clear chat
+            </button>
+          )}
+        </div>
         <p style={subtitleStyle}>Ask questions about your course materials</p>
 
         {/* Course selector */}
@@ -204,7 +215,10 @@ export default function ChatPage() {
           </select>
         ) : (
           <p style={{ color: "#e8a040", fontSize: "0.85rem", margin: 0 }}>
-            No course documents uploaded yet. Upload materials on the Dashboard first.
+            No course documents uploaded yet.{" "}
+            <Link href="/" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
+              Upload materials on the Dashboard
+            </Link>
           </p>
         )}
       </div>
@@ -218,6 +232,9 @@ export default function ChatPage() {
             </p>
             <p style={{ fontSize: "0.85rem", color: "#7a7060" }}>
               Your answers will be grounded in your uploaded documents with inline citations.
+            </p>
+            <p style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.25rem" }}>
+              Press <kbd style={kbdStyle}>Enter</kbd> to send, <kbd style={kbdStyle}>Shift+Enter</kbd> for new line
             </p>
           </div>
         )}
@@ -304,9 +321,20 @@ export default function ChatPage() {
             <div style={{ fontSize: "0.7rem", color: "#7ec8e3", marginBottom: "0.3rem", fontWeight: 600 }}>
               STUDY BOT
             </div>
-            <div style={{ color: "#a89a82", fontSize: "0.85rem" }}>
-              Searching your materials...
+            <div style={{ color: "#a89a82", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              Searching your materials
+              <span style={dotAnimation}>
+                <span className="dot1">.</span>
+                <span className="dot2">.</span>
+                <span className="dot3">.</span>
+              </span>
             </div>
+            <style>{`
+              @keyframes blink { 0%,20% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+              .dot1 { animation: blink 1.4s infinite 0s; }
+              .dot2 { animation: blink 1.4s infinite 0.2s; }
+              .dot3 { animation: blink 1.4s infinite 0.4s; }
+            `}</style>
           </div>
         )}
 
@@ -537,4 +565,32 @@ const sendButton: React.CSSProperties = {
   borderRadius: 6,
   cursor: "pointer",
   alignSelf: "flex-end",
+};
+
+const clearButton: React.CSSProperties = {
+  fontSize: "0.75rem",
+  fontFamily: "inherit",
+  color: "#7a7060",
+  background: "none",
+  border: "1px solid #3a5a3a",
+  borderRadius: 4,
+  padding: "0.25rem 0.6rem",
+  cursor: "pointer",
+};
+
+const kbdStyle: React.CSSProperties = {
+  display: "inline-block",
+  fontSize: "0.65rem",
+  fontFamily: "monospace",
+  background: "#334d33",
+  border: "1px solid #4a6a4a",
+  borderRadius: 3,
+  padding: "0.05rem 0.35rem",
+  color: "#e8dcc8",
+};
+
+const dotAnimation: React.CSSProperties = {
+  fontSize: "1.2rem",
+  letterSpacing: "0.1em",
+  lineHeight: 1,
 };
