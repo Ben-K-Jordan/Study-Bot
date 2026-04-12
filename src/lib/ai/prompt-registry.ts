@@ -71,6 +71,21 @@ interface ExtractObjectivesInput {
   examName?: string;
 }
 
+interface SummarizeDocumentInput {
+  title: string;
+  courseName?: string;
+  examName?: string;
+  chunkTexts: string[];
+}
+
+interface GenerateStudyGuideInput {
+  courseName: string;
+  examName?: string;
+  guideType: "KEY_CONCEPTS" | "FAQ" | "CHEAT_SHEET";
+  chunkTexts: string[];
+  objectives?: string[];
+}
+
 interface PlanGeneratorInput {
   objectives: string[];
   numDays: number;
@@ -463,6 +478,94 @@ The following excerpts are from the student's uploaded course materials:
 ${contextStr}
 
 Extract key learning objectives from this content.`;
+    },
+  },
+
+  [AiTask.SUMMARIZE_DOCUMENT]: {
+    task: AiTask.SUMMARIZE_DOCUMENT,
+    version: "v1",
+    systemPrompt: `You are a study assistant. Task: SUMMARIZE_DOCUMENT.
+Given excerpts from an uploaded document, generate:
+1. A concise summary (3-5 sentences) covering the main topics and key takeaways.
+2. Exactly 3 suggested study questions that a student could ask about this material.
+
+The summary should help a student quickly understand what the document covers and whether it's relevant to their studies. Questions should be specific, substantive, and answerable from the document content.
+
+Output valid JSON:
+{
+  "summary": string,
+  "suggested_questions": [string, string, string]
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { title, courseName, examName, chunkTexts } = input as SummarizeDocumentInput;
+      let header = `Document: "${title}"`;
+      if (courseName) header += `\nCourse: ${courseName}`;
+      if (examName) header += `\nExam: ${examName}`;
+      const context = chunkTexts
+        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .join("\n\n");
+      return `${header}\n\nDocument excerpts:\n${context}\n\nGenerate a summary and 3 study questions.`;
+    },
+  },
+
+  [AiTask.GENERATE_STUDY_GUIDE]: {
+    task: AiTask.GENERATE_STUDY_GUIDE,
+    version: "v1",
+    systemPrompt: `You are an expert professor creating study guides from course materials. Task: GENERATE_STUDY_GUIDE.
+
+You will be given a guide type and course material excerpts. Generate the requested guide type:
+
+**KEY_CONCEPTS**: A structured list of the most important concepts, definitions, and principles. Each concept should have a title, a clear explanation (2-3 sentences), and why it matters.
+
+**FAQ**: A list of 10-15 frequently asked questions with detailed answers. Questions should cover the most common confusion points, important distinctions, and practical applications. Answers should be thorough but concise.
+
+**CHEAT_SHEET**: A condensed reference sheet with formulas, key definitions, important lists, mnemonics, and quick-reference tables. Organized by topic. Designed to be printed and used during review sessions.
+
+Rules:
+1. Ground everything in the provided course material — do not fabricate content.
+2. Use specific terminology, examples, and references from the materials.
+3. Organize content logically from foundational to advanced.
+4. Make it genuinely useful for exam preparation.
+
+Output valid JSON based on guide type:
+
+For KEY_CONCEPTS:
+{
+  "guide_type": "KEY_CONCEPTS",
+  "title": string,
+  "sections": [{ "concept": string, "explanation": string, "importance": string }]
+}
+
+For FAQ:
+{
+  "guide_type": "FAQ",
+  "title": string,
+  "sections": [{ "question": string, "answer": string }]
+}
+
+For CHEAT_SHEET:
+{
+  "guide_type": "CHEAT_SHEET",
+  "title": string,
+  "sections": [{ "topic": string, "content": string }]
+}`,
+    buildUserPrompt: (input: unknown) => {
+      const { courseName, examName, guideType, chunkTexts, objectives } =
+        input as GenerateStudyGuideInput;
+      let header = `Course: ${courseName}`;
+      if (examName) header += ` | Exam: ${examName}`;
+      header += `\nGuide type: ${guideType}`;
+
+      const context = chunkTexts
+        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .join("\n\n");
+
+      let objStr = "";
+      if (objectives && objectives.length > 0) {
+        objStr = `\n\nLearning objectives:\n${objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}`;
+      }
+
+      return `${header}${objStr}\n\nCourse material excerpts:\n${context}\n\nGenerate the ${guideType.replace(/_/g, " ").toLowerCase()} study guide.`;
     },
   },
 };

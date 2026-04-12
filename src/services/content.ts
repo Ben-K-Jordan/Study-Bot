@@ -6,6 +6,10 @@ import { searchChunks, buildFeedbackQuery, type SearchResult } from "@/lib/searc
 import { enqueueJob } from "@/lib/jobs/queue";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
+import { runTask, type GatewayContext } from "@/lib/ai/gateway";
+import { AiTask } from "@/lib/ai/types";
+import { getPrompt } from "@/lib/ai/prompt-registry";
+import { createProvider } from "@/lib/ai/provider-factory";
 
 // ---- Document Upload ----
 
@@ -148,6 +152,11 @@ export async function processDocument(userId: string, documentId: string) {
       chunk_count: chunks.length,
     });
 
+    // Fire-and-forget: generate document summary + suggested questions
+    generateDocumentSummary(userId, doc.id, doc.title, doc.courseName, doc.examName, chunks.map((c) => c.text)).catch((err) => {
+      logger.error("document.summary_failed", { document_id: doc.id, error: String(err) });
+    });
+
     return {
       data: {
         document_id: doc.id,
@@ -200,6 +209,8 @@ export async function listDocuments(
     original_filename: d.originalFilename,
     status: d.status,
     chunk_count: d._count.chunks,
+    summary: d.summary ?? null,
+    suggested_questions: (d.suggestedQuestions as string[] | null) ?? null,
     created_at: d.createdAt.toISOString(),
   }));
 }
@@ -259,6 +270,63 @@ export async function fetchFeedbackExcerpts(
     captureException(err, { user_id: userId, attempt_id: attemptId, action: "fetchFeedback" });
     logger.error("feedback.failed", { user_id: userId, attempt_id: attemptId, error: String(err) });
     return [];
+  }
+}
+
+// ---- Document Summary Generation ----
+
+const SUMMARY_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
+
+async function generateDocumentSummary(
+  userId: string,
+  documentId: string,
+  title: string,
+  courseName: string | null,
+  examName: string | null,
+  chunkTexts: string[],
+): Promise<void> {
+  const providerName = process.env.AI_PROVIDER || "mock";
+  if (providerName === "mock") return;
+
+  // Use a sample of chunks (first 8) to keep token usage reasonable
+  const sampleTexts = chunkTexts.slice(0, 8);
+  if (sampleTexts.length === 0) return;
+
+  const ctx: GatewayContext = { userId, provider: createProvider() };
+  const prompt = getPrompt(AiTask.SUMMARIZE_DOCUMENT);
+
+  const result = await runTask<{ summary: string; suggested_questions: string[] }>(ctx, {
+    task: AiTask.SUMMARIZE_DOCUMENT,
+    promptVersion: prompt.version,
+    model: SUMMARY_MODEL,
+    input: {
+      title,
+      courseName: courseName || undefined,
+      examName: examName || undefined,
+      chunkTexts: sampleTexts,
+    },
+    parseOutput: (raw: unknown) => {
+      const data = raw as Record<string, unknown>;
+      return {
+        summary: (data.summary as string) || "",
+        suggested_questions: (data.suggested_questions as string[]) || [],
+      };
+    },
+  });
+
+  if (result.output.summary) {
+    await prisma.contentDocument.update({
+      where: { id: documentId },
+      data: {
+        summary: result.output.summary,
+        suggestedQuestions: result.output.suggested_questions,
+      },
+    });
+
+    logger.info("document.summary_generated", {
+      document_id: documentId,
+      questions_count: result.output.suggested_questions.length,
+    });
   }
 }
 

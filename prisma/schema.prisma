@@ -164,6 +164,8 @@ model ContentDocument {
   contentHash      String         @map("content_hash")
   status           String         @default("UPLOADED") // UPLOADED | PROCESSED | FAILED
   errorMessage     String?        @map("error_message")
+  summary          String?
+  suggestedQuestions Json?        @map("suggested_questions") // Array of strings
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
@@ -496,4 +498,19 @@ model ObjectiveMastery {
   @@unique([userId, courseName, objectiveKey], map: "objective_mastery_user_course_key")
   @@index([userId, courseName, nextDueAt])
   @@map("objective_mastery")
+}
+
+model StudyGuide {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  courseName String   @map("course_name")
+  examName   String?  @map("exam_name")
+  guideType  String   @map("guide_type") // KEY_CONCEPTS | FAQ | CHEAT_SHEET
+  title      String
+  content    Json     // Structured guide content (sections array)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, courseName, examName], map: "study_guides_user_course_exam_idx")
+  @@map("study_guides")
 }
