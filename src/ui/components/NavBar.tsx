@@ -18,7 +18,7 @@ export function NavBar() {
 
   function isActive(href: string): boolean {
     if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+    return pathname === href || pathname.startsWith(href + "/");
   }
 
   const barStyle: React.CSSProperties = {

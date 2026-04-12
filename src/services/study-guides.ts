@@ -122,6 +122,7 @@ export async function generateStudyGuide(
       examName: examName || null,
       guideType,
       title: result.output.title,
+      // Round-trip through JSON to satisfy Prisma's InputJsonValue constraint
       content: JSON.parse(JSON.stringify(result.output.sections)),
     },
   });
