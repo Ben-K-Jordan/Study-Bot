@@ -44,8 +44,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [confidence, setConfidence] = useState<number>(3);
   const [selfExplanation, setSelfExplanation] = useState("");
   const [generatedExample, setGeneratedExample] = useState("");
+  const [highlightedCitation, setHighlightedCitation] = useState<number | null>(null);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const excerptRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   // Use current_prompt from run data (Phase 2: no full prompt array needed)
   const currentPrompt = run.current_prompt;
@@ -112,6 +114,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setConfidence(3);
     setSelfExplanation("");
     setGeneratedExample("");
+    setHighlightedCitation(null);
+    excerptRefs.current.clear();
     startTimeRef.current = Date.now();
     if (!isReviewPhase) {
       textareaRef.current?.focus();
@@ -616,7 +620,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 REVIEW (from your materials)
               </p>
 
-              {/* AI-powered explanation */}
+              {/* AI-powered explanation with inline citations */}
               {fb.explanation && (
                 <div
                   style={{
@@ -630,9 +634,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#7ec8e3" }}>
                     Professor&apos;s Explanation
                   </p>
-                  <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6 }}>
-                    {fb.explanation}
-                  </p>
+                  <div style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6 }}>
+                    {renderExplanationWithCitations(fb.explanation, feedbackExcerpts, (idx) => {
+                      setHighlightedCitation(idx === highlightedCitation ? null : idx);
+                      const el = excerptRefs.current.get(idx);
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    })}
+                  </div>
                   {fb.key_takeaway && (
                     <div
                       style={{
@@ -656,31 +664,41 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </p>
               )}
 
-              {/* Raw excerpts from course materials */}
-              {feedbackExcerpts.map((excerpt, i) => (
-                <div
-                  key={excerpt.chunk_id}
-                  style={{
-                    background: "#334d33",
-                    border: "1px solid #4a6a4a",
-                    borderRadius: 4,
-                    padding: "0.75rem",
-                    marginBottom: i < feedbackExcerpts.length - 1 ? "0.5rem" : 0,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#a89a82", marginBottom: "0.4rem" }}>
-                    <span data-testid="excerpt-doc-title">{excerpt.doc_title}</span>
-                    {excerpt.page_number && <span>p. {excerpt.page_number}</span>}
-                  </div>
-                  <p
-                    style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
-                    dangerouslySetInnerHTML={{
-                      __html: excerpt.snippet
-                        .replace(/<<(.*?)>>/g, '<mark style="background:#7ec8e333;color:#7ec8e3">$1</mark>'),
+              {/* Numbered excerpt cards from course materials */}
+              {feedbackExcerpts.map((excerpt, i) => {
+                const isHighlighted = highlightedCitation === i;
+                return (
+                  <div
+                    key={excerpt.chunk_id}
+                    ref={(el) => { if (el) excerptRefs.current.set(i, el); }}
+                    style={{
+                      background: isHighlighted ? "#3d5d3d" : "#334d33",
+                      border: isHighlighted ? "1px solid #7ec8e3" : "1px solid #4a6a4a",
+                      borderRadius: 4,
+                      padding: "0.75rem",
+                      marginBottom: i < feedbackExcerpts.length - 1 ? "0.5rem" : 0,
+                      transition: "border-color 0.2s, background 0.2s",
+                      cursor: "pointer",
                     }}
-                  />
-                </div>
-              ))}
+                    onClick={() => setHighlightedCitation(isHighlighted ? null : i)}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.7rem", color: "#a89a82", marginBottom: "0.4rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <span style={citationNumberBadge}>{i + 1}</span>
+                        <span data-testid="excerpt-doc-title">{excerpt.doc_title}</span>
+                      </div>
+                      {excerpt.page_number && <span>p. {excerpt.page_number}</span>}
+                    </div>
+                    <p
+                      style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
+                      dangerouslySetInnerHTML={{
+                        __html: excerpt.snippet
+                          .replace(/<<(.*?)>>/g, '<mark style="background:#7ec8e333;color:#7ec8e3">$1</mark>'),
+                      }}
+                    />
+                  </div>
+                );
+              })}
 
               {!feedbackLoading && feedbackExcerpts.length === 0 && !fb.explanation && (
                 <p style={{ fontSize: "0.8rem", color: "#a89a82", fontStyle: "italic" }}>
@@ -918,6 +936,75 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 6,
   marginBottom: "0.75rem",
 };
+
+const citationNumberBadge: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 18,
+  height: 18,
+  borderRadius: "50%",
+  background: "#7ec8e3",
+  color: "#1f2e1f",
+  fontSize: "0.65rem",
+  fontWeight: 700,
+  flexShrink: 0,
+};
+
+const inlineCitationStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 16,
+  height: 16,
+  borderRadius: "50%",
+  background: "#7ec8e3",
+  color: "#1f2e1f",
+  fontSize: "0.6rem",
+  fontWeight: 700,
+  marginLeft: 2,
+  marginRight: 2,
+  verticalAlign: "super",
+  cursor: "pointer",
+};
+
+/**
+ * Parse explanation text and insert numbered citation badges.
+ * Matches patterns like [1], [2], etc. and creates clickable badges.
+ * Also matches references to excerpt numbers in natural language patterns.
+ */
+function renderExplanationWithCitations(
+  text: string,
+  excerpts: FeedbackExcerpt[],
+  onCitationClick: (index: number) => void,
+): React.ReactNode {
+  if (excerpts.length === 0) return text;
+
+  // Split on [N] patterns
+  const parts = text.split(/(\[\d+\])/g);
+  return parts.map((part, i) => {
+    const match = part.match(/^\[(\d+)\]$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num >= 1 && num <= excerpts.length) {
+        return (
+          <span
+            key={i}
+            role="button"
+            tabIndex={0}
+            style={inlineCitationStyle}
+            title={`Source: ${excerpts[num - 1].doc_title}${excerpts[num - 1].page_number ? ` p.${excerpts[num - 1].page_number}` : ""}`}
+            onClick={() => onCitationClick(num - 1)}
+            onKeyDown={(e) => { if (e.key === "Enter") onCitationClick(num - 1); }}
+          >
+            {num}
+          </span>
+        );
+      }
+    }
+    return part;
+  });
+}
 
 const fieldLabel: React.CSSProperties = {
   display: "block",
