@@ -53,18 +53,39 @@ async function apiPost(url: string, body: unknown) {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = sessionStorage.getItem("chat_messages");
+      return saved ? (JSON.parse(saved) as Message[]) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<CourseOption[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<string>("");
+  const [selectedCourse, setSelectedCourse] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return sessionStorage.getItem("chat_selected_course") || "";
+  });
   const [expandedCitation, setExpandedCitation] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Persist messages to sessionStorage
+  useEffect(() => {
+    try { sessionStorage.setItem("chat_messages", JSON.stringify(messages)); } catch {}
+  }, [messages]);
+
+  // Persist selected course
+  useEffect(() => {
+    try { if (selectedCourse) sessionStorage.setItem("chat_selected_course", selectedCourse); } catch {}
+  }, [selectedCourse]);
+
   // Fetch available courses on mount
   useEffect(() => {
+    let mounted = true;
     apiGet("/api/content/documents?namespace=COURSE").then((data) => {
+      if (!mounted) return;
       if (data.documents) {
         const courseMap = new Map<string, CourseOption>();
         for (const doc of data.documents as { course_name: string; exam_name: string | null }[]) {
@@ -85,7 +106,7 @@ export default function ChatPage() {
         }
         const options = Array.from(courseMap.values());
         setCourses(options);
-        if (options.length > 0) {
+        if (!selectedCourse && options.length > 0) {
           setSelectedCourse(
             options[0].exam_name
               ? `${options[0].course_name}||${options[0].exam_name}`
@@ -94,7 +115,8 @@ export default function ChatPage() {
         }
       }
     }).catch(() => {});
-  }, []);
+    return () => { mounted = false; };
+  }, [selectedCourse]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
