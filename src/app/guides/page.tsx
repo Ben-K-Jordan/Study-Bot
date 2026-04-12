@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { getOrCreateUserId } from "@/lib/client-utils";
 
 // --- Types ---
@@ -75,7 +75,9 @@ export default function GuidesPage() {
 
   // Fetch available courses on mount
   useEffect(() => {
+    let mounted = true;
     apiGet("/api/content/documents?namespace=COURSE").then((data) => {
+      if (!mounted) return;
       if (data.documents) {
         const courseMap = new Map<string, CourseOption>();
         for (const doc of data.documents as { course_name: string; exam_name: string | null }[]) {
@@ -105,21 +107,21 @@ export default function GuidesPage() {
         }
       }
     }).catch(() => {});
+    return () => { mounted = false; };
   }, []);
 
   // Fetch existing guides when course changes
-  const fetchGuides = useCallback(async () => {
+  useEffect(() => {
     if (!selectedCourse) return;
+    let mounted = true;
     const [courseName, examName] = selectedCourse.split("||");
     const params = new URLSearchParams({ course_name: courseName });
     if (examName) params.set("exam_name", examName);
-    const data = await apiGet(`/api/guides?${params.toString()}`);
-    if (data.guides) setGuides(data.guides);
+    apiGet(`/api/guides?${params.toString()}`).then((data) => {
+      if (mounted && data.guides) setGuides(data.guides);
+    }).catch(() => {});
+    return () => { mounted = false; };
   }, [selectedCourse]);
-
-  useEffect(() => {
-    fetchGuides().catch(() => {});
-  }, [fetchGuides]);
 
   const handleGenerate = async () => {
     if (!selectedCourse || generating) return;
@@ -379,8 +381,8 @@ const selectStyle: React.CSSProperties = {
 };
 
 const typeButton: React.CSSProperties = {
-  flex: "1 1 0",
-  minWidth: 140,
+  flex: "1 1 auto",
+  minWidth: 0,
   padding: "0.6rem 0.75rem",
   fontFamily: "inherit",
   border: "1px solid #4a6a4a",
