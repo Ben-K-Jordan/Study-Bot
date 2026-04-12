@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { getOrCreateUserId } from "@/lib/client-utils";
 
 // --- Types ---
@@ -72,6 +73,7 @@ export default function GuidesPage() {
   const [selectedType, setSelectedType] = useState<GuideType>("KEY_CONCEPTS");
   const [expandedGuide, setExpandedGuide] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadingGuides, setLoadingGuides] = useState(false);
 
   // Fetch available courses on mount
   useEffect(() => {
@@ -114,12 +116,15 @@ export default function GuidesPage() {
   useEffect(() => {
     if (!selectedCourse) return;
     let mounted = true;
+    setLoadingGuides(true);
     const [courseName, examName] = selectedCourse.split("||");
     const params = new URLSearchParams({ course_name: courseName });
     if (examName) params.set("exam_name", examName);
     apiGet(`/api/guides?${params.toString()}`).then((data) => {
       if (mounted && data.guides) setGuides(data.guides);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      if (mounted) setLoadingGuides(false);
+    });
     return () => { mounted = false; };
   }, [selectedCourse]);
 
@@ -215,12 +220,25 @@ export default function GuidesPage() {
       ) : (
         <div style={{ padding: "2rem 0", textAlign: "center" }}>
           <p style={{ color: "#e8a040", fontSize: "0.9rem" }}>
-            No course documents uploaded yet. Upload materials on the Dashboard first.
+            No course documents uploaded yet.{" "}
+            <Link href="/" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
+              Upload materials on the Dashboard
+            </Link>
           </p>
         </div>
       )}
 
       {/* Existing guides */}
+      {loadingGuides && (
+        <p style={{ color: "#7a7060", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
+          Loading guides...
+        </p>
+      )}
+      {!loadingGuides && courses.length > 0 && guides.length === 0 && (
+        <p style={{ color: "#7a7060", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
+          No guides generated yet for this course. Pick a type and hit Generate!
+        </p>
+      )}
       {guides.length > 0 && (
         <div>
           <h2 style={sectionTitle}>YOUR GUIDES</h2>
@@ -238,7 +256,7 @@ export default function GuidesPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                   <span style={{ fontSize: "0.7rem", color: "#7a7060" }}>
-                    {new Date(guide.created_at).toLocaleDateString()}
+                    {new Date(guide.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                   </span>
                   <span style={{ color: "#7a7060" }}>
                     {expandedGuide === guide.id ? "▼" : "▶"}
