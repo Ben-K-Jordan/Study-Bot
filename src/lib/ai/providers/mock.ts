@@ -119,6 +119,61 @@ export class MockProvider implements AiProvider {
       };
     }
 
+    if (systemPrompt.includes("SUMMARIZE_DOCUMENT")) {
+      return {
+        json: {
+          summary: "This document covers fundamental concepts including key definitions, core principles, and practical applications relevant to the course.",
+          suggested_questions: [
+            "What are the main concepts covered in this document?",
+            "How do these concepts relate to each other?",
+            "What are the practical applications of these ideas?",
+          ],
+        },
+        usage: { tokenIn: 400, tokenOut: 100, costUsdMicros: 75 },
+      };
+    }
+
+    if (systemPrompt.includes("GENERATE_STUDY_GUIDE")) {
+      // Detect guide type from user prompt
+      if (userPrompt.includes("FAQ")) {
+        return {
+          json: {
+            guide_type: "FAQ",
+            title: "Frequently Asked Questions",
+            sections: [
+              { question: "What are the core concepts?", answer: "The core concepts include fundamental principles covered in the course materials." },
+              { question: "How are these concepts applied?", answer: "These concepts are applied through problem-solving and analytical frameworks." },
+            ],
+          },
+          usage: { tokenIn: 600, tokenOut: 200, costUsdMicros: 150 },
+        };
+      }
+      if (userPrompt.includes("CHEAT_SHEET")) {
+        return {
+          json: {
+            guide_type: "CHEAT_SHEET",
+            title: "Quick Reference Sheet",
+            sections: [
+              { topic: "Key Definitions", content: "Term 1: Definition of the first key concept\nTerm 2: Definition of the second key concept" },
+              { topic: "Important Formulas", content: "Formula 1: A = B + C\nFormula 2: X = Y * Z" },
+            ],
+          },
+          usage: { tokenIn: 600, tokenOut: 200, costUsdMicros: 150 },
+        };
+      }
+      return {
+        json: {
+          guide_type: "KEY_CONCEPTS",
+          title: "Key Concepts Guide",
+          sections: [
+            { concept: "Fundamental Principles", explanation: "The foundational ideas that form the basis of the course material.", importance: "Required for understanding all advanced topics." },
+            { concept: "Applied Methods", explanation: "Techniques used to put theoretical knowledge into practice.", importance: "Essential for exam problem-solving." },
+          ],
+        },
+        usage: { tokenIn: 600, tokenOut: 200, costUsdMicros: 150 },
+      };
+    }
+
     // Fallback
     return {
       json: { text: "Mock response" },

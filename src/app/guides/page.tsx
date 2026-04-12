@@ -157,7 +157,7 @@ export default function GuidesPage() {
           <label style={labelStyle}>Course</label>
           <select
             value={selectedCourse}
-            onChange={(e) => setSelectedCourse(e.target.value)}
+            onChange={(e) => { setSelectedCourse(e.target.value); setError(null); }}
             style={selectStyle}
           >
             {courses.map((c) => {

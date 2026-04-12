@@ -269,7 +269,7 @@ export default function ChatPage() {
 
             {/* Meta info */}
             {msg.meta && (
-              <div style={{ fontSize: "0.65rem", color: "#5a5040", marginTop: "0.25rem", marginLeft: "0.5rem" }}>
+              <div style={{ fontSize: "0.65rem", color: "#7a7060", marginTop: "0.25rem", marginLeft: "0.5rem" }}>
                 {msg.meta.chunks_retrieved ?? 0} sources searched
                 {msg.meta.latency_ms ? ` · ${(msg.meta.latency_ms / 1000).toFixed(1)}s` : ""}
               </div>
@@ -487,6 +487,9 @@ const inputContainer: React.CSSProperties = {
   padding: "0.75rem 0",
   borderTop: "1px solid #3a5a3a",
   flexShrink: 0,
+  position: "sticky",
+  bottom: 0,
+  background: "#2a3d2a",
 };
 
 const inputStyle: React.CSSProperties = {

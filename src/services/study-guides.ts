@@ -40,16 +40,16 @@ export async function generateStudyGuide(
   guideType: GuideType,
 ): Promise<StudyGuideData> {
   // Fetch course chunks directly from DB for comprehensive coverage
-  const docFilter: Record<string, unknown> = {
+  const docWhere: Record<string, unknown> = {
     userId,
     namespace: "COURSE",
     courseName,
     status: "PROCESSED",
   };
-  if (examName) docFilter.examName = examName;
+  if (examName) docWhere.examName = examName;
 
   const allChunks = await prisma.contentChunk.findMany({
-    where: { document: docFilter },
+    where: { document: { is: docWhere } },
     orderBy: [{ documentId: "asc" }, { ordinal: "asc" }],
     select: { text: true },
   });
@@ -59,14 +59,15 @@ export async function generateStudyGuide(
   }
 
   // Sample evenly across the corpus (max 20 chunks to stay within token budget)
+  // Always include first and last chunk for full coverage
   const MAX_CHUNKS = 20;
   let sampled: { text: string }[];
   if (allChunks.length <= MAX_CHUNKS) {
     sampled = allChunks;
   } else {
-    const step = allChunks.length / MAX_CHUNKS;
+    const step = (allChunks.length - 1) / (MAX_CHUNKS - 1);
     sampled = Array.from({ length: MAX_CHUNKS }, (_, i) =>
-      allChunks[Math.floor(i * step)]
+      allChunks[Math.round(i * step)]
     );
   }
 
