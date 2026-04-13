@@ -171,6 +171,7 @@ model ContentDocument {
 
   chunks           ContentChunk[]
   evidencePapers   EvidencePaper[]
+  flashcardDecks   FlashcardDeck[]
 
   @@unique([userId, contentHash], map: "content_documents_user_hash_key")
   @@index([userId, namespace, courseName, examName], map: "content_documents_user_ns_course_exam_idx")
@@ -513,4 +514,38 @@ model StudyGuide {
 
   @@index([userId, courseName, examName], map: "study_guides_user_course_exam_idx")
   @@map("study_guides")
+}
+
+// ---- Flashcards ----
+
+model FlashcardDeck {
+  id           String      @id @default(uuid())
+  userId       String      @map("user_id")
+  courseName   String      @map("course_name")
+  examName     String?     @map("exam_name")
+  documentId   String?     @map("document_id")
+  title        String
+  cardCount    Int         @default(0) @map("card_count")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  document     ContentDocument? @relation(fields: [documentId], references: [id])
+  cards        Flashcard[]
+
+  @@index([userId, courseName, examName], map: "flashcard_decks_user_course_exam_idx")
+  @@map("flashcard_decks")
+}
+
+model Flashcard {
+  id        String   @id @default(uuid())
+  deckId    String   @map("deck_id")
+  front     String
+  back      String
+  tags      Json?
+  ordinal   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  deck      FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@index([deckId])
+  @@map("flashcards")
 }

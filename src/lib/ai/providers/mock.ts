@@ -175,6 +175,19 @@ export class MockProvider implements AiProvider {
       };
     }
 
+    if (systemPrompt.includes("GENERATE_FLASHCARDS")) {
+      return {
+        json: {
+          cards: [
+            { front: "What are the fundamental principles covered in this course?", back: "The fundamental principles include core definitions, foundational theories, and key frameworks that form the basis of the subject.", tags: ["fundamentals", "definitions"] },
+            { front: "How are theoretical concepts applied in practice?", back: "Theoretical concepts are applied through structured problem-solving, case analysis, and practical exercises that demonstrate real-world applications.", tags: ["application", "practice"] },
+            { front: "What is the relationship between core concepts A and B?", back: "Concept A provides the theoretical foundation, while Concept B extends it into practical applications. They are complementary and often tested together.", tags: ["relationships", "exam prep"] },
+          ],
+        },
+        usage: { tokenIn: 500, tokenOut: 250, costUsdMicros: 120 },
+      };
+    }
+
     // Fallback
     return {
       json: { text: "Mock response" },

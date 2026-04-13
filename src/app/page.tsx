@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
 
 // ---- Types ----
@@ -33,6 +33,18 @@ interface Plan {
   items: PlanItem[];
 }
 
+interface ActivityDay {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+interface ActivityData {
+  activity: ActivityDay[];
+  streak: number;
+  total_xp: number;
+  today_count: number;
+}
+
 // ---- Helpers ----
 
 function formatTime(iso: string): string {
@@ -58,12 +70,14 @@ export default function DashboardPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activityData, setActivityData] = useState<ActivityData | null>(null);
 
   useEffect(() => {
+    const userId = getOrCreateUserId();
     async function fetchPlans() {
       try {
         const res = await fetch("/api/plans", {
-          headers: { "X-User-Id": getOrCreateUserId() },
+          headers: { "X-User-Id": userId },
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -77,7 +91,21 @@ export default function DashboardPage() {
         setLoading(false);
       }
     }
+    async function fetchActivity() {
+      try {
+        const res = await fetch("/api/stats/activity", {
+          headers: { "X-User-Id": userId },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setActivityData(data);
+        }
+      } catch {
+        // Activity is non-critical
+      }
+    }
     fetchPlans();
+    fetchActivity();
   }, []);
 
   const allItems = useMemo(() => plans.flatMap((p) => p.items), [plans]);
@@ -183,6 +211,24 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Activity Heatmap + XP */}
+      {activityData && (
+        <section style={{ marginBottom: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Activity</h2>
+            <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem" }}>
+              <span style={{ color: "#f0dc4e" }}>
+                {activityData.total_xp} XP
+              </span>
+              <span style={{ color: "#e8a040" }}>
+                {activityData.streak} day streak
+              </span>
+            </div>
+          </div>
+          <ActivityHeatmap activity={activityData.activity} />
+        </section>
+      )}
+
       {/* Today's Sessions */}
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionHeadingStyle}>Today</h2>
@@ -251,6 +297,138 @@ export default function DashboardPage() {
         </a>
       )}
     </main>
+  );
+}
+
+// ---- Activity Heatmap ----
+
+function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
+  const { weeks, monthLabels } = useMemo(() => {
+    const countMap = new Map<string, number>();
+    for (const a of activity) countMap.set(a.date, a.count);
+
+    // Build 52 weeks ending today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dayOfWeek = today.getDay(); // 0=Sun
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - (52 * 7 + dayOfWeek));
+
+    const wks: { date: string; count: number; dayOfWeek: number }[][] = [];
+    const mLabels: { label: string; weekIndex: number }[] = [];
+    let lastMonth = -1;
+
+    const cursor = new Date(startDate);
+    let weekIdx = 0;
+    let currentWeek: { date: string; count: number; dayOfWeek: number }[] = [];
+
+    while (cursor <= today) {
+      const key = cursor.toISOString().slice(0, 10);
+      const dow = cursor.getDay();
+
+      if (dow === 0 && currentWeek.length > 0) {
+        wks.push(currentWeek);
+        weekIdx++;
+        currentWeek = [];
+      }
+
+      const month = cursor.getMonth();
+      if (month !== lastMonth) {
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        mLabels.push({ label: monthNames[month], weekIndex: weekIdx });
+        lastMonth = month;
+      }
+
+      currentWeek.push({
+        date: key,
+        count: countMap.get(key) || 0,
+        dayOfWeek: dow,
+      });
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    if (currentWeek.length > 0) wks.push(currentWeek);
+
+    return { weeks: wks, monthLabels: mLabels };
+  }, [activity]);
+
+  const getColor = useCallback((count: number) => {
+    if (count === 0) return "#1f2e1f";
+    if (count === 1) return "#2d5a2d";
+    if (count === 2) return "#3d7a3d";
+    if (count <= 4) return "#5aa05a";
+    return "#88cc88";
+  }, []);
+
+  const cellSize = 11;
+  const cellGap = 2;
+  const step = cellSize + cellGap;
+
+  return (
+    <div style={{ overflow: "hidden" }}>
+      {/* Month labels */}
+      <div style={{ display: "flex", marginBottom: "0.2rem", marginLeft: 0, height: 14 }}>
+        {monthLabels.map((m, i) => (
+          <span
+            key={`${m.label}-${i}`}
+            style={{
+              position: "absolute",
+              left: m.weekIndex * step,
+              fontSize: "0.55rem",
+              color: "#7a7060",
+            }}
+          />
+        ))}
+        <svg width={weeks.length * step} height={14} style={{ display: "block" }}>
+          {monthLabels.map((m, i) => (
+            <text
+              key={`${m.label}-${i}`}
+              x={m.weekIndex * step}
+              y={11}
+              fill="#7a7060"
+              fontSize="9"
+              fontFamily="inherit"
+            >
+              {m.label}
+            </text>
+          ))}
+        </svg>
+      </div>
+      {/* Grid */}
+      <svg
+        width={weeks.length * step}
+        height={7 * step}
+        style={{ display: "block" }}
+      >
+        {weeks.map((week, wi) =>
+          week.map((day) => (
+            <rect
+              key={day.date}
+              x={wi * step}
+              y={day.dayOfWeek * step}
+              width={cellSize}
+              height={cellSize}
+              rx={2}
+              fill={getColor(day.count)}
+              stroke="#2a3d2a"
+              strokeWidth={0.5}
+            >
+              <title>{day.date}: {day.count} session{day.count !== 1 ? "s" : ""}</title>
+            </rect>
+          ))
+        )}
+      </svg>
+      {/* Legend */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.4rem", justifyContent: "flex-end" }}>
+        <span style={{ fontSize: "0.55rem", color: "#7a7060" }}>Less</span>
+        {[0, 1, 2, 3, 5].map((n) => (
+          <svg key={n} width={cellSize} height={cellSize}>
+            <rect width={cellSize} height={cellSize} rx={2} fill={getColor(n)} />
+          </svg>
+        ))}
+        <span style={{ fontSize: "0.55rem", color: "#7a7060" }}>More</span>
+      </div>
+    </div>
   );
 }
 
