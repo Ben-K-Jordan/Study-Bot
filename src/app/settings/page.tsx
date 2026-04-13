@@ -4,39 +4,72 @@ import { useState, useEffect } from "react";
 import { getOrCreateUserId } from "@/lib/client-utils";
 
 const DEFAULTS = {
+  displayName: "",
   studyStart: "09:00",
   studyEnd: "17:00",
   dailyCap: 180,
+  dailyXpGoal: 50,
 };
 
-function loadPrefs(): typeof DEFAULTS {
-  if (typeof window === "undefined") return DEFAULTS;
-  try {
-    const raw = localStorage.getItem("study_bot_prefs");
-    if (!raw) return DEFAULTS;
-    return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-function savePrefs(prefs: typeof DEFAULTS) {
-  localStorage.setItem("study_bot_prefs", JSON.stringify(prefs));
-}
-
 export default function SettingsPage() {
+  const [displayName, setDisplayName] = useState(DEFAULTS.displayName);
   const [studyStart, setStudyStart] = useState(DEFAULTS.studyStart);
   const [studyEnd, setStudyEnd] = useState(DEFAULTS.studyEnd);
   const [dailyCap, setDailyCap] = useState(DEFAULTS.dailyCap);
+  const [dailyXpGoal, setDailyXpGoal] = useState(DEFAULTS.dailyXpGoal);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [googleStatus, setGoogleStatus] = useState<"loading" | "connected" | "disconnected">("loading");
 
+  // Load settings from backend (with localStorage fallback)
   useEffect(() => {
-    const prefs = loadPrefs();
-    setStudyStart(prefs.studyStart);
-    setStudyEnd(prefs.studyEnd);
-    setDailyCap(prefs.dailyCap);
+    const userId = getOrCreateUserId();
+    async function loadSettings() {
+      try {
+        const res = await fetch("/api/settings", {
+          headers: { "X-User-Id": userId },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDisplayName(data.displayName || "");
+          setStudyStart(data.studyStart || DEFAULTS.studyStart);
+          setStudyEnd(data.studyEnd || DEFAULTS.studyEnd);
+          setDailyCap(data.dailyCap ?? DEFAULTS.dailyCap);
+          setDailyXpGoal(data.dailyXpGoal ?? DEFAULTS.dailyXpGoal);
+          // Also sync to localStorage for plan page compatibility
+          localStorage.setItem("study_bot_prefs", JSON.stringify({
+            studyStart: data.studyStart || DEFAULTS.studyStart,
+            studyEnd: data.studyEnd || DEFAULTS.studyEnd,
+            dailyCap: data.dailyCap ?? DEFAULTS.dailyCap,
+          }));
+        } else {
+          // Fall back to localStorage
+          loadFromLocalStorage();
+        }
+      } catch {
+        loadFromLocalStorage();
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function loadFromLocalStorage() {
+      try {
+        const raw = localStorage.getItem("study_bot_prefs");
+        if (raw) {
+          const prefs = JSON.parse(raw);
+          if (prefs.studyStart) setStudyStart(prefs.studyStart);
+          if (prefs.studyEnd) setStudyEnd(prefs.studyEnd);
+          if (prefs.dailyCap) setDailyCap(prefs.dailyCap);
+        }
+      } catch {
+        // Use defaults
+      }
+    }
+
+    loadSettings();
   }, []);
 
   useEffect(() => {
@@ -54,19 +87,71 @@ export default function SettingsPage() {
     checkGoogle();
   }, []);
 
-  const handleSave = () => {
-    savePrefs({ studyStart, studyEnd, dailyCap });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+
+    // Save to localStorage (always, as fallback)
+    localStorage.setItem("study_bot_prefs", JSON.stringify({ studyStart, studyEnd, dailyCap }));
+
+    // Save to backend
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": getOrCreateUserId(),
+        },
+        body: JSON.stringify({
+          displayName: displayName.trim() || undefined,
+          studyStart,
+          studyEnd,
+          dailyCap,
+          dailyXpGoal,
+        }),
+      });
+      if (res.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } catch {
+      // localStorage save already happened as fallback
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleGoogleConnect = () => {
     window.location.href = `/api/integrations/google/connect?user_id=${getOrCreateUserId()}`;
   };
 
+  if (loading) {
+    return (
+      <div style={pageStyle}>
+        <h1 style={headingStyle}>Settings</h1>
+        <p style={{ color: "#7a7060" }}>Loading preferences...</p>
+      </div>
+    );
+  }
+
   return (
     <div style={pageStyle}>
       <h1 style={headingStyle}>Settings</h1>
+
+      <section style={{ marginBottom: "2rem" }}>
+        <h2 style={sectionStyle}>Profile</h2>
+        <p style={hintStyle}>Set a display name for the leaderboard.</p>
+        <input
+          type="text"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="Your display name"
+          maxLength={50}
+          style={textInputStyle}
+        />
+      </section>
 
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Study hours</h2>
@@ -98,6 +183,25 @@ export default function SettingsPage() {
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
+        <h2 style={sectionStyle}>Daily XP goal</h2>
+        <p style={hintStyle}>Your daily XP target shown on the dashboard.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <input
+            type="range"
+            min={10}
+            max={200}
+            step={10}
+            value={dailyXpGoal}
+            onChange={(e) => setDailyXpGoal(Number(e.target.value))}
+            style={{ flex: 1, accentColor: "#f0dc4e" }}
+          />
+          <span style={{ color: "#f0dc4e", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
+            {dailyXpGoal} XP
+          </span>
+        </div>
+      </section>
+
+      <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Google Calendar</h2>
         {googleStatus === "loading" ? (
           <p style={hintStyle}>Checking connection...</p>
@@ -116,9 +220,12 @@ export default function SettingsPage() {
         )}
       </section>
 
-      <button onClick={handleSave} style={saveBtnStyle}>
-        {saved ? "Saved" : "Save Preferences"}
+      <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>
+        {saved ? "Saved!" : saving ? "Saving..." : "Save Preferences"}
       </button>
+      <p style={{ fontSize: "0.7rem", color: "#5a7a5a", marginTop: "0.5rem" }}>
+        Settings are synced to your account and available on all devices.
+      </p>
     </div>
   );
 }
@@ -155,6 +262,17 @@ const hintStyle: React.CSSProperties = {
   color: "#7a7060",
   fontSize: "0.9rem",
   margin: "0 0 0.75rem",
+};
+
+const textInputStyle: React.CSSProperties = {
+  width: "100%",
+  background: "#2d422d",
+  color: "#e8dcc8",
+  border: "1px solid #4a6a4a",
+  padding: "0.5rem 0.75rem",
+  fontFamily: "inherit",
+  fontSize: "1rem",
+  borderRadius: "4px",
 };
 
 const timeInputStyle: React.CSSProperties = {
