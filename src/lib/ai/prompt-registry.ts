@@ -86,6 +86,13 @@ interface GenerateStudyGuideInput {
   objectives?: string[];
 }
 
+interface GenerateFlashcardsInput {
+  title: string;
+  courseName: string;
+  examName?: string;
+  chunkTexts: string[];
+}
+
 interface PlanGeneratorInput {
   objectives: string[];
   numDays: number;
@@ -566,6 +573,42 @@ For CHEAT_SHEET:
       }
 
       return `${header}${objStr}\n\nCourse material excerpts:\n${context}\n\nGenerate the ${guideType.replace(/_/g, " ").toLowerCase()} study guide.`;
+    },
+  },
+
+  [AiTask.GENERATE_FLASHCARDS]: {
+    task: AiTask.GENERATE_FLASHCARDS,
+    version: "v1",
+    systemPrompt: `You are an expert educator creating flashcards from course materials. Task: GENERATE_FLASHCARDS.
+
+Given excerpts from a document, generate 10-15 high-quality flashcards that cover the key concepts, definitions, formulas, and important facts.
+
+Rules:
+1. Each card should test ONE specific concept or fact.
+2. Front: a clear, specific question or prompt (not too vague).
+3. Back: a concise, accurate answer grounded in the provided material.
+4. Cover the most important and exam-relevant material first.
+5. Mix question types: definitions, explanations, comparisons, applications.
+6. Do not fabricate information not present in the excerpts.
+7. Each card should be self-contained — understandable without the other cards.
+
+Output valid JSON:
+{
+  "cards": [
+    { "front": string, "back": string, "tags": [string] }
+  ]
+}
+
+Tags should be 1-3 short topic labels per card (e.g., ["definitions", "chapter 3"]).`,
+    buildUserPrompt: (input: unknown) => {
+      const { title, courseName, examName, chunkTexts } = input as GenerateFlashcardsInput;
+      let header = `Document: "${title}"`;
+      if (courseName) header += `\nCourse: ${courseName}`;
+      if (examName) header += `\nExam: ${examName}`;
+      const context = chunkTexts
+        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .join("\n\n");
+      return `${header}\n\nDocument excerpts:\n${context}\n\nGenerate flashcards from this material.`;
     },
   },
 };
