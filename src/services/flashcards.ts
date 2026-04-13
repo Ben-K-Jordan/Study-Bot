@@ -34,6 +34,85 @@ export interface FlashcardDeckData {
 const FLASHCARD_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
 
 /**
+ * Compute mastery context for adaptive flashcard generation.
+ * Analyzes existing card reviews to identify weak/strong areas.
+ */
+async function computeMasteryContext(
+  userId: string,
+  courseName: string,
+): Promise<string | undefined> {
+  // Get all cards in this course with their review stats
+  const decks = await prisma.flashcardDeck.findMany({
+    where: { userId, courseName },
+    include: {
+      cards: {
+        select: {
+          id: true,
+          tags: true,
+          easeFactor: true,
+          intervalDays: true,
+          repetitions: true,
+          reviews: {
+            select: { rating: true },
+            orderBy: { createdAt: "desc" },
+            take: 5,
+          },
+        },
+      },
+    },
+  });
+
+  const allCards = decks.flatMap((d) => d.cards);
+  if (allCards.length === 0) return undefined;
+
+  // Aggregate by tag
+  const tagStats = new Map<string, { total: number; avgEase: number; againCount: number; masteredCount: number }>();
+
+  for (const card of allCards) {
+    const tags = (card.tags as string[] | null) || ["general"];
+    const recentRatings = card.reviews.map((r) => r.rating);
+    const againCount = recentRatings.filter((r) => r === "AGAIN").length;
+
+    for (const tag of tags) {
+      const existing = tagStats.get(tag) || { total: 0, avgEase: 0, againCount: 0, masteredCount: 0 };
+      existing.total++;
+      existing.avgEase += card.easeFactor;
+      existing.againCount += againCount;
+      if (card.intervalDays >= 21) existing.masteredCount++;
+      tagStats.set(tag, existing);
+    }
+  }
+
+  // Build context string
+  const lines: string[] = [];
+  lines.push(`Total cards reviewed: ${allCards.filter((c) => c.repetitions > 0).length}/${allCards.length}`);
+
+  const weakTopics: string[] = [];
+  const strongTopics: string[] = [];
+
+  for (const [tag, stats] of tagStats) {
+    const avgEase = stats.avgEase / stats.total;
+    const masteryPct = Math.round((stats.masteredCount / stats.total) * 100);
+    const againRate = stats.total > 0 ? Math.round((stats.againCount / stats.total) * 100) : 0;
+
+    if (avgEase < 2.0 || againRate > 40) {
+      weakTopics.push(`${tag} (avg ease: ${avgEase.toFixed(1)}, ${againRate}% again rate, ${masteryPct}% mastered)`);
+    } else if (masteryPct >= 70) {
+      strongTopics.push(`${tag} (${masteryPct}% mastered, avg ease: ${avgEase.toFixed(1)})`);
+    }
+  }
+
+  if (weakTopics.length > 0) {
+    lines.push(`Weak areas (need more practice): ${weakTopics.join("; ")}`);
+  }
+  if (strongTopics.length > 0) {
+    lines.push(`Strong areas: ${strongTopics.join("; ")}`);
+  }
+
+  return lines.length > 1 ? lines.join("\n") : undefined;
+}
+
+/**
  * Generate flashcards from a specific document's chunks.
  */
 export async function generateFlashcardsFromDocument(
@@ -82,6 +161,9 @@ export async function generateFlashcardsFromDocument(
 
   const chunkTexts = sampled.map((c) => c.text);
 
+  // Compute mastery context for adaptive difficulty
+  const masteryContext = await computeMasteryContext(userId, doc.courseName!);
+
   const ctx: GatewayContext = { userId, provider: createProvider() };
   const prompt = getPrompt(AiTask.GENERATE_FLASHCARDS);
 
@@ -94,6 +176,7 @@ export async function generateFlashcardsFromDocument(
       courseName: doc.courseName,
       examName: doc.examName || undefined,
       chunkTexts,
+      masteryContext,
     },
     parseOutput: (raw: unknown) => {
       const data = raw as Record<string, unknown>;
@@ -196,6 +279,9 @@ export async function generateFlashcardsFromCourse(
 
   const chunkTexts = sampled.map((c) => c.text);
 
+  // Compute mastery context for adaptive difficulty
+  const masteryContext = await computeMasteryContext(userId, courseName);
+
   const ctx: GatewayContext = { userId, provider: createProvider() };
   const prompt = getPrompt(AiTask.GENERATE_FLASHCARDS);
 
@@ -208,6 +294,7 @@ export async function generateFlashcardsFromCourse(
       courseName,
       examName,
       chunkTexts,
+      masteryContext,
     },
     parseOutput: (raw: unknown) => {
       const data = raw as Record<string, unknown>;

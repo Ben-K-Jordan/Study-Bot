@@ -71,6 +71,20 @@ const BADGE_INFO: Record<string, { label: string; icon: string; description: str
   XP_1000:       { label: "XP Master",          icon: "\u{1F31F}", description: "1,000 total XP" },
 };
 
+interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  xp: number;
+  isCurrentUser: boolean;
+}
+
+interface LeaderboardData {
+  leaderboard: LeaderboardEntry[];
+  period: string;
+  userRank: number | null;
+}
+
 // ---- Helpers ----
 
 function formatTime(iso: string): string {
@@ -100,6 +114,8 @@ export default function DashboardPage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [celebrationBadge, setCelebrationBadge] = useState<string | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null);
+  const [lbPeriod, setLbPeriod] = useState<"week" | "month" | "all">("week");
 
   useEffect(() => {
     const userId = getOrCreateUserId();
@@ -152,10 +168,34 @@ export default function DashboardPage() {
         // Non-critical
       }
     }
+    async function fetchLeaderboard() {
+      try {
+        const res = await fetch("/api/leaderboard?period=week", {
+          headers: { "X-User-Id": userId },
+        });
+        if (res.ok) {
+          setLeaderboard(await res.json());
+        }
+      } catch {
+        // Non-critical
+      }
+    }
     fetchPlans();
     fetchActivity();
     fetchGameState();
+    fetchLeaderboard();
   }, []);
+
+  // Reload leaderboard when period changes
+  useEffect(() => {
+    const userId = getOrCreateUserId();
+    fetch(`/api/leaderboard?period=${lbPeriod}`, {
+      headers: { "X-User-Id": userId },
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setLeaderboard(data); })
+      .catch(() => {});
+  }, [lbPeriod]);
 
   const allItems = useMemo(() => plans.flatMap((p) => p.items), [plans]);
   const today = useMemo(() => new Date(), []);
@@ -322,6 +362,69 @@ export default function DashboardPage() {
       {streak > 0 && (
         <section style={{ marginBottom: "2rem" }}>
           <StreakMilestones streak={streak} earned={gameState?.achievements.map((a) => a.badgeType) ?? []} />
+        </section>
+      )}
+
+      {/* Leaderboard */}
+      {leaderboard && leaderboard.leaderboard.length > 0 && (
+        <section style={{ marginBottom: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Leaderboard</h2>
+            <div style={{ display: "flex", gap: "0.25rem" }}>
+              {(["week", "month", "all"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setLbPeriod(p)}
+                  style={{
+                    padding: "0.2rem 0.5rem",
+                    fontSize: "0.7rem",
+                    fontFamily: "inherit",
+                    background: lbPeriod === p ? "#f0dc4e22" : "transparent",
+                    color: lbPeriod === p ? "#f0dc4e" : "#7a7060",
+                    border: `1px solid ${lbPeriod === p ? "#f0dc4e44" : "#3a5a3a"}`,
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, overflow: "hidden" }}>
+            {leaderboard.leaderboard.slice(0, 10).map((entry) => (
+              <div
+                key={entry.userId}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "0.5rem 0.75rem",
+                  borderBottom: "1px solid #3a5a3a",
+                  background: entry.isCurrentUser ? "#f0dc4e0d" : "transparent",
+                }}
+              >
+                <span style={{
+                  width: 24, textAlign: "center", fontWeight: 700, fontSize: "0.85rem",
+                  color: entry.rank === 1 ? "#f0dc4e" : entry.rank === 2 ? "#c4c4c4" : entry.rank === 3 ? "#cd7f32" : "#7a7060",
+                }}>
+                  {entry.rank}
+                </span>
+                <span style={{ flex: 1, marginLeft: "0.5rem", fontSize: "0.85rem", color: entry.isCurrentUser ? "#f0dc4e" : "#e8dcc8", fontWeight: entry.isCurrentUser ? 600 : 400 }}>
+                  {entry.displayName}
+                  {entry.isCurrentUser && <span style={{ fontSize: "0.7rem", color: "#7a7060", marginLeft: "0.35rem" }}>(you)</span>}
+                </span>
+                <span style={{ fontSize: "0.8rem", color: "#f0dc4e", fontWeight: 600 }}>
+                  {entry.xp} XP
+                </span>
+              </div>
+            ))}
+          </div>
+          {leaderboard.userRank && leaderboard.userRank > 10 && (
+            <p style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.4rem", textAlign: "center" }}>
+              Your rank: #{leaderboard.userRank}
+            </p>
+          )}
         </section>
       )}
 

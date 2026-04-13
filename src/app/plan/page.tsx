@@ -156,20 +156,33 @@ export default function PlanPage() {
       return;
     }
 
-    // Read saved preferences (study hours + daily cap) from settings
+    // Read saved preferences — try backend first, fall back to localStorage
     let studyStart = "09:00";
     let studyEnd = "17:00";
     let dailyCap = 180;
     try {
-      const raw = localStorage.getItem("study_bot_prefs");
-      if (raw) {
-        const prefs = JSON.parse(raw);
-        if (prefs.studyStart) studyStart = prefs.studyStart;
-        if (prefs.studyEnd) studyEnd = prefs.studyEnd;
-        if (prefs.dailyCap) dailyCap = prefs.dailyCap;
+      const settingsRes = await fetch("/api/settings", {
+        headers: { "X-User-Id": getOrCreateUserId() },
+      });
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        if (settings.studyStart) studyStart = settings.studyStart;
+        if (settings.studyEnd) studyEnd = settings.studyEnd;
+        if (settings.dailyCap) dailyCap = settings.dailyCap;
+      } else {
+        throw new Error("fallback");
       }
     } catch {
-      // Use defaults
+      // Fall back to localStorage
+      try {
+        const raw = localStorage.getItem("study_bot_prefs");
+        if (raw) {
+          const prefs = JSON.parse(raw);
+          if (prefs.studyStart) studyStart = prefs.studyStart;
+          if (prefs.studyEnd) studyEnd = prefs.studyEnd;
+          if (prefs.dailyCap) dailyCap = prefs.dailyCap;
+        }
+      } catch { /* defaults */ }
     }
     const availability = Array.from({ length: 7 }, () => ({ start: studyStart, end: studyEnd }));
 

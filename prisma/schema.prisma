@@ -603,9 +603,13 @@ model Achievement {
 model UserGameState {
   id                   String    @id @default(uuid())
   userId               String    @unique @map("user_id")
+  displayName          String?   @map("display_name")
   dailyXpGoal          Int       @default(50) @map("daily_xp_goal")
   streakFreezes        Int       @default(0) @map("streak_freezes")
   streakFreezeUsedDate String?   @map("streak_freeze_used_date") // YYYY-MM-DD
+  studyStartTime       String    @default("09:00") @map("study_start_time")
+  studyEndTime         String    @default("17:00") @map("study_end_time")
+  dailyStudyCap        Int       @default(180) @map("daily_study_cap")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 

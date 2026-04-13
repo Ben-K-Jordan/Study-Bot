@@ -91,6 +91,7 @@ interface GenerateFlashcardsInput {
   courseName: string;
   examName?: string;
   chunkTexts: string[];
+  masteryContext?: string;
 }
 
 interface PlanGeneratorInput {
@@ -578,7 +579,7 @@ For CHEAT_SHEET:
 
   [AiTask.GENERATE_FLASHCARDS]: {
     task: AiTask.GENERATE_FLASHCARDS,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert educator creating flashcards from course materials. Task: GENERATE_FLASHCARDS.
 
 Given excerpts from a document, generate 10-15 high-quality flashcards that cover the key concepts, definitions, formulas, and important facts.
@@ -592,6 +593,13 @@ Rules:
 6. Do not fabricate information not present in the excerpts.
 7. Each card should be self-contained — understandable without the other cards.
 
+ADAPTIVE DIFFICULTY:
+If mastery data is provided, adjust card generation accordingly:
+- For topics where the student struggles (low mastery), generate more cards at a foundational level — focus on clear definitions, simple examples, and building blocks.
+- For topics where the student is strong (high mastery), generate harder cards — application questions, comparisons, edge cases, and synthesis across concepts.
+- For weak tags/topics, create cards that approach the concept from a different angle than existing cards.
+- Always include some cards on new material not yet covered by existing flashcards.
+
 Output valid JSON:
 {
   "cards": [
@@ -601,14 +609,19 @@ Output valid JSON:
 
 Tags should be 1-3 short topic labels per card (e.g., ["definitions", "chapter 3"]).`,
     buildUserPrompt: (input: unknown) => {
-      const { title, courseName, examName, chunkTexts } = input as GenerateFlashcardsInput;
+      const { title, courseName, examName, chunkTexts, masteryContext } = input as GenerateFlashcardsInput;
       let header = `Document: "${title}"`;
       if (courseName) header += `\nCourse: ${courseName}`;
       if (examName) header += `\nExam: ${examName}`;
       const context = chunkTexts
         .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
         .join("\n\n");
-      return `${header}\n\nDocument excerpts:\n${context}\n\nGenerate flashcards from this material.`;
+      let prompt = `${header}\n\nDocument excerpts:\n${context}`;
+      if (masteryContext) {
+        prompt += `\n\nStudent mastery data (use to adapt difficulty):\n${masteryContext}`;
+      }
+      prompt += `\n\nGenerate flashcards from this material${masteryContext ? ", adapting to the student's strengths and weaknesses" : ""}.`;
+      return prompt;
     },
   },
 };
