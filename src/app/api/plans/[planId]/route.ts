@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getPlan } from "@/services/plan";
+import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
 
 export async function GET(
   request: NextRequest,
@@ -22,4 +24,38 @@ export async function GET(
   }
 
   return NextResponse.json(result.data);
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ planId: string }> }
+) {
+  const userId = getUserId(request.headers);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { planId } = await params;
+
+  const plan = await prisma.studyPlan.findUnique({
+    where: { planId },
+    select: { userId: true },
+  });
+
+  if (!plan || plan.userId !== userId) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  }
+
+  // Delete in correct order to respect FK constraints
+  await prisma.$transaction([
+    prisma.planItemExternalEvent.deleteMany({ where: { planId } }),
+    prisma.planCalendarPublication.deleteMany({ where: { planId } }),
+    prisma.planReflowAudit.deleteMany({ where: { planId } }),
+    prisma.studyPlanItem.deleteMany({ where: { planId } }),
+    prisma.studyPlan.delete({ where: { planId } }),
+  ]);
+
+  logger.info("plan.deleted", { user_id: userId, plan_id: planId });
+
+  return NextResponse.json({ success: true });
 }

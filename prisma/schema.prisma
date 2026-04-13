@@ -536,16 +536,78 @@ model FlashcardDeck {
 }
 
 model Flashcard {
-  id        String   @id @default(uuid())
-  deckId    String   @map("deck_id")
-  front     String
-  back      String
-  tags      Json?
-  ordinal   Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String    @id @default(uuid())
+  deckId       String    @map("deck_id")
+  front        String
+  back         String
+  tags         Json?
+  ordinal      Int       @default(0)
+  easeFactor   Float     @default(2.5) @map("ease_factor")
+  intervalDays Int       @default(0) @map("interval_days")
+  repetitions  Int       @default(0)
+  nextDueAt    DateTime? @map("next_due_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at")
 
   deck      FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  reviews   CardReview[]
 
   @@index([deckId])
+  @@index([deckId, nextDueAt], map: "flashcards_deck_due_idx")
   @@map("flashcards")
+}
+
+// ---- Card Reviews (SM-2 history) ----
+
+model CardReview {
+  id           String   @id @default(uuid())
+  cardId       String   @map("card_id")
+  userId       String   @map("user_id")
+  rating       String   // AGAIN | HARD | GOOD | EASY
+  easeFactor   Float    @map("ease_factor")
+  intervalDays Int      @map("interval_days")
+  repetitions  Int
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  card         Flashcard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@index([userId, createdAt])
+  @@map("card_reviews")
+}
+
+// ---- Gamification ----
+
+model XpEvent {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  action    String   // FLASHCARD_REVIEW | GUIDE_GENERATED | CHAT_QUESTION | SESSION_COMPLETED | PERFECT_DECK | STREAK_MILESTONE
+  xpAmount  Int      @map("xp_amount")
+  sourceId  String?  @map("source_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("xp_events")
+}
+
+model Achievement {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  badgeType String   @map("badge_type")
+  earnedAt  DateTime @default(now()) @map("earned_at")
+
+  @@unique([userId, badgeType], map: "achievements_user_badge_key")
+  @@index([userId])
+  @@map("achievements")
+}
+
+model UserGameState {
+  id                   String    @id @default(uuid())
+  userId               String    @unique @map("user_id")
+  dailyXpGoal          Int       @default(50) @map("daily_xp_goal")
+  streakFreezes        Int       @default(0) @map("streak_freezes")
+  streakFreezeUsedDate String?   @map("streak_freeze_used_date") // YYYY-MM-DD
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  @@map("user_game_state")
 }

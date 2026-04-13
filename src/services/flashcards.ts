@@ -302,6 +302,24 @@ export async function listFlashcardDecks(
 }
 
 /**
+ * Delete a flashcard deck and all its cards (cascade).
+ */
+export async function deleteFlashcardDeck(
+  userId: string,
+  deckId: string,
+): Promise<boolean> {
+  const deck = await prisma.flashcardDeck.findUnique({
+    where: { id: deckId },
+    select: { userId: true },
+  });
+  if (!deck || deck.userId !== userId) return false;
+
+  await prisma.flashcardDeck.delete({ where: { id: deckId } });
+  logger.info("flashcards.deleted", { user_id: userId, deck_id: deckId });
+  return true;
+}
+
+/**
  * Get a deck with all its cards for studying.
  */
 export async function getFlashcardDeck(
