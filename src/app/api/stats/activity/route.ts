@@ -5,7 +5,8 @@ import { prisma } from "@/lib/db";
 /**
  * GET /api/stats/activity
  * Returns daily study activity for the past year (for heatmap),
- * current streak, and total XP (1 XP per completed session).
+ * current streak, and total XP.
+ * Merges data from completed plan items + XP events.
  */
 export async function GET(request: NextRequest) {
   const userId = getUserId(request.headers);
@@ -18,35 +19,47 @@ export async function GET(request: NextRequest) {
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   oneYearAgo.setHours(0, 0, 0, 0);
 
-  // Get all completed plan items in the past year
-  const completedItems = await prisma.studyPlanItem.findMany({
-    where: {
-      plan: { userId },
-      status: "DONE",
-      completedAt: { gte: oneYearAgo },
-    },
-    select: {
-      completedAt: true,
-      startTime: true,
-    },
-    orderBy: { completedAt: "asc" },
-  });
+  // Get completed plan items + XP events in parallel
+  const [completedItems, xpEvents, xpTotal] = await Promise.all([
+    prisma.studyPlanItem.findMany({
+      where: {
+        plan: { userId },
+        status: "DONE",
+        completedAt: { gte: oneYearAgo },
+      },
+      select: { completedAt: true, startTime: true },
+      orderBy: { completedAt: "asc" },
+    }),
+    prisma.xpEvent.findMany({
+      where: { userId, createdAt: { gte: oneYearAgo } },
+      select: { createdAt: true },
+    }),
+    prisma.xpEvent.aggregate({
+      where: { userId },
+      _sum: { xpAmount: true },
+    }),
+  ]);
 
-  // Build daily counts map
+  // Build daily counts map (merge both sources)
   const dailyCounts = new Map<string, number>();
   for (const item of completedItems) {
     const d = item.completedAt || item.startTime;
-    const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+    const key = d.toISOString().slice(0, 10);
     dailyCounts.set(key, (dailyCounts.get(key) || 0) + 1);
   }
+  for (const event of xpEvents) {
+    const key = event.createdAt.toISOString().slice(0, 10);
+    if (!dailyCounts.has(key)) {
+      dailyCounts.set(key, 1);
+    }
+  }
 
-  // Convert to array
   const activity = Array.from(dailyCounts.entries()).map(([date, count]) => ({
     date,
     count,
   }));
 
-  // Compute streak (consecutive days ending today or yesterday)
+  // Compute streak
   const todayKey = now.toISOString().slice(0, 10);
   const yesterdayDate = new Date(now);
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
@@ -56,7 +69,6 @@ export async function GET(request: NextRequest) {
   const check = new Date(now);
   check.setHours(0, 0, 0, 0);
 
-  // If no activity today, start checking from yesterday
   if (!dailyCounts.has(todayKey)) {
     if (!dailyCounts.has(yesterdayKey)) {
       streak = 0;
@@ -73,13 +85,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Total XP = total completed sessions all time
-  const totalXp = await prisma.studyPlanItem.count({
-    where: {
-      plan: { userId },
-      status: "DONE",
-    },
-  });
+  // Total XP from XP events; fallback to completed item count for legacy data
+  const xpFromEvents = xpTotal._sum.xpAmount || 0;
+  const totalXp = xpFromEvents > 0
+    ? xpFromEvents
+    : await prisma.studyPlanItem.count({
+        where: { plan: { userId }, status: "DONE" },
+      });
 
   return NextResponse.json({
     activity,

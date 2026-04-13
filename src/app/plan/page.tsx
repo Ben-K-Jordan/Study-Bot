@@ -40,6 +40,7 @@ export default function PlanPage() {
   const [googleConnected, setGoogleConnected] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishDone, setPublishDone] = useState(false);
+  const [deletingPlan, setDeletingPlan] = useState(false);
 
   useEffect(() => {
     async function checkGoogle() {
@@ -202,6 +203,29 @@ export default function PlanPage() {
     }
   };
 
+  const handleDeletePlan = async () => {
+    if (!result || deletingPlan) return;
+    setDeletingPlan(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plans/${result.plan_id}`, {
+        method: "DELETE",
+        headers: { "X-User-Id": getOrCreateUserId() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to delete plan");
+        return;
+      }
+      setResult(null);
+      setPublishDone(false);
+    } catch {
+      setError("Network error");
+    } finally {
+      setDeletingPlan(false);
+    }
+  };
+
   const grouped = result
     ? result.items.reduce<Record<number, PlanItem[]>>((acc, item) => {
         (acc[item.day_index] = acc[item.day_index] || []).push(item);
@@ -338,6 +362,13 @@ export default function PlanPage() {
           <a href={result.ics_download_url} style={btnStyle}>Download .ics</a>
           <button onClick={() => { setResult(null); setPublishDone(false); }} style={btnStyle}>
             New Plan
+          </button>
+          <button
+            onClick={handleDeletePlan}
+            disabled={deletingPlan}
+            style={{ ...btnStyle, color: "#e88888", borderColor: "#e8888844" }}
+          >
+            {deletingPlan ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>

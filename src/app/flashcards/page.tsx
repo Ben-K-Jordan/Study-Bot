@@ -6,12 +6,23 @@ import { getOrCreateUserId } from "@/lib/client-utils";
 
 // --- Types ---
 
-interface FlashcardData {
+interface CardData {
   id: string;
   front: string;
   back: string;
   tags: string[] | null;
   ordinal: number;
+  easeFactor: number;
+  intervalDays: number;
+  repetitions: number;
+  nextDueAt: string | null;
+  status: "new" | "learning" | "review" | "mastered";
+}
+
+interface StudyDeck {
+  deck: { id: string; title: string; courseName: string };
+  cards: CardData[];
+  stats: { newCount: number; learningCount: number; reviewCount: number; masteredCount: number };
 }
 
 interface DeckSummary {
@@ -24,15 +35,13 @@ interface DeckSummary {
   created_at: string;
 }
 
-interface DeckFull extends DeckSummary {
-  cards: FlashcardData[];
-}
-
 interface CourseOption {
   course_name: string;
   exam_name?: string;
   doc_count: number;
 }
+
+type ReviewRating = "AGAIN" | "HARD" | "GOOD" | "EASY";
 
 // --- API helpers ---
 
@@ -59,6 +68,39 @@ async function apiPost(url: string, body: unknown) {
   return data;
 }
 
+async function apiDelete(url: string) {
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { "X-User-Id": getOrCreateUserId() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+// --- Status helpers ---
+
+const STATUS_COLORS: Record<string, string> = {
+  new: "#7ec8e3",
+  learning: "#e8a040",
+  review: "#c4a0ff",
+  mastered: "#88cc88",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  new: "New",
+  learning: "Learning",
+  review: "Review",
+  mastered: "Mastered",
+};
+
+const RATING_COLORS: Record<ReviewRating, string> = {
+  AGAIN: "#e88888",
+  HARD: "#e8a040",
+  GOOD: "#88cc88",
+  EASY: "#7ec8e3",
+};
+
 // --- Component ---
 
 type View = "list" | "study";
@@ -73,11 +115,15 @@ export default function FlashcardsPage() {
 
   // Study mode state
   const [view, setView] = useState<View>("list");
-  const [studyDeck, setStudyDeck] = useState<DeckFull | null>(null);
+  const [studyData, setStudyData] = useState<StudyDeck | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [known, setKnown] = useState<Set<number>>(new Set());
   const [loadingDeck, setLoadingDeck] = useState(false);
+  const [sessionXp, setSessionXp] = useState(0);
+  const [reviewedCount, setReviewedCount] = useState(0);
+  const [reviewing, setReviewing] = useState(false);
+  const [xpPopup, setXpPopup] = useState<{ amount: number; key: number } | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const selectedCourseRef = useRef(selectedCourse);
   selectedCourseRef.current = selectedCourse;
@@ -171,11 +217,12 @@ export default function FlashcardsPage() {
   const openStudyMode = useCallback(async (deckId: string) => {
     setLoadingDeck(true);
     try {
-      const deck = await apiGet(`/api/flashcards/${deckId}`);
-      setStudyDeck(deck);
+      const data = await apiGet(`/api/flashcards/${deckId}/study`);
+      setStudyData(data);
       setCardIndex(0);
       setFlipped(false);
-      setKnown(new Set());
+      setSessionXp(0);
+      setReviewedCount(0);
       setView("study");
     } catch {
       setError("Failed to load deck");
@@ -186,38 +233,72 @@ export default function FlashcardsPage() {
 
   const handleFlip = () => setFlipped((f) => !f);
 
-  const handleNext = (markKnown: boolean) => {
-    if (!studyDeck) return;
-    if (markKnown) {
-      setKnown((prev) => new Set(prev).add(cardIndex));
-    }
-    if (cardIndex < studyDeck.cards.length - 1) {
-      setCardIndex((i) => i + 1);
-      setFlipped(false);
-    }
-  };
+  const handleReview = useCallback(async (rating: ReviewRating) => {
+    if (!studyData || reviewing) return;
+    const card = studyData.cards[cardIndex];
+    setReviewing(true);
 
-  const handlePrev = () => {
-    if (cardIndex > 0) {
-      setCardIndex((i) => i - 1);
-      setFlipped(false);
+    try {
+      const result = await apiPost(`/api/flashcards/${studyData.deck.id}/review`, {
+        card_id: card.id,
+        rating,
+      });
+
+      // Update card state locally
+      setStudyData((prev) => {
+        if (!prev) return prev;
+        const updatedCards = [...prev.cards];
+        updatedCards[cardIndex] = {
+          ...updatedCards[cardIndex],
+          easeFactor: result.easeFactor,
+          intervalDays: result.intervalDays,
+          repetitions: result.repetitions,
+          nextDueAt: result.nextDueAt,
+          status: result.intervalDays === 0 ? "learning"
+            : result.intervalDays >= 21 ? "mastered"
+            : "review",
+        };
+        return { ...prev, cards: updatedCards };
+      });
+
+      const earned = result.xpEarned || 0;
+      setSessionXp((prev) => prev + earned);
+      setReviewedCount((prev) => prev + 1);
+
+      // XP popup
+      if (earned > 0) {
+        setXpPopup({ amount: earned, key: Date.now() });
+        setTimeout(() => setXpPopup(null), 1500);
+      }
+
+      // Advance to next card
+      if (cardIndex < studyData.cards.length - 1) {
+        setCardIndex((i) => i + 1);
+        setFlipped(false);
+      } else {
+        // Reached end — flip to show summary
+        setFlipped(true);
+      }
+    } catch {
+      setError("Failed to submit review");
+    } finally {
+      setReviewing(false);
     }
-  };
+  }, [studyData, cardIndex, reviewing]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (view !== "study" || !studyDeck) return;
+      if (view !== "study" || !studyData) return;
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         setFlipped((f) => !f);
-      } else if (e.key === "ArrowRight") {
-        handleNext(false);
-      } else if (e.key === "ArrowLeft") {
-        handlePrev();
-      }
+      } else if (e.key === "1") { handleReview("AGAIN"); }
+      else if (e.key === "2") { handleReview("HARD"); }
+      else if (e.key === "3") { handleReview("GOOD"); }
+      else if (e.key === "4") { handleReview("EASY"); }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view, studyDeck, cardIndex],
+    [view, studyData, cardIndex, reviewing],
   );
 
   useEffect(() => {
@@ -225,25 +306,60 @@ export default function FlashcardsPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  const handleDeleteDeck = useCallback(async (deckId: string) => {
+    if (deleting) return;
+    setDeleting(deckId);
+    try {
+      await apiDelete(`/api/flashcards/${deckId}`);
+      setDecks((prev) => prev.filter((d) => d.id !== deckId));
+    } catch {
+      setError("Failed to delete deck");
+    } finally {
+      setDeleting(null);
+    }
+  }, [deleting]);
+
   // --- Study Mode ---
-  if (view === "study" && studyDeck) {
-    const card = studyDeck.cards[cardIndex];
-    const total = studyDeck.cards.length;
-    const knownCount = known.size;
+  if (view === "study" && studyData) {
+    const card = studyData.cards[cardIndex];
+    const total = studyData.cards.length;
     const progressPct = total > 0 ? ((cardIndex + 1) / total) * 100 : 0;
+    const isLastCard = cardIndex === total - 1;
+    const sessionComplete = isLastCard && reviewedCount >= total;
 
     return (
       <div style={pageContainer}>
+        <style>{`
+          @keyframes xp-float { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-30px); } }
+        `}</style>
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <button onClick={() => setView("list")} style={backBtn}>
             Back to Decks
           </button>
-          <span style={{ fontSize: "0.8rem", color: "#7a7060" }}>
-            {knownCount}/{total} known
-          </span>
+          <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+            <span style={{ fontSize: "0.8rem", color: "#f0dc4e", fontWeight: 600 }}>
+              +{sessionXp} XP
+            </span>
+            <span style={{ fontSize: "0.8rem", color: "#7a7060" }}>
+              {reviewedCount}/{total} reviewed
+            </span>
+          </div>
         </div>
 
-        <h2 style={{ ...titleStyle, fontSize: "1.3rem", marginBottom: "0.5rem" }}>{studyDeck.title}</h2>
+        <h2 style={{ ...titleStyle, fontSize: "1.3rem", marginBottom: "0.5rem" }}>{studyData.deck.title}</h2>
+
+        {/* Stats bar */}
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
+          {(["new", "learning", "review", "mastered"] as const).map((s) => {
+            const count = studyData.stats[`${s}Count` as keyof typeof studyData.stats];
+            return (
+              <span key={s} style={{ fontSize: "0.7rem", color: STATUS_COLORS[s], background: `${STATUS_COLORS[s]}22`, padding: "0.15rem 0.5rem", borderRadius: 3 }}>
+                {STATUS_LABELS[s]}: {count}
+              </span>
+            );
+          })}
+        </div>
 
         {/* Progress bar */}
         <div style={progressBarBg}>
@@ -254,82 +370,106 @@ export default function FlashcardsPage() {
         </p>
 
         {/* Card */}
-        <div
-          onClick={handleFlip}
-          style={{
-            ...cardStyle,
-            background: flipped ? "#2d4a3d" : "#334d33",
-            borderColor: known.has(cardIndex) ? "#88cc88" : flipped ? "#7ec8e3" : "#4a6a4a",
-            cursor: "pointer",
-          }}
-        >
-          <div style={{ fontSize: "0.65rem", color: flipped ? "#7ec8e3" : "#a89a82", marginBottom: "0.75rem", letterSpacing: "0.08em" }}>
-            {flipped ? "ANSWER" : "QUESTION"}
-          </div>
-          <div style={{ fontSize: "1.05rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-            {flipped ? card.back : card.front}
-          </div>
-          {card.tags && card.tags.length > 0 && (
-            <div style={{ marginTop: "1rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-              {(card.tags as string[]).map((tag) => (
-                <span key={tag} style={tagStyle}>{tag}</span>
-              ))}
+        <div style={{ position: "relative" }}>
+          {xpPopup && (
+            <div
+              key={xpPopup.key}
+              style={{
+                position: "absolute", top: -10, right: 10, zIndex: 10,
+                color: "#f0dc4e", fontWeight: 700, fontSize: "1.1rem",
+                animation: "xp-float 1.5s ease-out forwards",
+                pointerEvents: "none",
+              }}
+            >
+              +{xpPopup.amount} XP
             </div>
           )}
-        </div>
-
-        <p style={{ fontSize: "0.7rem", color: "#7a7060", textAlign: "center", margin: "0.5rem 0" }}>
-          Tap card or press Space to flip
-        </p>
-
-        {/* Controls */}
-        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-          <button
-            onClick={handlePrev}
-            disabled={cardIndex === 0}
-            style={{ ...navBtn, opacity: cardIndex === 0 ? 0.3 : 1 }}
-          >
-            Prev
-          </button>
-          <button
-            onClick={() => handleNext(false)}
-            disabled={cardIndex === total - 1}
-            style={{ ...navBtn, flex: 2, opacity: cardIndex === total - 1 ? 0.3 : 1 }}
-          >
-            Next
-          </button>
-          <button
-            onClick={() => handleNext(true)}
-            disabled={cardIndex === total - 1}
+          <div
+            onClick={handleFlip}
             style={{
-              ...navBtn,
-              background: "#88cc8833",
-              borderColor: "#88cc88",
-              color: "#88cc88",
-              opacity: cardIndex === total - 1 ? 0.3 : 1,
+              ...cardStyle,
+              background: flipped ? "#2d4a3d" : "#334d33",
+              borderColor: flipped ? "#7ec8e3" : "#4a6a4a",
+              cursor: "pointer",
             }}
           >
-            Got it
-          </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <span style={{ fontSize: "0.65rem", color: flipped ? "#7ec8e3" : "#a89a82", letterSpacing: "0.08em" }}>
+                {flipped ? "ANSWER" : "QUESTION"}
+              </span>
+              <span style={{ fontSize: "0.6rem", color: STATUS_COLORS[card.status], background: `${STATUS_COLORS[card.status]}22`, padding: "0.1rem 0.4rem", borderRadius: 3 }}>
+                {STATUS_LABELS[card.status]}
+                {card.intervalDays > 0 && ` · ${card.intervalDays}d`}
+              </span>
+            </div>
+            <div style={{ fontSize: "1.05rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+              {flipped ? card.back : card.front}
+            </div>
+            {card.tags && card.tags.length > 0 && (
+              <div style={{ marginTop: "1rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                {(card.tags as string[]).map((tag) => (
+                  <span key={tag} style={tagStyle}>{tag}</span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* End of deck */}
-        {cardIndex === total - 1 && flipped && (
-          <div style={{ textAlign: "center", marginTop: "1.5rem", padding: "1rem", background: "#334d33", borderRadius: 6, border: "1px solid #4a6a4a" }}>
-            <p style={{ fontSize: "1.1rem", color: "#f0dc4e", margin: "0 0 0.5rem" }}>
-              Deck complete!
+        {!flipped && (
+          <p style={{ fontSize: "0.7rem", color: "#7a7060", textAlign: "center", margin: "0.5rem 0" }}>
+            Tap card or press Space to flip
+          </p>
+        )}
+
+        {/* Rating buttons — only show when flipped */}
+        {flipped && !sessionComplete && (
+          <div style={{ marginTop: "0.75rem" }}>
+            <p style={{ fontSize: "0.7rem", color: "#7a7060", textAlign: "center", marginBottom: "0.5rem" }}>
+              How well did you know this?
             </p>
-            <p style={{ fontSize: "0.85rem", color: "#a89a82", margin: 0 }}>
-              You marked {knownCount} of {total} cards as known.
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              {(["AGAIN", "HARD", "GOOD", "EASY"] as const).map((rating, i) => (
+                <button
+                  key={rating}
+                  onClick={() => handleReview(rating)}
+                  disabled={reviewing}
+                  style={{
+                    ...ratingBtn,
+                    borderColor: RATING_COLORS[rating],
+                    color: RATING_COLORS[rating],
+                    opacity: reviewing ? 0.5 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: "0.7rem", opacity: 0.6 }}>{i + 1}</span>
+                  <span>{rating.charAt(0) + rating.slice(1).toLowerCase()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* End of deck summary */}
+        {sessionComplete && (
+          <div style={{ textAlign: "center", marginTop: "1.5rem", padding: "1.25rem", background: "#334d33", borderRadius: 8, border: "1px solid #4a6a4a" }}>
+            <p style={{ fontSize: "1.2rem", color: "#f0dc4e", margin: "0 0 0.5rem", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
+              Session Complete!
+            </p>
+            <p style={{ fontSize: "0.9rem", color: "#88cc88", margin: "0 0 0.25rem" }}>
+              +{sessionXp} XP earned
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "#a89a82", margin: "0 0 1rem" }}>
+              {reviewedCount} cards reviewed
             </p>
             <button
-              onClick={() => { setCardIndex(0); setFlipped(false); setKnown(new Set()); }}
-              style={{ ...generateBtnStyle, marginTop: "0.75rem", fontSize: "0.9rem", padding: "0.6rem" }}
+              onClick={() => openStudyMode(studyData.deck.id)}
+              style={{ ...generateBtnStyle, fontSize: "0.9rem", padding: "0.6rem" }}
             >
               Study Again
             </button>
           </div>
         )}
+
+        {error && <p role="alert" style={{ color: "#e88888", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
       </div>
     );
   }
@@ -339,7 +479,7 @@ export default function FlashcardsPage() {
     <div style={pageContainer}>
       <div style={headerStyle}>
         <h1 style={titleStyle}>Flashcards</h1>
-        <p style={subtitleStyle}>Auto-generated flashcards from your course materials</p>
+        <p style={subtitleStyle}>Spaced repetition flashcards from your course materials</p>
       </div>
 
       {courses.length > 0 ? (
@@ -403,24 +543,33 @@ export default function FlashcardsPage() {
         <div>
           <h2 style={sectionTitle}>YOUR DECKS</h2>
           {decks.map((deck) => (
-            <button
-              key={deck.id}
-              onClick={() => openStudyMode(deck.id)}
-              disabled={loadingDeck}
-              style={deckCard}
-            >
-              <div style={{ flex: 1, textAlign: "left" }}>
-                <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.2rem" }}>
-                  {deck.title}
+            <div key={deck.id} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <button
+                onClick={() => openStudyMode(deck.id)}
+                disabled={loadingDeck}
+                style={{ ...deckCard, flex: 1 }}
+              >
+                <div style={{ flex: 1, textAlign: "left" }}>
+                  <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.2rem" }}>
+                    {deck.title}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#7a7060" }}>
+                    {deck.card_count} cards · {new Date(deck.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </div>
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "#7a7060" }}>
-                  {deck.card_count} cards · {new Date(deck.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                </div>
-              </div>
-              <span style={{ color: "#f0dc4e", fontSize: "0.85rem", fontWeight: 600 }}>
-                Study →
-              </span>
-            </button>
+                <span style={{ color: "#f0dc4e", fontSize: "0.85rem", fontWeight: 600 }}>
+                  Study →
+                </span>
+              </button>
+              <button
+                onClick={() => handleDeleteDeck(deck.id)}
+                disabled={deleting === deck.id}
+                aria-label={`Delete ${deck.title}`}
+                style={deleteBtnStyle}
+              >
+                {deleting === deck.id ? "..." : "×"}
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -492,7 +641,6 @@ const sectionTitle: React.CSSProperties = {
 const deckCard: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  width: "100%",
   padding: "0.85rem 1rem",
   fontFamily: "inherit",
   background: "#334d33",
@@ -500,8 +648,20 @@ const deckCard: React.CSSProperties = {
   border: "1px solid #4a6a4a",
   borderRadius: 6,
   cursor: "pointer",
-  marginBottom: "0.5rem",
   textAlign: "left",
+};
+
+const deleteBtnStyle: React.CSSProperties = {
+  padding: "0 0.65rem",
+  fontFamily: "inherit",
+  fontSize: "1.1rem",
+  fontWeight: 700,
+  background: "none",
+  color: "#e88888",
+  border: "1px solid #e8888844",
+  borderRadius: 6,
+  cursor: "pointer",
+  flexShrink: 0,
 };
 
 const cardStyle: React.CSSProperties = {
@@ -530,14 +690,17 @@ const progressBarFill: React.CSSProperties = {
   transition: "width 0.3s",
 };
 
-const navBtn: React.CSSProperties = {
+const ratingBtn: React.CSSProperties = {
   flex: 1,
-  padding: "0.65rem",
-  fontSize: "0.85rem",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "0.15rem",
+  padding: "0.6rem 0.3rem",
+  fontSize: "0.8rem",
   fontFamily: "inherit",
   fontWeight: 600,
   background: "#334d33",
-  color: "#e8dcc8",
   border: "1px solid #4a6a4a",
   borderRadius: 6,
   cursor: "pointer",

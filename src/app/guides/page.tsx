@@ -59,6 +59,16 @@ async function apiPost(url: string, body: unknown) {
   return data;
 }
 
+async function apiDelete(url: string) {
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { "X-User-Id": getOrCreateUserId() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
 const GUIDE_TYPES: { value: GuideType; label: string; description: string }[] = [
   { value: "KEY_CONCEPTS", label: "Key Concepts", description: "Important concepts with explanations" },
   { value: "FAQ", label: "FAQ", description: "Common questions and detailed answers" },
@@ -74,6 +84,7 @@ export default function GuidesPage() {
   const [expandedGuide, setExpandedGuide] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingGuides, setLoadingGuides] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const selectedCourseRef = useRef(selectedCourse);
   selectedCourseRef.current = selectedCourse;
 
@@ -157,6 +168,20 @@ export default function GuidesPage() {
       }
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleDeleteGuide = async (guideId: string) => {
+    if (deleting) return;
+    setDeleting(guideId);
+    try {
+      await apiDelete(`/api/guides/${guideId}`);
+      setGuides((prev) => prev.filter((g) => g.id !== guideId));
+      if (expandedGuide === guideId) setExpandedGuide(null);
+    } catch {
+      setError("Failed to delete guide");
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -255,26 +280,36 @@ export default function GuidesPage() {
           <h2 style={sectionTitle}>YOUR GUIDES</h2>
           {guides.map((guide) => (
             <div key={guide.id} style={{ marginBottom: "0.75rem" }}>
-              <button
-                aria-expanded={expandedGuide === guide.id}
-                onClick={() =>
-                  setExpandedGuide(expandedGuide === guide.id ? null : guide.id)
-                }
-                style={guideHeader}
-              >
-                <div style={{ flex: 1, textAlign: "left" }}>
-                  <span style={guideTypeTag}>{guide.guide_type.replace(/_/g, " ")}</span>
-                  <span style={{ fontSize: "0.9rem" }}>{guide.title}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "#7a7060" }}>
-                    {new Date(guide.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  </span>
-                  <span style={{ color: "#7a7060" }}>
-                    {expandedGuide === guide.id ? "▼" : "▶"}
-                  </span>
-                </div>
-              </button>
+              <div style={{ display: "flex", gap: "0.35rem" }}>
+                <button
+                  aria-expanded={expandedGuide === guide.id}
+                  onClick={() =>
+                    setExpandedGuide(expandedGuide === guide.id ? null : guide.id)
+                  }
+                  style={{ ...guideHeader, flex: 1 }}
+                >
+                  <div style={{ flex: 1, textAlign: "left" }}>
+                    <span style={guideTypeTag}>{guide.guide_type.replace(/_/g, " ")}</span>
+                    <span style={{ fontSize: "0.9rem" }}>{guide.title}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "0.7rem", color: "#7a7060" }}>
+                      {new Date(guide.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                    <span style={{ color: "#7a7060" }}>
+                      {expandedGuide === guide.id ? "▼" : "▶"}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleDeleteGuide(guide.id)}
+                  disabled={deleting === guide.id}
+                  aria-label={`Delete ${guide.title}`}
+                  style={deleteBtn}
+                >
+                  {deleting === guide.id ? "..." : "×"}
+                </button>
+              </div>
 
               {expandedGuide === guide.id && (
                 <div style={guideContent}>
@@ -473,6 +508,19 @@ const guideContent: React.CSSProperties = {
   borderTop: "none",
   borderRadius: "0 0 6px 6px",
   padding: "1rem",
+};
+
+const deleteBtn: React.CSSProperties = {
+  padding: "0 0.6rem",
+  fontFamily: "inherit",
+  fontSize: "1.1rem",
+  fontWeight: 700,
+  background: "none",
+  color: "#e88888",
+  border: "1px solid #e8888844",
+  borderRadius: 6,
+  cursor: "pointer",
+  flexShrink: 0,
 };
 
 const conceptCard: React.CSSProperties = {
