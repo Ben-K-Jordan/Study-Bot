@@ -364,16 +364,16 @@ export function SessionRunner({ session }: Props) {
         margin: "0 auto",
         padding: "1.5rem 1rem",
         fontFamily: "var(--font-body)",
-        color: "#e8dcc8",
-        backgroundColor: "#2a3d2a",
+        color: "var(--color-text)",
+        backgroundColor: "var(--color-bg)",
         minHeight: "100vh",
       }}
     >
       {error && (
         <div
           style={{
-            background: "#e88888",
-            color: "#1f2e1f",
+            background: "var(--color-error)",
+            color: "var(--color-bg-darkest)",
             padding: "0.5rem 1rem",
             borderRadius: 4,
             marginBottom: "1rem",

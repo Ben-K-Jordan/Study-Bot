@@ -134,7 +134,7 @@ export default function SettingsPage() {
     return (
       <div style={pageStyle}>
         <h1 style={headingStyle}>Settings</h1>
-        <p style={{ color: "#7a7060" }}>Loading preferences...</p>
+        <p style={{ color: "var(--color-text-dim)" }}>Loading preferences...</p>
       </div>
     );
   }
@@ -161,7 +161,7 @@ export default function SettingsPage() {
         <p style={hintStyle}>Sessions will be scheduled between these times.</p>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <input type="time" value={studyStart} onChange={(e) => setStudyStart(e.target.value)} style={timeInputStyle} />
-          <span style={{ color: "#a89a82" }}>to</span>
+          <span style={{ color: "var(--color-text-muted)" }}>to</span>
           <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} style={timeInputStyle} />
         </div>
       </section>
@@ -177,9 +177,9 @@ export default function SettingsPage() {
             step={15}
             value={dailyCap}
             onChange={(e) => setDailyCap(Number(e.target.value))}
-            style={{ flex: 1, accentColor: "#f0dc4e" }}
+            style={{ flex: 1, accentColor: "var(--color-primary)" }}
           />
-          <span style={{ color: "#f0dc4e", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
+          <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
             {Math.floor(dailyCap / 60)}h{dailyCap % 60 > 0 ? ` ${dailyCap % 60}m` : ""}
           </span>
         </div>
@@ -196,9 +196,9 @@ export default function SettingsPage() {
             step={10}
             value={dailyXpGoal}
             onChange={(e) => setDailyXpGoal(Number(e.target.value))}
-            style={{ flex: 1, accentColor: "#f0dc4e" }}
+            style={{ flex: 1, accentColor: "var(--color-primary)" }}
           />
-          <span style={{ color: "#f0dc4e", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
+          <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
             {dailyXpGoal} XP
           </span>
         </div>
@@ -211,9 +211,9 @@ export default function SettingsPage() {
             type="checkbox"
             checked={leaderboardVisible}
             onChange={(e) => setLeaderboardVisible(e.target.checked)}
-            style={{ accentColor: "#f0dc4e", width: 18, height: 18, cursor: "pointer" }}
+            style={{ accentColor: "var(--color-primary)", width: 18, height: 18, cursor: "pointer" }}
           />
-          <span style={{ color: "#e8dcc8", fontSize: "0.95rem" }}>Show me on the leaderboard</span>
+          <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Show me on the leaderboard</span>
         </label>
         <p style={{ ...hintStyle, marginTop: "0.35rem" }}>
           When off, your name won&apos;t appear to other users.
@@ -226,8 +226,8 @@ export default function SettingsPage() {
           <p style={hintStyle}>Checking connection...</p>
         ) : googleStatus === "connected" ? (
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span style={{ color: "#88cc88", fontSize: "0.95rem" }}>Connected</span>
-            <span style={{ color: "#7a7060", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
+            <span style={{ color: "var(--color-success)", fontSize: "0.95rem" }}>Connected</span>
+            <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
           </div>
         ) : (
           <div>
@@ -253,8 +253,8 @@ export default function SettingsPage() {
 
 const pageStyle: React.CSSProperties = {
   fontFamily: "var(--font-body)",
-  background: "#2a3d2a",
-  color: "#e8dcc8",
+  background: "var(--color-bg)",
+  color: "var(--color-text)",
   minHeight: "100vh",
   padding: "2rem",
   maxWidth: 600,
@@ -262,7 +262,7 @@ const pageStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   fontSize: "2rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
@@ -270,7 +270,7 @@ const headingStyle: React.CSSProperties = {
 };
 
 const sectionStyle: React.CSSProperties = {
-  color: "#e8dcc8",
+  color: "var(--color-text)",
   fontSize: "1.2rem",
   margin: "0 0 0.25rem",
   fontWeight: 600,
@@ -278,16 +278,16 @@ const sectionStyle: React.CSSProperties = {
 };
 
 const hintStyle: React.CSSProperties = {
-  color: "#9a8a7a",
+  color: "var(--color-text-faint)",
   fontSize: "0.9rem",
   margin: "0 0 0.75rem",
 };
 
 const textInputStyle: React.CSSProperties = {
   width: "100%",
-  background: "#2d422d",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-input)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
   padding: "0.5rem 0.75rem",
   fontFamily: "inherit",
   fontSize: "1rem",
@@ -295,9 +295,9 @@ const textInputStyle: React.CSSProperties = {
 };
 
 const timeInputStyle: React.CSSProperties = {
-  background: "#2d422d",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-input)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
   padding: "0.35rem 0.5rem",
   fontFamily: "inherit",
   fontSize: "0.95rem",
@@ -305,8 +305,8 @@ const timeInputStyle: React.CSSProperties = {
 };
 
 const saveBtnStyle: React.CSSProperties = {
-  background: "#f0dc4e",
-  color: "#1f2e1f",
+  background: "var(--color-primary)",
+  color: "var(--color-bg-darkest)",
   border: "none",
   padding: "0.6rem 1.5rem",
   fontFamily: "inherit",
@@ -317,8 +317,8 @@ const saveBtnStyle: React.CSSProperties = {
 };
 
 const connectBtnStyle: React.CSSProperties = {
-  background: "#7ec8e3",
-  color: "#1f2e1f",
+  background: "var(--color-info)",
+  color: "var(--color-bg-darkest)",
   border: "none",
   padding: "0.5rem 1rem",
   fontFamily: "inherit",

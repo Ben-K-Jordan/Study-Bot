@@ -228,9 +228,9 @@ export default function GuidesPage() {
                 onClick={() => setSelectedType(t.value)}
                 style={{
                   ...typeButton,
-                  background: selectedType === t.value ? "#7ec8e333" : "#334d33",
-                  borderColor: selectedType === t.value ? "#7ec8e3" : "#4a6a4a",
-                  color: selectedType === t.value ? "#7ec8e3" : "#a89a82",
+                  background: selectedType === t.value ? "#7ec8e333" : "var(--color-bg-card)",
+                  borderColor: selectedType === t.value ? "var(--color-info)" : "#4a6a4a",
+                  color: selectedType === t.value ? "var(--color-info)" : "var(--color-text-muted)",
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{t.label}</div>
@@ -252,18 +252,18 @@ export default function GuidesPage() {
           </button>
 
           {error && (
-            <p role="alert" style={{ color: "#e88888", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>
+            <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>
           )}
         </div>
       ) : (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed #5a7a5a", borderRadius: 8 }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: 8 }}>
           <p style={{ color: "#b0a090", fontSize: "1rem", margin: "0 0 0.5rem" }}>
             No course documents yet
           </p>
-          <p style={{ color: "#9a8a7a", fontSize: "0.85rem", margin: "0 0 1rem" }}>
+          <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Upload your course materials first, then come back to generate study guides.
           </p>
-          <Link href="/flashcards" style={{ padding: "0.5rem 1rem", background: "#f0dc4e", color: "#1f2e1f", borderRadius: 6, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+          <Link href="/flashcards" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: 6, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
             Upload Documents
           </Link>
         </div>
@@ -271,16 +271,16 @@ export default function GuidesPage() {
 
       {/* Existing guides */}
       {loadingGuides && (
-        <p style={{ color: "#7a7060", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
+        <p style={{ color: "var(--color-text-dim)", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
           Loading guides...
         </p>
       )}
       {!loadingGuides && courses.length > 0 && guides.length === 0 && (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed #5a7a5a", borderRadius: 8 }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: 8 }}>
           <p style={{ color: "#b0a090", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
             No guides generated yet for this course
           </p>
-          <p style={{ color: "#9a8a7a", fontSize: "0.8rem", margin: 0 }}>
+          <p style={{ color: "var(--color-text-faint)", fontSize: "0.8rem", margin: 0 }}>
             Pick a guide type above and hit Generate to create Key Concepts, FAQs, or Cheat Sheets from your materials.
           </p>
         </div>
@@ -303,10 +303,10 @@ export default function GuidesPage() {
                     <span style={{ fontSize: "0.9rem" }}>{guide.title}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontSize: "0.7rem", color: "#7a7060" }}>
+                    <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)" }}>
                       {new Date(guide.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </span>
-                    <span style={{ color: "#7a7060" }}>
+                    <span style={{ color: "var(--color-text-dim)" }}>
                       {expandedGuide === guide.id ? "▼" : "▶"}
                     </span>
                   </div>
@@ -338,7 +338,7 @@ export default function GuidesPage() {
 
 function renderGuideContent(guide: StudyGuide): React.ReactNode {
   if (!guide.sections || guide.sections.length === 0) {
-    return <p style={{ color: "#a89a82", fontStyle: "italic" }}>No content generated.</p>;
+    return <p style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>No content generated.</p>;
   }
 
   switch (guide.guide_type) {
@@ -347,7 +347,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`concept-${i}`} style={conceptCard}>
-              <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", color: "#f0dc4e" }}>
+              <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", color: "var(--color-primary)" }}>
                 {s.concept || `Concept ${i + 1}`}
               </h3>
               {s.explanation && (
@@ -356,7 +356,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
                 </p>
               )}
               {s.importance && (
-                <p style={{ margin: 0, fontSize: "0.75rem", color: "#7ec8e3", fontStyle: "italic" }}>
+                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--color-info)", fontStyle: "italic" }}>
                   Why it matters: {s.importance}
                 </p>
               )}
@@ -370,11 +370,11 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`faq-${i}`} style={conceptCard}>
-              <p style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", fontWeight: 600, color: "#e8dcc8" }}>
+              <p style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", fontWeight: 600, color: "var(--color-text)" }}>
                 Q: {s.question || `Question ${i + 1}`}
               </p>
               {s.answer && (
-                <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "#c8bca8" }}>
+                <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
                   {s.answer}
                 </p>
               )}
@@ -388,7 +388,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`cheat-${i}`} style={conceptCard}>
-              <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", color: "#e8a040" }}>
+              <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", color: "var(--color-warning)" }}>
                 {s.topic || `Topic ${i + 1}`}
               </h3>
               {s.content && (
@@ -404,18 +404,18 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
       );
 
     default:
-      return <p style={{ color: "#a89a82" }}>Unknown guide type</p>;
+      return <p style={{ color: "var(--color-text-muted)" }}>Unknown guide type</p>;
   }
 }
 
 // --- Styles ---
 
 const pageContainer: React.CSSProperties = {
-  maxWidth: 720,
+  maxWidth: 700,
   margin: "0 auto",
   padding: "1.5rem 1rem",
   fontFamily: "var(--font-body)",
-  color: "#e8dcc8",
+  color: "var(--color-text)",
 };
 
 const headerStyle: React.CSSProperties = {
@@ -426,11 +426,11 @@ const titleStyle: React.CSSProperties = {
   fontSize: "1.6rem",
   margin: "0 0 0.25rem",
   fontFamily: "var(--font-display)",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
 };
 
 const subtitleStyle: React.CSSProperties = {
-  color: "#a89a82",
+  color: "var(--color-text-muted)",
   margin: 0,
   fontSize: "0.9rem",
 };
@@ -438,7 +438,7 @@ const subtitleStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   display: "block",
   fontSize: "0.75rem",
-  color: "#7a7060",
+  color: "var(--color-text-dim)",
   textTransform: "uppercase",
   letterSpacing: "0.06em",
   marginBottom: "0.35rem",
@@ -449,9 +449,9 @@ const selectStyle: React.CSSProperties = {
   padding: "0.5rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "#334d33",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
 };
 
@@ -460,7 +460,7 @@ const typeButton: React.CSSProperties = {
   minWidth: 0,
   padding: "0.6rem 0.75rem",
   fontFamily: "inherit",
-  border: "1px solid #4a6a4a",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
   cursor: "pointer",
   textAlign: "left",
@@ -472,8 +472,8 @@ const generateBtn: React.CSSProperties = {
   fontSize: "1.05rem",
   fontFamily: "var(--font-body)",
   fontWeight: 600,
-  background: "#f0dc4e",
-  color: "#1f2e1f",
+  background: "var(--color-primary)",
+  color: "var(--color-bg-darkest)",
   border: "none",
   borderRadius: 6,
   cursor: "pointer",
@@ -482,7 +482,7 @@ const generateBtn: React.CSSProperties = {
 const sectionTitle: React.CSSProperties = {
   fontSize: "0.8rem",
   letterSpacing: "0.08em",
-  color: "#7ec8e3",
+  color: "var(--color-info)",
   margin: "0 0 0.75rem",
   fontFamily: "var(--font-display)",
 };
@@ -494,9 +494,9 @@ const guideHeader: React.CSSProperties = {
   padding: "0.75rem 1rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "#334d33",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
   cursor: "pointer",
 };
@@ -505,7 +505,7 @@ const guideTypeTag: React.CSSProperties = {
   display: "inline-block",
   fontSize: "0.65rem",
   fontWeight: 600,
-  color: "#7ec8e3",
+  color: "var(--color-info)",
   background: "#7ec8e322",
   padding: "0.1rem 0.4rem",
   borderRadius: 3,
@@ -514,8 +514,8 @@ const guideTypeTag: React.CSSProperties = {
 };
 
 const guideContent: React.CSSProperties = {
-  background: "#2d3d2d",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg)",
+  border: "1px solid var(--color-border)",
   borderTop: "none",
   borderRadius: "0 0 6px 6px",
   padding: "1rem",
@@ -527,7 +527,7 @@ const deleteBtn: React.CSSProperties = {
   fontSize: "1.1rem",
   fontWeight: 700,
   background: "none",
-  color: "#e88888",
+  color: "var(--color-error)",
   border: "1px solid #e8888844",
   borderRadius: 6,
   cursor: "pointer",
@@ -535,8 +535,8 @@ const deleteBtn: React.CSSProperties = {
 };
 
 const conceptCard: React.CSSProperties = {
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
   borderRadius: 4,
   padding: "0.75rem",
   marginBottom: "0.5rem",

@@ -227,7 +227,7 @@ export default function DashboardPage() {
     return (
       <main style={mainStyle}>
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "#a89a82" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-text-muted)" }}>
           <div style={spinnerStyle} />
           <p style={{ marginTop: "1rem" }}>Loading...</p>
         </div>
@@ -238,9 +238,9 @@ export default function DashboardPage() {
   if (error) {
     return (
       <main style={mainStyle}>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "#e88888" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-error)" }}>
           <p style={{ fontSize: "1.3rem" }}>Failed to load dashboard</p>
-          <p style={{ color: "#a89a82", marginTop: "0.5rem" }}>{error}</p>
+          <p style={{ color: "var(--color-text-muted)", marginTop: "0.5rem" }}>{error}</p>
           <button onClick={() => window.location.reload()} style={actionBtnStyle}>
             Retry
           </button>
@@ -309,10 +309,10 @@ export default function DashboardPage() {
               goal={gameState?.dailyXpGoal ?? 50}
             />
             <div>
-              <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display)" }}>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
                 {gameState?.xpToday ?? 0} / {gameState?.dailyXpGoal ?? 50} XP
               </div>
-              <div style={{ fontSize: "0.75rem", color: "#9a8a7a", marginTop: "0.2rem" }}>Daily Goal</div>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", marginTop: "0.2rem" }}>Daily Goal</div>
               <div style={{ fontSize: "0.7rem", color: "#b0a090", marginTop: "0.1rem" }}>
                 {totalXp} total XP · Tap to adjust
               </div>
@@ -320,10 +320,10 @@ export default function DashboardPage() {
           </Link>
           {/* Streak */}
           <div style={statCardStyle}>
-            <span style={{ ...statNumberStyle, color: "#e8a040" }}>{streak}</span>
+            <span style={{ ...statNumberStyle, color: "var(--color-warning)" }}>{streak}</span>
             <span style={statLabelStyle}>Streak</span>
             {gameState && gameState.streakFreezes > 0 && (
-              <span style={{ fontSize: "0.6rem", color: "#7ec8e3", marginTop: "0.2rem" }}>
+              <span style={{ fontSize: "0.6rem", color: "var(--color-info)", marginTop: "0.2rem" }}>
                 {gameState.streakFreezes} freeze{gameState.streakFreezes !== 1 ? "s" : ""}
               </span>
             )}
@@ -356,7 +356,7 @@ export default function DashboardPage() {
             <p style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
               {plans.length === 0 ? "No study plans yet" : "No sessions today"}
             </p>
-            <p style={{ color: "#7a7060", fontSize: "0.9rem", margin: 0 }}>
+            <p style={{ color: "var(--color-text-dim)", fontSize: "0.9rem", margin: 0 }}>
               {plans.length === 0
                 ? "Create a plan to get started."
                 : "Rest is part of effective learning."}
@@ -374,22 +374,22 @@ export default function DashboardPage() {
               const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
               const cardContent = (
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                    <span style={{ color: "#7a7060", fontSize: "0.9rem", minWidth: "6rem" }}>
+                    <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem", minWidth: "6rem" }}>
                       {formatTime(item.start_time)} - {formatTime(item.end_time)}
                     </span>
-                    <span style={{ fontWeight: 600, color: "#e8dcc8" }}>
+                    <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
                       {MODE_LABELS[item.mode] || item.mode}
                     </span>
-                    <span style={{ color: "#a89a82", flex: 1, fontSize: "0.95rem" }}>
+                    <span style={{ color: "var(--color-text-muted)", flex: 1, fontSize: "0.95rem" }}>
                       {item.topic_scope}
                     </span>
                     {actionable && (
-                      <span style={{ color: "#f0dc4e", fontSize: "0.9rem", fontWeight: 600 }}>
+                      <span style={{ color: "var(--color-primary)", fontSize: "0.9rem", fontWeight: 600 }}>
                         {item.status === "IN_PROGRESS" ? "Continue" : "Start"}
                       </span>
                     )}
                     {item.status === "DONE" && (
-                      <span style={{ color: "#88cc88", fontSize: "0.85rem" }}>Done</span>
+                      <span style={{ color: "var(--color-success)", fontSize: "0.85rem" }}>Done</span>
                     )}
                   </div>
               );
@@ -424,7 +424,7 @@ export default function DashboardPage() {
       <section style={{ marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Achievements</h2>
-          <Link href="/achievements" style={{ fontSize: "0.75rem", color: "#9a8a7a", textDecoration: "none" }}>
+          <Link href="/achievements" style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", textDecoration: "none" }}>
             View All ({gameState?.achievements.length || 0}/{TOTAL_BADGES})
           </Link>
         </div>
@@ -456,10 +456,10 @@ export default function DashboardPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Activity</h2>
             <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem" }}>
-              <span style={{ color: "#f0dc4e" }}>
+              <span style={{ color: "var(--color-primary)" }}>
                 {totalXp} XP
               </span>
-              <span style={{ color: "#e8a040" }}>
+              <span style={{ color: "var(--color-warning)" }}>
                 {streak} day streak
               </span>
             </div>
@@ -490,8 +490,8 @@ export default function DashboardPage() {
                     fontSize: "0.7rem",
                     fontFamily: "inherit",
                     background: lbPeriod === p ? "#f0dc4e22" : "transparent",
-                    color: lbPeriod === p ? "#f0dc4e" : "#9a8a7a",
-                    border: `1px solid ${lbPeriod === p ? "#f0dc4e44" : "#3a5a3a"}`,
+                    color: lbPeriod === p ? "var(--color-primary)" : "var(--color-text-faint)",
+                    border: `1px solid ${lbPeriod === p ? "#f0dc4e44" : "var(--color-border-subtle)"}`,
                     borderRadius: 4,
                     cursor: "pointer",
                     textTransform: "capitalize",
@@ -502,7 +502,7 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
-          <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, overflow: "hidden" }}>
+          <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden" }}>
             {leaderboard.leaderboard.slice(0, 10).map((entry) => (
               <div
                 key={entry.rank}
@@ -510,28 +510,28 @@ export default function DashboardPage() {
                   display: "flex",
                   alignItems: "center",
                   padding: "0.5rem 0.75rem",
-                  borderBottom: "1px solid #3a5a3a",
+                  borderBottom: "1px solid var(--color-border-subtle)",
                   background: entry.isCurrentUser ? "#f0dc4e0d" : "transparent",
                 }}
               >
                 <span style={{
                   width: 24, textAlign: "center", fontWeight: 700, fontSize: "0.85rem",
-                  color: entry.rank === 1 ? "#f0dc4e" : entry.rank === 2 ? "#c4c4c4" : entry.rank === 3 ? "#cd7f32" : "#9a8a7a",
+                  color: entry.rank === 1 ? "var(--color-primary)" : entry.rank === 2 ? "#c4c4c4" : entry.rank === 3 ? "#cd7f32" : "var(--color-text-faint)",
                 }}>
                   {entry.rank}
                 </span>
-                <span style={{ flex: 1, marginLeft: "0.5rem", fontSize: "0.85rem", color: entry.isCurrentUser ? "#f0dc4e" : "#e8dcc8", fontWeight: entry.isCurrentUser ? 600 : 400 }}>
+                <span style={{ flex: 1, marginLeft: "0.5rem", fontSize: "0.85rem", color: entry.isCurrentUser ? "var(--color-primary)" : "var(--color-text)", fontWeight: entry.isCurrentUser ? 600 : 400 }}>
                   {entry.displayName}
-                  {entry.isCurrentUser && <span style={{ fontSize: "0.7rem", color: "#9a8a7a", marginLeft: "0.35rem" }}>(you)</span>}
+                  {entry.isCurrentUser && <span style={{ fontSize: "0.7rem", color: "var(--color-text-faint)", marginLeft: "0.35rem" }}>(you)</span>}
                 </span>
-                <span style={{ fontSize: "0.8rem", color: "#f0dc4e", fontWeight: 600 }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--color-primary)", fontWeight: 600 }}>
                   {entry.xp} XP
                 </span>
               </div>
             ))}
           </div>
           {leaderboard.userRank && leaderboard.userRank > 10 && (
-            <p style={{ fontSize: "0.75rem", color: "#9a8a7a", marginTop: "0.4rem", textAlign: "center" }}>
+            <p style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", marginTop: "0.4rem", textAlign: "center" }}>
               Your rank: #{leaderboard.userRank}
             </p>
           )}
@@ -563,7 +563,7 @@ function OnboardingFlow({
       title: "Welcome to Study Bot!",
       content: (
         <div>
-          <p style={{ fontSize: "1rem", color: "#e8dcc8", lineHeight: 1.6, marginBottom: "1rem" }}>
+          <p style={{ fontSize: "1rem", color: "var(--color-text)", lineHeight: 1.6, marginBottom: "1rem" }}>
             Your AI-powered study companion. Upload your course materials and let Study Bot help you learn more effectively.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", textAlign: "left" }}>
@@ -574,7 +574,7 @@ function OnboardingFlow({
               { icon: "\u{1F4C5}", text: "Plan study sessions and track progress" },
               { icon: "\u{1F3C6}", text: "Earn XP and unlock achievements" },
             ].map((item) => (
-              <div key={item.text} style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.9rem", color: "#c8bca8" }}>
+              <div key={item.text} style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.9rem", color: "var(--color-text-secondary)" }}>
                 <span style={{ fontSize: "1.1rem" }}>{item.icon}</span>
                 <span>{item.text}</span>
               </div>
@@ -587,7 +587,7 @@ function OnboardingFlow({
       title: "Set your display name",
       content: (
         <div>
-          <p style={{ fontSize: "0.9rem", color: "#a89a82", marginBottom: "1rem" }}>
+          <p style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
             Choose a name for the leaderboard. You can always change this later in Settings.
           </p>
           <input
@@ -598,9 +598,9 @@ function OnboardingFlow({
             maxLength={50}
             style={{
               width: "100%",
-              background: "#2d422d",
-              color: "#e8dcc8",
-              border: "1px solid #4a6a4a",
+              background: "var(--color-bg-input)",
+              color: "var(--color-text)",
+              border: "1px solid var(--color-border)",
               padding: "0.6rem 0.75rem",
               fontFamily: "inherit",
               fontSize: "1rem",
@@ -615,7 +615,7 @@ function OnboardingFlow({
       title: "Your learning journey",
       content: (
         <div>
-          <p style={{ fontSize: "0.9rem", color: "#a89a82", marginBottom: "1rem" }}>
+          <p style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
             Here&apos;s how to get the most out of Study Bot:
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -628,15 +628,15 @@ function OnboardingFlow({
               <div key={item.step} style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
                 <div style={{
                   width: 24, height: 24, borderRadius: "50%",
-                  background: "#f0dc4e", color: "#1f2e1f",
+                  background: "var(--color-primary)", color: "var(--color-bg-darkest)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: "0.75rem", fontWeight: 700, flexShrink: 0,
                 }}>
                   {item.step}
                 </div>
                 <div>
-                  <div style={{ fontSize: "0.9rem", color: "#e8dcc8", fontWeight: 600 }}>{item.title}</div>
-                  <div style={{ fontSize: "0.75rem", color: "#7a7060" }}>{item.desc}</div>
+                  <div style={{ fontSize: "0.9rem", color: "var(--color-text)", fontWeight: 600 }}>{item.title}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)" }}>{item.desc}</div>
                 </div>
               </div>
             ))}
@@ -657,8 +657,8 @@ function OnboardingFlow({
       padding: "1rem",
     }}>
       <div style={{
-        background: "#2a3d2a",
-        border: "1px solid #4a6a4a",
+        background: "var(--color-bg)",
+        border: "1px solid var(--color-border)",
         borderRadius: 12,
         padding: "2rem",
         maxWidth: 480,
@@ -673,7 +673,7 @@ function OnboardingFlow({
               key={i}
               style={{
                 width: 8, height: 8, borderRadius: "50%",
-                background: i <= step ? "#f0dc4e" : "#4a6a4a",
+                background: i <= step ? "var(--color-primary)" : "var(--color-border)",
                 transition: "background 0.3s",
               }}
             />
@@ -681,7 +681,7 @@ function OnboardingFlow({
         </div>
 
         <h2 style={{
-          fontSize: "1.5rem", color: "#f0dc4e", fontWeight: 700, margin: "0 0 1rem",
+          fontSize: "1.5rem", color: "var(--color-primary)", fontWeight: 700, margin: "0 0 1rem",
           fontFamily: "var(--font-display)",
         }}>
           {currentStep.title}
@@ -691,7 +691,7 @@ function OnboardingFlow({
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.5rem" }}>
           <button onClick={onSkip} style={{
-            background: "none", border: "none", color: "#7a7060", fontSize: "0.8rem",
+            background: "none", border: "none", color: "var(--color-text-dim)", fontSize: "0.8rem",
             fontFamily: "inherit", cursor: "pointer", padding: "0.3rem",
           }}>
             Skip
@@ -699,7 +699,7 @@ function OnboardingFlow({
           <button
             onClick={isLast ? onComplete : onNext}
             style={{
-              background: "#f0dc4e", color: "#1f2e1f", border: "none",
+              background: "var(--color-primary)", color: "var(--color-bg-darkest)", border: "none",
               padding: "0.55rem 1.5rem", fontSize: "0.95rem", fontWeight: 700,
               fontFamily: "inherit", borderRadius: 6, cursor: "pointer",
             }}
@@ -766,19 +766,19 @@ function StreakMilestones({ streak, earned }: { streak: number; earned: string[]
   const info = BADGE_MAP[next.badge];
 
   return (
-    <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, padding: "0.75rem 1rem" }}>
+    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, padding: "0.75rem 1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-        <span style={{ fontSize: "0.75rem", color: "#7a7060", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <span style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Next Milestone
         </span>
-        <span style={{ fontSize: "0.8rem", color: "#e8a040" }}>
+        <span style={{ fontSize: "0.8rem", color: "var(--color-warning)" }}>
           {info?.icon} {info?.label}
         </span>
       </div>
-      <div style={{ height: 6, background: "#1f2e1f", borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${progress * 100}%`, background: "#e8a040", borderRadius: 3, transition: "width 0.5s" }} />
+      <div style={{ height: 6, background: "var(--color-bg-darkest)", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${progress * 100}%`, background: "var(--color-warning)", borderRadius: 3, transition: "width 0.5s" }} />
       </div>
-      <div style={{ fontSize: "0.7rem", color: "#7a7060", marginTop: "0.3rem", textAlign: "right" }}>
+      <div style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", marginTop: "0.3rem", textAlign: "right" }}>
         {streak} / {next.days} days
       </div>
     </div>
@@ -828,10 +828,10 @@ function ConfettiOverlay({ badge }: { badge: string | null }) {
           animation: "celebrate-pop 0.5s ease-out forwards",
         }}>
           <div style={{ fontSize: "3rem", marginBottom: "0.5rem" }}>{info.icon}</div>
-          <div style={{ fontSize: "1.3rem", color: "#f0dc4e", fontWeight: 700, fontFamily: "var(--font-display)" }}>
+          <div style={{ fontSize: "1.3rem", color: "var(--color-primary)", fontWeight: 700, fontFamily: "var(--font-display)" }}>
             {info.label}!
           </div>
-          <div style={{ fontSize: "0.85rem", color: "#e8dcc8", marginTop: "0.25rem" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--color-text)", marginTop: "0.25rem" }}>
             {info.description}
           </div>
         </div>
@@ -945,13 +945,13 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
         )}
       </svg>
       <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.4rem", justifyContent: "flex-end" }}>
-        <span style={{ fontSize: "0.55rem", color: "#7a7060" }}>Less</span>
+        <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>Less</span>
         {[0, 1, 2, 3, 5].map((n) => (
           <svg key={n} width={cellSize} height={cellSize}>
             <rect width={cellSize} height={cellSize} rx={2} fill={getColor(n)} />
           </svg>
         ))}
-        <span style={{ fontSize: "0.55rem", color: "#7a7060" }}>More</span>
+        <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>More</span>
       </div>
     </div>
   );
@@ -964,15 +964,15 @@ const mainStyle: React.CSSProperties = {
   margin: "0 auto",
   padding: "1.5rem 1rem",
   fontFamily: "var(--font-body)",
-  color: "#e8dcc8",
-  backgroundColor: "#2a3d2a",
+  color: "var(--color-text)",
+  backgroundColor: "var(--color-bg)",
   minHeight: "100vh",
 };
 
 const headingStyle: React.CSSProperties = {
   fontSize: "2rem",
   margin: "0 0 1.5rem",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   fontWeight: 700,
   fontFamily: "var(--font-display)",
 };
@@ -997,22 +997,22 @@ const statCardStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   padding: "1rem 0.5rem",
-  border: "1px solid #4a6a4a",
+  border: "1px solid var(--color-border)",
   borderRadius: "6px",
-  backgroundColor: "#334d33",
+  backgroundColor: "var(--color-bg-card)",
 };
 
 const statNumberStyle: React.CSSProperties = {
   fontSize: "1.5rem",
   fontWeight: 700,
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   lineHeight: 1,
   fontFamily: "var(--font-display)",
 };
 
 const statLabelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
-  color: "#9a8a7a",
+  color: "var(--color-text-faint)",
   marginTop: "0.4rem",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
@@ -1023,31 +1023,31 @@ const badgeStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   padding: "0.5rem 0.6rem",
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
   minWidth: 60,
 };
 
 const sessionCardStyle: React.CSSProperties = {
   padding: "0.75rem 1rem",
-  border: "1px solid #4a6a4a",
+  border: "1px solid var(--color-border)",
   borderRadius: "6px",
-  backgroundColor: "#334d33",
+  backgroundColor: "var(--color-bg-card)",
 };
 
 const emptyCardStyle: React.CSSProperties = {
   padding: "2rem",
-  border: "1px dashed #5a7a5a",
+  border: "1px dashed var(--color-border-done)",
   borderRadius: "8px",
   textAlign: "center",
-  color: "#c8bca8",
+  color: "var(--color-text-secondary)",
 };
 
 const actionBtnStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
   fontSize: "0.9rem",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   border: "1px solid #f0dc4e44",
   borderRadius: "6px",
   backgroundColor: "#f0dc4e11",
@@ -1059,8 +1059,8 @@ const actionBtnStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: "32px",
   height: "32px",
-  border: "3px solid #4a6a4a",
-  borderTop: "3px solid #f0dc4e",
+  border: "3px solid var(--color-border)",
+  borderTop: "3px solid var(--color-primary)",
   borderRadius: "50%",
   margin: "0 auto",
   animation: "dash-spin 0.8s linear infinite",
