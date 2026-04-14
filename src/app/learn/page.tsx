@@ -164,7 +164,7 @@ export default function LearnPage() {
         <h3 style={sectionLabelStyle}>Study Actions</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <Link href="/flashcards" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\\ud83c\\udccf"}</span>
+            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F0CF}"}</span>
             <span style={actionTitleStyle}>Review Flashcards</span>
             <span style={actionDescStyle}>
               {course.dueCardCount > 0
@@ -176,7 +176,7 @@ export default function LearnPage() {
           </Link>
 
           <Link href="/flashcards" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\\u2728"}</span>
+            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u2728"}</span>
             <span style={actionTitleStyle}>Generate Flashcards</span>
             <span style={actionDescStyle}>
               {course.processedDocCount > 0
@@ -186,7 +186,7 @@ export default function LearnPage() {
           </Link>
 
           <Link href="/guides" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\\ud83d\\udcd6"}</span>
+            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F4D6}"}</span>
             <span style={actionTitleStyle}>Study Guides</span>
             <span style={actionDescStyle}>
               {course.guideCount > 0
@@ -195,20 +195,20 @@ export default function LearnPage() {
             </span>
           </Link>
 
-          <Link href={`/chat`} style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\\ud83d\\udcac"}</span>
+          <Link href="/chat" style={actionCardStyle}>
+            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F4AC}"}</span>
             <span style={actionTitleStyle}>Ask a Question</span>
             <span style={actionDescStyle}>Chat with your course materials</span>
           </Link>
 
           <Link href="/plan" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\\ud83d\\udcc5"}</span>
+            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F4C5}"}</span>
             <span style={actionTitleStyle}>Study Plan</span>
             <span style={actionDescStyle}>Schedule practice sessions</span>
           </Link>
 
           <Link href="/" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\\ud83c\\udfc6"}</span>
+            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F3C6}"}</span>
             <span style={actionTitleStyle}>Dashboard</span>
             <span style={actionDescStyle}>View your progress & XP</span>
           </Link>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { getOrCreateUserId } from "@/lib/client-utils";
+import { ALL_BADGES, TOTAL_BADGES, CATEGORY_LABELS } from "@/lib/badge-data";
 
 interface GameState {
   xpToday: number;
@@ -10,62 +11,22 @@ interface GameState {
   dailyXpGoal: number;
   streak: number;
   streakFreezes: number;
+  reviewCount: number;
   achievements: { badgeType: string; earnedAt: string }[];
   newAchievements: string[];
 }
 
-// All badge definitions with categories
-const ALL_BADGES: {
-  key: string;
-  label: string;
-  icon: string;
-  description: string;
-  category: "streak" | "review" | "xp";
-  threshold: number;
-  unit: string;
-}[] = [
-  // Streak badges
-  { key: "STREAK_3",   label: "Getting Started",  icon: "\u{1F525}", description: "Achieve a 3-day study streak",    category: "streak", threshold: 3,   unit: "days" },
-  { key: "STREAK_7",   label: "Week Warrior",      icon: "\u26A1",    description: "Achieve a 7-day study streak",    category: "streak", threshold: 7,   unit: "days" },
-  { key: "STREAK_14",  label: "Two-Week Titan",    icon: "\u{1F4AA}", description: "Achieve a 14-day study streak",   category: "streak", threshold: 14,  unit: "days" },
-  { key: "STREAK_30",  label: "Monthly Master",    icon: "\u{1F3C6}", description: "Achieve a 30-day study streak",   category: "streak", threshold: 30,  unit: "days" },
-  { key: "STREAK_60",  label: "Dedicated Scholar", icon: "\u{1F393}", description: "Achieve a 60-day study streak",   category: "streak", threshold: 60,  unit: "days" },
-  { key: "STREAK_100", label: "Century Club",      icon: "\u{1F48E}", description: "Achieve a 100-day study streak",  category: "streak", threshold: 100, unit: "days" },
-  // Review badges
-  { key: "FIRST_REVIEW",  label: "First Steps",       icon: "\u{1F4D6}", description: "Review your first flashcard",      category: "review", threshold: 1,   unit: "reviews" },
-  { key: "REVIEWS_100",   label: "Card Shark",         icon: "\u{1F0CF}", description: "Review 100 flashcards",            category: "review", threshold: 100, unit: "reviews" },
-  { key: "REVIEWS_500",   label: "Flashcard Fiend",    icon: "\u{1F9E0}", description: "Review 500 flashcards",            category: "review", threshold: 500, unit: "reviews" },
-  { key: "FIRST_PERFECT", label: "Perfect Score",      icon: "\u2B50",    description: "Complete a deck with all correct", category: "review", threshold: 1,   unit: "perfect decks" },
-  // XP badges
-  { key: "XP_100",  label: "XP Centurion", icon: "\u{1F4AF}", description: "Earn 100 total XP",   category: "xp", threshold: 100,  unit: "XP" },
-  { key: "XP_1000", label: "XP Master",    icon: "\u{1F31F}", description: "Earn 1,000 total XP", category: "xp", threshold: 1000, unit: "XP" },
-];
-
-const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
-  streak: { label: "Streak Milestones", color: "#e8a040" },
-  review: { label: "Flashcard Mastery", color: "#7ec8e3" },
-  xp:     { label: "XP Milestones",     color: "#c4a0ff" },
-};
-
 export default function AchievementsPage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reviewCount, setReviewCount] = useState(0);
 
   useEffect(() => {
     const userId = getOrCreateUserId();
-    Promise.all([
-      fetch("/api/stats/game", { headers: { "X-User-Id": userId } }).then((r) => r.json()),
-      fetch("/api/flashcards", { headers: { "X-User-Id": userId } }).then((r) => r.json()).catch(() => ({ decks: [] })),
-    ])
-      .then(([state]) => {
-        setGameState(state);
-      })
+    fetch("/api/stats/game", { headers: { "X-User-Id": userId } })
+      .then((r) => r.json())
+      .then((state) => setGameState(state))
       .catch(() => {})
       .finally(() => setLoading(false));
-
-    // Estimate review count from XP (2 XP per review)
-    // This is approximate — real count would need a dedicated endpoint
   }, []);
 
   if (loading) {
@@ -84,17 +45,13 @@ export default function AchievementsPage() {
   const earnedSet = new Set(gameState?.achievements.map((a) => a.badgeType) || []);
   const earnedMap = new Map(gameState?.achievements.map((a) => [a.badgeType, a.earnedAt]) || []);
   const totalEarned = earnedSet.size;
-  const totalBadges = ALL_BADGES.length;
-  const completionPct = Math.round((totalEarned / totalBadges) * 100);
+  const completionPct = Math.round((totalEarned / TOTAL_BADGES) * 100);
 
-  // Compute progress values for each badge
   function getProgress(badge: typeof ALL_BADGES[0]): number {
     if (earnedSet.has(badge.key)) return badge.threshold;
     if (badge.category === "streak") return gameState?.streak || 0;
     if (badge.category === "xp") return gameState?.xpTotal || 0;
-    if (badge.key === "FIRST_REVIEW" || badge.key === "REVIEWS_100" || badge.key === "REVIEWS_500") {
-      return reviewCount;
-    }
+    if (badge.category === "review") return gameState?.reviewCount || 0;
     return 0;
   }
 
@@ -107,33 +64,31 @@ export default function AchievementsPage() {
       {/* Overall progress */}
       <section style={overviewCardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <div style={progressRingContainerStyle}>
-            <svg width={64} height={64} viewBox="0 0 64 64">
-              <circle cx={32} cy={32} r={26} fill="none" stroke="#1f2e1f" strokeWidth={5} />
-              <circle
-                cx={32} cy={32} r={26}
-                fill="none"
-                stroke="#f0dc4e"
-                strokeWidth={5}
-                strokeLinecap="round"
-                strokeDasharray={2 * Math.PI * 26}
-                strokeDashoffset={2 * Math.PI * 26 * (1 - completionPct / 100)}
-                transform="rotate(-90 32 32)"
-                style={{ transition: "stroke-dashoffset 0.5s" }}
-              />
-              <text x={32} y={35} textAnchor="middle" fill="#f0dc4e" fontSize="14" fontWeight="bold" fontFamily="inherit">
-                {completionPct}%
-              </text>
-            </svg>
-          </div>
+          <svg width={64} height={64} viewBox="0 0 64 64" style={{ flexShrink: 0 }}>
+            <circle cx={32} cy={32} r={26} fill="none" stroke="#1f2e1f" strokeWidth={5} />
+            <circle
+              cx={32} cy={32} r={26}
+              fill="none"
+              stroke="#f0dc4e"
+              strokeWidth={5}
+              strokeLinecap="round"
+              strokeDasharray={2 * Math.PI * 26}
+              strokeDashoffset={2 * Math.PI * 26 * (1 - completionPct / 100)}
+              transform="rotate(-90 32 32)"
+              style={{ transition: "stroke-dashoffset 0.5s" }}
+            />
+            <text x={32} y={35} textAnchor="middle" fill="#f0dc4e" fontSize="14" fontWeight="bold" fontFamily="inherit">
+              {completionPct}%
+            </text>
+          </svg>
           <div>
             <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
-              {totalEarned} / {totalBadges} Badges
+              {totalEarned} / {TOTAL_BADGES} Badges
             </div>
             <div style={{ fontSize: "0.8rem", color: "#7a7060", marginTop: "0.2rem" }}>
-              {totalEarned === totalBadges
+              {totalEarned === TOTAL_BADGES
                 ? "All achievements unlocked!"
-                : `${totalBadges - totalEarned} more to collect`}
+                : `${TOTAL_BADGES - totalEarned} more to collect`}
             </div>
           </div>
         </div>
@@ -172,7 +127,6 @@ export default function AchievementsPage() {
                       opacity: isEarned ? 1 : 0.75,
                     }}
                   >
-                    {/* Icon */}
                     <div style={{
                       fontSize: "1.6rem",
                       width: 40,
@@ -188,7 +142,6 @@ export default function AchievementsPage() {
                       {badge.icon}
                     </div>
 
-                    {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span style={{
@@ -207,7 +160,6 @@ export default function AchievementsPage() {
                       <div style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.15rem" }}>
                         {badge.description}
                       </div>
-                      {/* Progress bar */}
                       {!isEarned && (
                         <div style={{ marginTop: "0.4rem" }}>
                           <div style={{ height: 4, background: "#1f2e1f", borderRadius: 2, overflow: "hidden" }}>
@@ -240,7 +192,7 @@ export default function AchievementsPage() {
       })}
 
       <div style={{ textAlign: "center", marginTop: "1rem" }}>
-        <Link href="/" style={backLinkStyle}>Back to Dashboard</Link>
+        <Link href="/" style={{ color: "#7a7060", fontSize: "0.85rem", textDecoration: "none" }}>Back to Dashboard</Link>
       </div>
     </main>
   );
@@ -279,16 +231,6 @@ const overviewCardStyle: React.CSSProperties = {
   borderRadius: 8,
   padding: "1.25rem",
   marginBottom: "2rem",
-};
-
-const progressRingContainerStyle: React.CSSProperties = {
-  flexShrink: 0,
-};
-
-const backLinkStyle: React.CSSProperties = {
-  color: "#7a7060",
-  fontSize: "0.85rem",
-  textDecoration: "none",
 };
 
 const spinnerStyle: React.CSSProperties = {
