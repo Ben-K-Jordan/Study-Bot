@@ -48,6 +48,7 @@ interface GeneratePromptsInput {
   contentChunks: { doc_title: string; page_number: number | null; text: string }[];
   courseName: string;
   examName?: string;
+  masteryContext?: string;
 }
 
 interface GenerateFeedbackInput {
@@ -307,7 +308,7 @@ Output valid JSON:
   ]
 }`,
     buildUserPrompt: (input: unknown) => {
-      const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName } =
+      const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName, masteryContext } =
         input as GeneratePromptsInput;
 
       const objStr = objectives
@@ -321,6 +322,11 @@ Output valid JSON:
       let header = `Course: ${courseName}`;
       if (examName) header += ` | Exam: ${examName}`;
 
+      let masteryStr = "";
+      if (masteryContext) {
+        masteryStr = `\n\n${masteryContext}\n\nADAPT question difficulty to the student's mastery level for each objective. Do NOT generate the same difficulty for all objectives.`;
+      }
+
       return `${header}
 Topic scope: ${topicScope}
 Session mode: ${mode}
@@ -330,7 +336,7 @@ Learning objectives:
 ${objStr}
 
 Course material excerpts (use these to ground your questions):
-${contentStr}
+${contentStr}${masteryStr}
 
 Generate ${promptCount} study questions that test mastery of this specific course material.`;
     },

@@ -13,7 +13,7 @@ import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
-import { updateMastery, getDueObjectives } from "@/lib/mastery";
+import { updateMastery, getDueObjectives, accuracyToQuality, confidenceAdjustedQuality } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
 import type {
@@ -25,6 +25,7 @@ import type {
 } from "@/lib/validation";
 import { RUNNABLE_MODES } from "@/lib/validation";
 import { generateVariantQuestion, MAX_VARIANTS_PER_SESSION } from "@/lib/variant-questions";
+import { createFlashcardsFromErrors } from "@/lib/auto-flashcards";
 
 // ---- Sentinel errors for transaction control flow ----
 
@@ -831,7 +832,21 @@ async function handleImmediateScoring(
       // Mastery update — awaited to prevent data loss on process exit
       try {
         const s = await prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } });
-        if (s) await updateObjectiveMastery(userId, run.runId, s.courseName);
+        if (s) {
+          await updateObjectiveMastery(userId, run.runId, s.courseName);
+          // Auto-generate flashcards from errors (Roediger & Butler 2011)
+          try {
+            await createFlashcardsFromErrors(userId, run.runId, s.courseName);
+          } catch (fcErr) {
+            logger.error("auto_flashcards.call_failed", { error: String(fcErr) });
+          }
+          // Auto-complete plan items linked to this session
+          try {
+            await completePlanItemsForSession(run.sessionId, run.runId);
+          } catch (planErr) {
+            logger.error("plan_item.auto_complete_failed", { error: String(planErr) });
+          }
+        }
       } catch (masteryErr) {
         logger.error("mastery.update_failed", { error: String(masteryErr) });
       }
@@ -1085,7 +1100,21 @@ async function handleExamScore(
       // Mastery update — awaited to prevent data loss on process exit
       try {
         const s = await prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } });
-        if (s) await updateObjectiveMastery(userId, run.runId, s.courseName);
+        if (s) {
+          await updateObjectiveMastery(userId, run.runId, s.courseName);
+          // Auto-generate flashcards from errors (Roediger & Butler 2011)
+          try {
+            await createFlashcardsFromErrors(userId, run.runId, s.courseName);
+          } catch (fcErr) {
+            logger.error("auto_flashcards.call_failed", { error: String(fcErr) });
+          }
+          // Auto-complete plan items linked to this session
+          try {
+            await completePlanItemsForSession(run.sessionId, run.runId);
+          } catch (planErr) {
+            logger.error("plan_item.auto_complete_failed", { error: String(planErr) });
+          }
+        }
       } catch (masteryErr) {
         logger.error("mastery.update_failed", { error: String(masteryErr) });
       }
@@ -1319,11 +1348,11 @@ async function generateWarmupPrompts(
  */
 async function updateObjectiveMastery(userId: string, runId: string, courseName: string) {
   try {
-    // Fetch all scored attempts with their objective IDs
+    // Fetch all scored attempts with their objective IDs and confidence ratings
     const [attempts, promptRows, plan] = await Promise.all([
       prisma.sessionAttempt.findMany({
         where: { runId, selfScore: { not: null } },
-        select: { selfScore: true, promptIndex: true },
+        select: { selfScore: true, promptIndex: true, confidenceRating: true },
       }),
       prisma.sessionRunPrompt.findMany({
         where: { runId },
@@ -1339,24 +1368,29 @@ async function updateObjectiveMastery(userId: string, runId: string, courseName:
 
     const examDate = plan?.examDate ?? undefined;
 
-    // Build objective -> scores map
-    const objectiveScores = new Map<string, { correct: number; total: number }>();
+    // Build objective -> scores map (with confidence data)
+    const objectiveScores = new Map<string, { correct: number; total: number; confidenceSum: number; confidenceCount: number }>();
     for (const attempt of attempts) {
       const promptRow = promptRows.find((p) => p.promptIndex === attempt.promptIndex);
       const objId = promptRow?.objectiveId;
       if (!objId) continue;
 
-      const entry = objectiveScores.get(objId) || { correct: 0, total: 0 };
+      const entry = objectiveScores.get(objId) || { correct: 0, total: 0, confidenceSum: 0, confidenceCount: 0 };
       entry.total++;
       if (attempt.selfScore === "CORRECT") entry.correct++;
+      if (attempt.confidenceRating != null) {
+        entry.confidenceSum += attempt.confidenceRating;
+        entry.confidenceCount++;
+      }
       objectiveScores.set(objId, entry);
     }
 
-    // Update mastery for each objective (with exam-aware spacing)
+    // Update mastery for each objective (with confidence-weighted quality + exam-aware spacing)
     const updates = Array.from(objectiveScores.entries()).map(
-      ([objectiveKey, { correct, total }]) => {
+      ([objectiveKey, { correct, total, confidenceSum, confidenceCount }]) => {
         const accuracy = total > 0 ? correct / total : 0;
-        return updateMastery(userId, courseName, objectiveKey, accuracy, new Date(), examDate);
+        const avgConfidence = confidenceCount > 0 ? confidenceSum / confidenceCount : null;
+        return updateMastery(userId, courseName, objectiveKey, accuracy, new Date(), examDate, avgConfidence);
       }
     );
 
@@ -1421,6 +1455,20 @@ export async function completeRun(userId: string, runId: string) {
     logger.error("mastery.update_failed", { user_id: userId, run_id: runId, error: String(masteryErr) });
   }
 
+  // Auto-generate flashcards from errors (Roediger & Butler 2011)
+  try {
+    await createFlashcardsFromErrors(userId, runId, run.session.courseName);
+  } catch (fcErr) {
+    logger.error("auto_flashcards.call_failed", { user_id: userId, run_id: runId, error: String(fcErr) });
+  }
+
+  // Auto-complete plan items linked to this session
+  try {
+    await completePlanItemsForSession(run.sessionId, runId);
+  } catch (planErr) {
+    logger.error("plan_item.auto_complete_failed", { user_id: userId, run_id: runId, error: String(planErr) });
+  }
+
   logger.info("run.completed", {
     user_id: userId,
     run_id: runId,
@@ -1473,4 +1521,37 @@ export async function endBreak(userId: string, runId: string) {
   });
 
   return { data: { break_state: newState } };
+}
+
+// ---- Auto-complete plan items ----
+
+/**
+ * Mark StudyPlanItems linked to this session as DONE when a run completes.
+ * Only updates items in SCHEDULED or IN_PROGRESS status.
+ */
+async function completePlanItemsForSession(
+  sessionId: string,
+  completedRunId: string,
+): Promise<number> {
+  const result = await prisma.studyPlanItem.updateMany({
+    where: {
+      sessionId,
+      status: { in: ["SCHEDULED", "IN_PROGRESS"] },
+    },
+    data: {
+      status: "DONE",
+      completedRunId,
+      completedAt: new Date(),
+    },
+  });
+
+  if (result.count > 0) {
+    logger.info("plan_item.auto_completed", {
+      session_id: sessionId,
+      completed_run_id: completedRunId,
+      items_completed: result.count,
+    });
+  }
+
+  return result.count;
 }
