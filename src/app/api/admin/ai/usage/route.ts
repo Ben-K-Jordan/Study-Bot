@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const filterUserId = request.nextUrl.searchParams.get("user_id") || userId;
+  const filterUserId = userId;
   const days = parseInt(request.nextUrl.searchParams.get("days") || "7", 10);
   const since = new Date();
   since.setDate(since.getDate() - days);
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   const totalCostMicros = logs.reduce((sum, l) => sum + Number(l._sum.costUsdMicros ?? 0), 0);
 
   return NextResponse.json({
-    user_id: filterUserId,
+    user_id: userId,
     period_days: days,
     total_cost_usd: totalCostMicros / 1_000_000,
     breakdown: logs.map((l) => ({

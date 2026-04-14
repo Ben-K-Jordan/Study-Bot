@@ -13,6 +13,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").filter(Boolean);
+  if (!adminIds.includes(userId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const statusFilter = request.nextUrl.searchParams.get("status");
   const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "20", 10), 100);
 

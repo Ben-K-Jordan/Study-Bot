@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { signupLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 
 const signupSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -10,6 +11,9 @@ const signupSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const rl = signupLimiter.check(getClientIp(request as any));
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+
   try {
     const body = await request.json();
     const { email, password, name } = signupSchema.parse(body);

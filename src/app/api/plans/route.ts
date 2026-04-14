@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { createdAt: "desc" },
+      take: 50,
     });
 
     // Collect all session IDs across all plans

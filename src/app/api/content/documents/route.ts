@@ -4,6 +4,7 @@ import { uploadDocument, listDocuments } from "@/services/content";
 import { uploadDocumentSchema, listDocumentsSchema } from "@/lib/validation-content";
 import { z } from "zod/v4";
 import { logger } from "@/lib/logger";
+import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -18,6 +19,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rl = aiLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -28,6 +32,14 @@ export async function POST(request: NextRequest) {
   const file = formData.get("file") as File | null;
   if (!file) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
+  }
+
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+  if (file.size > MAX_FILE_SIZE) {
+    return NextResponse.json(
+      { error: `File too large. Maximum size is 10 MB.` },
+      { status: 413 }
+    );
   }
 
   const mimeType = file.type || "text/plain";
