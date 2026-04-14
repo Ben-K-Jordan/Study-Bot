@@ -57,7 +57,6 @@ export async function GET(request: NextRequest) {
 
   const leaderboard = xpByUser.map((entry, i) => ({
     rank: i + 1,
-    userId: entry.userId,
     displayName: nameMap.get(entry.userId) || anonymizeName(entry.userId),
     xp: entry._sum.xpAmount || 0,
     isCurrentUser: entry.userId === userId,
@@ -85,13 +84,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ leaderboard, period, userRank });
 }
 
-/**
- * Generate an anonymous display name from userId.
- */
 function anonymizeName(userId: string): string {
   const adjectives = ["Eager", "Bright", "Swift", "Keen", "Bold", "Sharp", "Calm", "Wise"];
   const nouns = ["Scholar", "Learner", "Student", "Thinker", "Reader", "Writer", "Seeker", "Explorer"];
-  // Simple hash from userId
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;

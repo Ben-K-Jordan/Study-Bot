@@ -2,12 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-/**
- * GET /api/stats/activity
- * Returns daily study activity for the past year (for heatmap),
- * current streak, and total XP.
- * Merges data from completed plan items + XP events.
- */
 export async function GET(request: NextRequest) {
   const userId = getUserId(request.headers);
   if (!userId) {
@@ -19,7 +13,6 @@ export async function GET(request: NextRequest) {
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   oneYearAgo.setHours(0, 0, 0, 0);
 
-  // Get completed plan items + XP events in parallel
   const [completedItems, xpEvents, xpTotal] = await Promise.all([
     prisma.studyPlanItem.findMany({
       where: {
@@ -28,11 +21,12 @@ export async function GET(request: NextRequest) {
         completedAt: { gte: oneYearAgo },
       },
       select: { completedAt: true, startTime: true },
-      orderBy: { completedAt: "asc" },
     }),
-    prisma.xpEvent.findMany({
+    // Use groupBy on createdAt to get distinct active dates with counts
+    prisma.xpEvent.groupBy({
+      by: ["createdAt"],
       where: { userId, createdAt: { gte: oneYearAgo } },
-      select: { createdAt: true },
+      _count: { id: true },
     }),
     prisma.xpEvent.aggregate({
       where: { userId },
@@ -49,6 +43,7 @@ export async function GET(request: NextRequest) {
   }
   for (const event of xpEvents) {
     const key = event.createdAt.toISOString().slice(0, 10);
+    // XP events contribute at least 1 to the count for that day
     if (!dailyCounts.has(key)) {
       dailyCounts.set(key, 1);
     }
@@ -59,7 +54,7 @@ export async function GET(request: NextRequest) {
     count,
   }));
 
-  // Compute streak
+  // Compute streak from daily counts
   const todayKey = now.toISOString().slice(0, 10);
   const yesterdayDate = new Date(now);
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
@@ -69,15 +64,8 @@ export async function GET(request: NextRequest) {
   const check = new Date(now);
   check.setHours(0, 0, 0, 0);
 
-  if (!dailyCounts.has(todayKey)) {
-    if (!dailyCounts.has(yesterdayKey)) {
-      streak = 0;
-    } else {
-      check.setDate(check.getDate() - 1);
-    }
-  }
-
-  if (streak === 0 && (dailyCounts.has(todayKey) || dailyCounts.has(yesterdayKey))) {
+  if (dailyCounts.has(todayKey) || dailyCounts.has(yesterdayKey)) {
+    if (!dailyCounts.has(todayKey)) check.setDate(check.getDate() - 1);
     const d = new Date(check);
     while (dailyCounts.has(d.toISOString().slice(0, 10))) {
       streak++;
@@ -85,7 +73,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Total XP from XP events; fallback to completed item count for legacy data
   const xpFromEvents = xpTotal._sum.xpAmount || 0;
   const totalXp = xpFromEvents > 0
     ? xpFromEvents
@@ -97,6 +84,5 @@ export async function GET(request: NextRequest) {
     activity,
     streak,
     total_xp: totalXp,
-    today_count: dailyCounts.get(todayKey) || 0,
   });
 }

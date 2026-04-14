@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
+import { BADGE_MAP, TOTAL_BADGES } from "@/lib/badge-data";
 
 // ---- Types ----
 
@@ -42,7 +43,6 @@ interface ActivityData {
   activity: ActivityDay[];
   streak: number;
   total_xp: number;
-  today_count: number;
 }
 
 interface GameState {
@@ -55,25 +55,9 @@ interface GameState {
   newAchievements: string[];
 }
 
-// Achievement display data
-const BADGE_INFO: Record<string, { label: string; icon: string; description: string }> = {
-  STREAK_3:      { label: "Getting Started",   icon: "\u{1F525}", description: "3-day streak" },
-  STREAK_7:      { label: "Week Warrior",       icon: "\u26A1",    description: "7-day streak" },
-  STREAK_14:     { label: "Two-Week Titan",     icon: "\u{1F4AA}", description: "14-day streak" },
-  STREAK_30:     { label: "Monthly Master",     icon: "\u{1F3C6}", description: "30-day streak" },
-  STREAK_60:     { label: "Dedicated Scholar",  icon: "\u{1F393}", description: "60-day streak" },
-  STREAK_100:    { label: "Century Club",       icon: "\u{1F48E}", description: "100-day streak" },
-  FIRST_REVIEW:  { label: "First Steps",       icon: "\u{1F4D6}", description: "First flashcard review" },
-  REVIEWS_100:   { label: "Card Shark",         icon: "\u{1F0CF}", description: "100 cards reviewed" },
-  REVIEWS_500:   { label: "Flashcard Fiend",    icon: "\u{1F9E0}", description: "500 cards reviewed" },
-  FIRST_PERFECT: { label: "Perfect Score",      icon: "\u2B50",    description: "Perfect deck run" },
-  XP_100:        { label: "XP Centurion",       icon: "\u{1F4AF}", description: "100 total XP" },
-  XP_1000:       { label: "XP Master",          icon: "\u{1F31F}", description: "1,000 total XP" },
-};
 
 interface LeaderboardEntry {
   rank: number;
-  userId: string;
   displayName: string;
   xp: number;
   isCurrentUser: boolean;
@@ -170,18 +154,6 @@ export default function DashboardPage() {
         // Non-critical
       }
     }
-    async function fetchLeaderboard() {
-      try {
-        const res = await fetch("/api/leaderboard?period=week", {
-          headers: { "X-User-Id": userId },
-        });
-        if (res.ok) {
-          setLeaderboard(await res.json());
-        }
-      } catch {
-        // Non-critical
-      }
-    }
     async function checkOnboarding() {
       try {
         const res = await fetch("/api/onboarding", {
@@ -200,8 +172,8 @@ export default function DashboardPage() {
     fetchPlans();
     fetchActivity();
     fetchGameState();
-    fetchLeaderboard();
     checkOnboarding();
+    // Leaderboard is fetched by the lbPeriod effect
   }, []);
 
   // Reload leaderboard when period changes
@@ -385,7 +357,7 @@ export default function DashboardPage() {
         {gameState && gameState.achievements.length > 0 ? (
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             {gameState.achievements.map((a) => {
-              const info = BADGE_INFO[a.badgeType];
+              const info = BADGE_MAP[a.badgeType];
               if (!info) return null;
               return (
                 <a key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
@@ -459,7 +431,7 @@ export default function DashboardPage() {
           <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, overflow: "hidden" }}>
             {leaderboard.leaderboard.slice(0, 10).map((entry) => (
               <div
-                key={entry.userId}
+                key={entry.rank}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -785,7 +757,7 @@ function StreakMilestones({ streak, earned }: { streak: number; earned: string[]
 
   const next = milestones[nextIdx];
   const progress = Math.min(streak / next.days, 1);
-  const info = BADGE_INFO[next.badge];
+  const info = BADGE_MAP[next.badge];
 
   return (
     <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, padding: "0.75rem 1rem" }}>
@@ -810,7 +782,7 @@ function StreakMilestones({ streak, earned }: { streak: number; earned: string[]
 // ---- Confetti Overlay ----
 
 function ConfettiOverlay({ badge }: { badge: string | null }) {
-  const info = badge ? BADGE_INFO[badge] : null;
+  const info = badge ? BADGE_MAP[badge] : null;
   const particles = useMemo(() => {
     const colors = ["#f0dc4e", "#e8a040", "#88cc88", "#7ec8e3", "#c4a0ff", "#e88888"];
     return Array.from({ length: 40 }, (_, i) => ({

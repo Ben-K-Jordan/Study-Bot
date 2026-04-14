@@ -3,10 +3,6 @@ import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 
-/**
- * GET /api/learn — returns per-course learning data for the study hub.
- * Each course shows: document count, flashcard decks, due cards, guides, recent XP.
- */
 export async function GET(request: NextRequest) {
   const userId = getUserId(request.headers);
   if (!userId) {
@@ -14,13 +10,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Fetch all user courses from documents
     const docs = await prisma.contentDocument.findMany({
       where: { userId, namespace: "COURSE", courseName: { not: null } },
       select: { courseName: true, examName: true, status: true },
     });
 
-    // Unique courses
     const courseMap = new Map<string, { examNames: Set<string>; docCount: number; processedCount: number }>();
     for (const doc of docs) {
       if (!doc.courseName) continue;
@@ -36,32 +30,39 @@ export async function GET(request: NextRequest) {
     }
 
     const courseNames = Array.from(courseMap.keys());
-
-    // Fetch flashcard decks, due cards, guides, and recent XP in parallel
     const now = new Date();
-    const [decks, dueCards, guides, recentXp] = await Promise.all([
+
+    const [decks, dueNewCards, dueReviewCards, guides, recentXp] = await Promise.all([
       prisma.flashcardDeck.groupBy({
         by: ["courseName"],
         where: { userId, courseName: { in: courseNames } },
         _count: { id: true },
       }),
-      prisma.flashcard.findMany({
+      // Count new cards (never reviewed) per course via deck groupBy
+      prisma.flashcard.groupBy({
+        by: ["deckId"],
         where: {
           deck: { userId, courseName: { in: courseNames } },
-          OR: [
-            { nextDueAt: null, repetitions: 0 }, // new cards
-            { nextDueAt: { lte: now } },           // due cards
-          ],
+          nextDueAt: null,
+          repetitions: 0,
         },
-        select: { deck: { select: { courseName: true } } },
+        _count: { id: true },
+      }),
+      // Count due review cards per course via deck groupBy
+      prisma.flashcard.groupBy({
+        by: ["deckId"],
+        where: {
+          deck: { userId, courseName: { in: courseNames } },
+          nextDueAt: { lte: now },
+        },
+        _count: { id: true },
       }),
       prisma.studyGuide.groupBy({
         by: ["courseName"],
         where: { userId, courseName: { in: courseNames } },
         _count: { id: true },
       }),
-      prisma.xpEvent.groupBy({
-        by: ["action"],
+      prisma.xpEvent.aggregate({
         where: {
           userId,
           createdAt: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },
@@ -70,27 +71,22 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // Aggregate due cards per course
+    // Need deck → course mapping to aggregate due cards by course
+    const deckCourseMap = new Map<string, string>();
+    const allDecks = await prisma.flashcardDeck.findMany({
+      where: { userId, courseName: { in: courseNames } },
+      select: { id: true, courseName: true },
+    });
+    for (const d of allDecks) deckCourseMap.set(d.id, d.courseName);
+
     const duePerCourse = new Map<string, number>();
-    for (const card of dueCards) {
-      const cn = card.deck.courseName;
-      duePerCourse.set(cn, (duePerCourse.get(cn) || 0) + 1);
+    for (const g of [...dueNewCards, ...dueReviewCards]) {
+      const cn = deckCourseMap.get(g.deckId);
+      if (cn) duePerCourse.set(cn, (duePerCourse.get(cn) || 0) + g._count.id);
     }
 
-    // Build deck count map
-    const deckCountMap = new Map<string, number>();
-    for (const d of decks) {
-      deckCountMap.set(d.courseName, d._count.id);
-    }
-
-    // Build guide count map
-    const guideCountMap = new Map<string, number>();
-    for (const g of guides) {
-      guideCountMap.set(g.courseName, g._count.id);
-    }
-
-    // Weekly XP total
-    const weeklyXp = recentXp.reduce((sum, e) => sum + (e._sum.xpAmount || 0), 0);
+    const deckCountMap = new Map(decks.map((d) => [d.courseName, d._count.id]));
+    const guideCountMap = new Map(guides.map((g) => [g.courseName, g._count.id]));
 
     const courses = courseNames.map((name) => {
       const info = courseMap.get(name)!;
@@ -105,10 +101,13 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Sort by most due cards first, then most recent activity
     courses.sort((a, b) => b.dueCardCount - a.dueCardCount || b.docCount - a.docCount);
 
-    return NextResponse.json({ courses, hasCourses: true, weeklyXp });
+    return NextResponse.json({
+      courses,
+      hasCourses: true,
+      weeklyXp: recentXp._sum.xpAmount || 0,
+    });
   } catch (err) {
     logger.error("learn.fetch_failed", { userId, error: String(err) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
