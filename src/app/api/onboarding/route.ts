@@ -11,15 +11,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const state = await prisma.userGameState.findUnique({
-    where: { userId },
-    select: { onboardingComplete: true },
-  });
+  try {
+    const state = await prisma.userGameState.findUnique({
+      where: { userId },
+      select: { onboardingComplete: true },
+    });
 
-  // If no state exists yet, user hasn't onboarded
-  return NextResponse.json({
-    complete: state?.onboardingComplete ?? false,
-  });
+    return NextResponse.json({
+      complete: state?.onboardingComplete ?? false,
+    });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 /**
@@ -31,11 +34,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await prisma.userGameState.upsert({
-    where: { userId },
-    create: { userId, onboardingComplete: true },
-    update: { onboardingComplete: true },
-  });
+  try {
+    await prisma.userGameState.upsert({
+      where: { userId },
+      create: { userId, onboardingComplete: true },
+      update: { onboardingComplete: true },
+    });
 
-  return NextResponse.json({ complete: true });
+    return NextResponse.json({ complete: true });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

@@ -67,14 +67,13 @@ export async function getGameState(userId: string): Promise<{
 
   const streak = await computeStreak(userId, gameState);
 
-  // Award streak freeze as an explicit write (not a side-effect of reads)
-  await maybeAwardStreakFreeze(userId, streak);
+  // Award streak freeze atomically — returns updated freeze count
+  const updatedFreezes = await maybeAwardStreakFreeze(userId, streak, gameState.streakFreezes);
 
   const existingBadges = new Set(achievements.map((a) => a.badgeType));
   const totalXp = xpTotalResult._sum.xpAmount || 0;
   const newAchievements = await checkAndAwardAchievements(userId, existingBadges, streak, totalXp, reviewCount);
 
-  // Merge newly awarded badges inline instead of re-fetching
   const allAchievements = newAchievements.length > 0
     ? [
         ...achievements.map((a) => ({ badgeType: a.badgeType, earnedAt: a.earnedAt.toISOString() })),
@@ -87,7 +86,7 @@ export async function getGameState(userId: string): Promise<{
     xpTotal: totalXp,
     dailyXpGoal: gameState.dailyXpGoal,
     streak,
-    streakFreezes: gameState.streakFreezes,
+    streakFreezes: updatedFreezes,
     reviewCount,
     achievements: allAchievements,
     newAchievements,
@@ -127,7 +126,7 @@ export async function consumeStreakFreeze(userId: string): Promise<{ success: bo
 }
 
 /**
- * Compute current streak using groupBy for dates instead of fetching all rows.
+ * Compute current streak from active days (dates with any XP or completed plan items).
  * Accepts pre-fetched gameState to avoid redundant DB read.
  */
 export async function computeStreak(
@@ -138,32 +137,27 @@ export async function computeStreak(
   const ninetyDaysAgo = new Date(now);
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-  // Use groupBy to get distinct active dates instead of fetching all rows
-  const [xpDays, planDays] = await Promise.all([
-    prisma.xpEvent.groupBy({
-      by: ["createdAt"],
+  // Fetch event dates and completed plan items in parallel.
+  // Use findMany + select (only createdAt) — groupBy on DateTime doesn't reduce rows.
+  const [xpEvents, planItems] = await Promise.all([
+    prisma.xpEvent.findMany({
       where: { userId, createdAt: { gte: ninetyDaysAgo } },
-      _min: { createdAt: true },
-    }).then((rows) => {
-      // groupBy on createdAt gives per-event rows; use raw dates and dedupe
-      const dates = new Set<string>();
-      for (const r of rows) dates.add(r.createdAt.toISOString().slice(0, 10));
-      return dates;
+      select: { createdAt: true },
     }),
     prisma.studyPlanItem.findMany({
       where: { plan: { userId }, status: "DONE", completedAt: { gte: ninetyDaysAgo } },
       select: { completedAt: true, startTime: true },
-      distinct: ["completedAt"],
     }),
   ]);
 
-  const activeDays = new Set(xpDays);
-  for (const item of planDays) {
+  // Dedupe into calendar dates
+  const activeDays = new Set<string>();
+  for (const e of xpEvents) activeDays.add(e.createdAt.toISOString().slice(0, 10));
+  for (const item of planItems) {
     const d = item.completedAt || item.startTime;
     activeDays.add(d.toISOString().slice(0, 10));
   }
 
-  // Include streak freeze date
   const gameState = existingGameState ?? await prisma.userGameState.findUnique({ where: { userId } });
   if (gameState?.streakFreezeUsedDate) {
     activeDays.add(gameState.streakFreezeUsedDate);
@@ -192,20 +186,28 @@ export async function computeStreak(
 }
 
 /**
- * Award streak freeze (called separately, not as read side-effect).
+ * Atomically award a streak freeze at 7-day milestones, max 3.
+ * Uses updateMany with a condition to prevent race conditions and double awards.
+ * Returns the current freeze count after the operation.
  */
-export async function maybeAwardStreakFreeze(userId: string, streak: number): Promise<void> {
-  if (streak <= 0 || streak % 7 !== 0) return;
-  const state = await prisma.userGameState.findUnique({
-    where: { userId },
-    select: { streakFreezes: true },
-  });
-  if (!state || state.streakFreezes >= 3) return;
-  await prisma.userGameState.update({
-    where: { userId },
+async function maybeAwardStreakFreeze(
+  userId: string,
+  streak: number,
+  currentFreezes: number,
+): Promise<number> {
+  if (streak <= 0 || streak % 7 !== 0 || currentFreezes >= 3) return currentFreezes;
+
+  // Atomic conditional update: only increment if still under cap
+  const result = await prisma.userGameState.updateMany({
+    where: { userId, streakFreezes: { lt: 3 } },
     data: { streakFreezes: { increment: 1 } },
   });
-  logger.info("streak.freeze_earned", { user_id: userId, streak });
+
+  if (result.count > 0) {
+    logger.info("streak.freeze_earned", { user_id: userId, streak });
+    return currentFreezes + 1;
+  }
+  return currentFreezes;
 }
 
 async function checkAndAwardAchievements(
@@ -215,27 +217,26 @@ async function checkAndAwardAchievements(
   totalXp: number,
   reviewCount: number,
 ): Promise<string[]> {
-  // Short-circuit: all badges already earned
   if (existingBadges.size >= TOTAL_BADGES) return [];
 
   const newBadges: string[] = [];
 
-  // Derive streak thresholds from shared badge data
+  // Drive all badge checks from the shared ALL_BADGES definitions
   for (const badge of ALL_BADGES) {
     if (existingBadges.has(badge.key)) continue;
+
     if (badge.category === "streak" && streak >= badge.threshold) {
       newBadges.push(badge.key);
+    } else if (badge.category === "xp" && totalXp >= badge.threshold) {
+      newBadges.push(badge.key);
+    } else if (badge.category === "review") {
+      // FIRST_PERFECT requires a separate check (not review count)
+      if (badge.key === "FIRST_PERFECT") continue;
+      if (reviewCount >= badge.threshold) {
+        newBadges.push(badge.key);
+      }
     }
   }
-
-  // XP achievements
-  if (totalXp >= 100 && !existingBadges.has("XP_100")) newBadges.push("XP_100");
-  if (totalXp >= 1000 && !existingBadges.has("XP_1000")) newBadges.push("XP_1000");
-
-  // Review count achievements (reviewCount already fetched in getGameState)
-  if (reviewCount >= 1 && !existingBadges.has("FIRST_REVIEW")) newBadges.push("FIRST_REVIEW");
-  if (reviewCount >= 100 && !existingBadges.has("REVIEWS_100")) newBadges.push("REVIEWS_100");
-  if (reviewCount >= 500 && !existingBadges.has("REVIEWS_500")) newBadges.push("REVIEWS_500");
 
   // Perfect deck — only query if badge not yet earned
   if (!existingBadges.has("FIRST_PERFECT")) {
