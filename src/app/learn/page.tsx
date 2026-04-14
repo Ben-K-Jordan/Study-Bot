@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { apiGet } from "@/lib/client-api";
 
 interface CourseData {
   courseName: string;
@@ -20,10 +21,28 @@ interface LearnData {
   weeklyXp: number;
 }
 
+interface Recommendation {
+  next_session: {
+    mode: string;
+    objectives: string[];
+    topic_scope: string;
+    reason: string;
+  };
+  overdue_objectives: { objective_key: string; days_overdue: number }[];
+  weak_objectives: { objective_key: string; last_accuracy: number | null }[];
+  unresolved_errors: { count: number; recent_error_types: string[] };
+  streak: number;
+  plan_nudge: {
+    plan_id: string;
+    items: { session_id: string; start_time: string; message: string }[];
+  } | null;
+}
+
 export default function LearnPage() {
   const [data, setData] = useState<LearnData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourseRaw] = useState<string | null>(null);
+  const [recs, setRecs] = useState<Recommendation | null>(null);
   const setSelectedCourse = (v: string | null) => { setSelectedCourseRaw(v); if (v) setActiveCourse(v); };
 
   useEffect(() => {
@@ -41,6 +60,15 @@ export default function LearnPage() {
       .catch(() => setData({ courses: [], hasCourses: false, weeklyXp: 0 }))
       .finally(() => setLoading(false));
   }, []);
+
+  // Fetch mastery-driven recommendations when selected course changes
+  useEffect(() => {
+    if (!selectedCourse) return;
+    setRecs(null);
+    apiGet(`/api/learn/recommendations?course_name=${encodeURIComponent(selectedCourse)}`)
+      .then(setRecs)
+      .catch(() => {}); // Graceful: recommendations are optional
+  }, [selectedCourse]);
 
   if (loading) {
     return (
@@ -150,7 +178,51 @@ export default function LearnPage() {
         </div>
       </section>
 
-      {/* Smart recommendations */}
+      {/* Mastery-driven recommendation */}
+      {recs && (
+        <section style={{ ...recommendationStyle, borderLeftColor: "var(--color-primary)" }}>
+          {recs.streak > 0 && (
+            <div style={{ fontSize: "0.8rem", color: "var(--color-success)", marginBottom: "0.4rem", fontWeight: 600 }}>
+              {recs.streak} day streak
+            </div>
+          )}
+          {recs.plan_nudge && recs.plan_nudge.items.length > 0 && (
+            <div style={{ marginBottom: "0.6rem", padding: "0.5rem 0.75rem", background: "var(--color-bg-darkest)", borderRadius: 4, border: "1px solid var(--color-border)" }}>
+              {recs.plan_nudge.items.map((item, i) => (
+                <div key={i} style={{ fontSize: "0.85rem", color: "var(--color-info)", marginBottom: i < recs.plan_nudge!.items.length - 1 ? "0.3rem" : 0 }}>
+                  {item.message} ({new Date(item.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
+            <span style={{ color: "var(--color-primary)", fontWeight: 700, fontSize: "0.95rem" }}>
+              Recommended: {recs.next_session.mode.replace(/_/g, " ")}
+            </span>
+          </div>
+          <p style={{ color: "var(--color-text-dim)", fontSize: "0.8rem", margin: "0 0 0.5rem", lineHeight: 1.4 }}>
+            {recs.next_session.reason}
+          </p>
+          {recs.overdue_objectives.length > 0 && (
+            <div style={{ fontSize: "0.8rem", color: "var(--color-warning)", marginBottom: "0.3rem" }}>
+              {recs.overdue_objectives.length} objective{recs.overdue_objectives.length !== 1 ? "s" : ""} overdue for review
+            </div>
+          )}
+          {recs.unresolved_errors.count > 0 && (
+            <div style={{ fontSize: "0.8rem", color: "var(--color-error)", marginBottom: "0.3rem" }}>
+              {recs.unresolved_errors.count} unresolved error{recs.unresolved_errors.count !== 1 ? "s" : ""} to repair
+            </div>
+          )}
+          <Link
+            href={`/plan?mode=${recs.next_session.mode}&topic=${encodeURIComponent(recs.next_session.topic_scope)}`}
+            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.5rem", fontSize: "0.85rem", padding: "0.5rem 1.25rem" }}
+          >
+            Start {recs.next_session.mode.replace(/_/g, " ")} Session
+          </Link>
+        </section>
+      )}
+
+      {/* Due cards alert */}
       {course.dueCardCount > 0 && (
         <section style={recommendationStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
