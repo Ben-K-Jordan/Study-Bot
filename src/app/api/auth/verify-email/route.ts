@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { consumeToken } from "@/lib/tokens";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { authLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 
 /**
  * GET /api/auth/verify-email?token=xxx
  * Verifies the user's email address.
  */
 export async function GET(request: NextRequest) {
+  const rl = authLimiter.check(getClientIp(request));
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+
   const token = request.nextUrl.searchParams.get("token");
   if (!token) {
     return NextResponse.json({ error: "Missing token" }, { status: 400 });

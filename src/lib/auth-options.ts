@@ -47,6 +47,11 @@ export const authOptions: NextAuthOptions = {
         );
         if (!user || !valid) return null;
 
+        // Reject unverified emails in production
+        if (process.env.NODE_ENV === "production" && !user.emailVerified) {
+          return null;
+        }
+
         return { id: user.id, email: user.email, name: user.name };
       },
     }),
