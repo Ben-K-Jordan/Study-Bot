@@ -205,30 +205,61 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
     expect(data.metrics.attempts_count).toBe(3);
   });
 
-  // ---- Completion ----
+  // ---- Variant injection + Completion ----
+  // INCORRECT (prompt 1) and PARTIAL (prompt 2) with error_logs trigger
+  // variant repair prompts appended at indices 4 and 5, extending the deck
+  // from 4 to 6.
 
-  it("completing last prompt marks run COMPLETED with followups", async () => {
+  it("original last prompt stays ACTIVE because variant prompts were injected", async () => {
     const result = await submitAttempt(userId, runId, {
       prompt_index: 3,
-      user_answer: "Final answer",
+      user_answer: "Final original answer",
       self_score: "CORRECT",
       time_to_answer_seconds: 25,
     });
     expect("data" in result).toBe(true);
     const data = result.data!;
-    expect(data.status).toBe("COMPLETED");
+    expect(data.status).toBe("ACTIVE"); // 2 variant prompts remain
     expect(data.metrics.attempts_count).toBe(4);
-    expect(data.metrics.correct_count).toBe(2);
-    expect(data.metrics.accuracy).toBe(0.5);
+    expect(data.current_index).toBe(4);
+  });
+
+  it("submits first variant repair prompt", async () => {
+    const result = await submitAttempt(userId, runId, {
+      prompt_index: 4,
+      user_answer: "Variant repair answer 1",
+      self_score: "CORRECT",
+      time_to_answer_seconds: 20,
+    });
+    expect("data" in result).toBe(true);
+    const data = result.data!;
+    expect(data.status).toBe("ACTIVE"); // 1 variant prompt remains
+    expect(data.current_index).toBe(5);
+  });
+
+  it("completing last variant prompt marks run COMPLETED with followups", async () => {
+    const result = await submitAttempt(userId, runId, {
+      prompt_index: 5,
+      user_answer: "Variant repair answer 2",
+      self_score: "CORRECT",
+      time_to_answer_seconds: 20,
+    });
+    expect("data" in result).toBe(true);
+    const data = result.data!;
+    expect(data.status).toBe("COMPLETED");
+    expect(data.metrics.attempts_count).toBe(6);
+    expect(data.metrics.correct_count).toBe(4); // prompts 0, 3, 4, 5
+    expect(data.metrics.incorrect_count).toBe(1);
+    expect(data.metrics.partial_count).toBe(1);
+    // 4/6 ≈ 0.667 → < 70% → days 1 and 2
     expect(data.metrics.recommended_followups).toBeDefined();
     expect(data.metrics.recommended_followups!.length).toBe(2);
-    // 50% accuracy → days 1 and 2
     expect(data.metrics.recommended_followups![0].days_from_now).toBe(1);
   });
 
   it("rejects attempt after completion", async () => {
     const result = await submitAttempt(userId, runId, {
-      prompt_index: 4,
+      prompt_index: 6,
       user_answer: "Too late",
       self_score: "CORRECT",
       time_to_answer_seconds: 10,
@@ -253,16 +284,15 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
     expect("data" in runResult).toBe(true);
     const run = runResult.data!;
 
-    expect(run.attempts).toHaveLength(4);
+    expect(run.attempts).toHaveLength(6); // 4 original + 2 variant repairs
     expect(run.error_logs).toHaveLength(2); // INCORRECT + PARTIAL
 
     const metrics = run.metrics as any;
-    expect(metrics.correct_count).toBe(2);
+    expect(metrics.correct_count).toBe(4);
     expect(metrics.incorrect_count).toBe(1);
     expect(metrics.partial_count).toBe(1);
-    expect(metrics.attempts_count).toBe(4);
-    expect(metrics.accuracy).toBe(0.5);
-    expect(metrics.time_spent_seconds).toBe(30 + 60 + 40 + 25);
+    expect(metrics.attempts_count).toBe(6);
+    expect(metrics.time_spent_seconds).toBe(30 + 60 + 40 + 25 + 20 + 20);
 
     // Verify error log content
     const misconception = run.error_logs.find((e: any) => e.error_type === "MISCONCEPTION");
