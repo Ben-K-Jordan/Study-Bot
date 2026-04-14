@@ -34,6 +34,41 @@ export function accuracyToQuality(accuracy: number): number {
 }
 
 /**
+ * Confidence-weighted quality adjustment (Dunlosky et al. 2011).
+ *
+ * Confidence calibration reveals dangerous blind spots and fragile knowledge:
+ * - High confidence + wrong → blind spot: penalize quality (-1)
+ * - Low confidence + right → fragile: reduce quality boost (-1)
+ * - Well-calibrated → no adjustment
+ *
+ * @param baseQuality SM-2 quality from accuracyToQuality (0-5)
+ * @param accuracy per-objective accuracy (0-1)
+ * @param avgConfidence average confidence rating for this objective (1-5, or null)
+ * @returns adjusted quality score (0-5)
+ */
+export function confidenceAdjustedQuality(
+  baseQuality: number,
+  accuracy: number,
+  avgConfidence: number | null,
+): number {
+  if (avgConfidence === null) return baseQuality;
+
+  const normalizedConfidence = (avgConfidence - 1) / 4; // 1-5 → 0-1
+
+  if (accuracy < 0.5 && normalizedConfidence > 0.6) {
+    // Blind spot: student is confident but wrong — penalize harder
+    return Math.max(0, baseQuality - 1);
+  }
+
+  if (accuracy >= 0.7 && normalizedConfidence < 0.3) {
+    // Fragile knowledge: student is right but unsure — don't advance as fast
+    return Math.max(0, baseQuality - 1);
+  }
+
+  return baseQuality;
+}
+
+/**
  * Compute the next SM-2 state given current state and a quality score (0–5).
  *
  * Exam-aware spacing (Cepeda et al. 2008): when an exam date is provided,
@@ -112,6 +147,7 @@ export async function updateMastery(
   accuracy: number,
   now: Date = new Date(),
   examDate?: Date,
+  avgConfidence?: number | null,
 ): Promise<SM2Update> {
   // Read + compute + write in a single transaction to prevent concurrent
   // run completions from clobbering each other's mastery state.
@@ -134,7 +170,8 @@ export async function updateMastery(
         }
       : { easeFactor: 2.5, intervalDays: 0, repetitions: 0 };
 
-    const quality = accuracyToQuality(accuracy);
+    const baseQuality = accuracyToQuality(accuracy);
+    const quality = confidenceAdjustedQuality(baseQuality, accuracy, avgConfidence ?? null);
     const result = sm2Next(current, quality, now, examDate);
 
     await tx.objectiveMastery.upsert({

@@ -15,6 +15,7 @@ import { runTask } from "@/lib/ai/gateway";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
+import { getMasterySummary } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
 import type { Prompt } from "@/lib/prompts";
 
@@ -69,6 +70,35 @@ export async function generateContentAwarePrompts(
 
   const prompt = getPrompt(AiTask.GENERATE_PROMPTS);
 
+  // Fetch mastery data to inform question difficulty (Vygotsky ZPD)
+  let masteryContext: string | undefined;
+  try {
+    const summary = await getMasterySummary(userId, courseName);
+    if (summary.total > 0) {
+      const lines: string[] = [];
+      lines.push(`Student mastery profile (${summary.mastered}/${summary.total} objectives mastered, ${summary.due} due for review):`);
+      for (const obj of summary.objectives) {
+        const objTitle = objectives.find((o) => o.id === obj.objective_key)?.title || obj.objective_key;
+        const acc = obj.last_accuracy != null ? `${Math.round(obj.last_accuracy * 100)}%` : "never studied";
+        const level = obj.repetitions >= 3 && obj.ease_factor >= 2.0 ? "MASTERED"
+          : obj.repetitions === 0 ? "NEW"
+          : obj.last_accuracy != null && obj.last_accuracy < 0.5 ? "STRUGGLING"
+          : obj.last_accuracy != null && obj.last_accuracy < 0.7 ? "DEVELOPING"
+          : "PROFICIENT";
+        lines.push(`  - ${objTitle}: ${level} (accuracy: ${acc}, ${obj.repetitions} reviews, ease: ${obj.ease_factor.toFixed(1)})`);
+      }
+      lines.push("");
+      lines.push("ADAPTIVE DIFFICULTY RULES:");
+      lines.push("- For STRUGGLING/NEW objectives: generate foundational questions (definitions, recall, simple examples). Bloom's level 1-2.");
+      lines.push("- For DEVELOPING objectives: generate application questions (apply to scenarios, compare). Bloom's level 2-3.");
+      lines.push("- For PROFICIENT objectives: generate analysis questions (compare/contrast, cause-effect). Bloom's level 3-4.");
+      lines.push("- For MASTERED objectives: generate synthesis/evaluation questions (edge cases, novel applications, critique). Bloom's level 4-5.");
+      masteryContext = lines.join("\n");
+    }
+  } catch {
+    // Mastery data is optional — continue without it
+  }
+
   try {
     const result = await runTask<{ prompts: GeneratedPrompt[] }>(gatewayCtx, {
       task: AiTask.GENERATE_PROMPTS,
@@ -86,6 +116,7 @@ export async function generateContentAwarePrompts(
         })),
         courseName,
         examName,
+        masteryContext,
       },
       parseOutput: (raw: unknown) => {
         const data = raw as Record<string, unknown>;
