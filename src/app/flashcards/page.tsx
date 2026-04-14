@@ -363,7 +363,7 @@ export default function FlashcardsPage() {
     const sessionComplete = isLastCard && reviewedCount >= total;
 
     return (
-      <div style={pageContainer}>
+      <div id="main-content" style={pageContainer}>
         <style>{`
           @keyframes xp-float { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-30px); } }
         `}</style>
@@ -412,7 +412,7 @@ export default function FlashcardsPage() {
         </p>
 
         {/* Card */}
-        <div style={{ position: "relative" }}>
+        <div style={{ position: "relative" }} role="region" aria-label="Flashcard">
           {xpPopup && (
             <div
               key={xpPopup.key}
@@ -444,7 +444,7 @@ export default function FlashcardsPage() {
                 {card.intervalDays > 0 && ` · ${card.intervalDays}d`}
               </span>
             </div>
-            <div style={{ fontSize: "1.05rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+            <div aria-live="polite" style={{ fontSize: "1.05rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
               {flipped ? card.back : card.front}
             </div>
             {card.tags && card.tags.length > 0 && (
@@ -475,6 +475,8 @@ export default function FlashcardsPage() {
                   key={rating}
                   onClick={() => handleReview(rating)}
                   disabled={reviewing}
+                  aria-label={`Rate ${rating.charAt(0) + rating.slice(1).toLowerCase()} (${i + 1})`}
+                  type="button"
                   style={{
                     ...ratingBtn,
                     borderColor: RATING_COLORS[rating],
@@ -526,7 +528,7 @@ export default function FlashcardsPage() {
 
   // --- List Mode ---
   return (
-    <div style={pageContainer}>
+    <div id="main-content" style={pageContainer}>
       <div style={headerStyle}>
         <h1 style={titleStyle}>Flashcards</h1>
         <p style={subtitleStyle}>Spaced repetition flashcards from your course materials</p>

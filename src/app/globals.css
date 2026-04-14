@@ -1,0 +1,344 @@
+/* ===========================
+   Study Bot — Global Styles
+   =========================== */
+
+/* ---- CSS Custom Properties ---- */
+
+:root {
+  --font-display: 'Caveat', cursive;
+  --font-body: 'Patrick Hand', cursive;
+
+  --color-bg-darkest: #1f2e1f;
+  --color-bg: #2a3d2a;
+  --color-bg-card: #334d33;
+  --color-bg-input: #2d422d;
+  --color-bg-done: #2d4a2d;
+
+  --color-border: #4a6a4a;
+  --color-border-subtle: #3a5a3a;
+  --color-border-done: #5a8a5a;
+
+  --color-text: #e8dcc8;
+  --color-text-secondary: #c8bca8;
+  --color-text-muted: #a89a82;
+  --color-text-faint: #9a8a7a;
+  --color-text-dim: #7a7060;
+
+  --color-primary: #f0dc4e;
+  --color-info: #7ec8e3;
+  --color-success: #88cc88;
+  --color-warning: #e8a040;
+  --color-error: #e88888;
+  --color-review: #c4a0ff;
+
+  --nav-height: 52px;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  line-height: 1.5;
+}
+
+/* ---- Skip-to-content link (accessibility) ---- */
+
+.skip-to-content {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 10000;
+  padding: 0.75rem 1.5rem;
+  background: var(--color-primary);
+  color: var(--color-bg-darkest);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  border-radius: 0 0 6px 6px;
+  transition: top 0.15s ease;
+}
+
+.skip-to-content:focus {
+  top: 0;
+  outline: 3px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+/* ---- Focus-visible outlines (accessibility) ---- */
+
+*:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+/* ---- Nav responsive ---- */
+
+.nav-container {
+  /* Structural styles are inline; this class enables responsive overrides */
+}
+
+.nav-links {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0.25rem;
+  overflow: auto;
+}
+
+.nav-hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nav-hamburger-line {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--color-text);
+  border-radius: 1px;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.nav-hamburger-line::before,
+.nav-hamburger-line::after {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--color-text);
+  border-radius: 1px;
+  position: absolute;
+  left: 0;
+  transition: transform 0.2s, top 0.2s;
+}
+
+.nav-hamburger-line::before {
+  top: -7px;
+}
+
+.nav-hamburger-line::after {
+  top: 7px;
+}
+
+/* Hamburger open state — animate to X */
+.nav-hamburger[aria-expanded="true"] .nav-hamburger-line {
+  background: transparent;
+}
+
+.nav-hamburger[aria-expanded="true"] .nav-hamburger-line::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.nav-hamburger[aria-expanded="true"] .nav-hamburger-line::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
+
+/* ---- Buttons — touch targets ---- */
+
+button,
+[role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Allow small inline badges / icon buttons to opt out with a class */
+button.compact-btn {
+  min-height: auto;
+  min-width: auto;
+}
+
+/* ---- Form inputs ---- */
+
+select,
+textarea,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="number"] {
+  font-size: 16px; /* prevents iOS zoom on focus */
+}
+
+/* ================================================================
+   Tablet breakpoint (max-width: 768px)
+   ================================================================ */
+
+@media (max-width: 768px) {
+  /* -- Mobile nav -- */
+  .nav-hamburger {
+    display: flex;
+  }
+
+  .nav-links {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: var(--nav-height);
+    left: 0;
+    right: 0;
+    background: var(--color-bg-darkest);
+    border-bottom: 1px solid var(--color-border-subtle);
+    padding: 0.5rem 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 9998;
+    overflow: visible;
+  }
+
+  .nav-links.open {
+    display: flex;
+  }
+
+  .nav-links li {
+    width: 100%;
+  }
+
+  .nav-links li a {
+    display: block;
+    padding: 0.75rem 1.25rem !important;
+    border-bottom: none !important;
+    font-size: 1.05rem !important;
+  }
+
+  .nav-links li a:hover,
+  .nav-links li a:focus {
+    background: var(--color-bg);
+  }
+
+  /* -- Page containers — reduce side padding -- */
+  main {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  /* -- Stats grids: 4-col to 2-col -- */
+  div[style*="gridTemplateColumns"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* -- Font size adjustments -- */
+  h1 {
+    font-size: 1.35rem;
+  }
+
+  h2 {
+    font-size: 1.1rem;
+  }
+
+  /* -- Chat bubbles: reduce side margins -- */
+  div[style*="marginLeft: \"2rem\""],
+  div[style*="marginLeft"] {
+    margin-left: 0.5rem;
+  }
+
+  div[style*="marginRight: \"2rem\""],
+  div[style*="marginRight"] {
+    margin-right: 0.5rem;
+  }
+}
+
+/* ================================================================
+   Phone breakpoint (max-width: 480px)
+   ================================================================ */
+
+@media (max-width: 480px) {
+  /* -- Even more compact layout -- */
+  main {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+
+  /* -- Stats grids: single column -- */
+  div[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* -- Cards: less padding -- */
+  .card,
+  div[style*="padding: \"1.5rem\""] {
+    padding: 0.75rem;
+  }
+
+  /* -- Buttons: full width on small screens -- */
+  button:not(.nav-hamburger):not(.compact-btn) {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* -- Font sizes tighten further -- */
+  h1 {
+    font-size: 1.2rem;
+  }
+
+  h2 {
+    font-size: 1rem;
+  }
+
+  /* -- Leaderboard entries: more compact -- */
+  .leaderboard-entry {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  /* -- Rating buttons in flashcards -- */
+  div[style*="display: \"flex\""][style*="gap: \"0.4rem\""] {
+    flex-wrap: wrap;
+  }
+}
+
+/* ================================================================
+   Reduced motion preference
+   ================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ================================================================
+   Print styles
+   ================================================================ */
+
+@media print {
+  .nav-container,
+  .nav-hamburger,
+  .skip-to-content {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+
+  main {
+    padding-top: 0 !important;
+  }
+}

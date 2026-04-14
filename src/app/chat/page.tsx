@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 
 // --- Types ---
 
@@ -28,12 +28,8 @@ interface CourseOption {
 
 // --- API helpers ---
 
-let msgCounter = 0;
-
 async function apiGet(url: string) {
-  const res = await fetch(url, {
-    headers: { "X-User-Id": getOrCreateUserId() },
-  });
+  const res = await fetch(url);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
@@ -42,10 +38,7 @@ async function apiGet(url: string) {
 async function apiPost(url: string, body: unknown) {
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-User-Id": getOrCreateUserId(),
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const data = await res.json();
@@ -53,14 +46,15 @@ async function apiPost(url: string, body: unknown) {
   return data;
 }
 
+async function apiDelete(url: string) {
+  const res = await fetch(url, { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = sessionStorage.getItem("chat_messages");
-      return saved ? (JSON.parse(saved) as Message[]) : [];
-    } catch { return []; }
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<CourseOption[]>([]);
@@ -70,10 +64,30 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Persist messages to sessionStorage
+  // Load chat history from database when course changes
   useEffect(() => {
-    try { sessionStorage.setItem("chat_messages", JSON.stringify(messages)); } catch {}
-  }, [messages]);
+    if (!selectedCourse) return;
+    let mounted = true;
+    const params = new URLSearchParams({ courseKey: selectedCourse });
+    apiGet(`/api/chat/messages?${params.toString()}`)
+      .then((data) => {
+        if (!mounted) return;
+        if (data.messages) {
+          setMessages(
+            data.messages.map((m: { id: string; role: string; content: string; citations?: Citation[] }) => ({
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              citations: m.citations as Citation[] | undefined,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        if (mounted) setMessages([]);
+      });
+    return () => { mounted = false; };
+  }, [selectedCourse]);
 
   // Fetch available courses on mount
   useEffect(() => {
@@ -128,15 +142,31 @@ export default function ChatPage() {
 
     const [courseName, examName] = selectedCourse.split("||");
 
-    const userMsg: Message = {
-      id: `u-${++msgCounter}`,
+    // Optimistically add user message to UI
+    const tempUserMsg: Message = {
+      id: `temp-u-${Date.now()}`,
       role: "user",
       content: question,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => [...prev, tempUserMsg]);
     setInput("");
     setLoading(true);
+
+    // Persist user message to database
+    try {
+      const { message: savedUserMsg } = await apiPost("/api/chat/messages", {
+        courseKey: selectedCourse,
+        role: "user",
+        content: question,
+      });
+      // Replace temp message with server-assigned id
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempUserMsg.id ? { ...m, id: savedUserMsg.id } : m)),
+      );
+    } catch {
+      // Keep the temp message in UI even if persistence fails
+    }
 
     try {
       const response = await apiPost("/api/assistant/answer", {
@@ -147,11 +177,28 @@ export default function ChatPage() {
         top_k: 5,
       });
 
+      const assistantContent = response.answer_markdown || "No response received.";
+      const assistantCitations = response.citations || [];
+
+      // Persist assistant message to database
+      let assistantId = `temp-a-${Date.now()}`;
+      try {
+        const { message: savedAssistantMsg } = await apiPost("/api/chat/messages", {
+          courseKey: selectedCourse,
+          role: "assistant",
+          content: assistantContent,
+          citations: assistantCitations.length > 0 ? assistantCitations : undefined,
+        });
+        assistantId = savedAssistantMsg.id;
+      } catch {
+        // Keep temp id if persistence fails
+      }
+
       const assistantMsg: Message = {
-        id: `a-${++msgCounter}`,
+        id: assistantId,
         role: "assistant",
-        content: response.answer_markdown || "No response received.",
-        citations: response.citations || [],
+        content: assistantContent,
+        citations: assistantCitations,
         meta: response.meta,
       };
 
@@ -160,7 +207,7 @@ export default function ChatPage() {
       setMessages((prev) => [
         ...prev,
         {
-          id: `e-${++msgCounter}`,
+          id: `e-${Date.now()}`,
           role: "assistant",
           content: err instanceof Error ? err.message : "Something went wrong. Please try again.",
         },
@@ -171,18 +218,29 @@ export default function ChatPage() {
     }
   }, [input, selectedCourse, loading]);
 
+  const clearChat = useCallback(async () => {
+    if (!selectedCourse) return;
+    setMessages([]);
+    try {
+      await apiDelete(`/api/chat/messages?courseKey=${encodeURIComponent(selectedCourse)}`);
+    } catch {
+      // UI already cleared
+    }
+  }, [selectedCourse]);
+
   const parsedCourse = selectedCourse.split("||");
 
   return (
-    <div style={pageContainer}>
+    <div id="main-content" style={pageContainer}>
       {/* Header */}
       <div style={headerStyle}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <h1 style={titleStyle}>Source Chat</h1>
           {messages.length > 0 && (
             <button
-              onClick={() => { setMessages([]); sessionStorage.removeItem("chat_messages"); }}
+              onClick={clearChat}
               style={clearButton}
+              type="button"
             >
               Clear chat
             </button>
@@ -224,7 +282,7 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div style={messagesContainer}>
+      <div style={messagesContainer} role="log" aria-live="polite">
         {messages.length === 0 && (
           <div style={emptyState}>
             <p style={{ fontSize: "1.2rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
@@ -240,7 +298,7 @@ export default function ChatPage() {
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} style={{ marginBottom: "1rem" }}>
+          <div key={msg.id} style={{ marginBottom: "1rem" }} role="article">
             {/* Message bubble */}
             <div
               style={
@@ -279,6 +337,7 @@ export default function ChatPage() {
                 {msg.citations.map((c, i) => (
                   <div key={c.chunk_id} style={{ marginBottom: "0.3rem" }}>
                     <button
+                      type="button"
                       aria-expanded={expandedCitation === `${msg.id}-${i}`}
                       onClick={() =>
                         setExpandedCitation(
@@ -367,6 +426,8 @@ export default function ChatPage() {
         <button
           onClick={sendMessage}
           disabled={!input.trim() || !selectedCourse || loading || courses.length === 0}
+          aria-label="Send message"
+          type="button"
           style={{
             ...sendButton,
             opacity: input.trim() && selectedCourse && !loading ? 1 : 0.4,

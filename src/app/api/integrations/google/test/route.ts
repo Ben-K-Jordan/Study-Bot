@@ -5,7 +5,7 @@ import { getGoogleClient, GoogleReconnectError } from "@/lib/google/calendar-cli
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
-  const userId = getUserId(request.headers);
+  const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

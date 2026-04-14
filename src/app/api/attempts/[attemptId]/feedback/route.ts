@@ -7,7 +7,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { attemptId: string } }
 ) {
-  const userId = getUserId(request.headers);
+  const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

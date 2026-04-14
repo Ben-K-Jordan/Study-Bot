@@ -249,7 +249,7 @@ export default function PlanPage() {
   // ---- Form view ----
   if (!result) {
     return (
-      <div style={pageStyle}>
+      <div id="main-content" style={pageStyle}>
         <h1 style={headingStyle}>New Study Plan</h1>
         <form onSubmit={handleSubmit} style={{ maxWidth: 500 }}>
           <div style={{ marginBottom: "1.25rem" }}>
@@ -260,6 +260,7 @@ export default function PlanPage() {
                 value={courseName}
                 onChange={(e) => setCourseName(e.target.value)}
                 required
+                aria-required="true"
                 placeholder="CS 101"
                 style={inputStyle}
               />
@@ -306,6 +307,7 @@ export default function PlanPage() {
                 multiple
                 accept=".pdf,.txt,.md"
                 onChange={handleFileUpload}
+                aria-label="Upload course materials (PDF, text, or markdown)"
                 style={{ display: "none" }}
               />
               <span style={{ color: "var(--color-primary)" }}>
@@ -319,7 +321,7 @@ export default function PlanPage() {
                 {uploadedFiles.map((file) => (
                   <div key={file.id} style={fileRowStyle}>
                     <span>{file.name}</span>
-                    <span style={{ color: file.status === "PROCESSED" ? "var(--color-success)" : "var(--color-warning)", fontSize: "0.85rem" }}>
+                    <span role="status" style={{ color: file.status === "PROCESSED" ? "var(--color-success)" : "var(--color-warning)", fontSize: "0.85rem" }}>
                       {file.status}
                     </span>
                   </div>
@@ -360,7 +362,7 @@ export default function PlanPage() {
 
   // ---- Result view ----
   return (
-    <div style={pageStyle}>
+    <div id="main-content" style={pageStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1 style={headingStyle}>Your Plan</h1>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>

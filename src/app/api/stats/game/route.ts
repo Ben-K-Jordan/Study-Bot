@@ -4,7 +4,7 @@ import { getGameState } from "@/services/gamification";
 import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
-  const userId = getUserId(request.headers);
+  const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

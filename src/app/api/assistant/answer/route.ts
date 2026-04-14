@@ -35,7 +35,7 @@ const ANSWER_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
 const provider = createProvider();
 
 export async function POST(request: NextRequest) {
-  const userId = getUserId(request.headers);
+  const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

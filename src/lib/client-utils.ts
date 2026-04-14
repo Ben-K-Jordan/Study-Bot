@@ -5,11 +5,15 @@
 
 export { MODE_LABELS } from "./calendar";
 
-const USER_ID_KEY = "study_bot_user_id";
 const COURSE_KEY = "study_bot_active_course";
 
+/**
+ * @deprecated Use useSession() from next-auth/react instead.
+ * Kept for backward compatibility during migration.
+ */
 export function getOrCreateUserId(): string {
   if (typeof window === "undefined") return "anonymous";
+  const USER_ID_KEY = "study_bot_user_id";
   let uid = localStorage.getItem(USER_ID_KEY);
   if (!uid) {
     uid = "user_" + Math.random().toString(36).slice(2, 10);
