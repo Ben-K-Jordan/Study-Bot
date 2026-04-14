@@ -103,26 +103,33 @@ export async function setDailyXpGoal(userId: string, goal: number): Promise<void
 }
 
 export async function consumeStreakFreeze(userId: string): Promise<{ success: boolean; freezesRemaining: number }> {
-  const state = await getOrCreateGameState(userId);
-  if (state.streakFreezes <= 0) {
-    return { success: false, freezesRemaining: 0 };
-  }
-
   const todayStr = new Date().toISOString().slice(0, 10);
-  if (state.streakFreezeUsedDate === todayStr) {
-    return { success: false, freezesRemaining: state.streakFreezes };
-  }
 
-  const updated = await prisma.userGameState.update({
-    where: { userId },
+  // Atomic conditional update: only decrement if freezes > 0 and not already used today
+  const result = await prisma.userGameState.updateMany({
+    where: { userId, streakFreezes: { gt: 0 }, streakFreezeUsedDate: { not: todayStr } },
     data: {
       streakFreezes: { decrement: 1 },
       streakFreezeUsedDate: todayStr,
     },
   });
 
-  logger.info("streak.freeze_used", { user_id: userId, remaining: updated.streakFreezes });
-  return { success: true, freezesRemaining: updated.streakFreezes };
+  if (result.count === 0) {
+    // Either no freezes left or already used today — fetch current state for response
+    const state = await prisma.userGameState.findUnique({
+      where: { userId },
+      select: { streakFreezes: true },
+    });
+    return { success: false, freezesRemaining: state?.streakFreezes ?? 0 };
+  }
+
+  const updated = await prisma.userGameState.findUnique({
+    where: { userId },
+    select: { streakFreezes: true },
+  });
+
+  logger.info("streak.freeze_used", { user_id: userId, remaining: updated?.streakFreezes });
+  return { success: true, freezesRemaining: updated?.streakFreezes ?? 0 };
 }
 
 /**

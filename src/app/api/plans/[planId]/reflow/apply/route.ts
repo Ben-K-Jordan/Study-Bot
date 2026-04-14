@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeReflow, ReflowItem, ReflowConfig } from "@/services/reflow";
 import { z } from "zod/v4";
@@ -22,9 +23,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ planId: string }> },
 ) {
-  const userId = req.headers.get("x-user-id");
+  const userId = getUserId(req.headers);
   if (!userId) {
-    return NextResponse.json({ error: "Missing X-User-Id header" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { planId } = await params;
