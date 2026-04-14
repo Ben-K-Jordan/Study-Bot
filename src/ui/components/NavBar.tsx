@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -17,10 +18,15 @@ const NAV_HEIGHT = 52;
 
 export function NavBar() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   function isActive(href: string): boolean {
     if (href === "/") return pathname === "/";
     return pathname === href || pathname.startsWith(href + "/");
+  }
+
+  function handleLinkClick() {
+    setMenuOpen(false);
   }
 
   const barStyle: React.CSSProperties = {
@@ -50,7 +56,6 @@ export function NavBar() {
   };
 
   const navListStyle: React.CSSProperties = {
-    display: "flex",
     listStyle: "none",
     margin: 0,
     padding: 0,
@@ -59,12 +64,29 @@ export function NavBar() {
   };
 
   return (
-    <nav style={barStyle}>
-      <Link href="/" style={brandStyle}>
+    <nav
+      style={barStyle}
+      className="nav-container"
+      role="navigation"
+      aria-label="Main navigation"
+    >
+      <Link href="/" style={brandStyle} onClick={handleLinkClick}>
         Study Bot
       </Link>
 
-      <ul style={navListStyle}>
+      <button
+        className="nav-hamburger"
+        aria-label="Toggle menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((prev) => !prev)}
+      >
+        <span className="nav-hamburger-line" />
+      </button>
+
+      <ul
+        style={navListStyle}
+        className={`nav-links${menuOpen ? " open" : ""}`}
+      >
         {NAV_LINKS.map(({ label, href }) => {
           const active = isActive(href);
           const linkStyle: React.CSSProperties = {
@@ -85,6 +107,8 @@ export function NavBar() {
               <Link
                 href={href}
                 style={linkStyle}
+                aria-current={active ? "page" : undefined}
+                onClick={handleLinkClick}
                 onMouseEnter={(e) => {
                   if (!active) e.currentTarget.style.color = "var(--color-text)";
                 }}

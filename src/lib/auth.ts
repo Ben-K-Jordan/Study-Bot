@@ -1,7 +1,19 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "./auth-options";
+
 /**
- * Stub auth helper. Replace with real auth (NextAuth, Clerk, etc.) later.
- * In dev, reads from X-User-Id header or falls back to a default user.
+ * Get the authenticated user ID from the NextAuth session.
+ * Falls back to the X-User-Id header for backward compatibility / testing.
  */
-export function getUserId(headers: Headers): string | null {
-  return headers.get("x-user-id") || null;
+export async function getUserId(request: Request): Promise<string | null> {
+  // Try NextAuth session first (reads cookie automatically)
+  try {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.id) return session.user.id;
+  } catch {
+    // getServerSession can fail in certain contexts; fall through to header
+  }
+
+  // Fallback: X-User-Id header (dev / testing / backward compat)
+  return request.headers.get("x-user-id") || null;
 }

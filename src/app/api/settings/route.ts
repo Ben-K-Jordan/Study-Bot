@@ -8,7 +8,7 @@ import { logger } from "@/lib/logger";
  * GET /api/settings — fetch user preferences (synced to backend).
  */
 export async function GET(request: NextRequest) {
-  const userId = getUserId(request.headers);
+  const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -41,7 +41,7 @@ const updateSchema = z.object({
  * PUT /api/settings — update user preferences.
  */
 export async function PUT(request: NextRequest) {
-  const userId = getUserId(request.headers);
+  const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

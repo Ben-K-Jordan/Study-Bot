@@ -48,6 +48,7 @@ export function Button({
   variant = "primary",
   size = "md",
   textureKey,
+  type = "button",
   style,
   disabled,
   children,
@@ -75,7 +76,21 @@ export function Button({
   }
 
   return (
-    <button style={{ ...baseStyle, ...style }} disabled={disabled} {...rest}>
+    <button
+      type={type}
+      style={{ ...baseStyle, ...style }}
+      disabled={disabled}
+      aria-disabled={disabled || undefined}
+      onFocus={(e) => {
+        e.currentTarget.style.outline = "2px solid var(--color-primary)";
+        e.currentTarget.style.outlineOffset = "2px";
+      }}
+      onBlur={(e) => {
+        e.currentTarget.style.outline = "none";
+        e.currentTarget.style.outlineOffset = "";
+      }}
+      {...rest}
+    >
       {children}
     </button>
   );

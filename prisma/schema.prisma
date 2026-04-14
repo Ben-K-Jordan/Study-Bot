@@ -617,3 +617,90 @@ model UserGameState {
 
   @@map("user_game_state")
 }
+
+// ── Authentication ──────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String    @map("password_hash")
+  image         String?
+  emailVerified DateTime? @map("email_verified")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  pushSubscriptions      PushSubscription[]
+  notificationPreference NotificationPreference?
+  chatMessages           ChatMessage[]
+
+  @@map("users")
+}
+
+// ── Push Notifications ──────────────────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, endpoint])
+  @@map("push_subscriptions")
+}
+
+// ── Chat Persistence ────────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  courseKey  String   @map("course_key") // "CourseName||ExamName"
+  role      String   // "user" | "assistant"
+  content   String
+  citations Json?    // source excerpts for assistant messages
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, courseKey, createdAt])
+  @@map("chat_messages")
+}
+
+// ── Notification Preferences ────────────────────────────────────
+
+model NotificationPreference {
+  id                 String   @id @default(uuid())
+  userId             String   @unique @map("user_id")
+  emailReminders     Boolean  @default(true) @map("email_reminders")
+  pushReminders      Boolean  @default(true) @map("push_reminders")
+  reminderTime       String   @default("09:00") @map("reminder_time") // HH:MM
+  streakReminders    Boolean  @default(true) @map("streak_reminders")
+  weeklyDigest       Boolean  @default(true) @map("weekly_digest")
+  emailAddress       String?  @map("email_address") // override if different from User.email
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ── Email Reminders (scheduled) ─────────────────────────────────
+
+model ScheduledReminder {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  type         String    // STUDY_REMINDER | STREAK_WARNING | WEEKLY_DIGEST
+  scheduledFor DateTime  @map("scheduled_for")
+  sentAt       DateTime? @map("sent_at")
+  payload      Json?     // extra data (plan items, streak count, etc.)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([scheduledFor, sentAt])
+  @@index([userId])
+  @@map("scheduled_reminders")
+}
