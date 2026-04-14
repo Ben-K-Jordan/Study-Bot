@@ -4,7 +4,11 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    maxAge: 7 * 24 * 60 * 60,  // 7 days
+    updateAge: 24 * 60 * 60,   // refresh token every 24h
+  },
   pages: {
     signIn: "/auth/signin",
     newUser: "/auth/signup",
@@ -23,10 +27,14 @@ export const authOptions: NextAuthOptions = {
           where: { email: credentials.email.toLowerCase().trim() },
         });
 
-        if (!user) return null;
-
-        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!valid) return null;
+        // Always run bcrypt.compare to prevent timing-based user enumeration.
+        // If the user doesn't exist we compare against a dummy hash.
+        const DUMMY_HASH = "$2a$12$000000000000000000000uGAIn1VGbk3rmB7qkVMHMNGLCgnfm2y";
+        const valid = await bcrypt.compare(
+          credentials.password,
+          user?.passwordHash ?? DUMMY_HASH,
+        );
+        if (!user || !valid) return null;
 
         return { id: user.id, email: user.email, name: user.name };
       },

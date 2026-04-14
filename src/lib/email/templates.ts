@@ -5,6 +5,16 @@
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
+/** Escape user-supplied strings before embedding in HTML */
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ── Theme tokens ────────────────────────────────────────────────────────────
 
 const BG = "#2a3d2a";
@@ -88,13 +98,13 @@ export function studyReminder(
   const itemList = items
     .map(
       (item) =>
-        `<li style="margin:0 0 8px;font-size:15px;color:${TEXT};">${item}</li>`,
+        `<li style="margin:0 0 8px;font-size:15px;color:${TEXT};">${esc(item)}</li>`,
     )
     .join("\n");
 
   const html = layout(`
 ${heading("Time to study!")}
-${paragraph(`Hi ${name},`)}
+${paragraph(`Hi ${esc(name)},`)}
 ${paragraph(
   "Your study plan says you should be reviewing today. Your study plan is very wise. You should listen to it.",
 )}
@@ -129,9 +139,9 @@ export function streakWarning(
 
   const html = layout(`
 ${heading("STREAK ALERT")}
-${paragraph(`Hi ${name},`)}
+${paragraph(`Hi ${esc(name)},`)}
 ${paragraph(
-  `Your <strong style="color:${ACCENT};">${streak}-day</strong> study streak is in critical condition. The doctors say it needs just 5 minutes of your time to survive.`,
+  `Your <strong style="color:${ACCENT};">${esc(String(streak))}-day</strong> study streak is in critical condition. The doctors say it needs just 5 minutes of your time to survive.`,
 )}
 ${paragraph("Don't let it flatline. You've come so far.")}
 ${paragraph(
@@ -180,13 +190,13 @@ export function weeklyDigest(
 
   const statRow = (label: string, value: string) =>
     `<tr>
-<td style="padding:10px 12px;font-size:14px;color:${TEXT_MUTED};border-bottom:1px solid #4a5e4a;">${label}</td>
-<td style="padding:10px 12px;font-size:16px;font-weight:700;color:${ACCENT};text-align:right;border-bottom:1px solid #4a5e4a;">${value}</td>
+<td style="padding:10px 12px;font-size:14px;color:${TEXT_MUTED};border-bottom:1px solid #4a5e4a;">${esc(label)}</td>
+<td style="padding:10px 12px;font-size:16px;font-weight:700;color:${ACCENT};text-align:right;border-bottom:1px solid #4a5e4a;">${esc(value)}</td>
 </tr>`;
 
   const html = layout(`
 ${heading("Your Weekly Digest")}
-${paragraph(`Hi ${name},`)}
+${paragraph(`Hi ${esc(name)},`)}
 ${paragraph("Here's how your week went — by the numbers:")}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background-color:${BG};border-radius:8px;overflow:hidden;">
 ${statRow("Study Sessions", String(stats.sessions))}
@@ -215,9 +225,9 @@ export function missedSession(
 
   const html = layout(`
 ${heading("Missed Session")}
-${paragraph(`Hi ${name},`)}
+${paragraph(`Hi ${esc(name)},`)}
 ${paragraph(
-  `So, <strong style="color:${ACCENT};">${sessionTitle}</strong> was on your schedule today... and it didn't happen. We're not mad, just disappointed. (Kidding. Mostly.)`,
+  `So, <strong style="color:${ACCENT};">${esc(sessionTitle)}</strong> was on your schedule today... and it didn't happen. We're not mad, just disappointed. (Kidding. Mostly.)`,
 )}
 ${paragraph(
   "Life happens. Dogs need walking, snacks need eating, existential crises need... existing. We get it.",

@@ -17,8 +17,11 @@ function isAuthorized(request: NextRequest): boolean {
     return true;
   }
 
-  // In development, allow if no CRON_SECRET is set
+  // In non-production, allow if no CRON_SECRET is configured
   if (!cronSecret && process.env.NODE_ENV !== "production") {
+    logger.warn("reminders_process_no_secret", {
+      message: "CRON_SECRET not set — allowing unauthenticated access in dev",
+    });
     return true;
   }
 

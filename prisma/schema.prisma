@@ -633,6 +633,7 @@ model User {
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
   chatMessages           ChatMessage[]
+  scheduledReminders     ScheduledReminder[]
 
   @@map("users")
 }
@@ -699,6 +700,8 @@ model ScheduledReminder {
   sentAt       DateTime? @map("sent_at")
   payload      Json?     // extra data (plan items, streak count, etc.)
   createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([scheduledFor, sentAt])
   @@index([userId])
