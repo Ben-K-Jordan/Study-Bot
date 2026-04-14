@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
 
 const updateSchema = z.object({
   displayName: z.string().max(50).optional(),
-  studyStart: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  studyEnd: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  studyStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  studyEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
   dailyCap: z.number().int().min(30).max(480).optional(),
   dailyXpGoal: z.number().int().min(10).max(500).optional(),
 });

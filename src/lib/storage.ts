@@ -1,8 +1,8 @@
 import { createHash } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR || "./data/uploads";
+const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || "./data/uploads");
 
 /**
  * Compute SHA-256 hash of a buffer.
@@ -33,7 +33,10 @@ export async function saveFile(
   data: Buffer
 ): Promise<string> {
   const key = buildStorageKey(userId, documentId, filename);
-  const fullPath = join(UPLOAD_DIR, key);
+  const fullPath = resolve(join(UPLOAD_DIR, key));
+  if (!fullPath.startsWith(UPLOAD_DIR)) {
+    throw new Error("Invalid storage path");
+  }
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, data);
   return key;
@@ -43,5 +46,9 @@ export async function saveFile(
  * Resolve absolute path from storage key.
  */
 export function resolveStoragePath(storageKey: string): string {
-  return join(UPLOAD_DIR, storageKey);
+  const fullPath = resolve(join(UPLOAD_DIR, storageKey));
+  if (!fullPath.startsWith(UPLOAD_DIR)) {
+    throw new Error("Invalid storage path");
+  }
+  return fullPath;
 }

@@ -1236,7 +1236,9 @@ export async function completeRun(userId: string, runId: string) {
   });
 
   // Update SM-2 mastery records (fire-and-forget)
-  updateObjectiveMastery(userId, runId, run.session.courseName).catch(() => {});
+  updateObjectiveMastery(userId, runId, run.session.courseName).catch((err) => {
+    logger.error("mastery.update_failed_async", { user_id: userId, run_id: runId, error: String(err) });
+  });
 
   logger.info("run.completed", {
     user_id: userId,

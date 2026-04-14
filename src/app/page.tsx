@@ -489,17 +489,7 @@ export default function DashboardPage() {
             {todaySessions.map((item) => {
               const mc = MODE_COLORS[item.mode] || "#7ec8e3";
               const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
-              return (
-                <a
-                  key={item.id}
-                  href={actionable ? `/s/${item.session_id}` : undefined}
-                  style={{
-                    ...sessionCardStyle,
-                    textDecoration: "none",
-                    cursor: actionable ? "pointer" : "default",
-                    borderLeft: `3px solid ${mc}`,
-                  }}
-                >
+              const cardContent = (
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                     <span style={{ color: "#7a7060", fontSize: "0.9rem", minWidth: "6rem" }}>
                       {formatTime(item.start_time)} - {formatTime(item.end_time)}
@@ -519,7 +509,21 @@ export default function DashboardPage() {
                       <span style={{ color: "#88cc88", fontSize: "0.85rem" }}>Done</span>
                     )}
                   </div>
-                </a>
+              );
+              const cardStyle = {
+                ...sessionCardStyle,
+                textDecoration: "none" as const,
+                cursor: actionable ? "pointer" as const : "default" as const,
+                borderLeft: `3px solid ${mc}`,
+              };
+              return actionable ? (
+                <Link key={item.id} href={`/s/${item.session_id}`} style={cardStyle}>
+                  {cardContent}
+                </Link>
+              ) : (
+                <div key={item.id} style={cardStyle}>
+                  {cardContent}
+                </div>
               );
             })}
           </div>
