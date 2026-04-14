@@ -14,8 +14,8 @@ export async function getUserId(request: Request): Promise<string | null> {
     // getServerSession can fail in certain contexts; fall through to header
   }
 
-  // Fallback: X-User-Id header — ONLY in non-production environments
-  if (process.env.NODE_ENV !== "production") {
+  // Fallback: X-User-Id header — ONLY in non-production or explicit test mode
+  if (process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_AUTH === "true") {
     return request.headers.get("x-user-id") || null;
   }
 

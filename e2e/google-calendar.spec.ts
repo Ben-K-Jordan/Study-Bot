@@ -187,10 +187,14 @@ test.describe("Google Calendar - Publish/Unpublish", () => {
     expect(res.status()).toBe(409);
   });
 
+});
+
+test.describe("Google Calendar - Auth enforcement", () => {
+  test.use({ extraHTTPHeaders: {} });
+
   test("POST publish returns 401 without auth header", async ({ request }) => {
     const res = await request.post(`${BASE}/api/plans/some-plan/publish/google`, {
       data: {},
-      headers: { "X-User-Id": "" },
     });
     expect(res.status()).toBe(401);
   });

@@ -197,6 +197,7 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
 });
 
 test.describe("E2E: Security", () => {
+  test.use({ extraHTTPHeaders: {} });
   test("different user cannot access another user's run", async ({ request }) => {
     // Create a session as user A
     const createRes = await request.post(`${BASE_URL}/api/sessions`, {

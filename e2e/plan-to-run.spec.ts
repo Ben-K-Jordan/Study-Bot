@@ -180,6 +180,7 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
 });
 
 test.describe("E2E: Plan security", () => {
+  test.use({ extraHTTPHeaders: {} });
   let planId: string;
 
   test.beforeAll(async ({ request }) => {
