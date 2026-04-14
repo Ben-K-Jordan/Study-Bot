@@ -226,6 +226,14 @@ export async function scheduleStudyReminders(userId: string): Promise<number> {
     },
   });
 
+  // Batch-fetch all sessions referenced by plan items (avoids N+1)
+  const allSessionIds = plans.flatMap((p) => p.items.map((i) => i.sessionId));
+  const uniqueSessionIds = [...new Set(allSessionIds)];
+  const sessions = await prisma.session.findMany({
+    where: { sessionId: { in: uniqueSessionIds } },
+  });
+  const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
+
   // Group items by date
   const itemsByDate = new Map<string, { titles: string[]; totalMinutes: number; planCourseName: string }>();
 
@@ -238,11 +246,7 @@ export async function scheduleStudyReminders(userId: string): Promise<number> {
         planCourseName: plan.courseName,
       };
 
-      // Look up the session to get the topic and planned minutes
-      const session = await prisma.session.findUnique({
-        where: { sessionId: item.sessionId },
-      });
-
+      const session = sessionMap.get(item.sessionId);
       const title = session
         ? `${session.topicScope} (${session.mode})`
         : `Study session`;

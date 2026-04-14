@@ -74,3 +74,5 @@ CREATE TABLE "scheduled_reminders" (
 CREATE INDEX "scheduled_reminders_scheduled_for_sent_at_idx"
     ON "scheduled_reminders"("scheduled_for", "sent_at");
 CREATE INDEX "scheduled_reminders_user_id_idx" ON "scheduled_reminders"("user_id");
+ALTER TABLE "scheduled_reminders" ADD CONSTRAINT "scheduled_reminders_user_id_fkey"
+    FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

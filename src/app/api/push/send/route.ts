@@ -40,10 +40,21 @@ const TITLE_MAP: Record<z.infer<typeof notificationType>, string> = {
 
 /**
  * POST /api/push/send — send a push notification (admin / internal use).
+ * Requires CRON_SECRET in Authorization header, or non-production env.
  *
  * Body: { userId, type, data? }
  */
 export async function POST(request: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = request.headers.get("authorization");
+  const authorized =
+    (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
+    (!cronSecret && process.env.NODE_ENV !== "production");
+
+  if (!authorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();

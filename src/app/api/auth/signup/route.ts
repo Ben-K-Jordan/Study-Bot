@@ -15,45 +15,52 @@ export async function POST(request: Request) {
     const { email, password, name } = signupSchema.parse(body);
 
     const normalizedEmail = email.toLowerCase().trim();
-
-    const existing = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-    if (existing) {
-      return NextResponse.json(
-        { error: "An account with this email already exists" },
-        { status: 409 }
-      );
-    }
-
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const user = await prisma.user.create({
-      data: {
-        email: normalizedEmail,
-        name,
-        passwordHash,
-      },
-    });
+    try {
+      const user = await prisma.$transaction(async (tx) => {
+        const u = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            name,
+            passwordHash,
+          },
+        });
 
-    // Create default notification preferences
-    await prisma.notificationPreference.create({
-      data: { userId: user.id },
-    });
+        await tx.notificationPreference.create({
+          data: { userId: u.id },
+        });
 
-    // Create default game state
-    await prisma.userGameState.create({
-      data: {
-        userId: user.id,
-        displayName: name,
-        onboardingComplete: false,
-      },
-    });
+        await tx.userGameState.create({
+          data: {
+            userId: u.id,
+            displayName: name,
+            onboardingComplete: false,
+          },
+        });
 
-    return NextResponse.json(
-      { id: user.id, email: user.email, name: user.name },
-      { status: 201 }
-    );
+        return u;
+      });
+
+      return NextResponse.json(
+        { id: user.id, email: user.email, name: user.name },
+        { status: 201 }
+      );
+    } catch (err: unknown) {
+      // Unique constraint violation (P2002) — email already taken
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code: string }).code === "P2002"
+      ) {
+        return NextResponse.json(
+          { error: "An account with this email already exists" },
+          { status: 409 }
+        );
+      }
+      throw err;
+    }
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(

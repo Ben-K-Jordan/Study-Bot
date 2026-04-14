@@ -14,6 +14,10 @@ export async function getUserId(request: Request): Promise<string | null> {
     // getServerSession can fail in certain contexts; fall through to header
   }
 
-  // Fallback: X-User-Id header (dev / testing / backward compat)
-  return request.headers.get("x-user-id") || null;
+  // Fallback: X-User-Id header — ONLY in non-production environments
+  if (process.env.NODE_ENV !== "production") {
+    return request.headers.get("x-user-id") || null;
+  }
+
+  return null;
 }

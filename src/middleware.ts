@@ -32,8 +32,12 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Allow requests with X-User-Id header (backward compat / dev)
-  if (!token && request.headers.get("x-user-id")) {
+  // Allow requests with X-User-Id header — ONLY in non-production
+  if (
+    !token &&
+    process.env.NODE_ENV !== "production" &&
+    request.headers.get("x-user-id")
+  ) {
     return NextResponse.next();
   }
 
