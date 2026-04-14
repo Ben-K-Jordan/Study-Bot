@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { chatLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 /**
  * GET /api/chat/messages?courseKey=CourseName||ExamName
@@ -34,9 +35,9 @@ export async function GET(request: NextRequest) {
 }
 
 const postSchema = z.object({
-  courseKey: z.string().min(1),
+  courseKey: z.string().min(1).max(200),
   role: z.enum(["user", "assistant"]),
-  content: z.string().min(1),
+  content: z.string().min(1).max(50000),
   citations: z.any().optional(),
 });
 
@@ -49,6 +50,9 @@ export async function POST(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = chatLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {

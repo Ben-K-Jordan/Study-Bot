@@ -3,12 +3,13 @@ import { z } from "zod/v4";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { pushLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 const subscribeSchema = z.object({
-  endpoint: z.string().url(),
+  endpoint: z.string().url().max(2000),
   keys: z.object({
-    p256dh: z.string().min(1),
-    auth: z.string().min(1),
+    p256dh: z.string().min(1).max(500),
+    auth: z.string().min(1).max(500),
   }),
 });
 
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = pushLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {
@@ -37,6 +41,14 @@ export async function POST(request: NextRequest) {
   }
 
   const { endpoint, keys } = parsed.data;
+
+  const existingCount = await prisma.pushSubscription.count({ where: { userId } });
+  if (existingCount >= 10) {
+    return NextResponse.json(
+      { error: "Maximum of 10 push subscriptions per account" },
+      { status: 400 },
+    );
+  }
 
   await prisma.pushSubscription.upsert({
     where: { userId_endpoint: { userId, endpoint } },
