@@ -14,16 +14,21 @@ export async function GET(
   }
 
   const { planId } = await params;
-  const result = await getPlan(userId, planId);
 
-  if ("error" in result) {
-    if (result.error === "not_found") {
-      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  try {
+    const result = await getPlan(userId, planId);
+
+    if ("error" in result) {
+      if (result.error === "not_found") {
+        return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+      }
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
-  return NextResponse.json(result.data);
+    return NextResponse.json(result.data);
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function DELETE(
@@ -37,25 +42,29 @@ export async function DELETE(
 
   const { planId } = await params;
 
-  const plan = await prisma.studyPlan.findUnique({
-    where: { planId },
-    select: { userId: true },
-  });
+  try {
+    const plan = await prisma.studyPlan.findUnique({
+      where: { planId },
+      select: { userId: true },
+    });
 
-  if (!plan || plan.userId !== userId) {
-    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+    if (!plan || plan.userId !== userId) {
+      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+    }
+
+    // Delete in correct order to respect FK constraints
+    await prisma.$transaction([
+      prisma.planItemExternalEvent.deleteMany({ where: { planId } }),
+      prisma.planCalendarPublication.deleteMany({ where: { planId } }),
+      prisma.planReflowAudit.deleteMany({ where: { planId } }),
+      prisma.studyPlanItem.deleteMany({ where: { planId } }),
+      prisma.studyPlan.delete({ where: { planId } }),
+    ]);
+
+    logger.info("plan.deleted", { user_id: userId, plan_id: planId });
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  // Delete in correct order to respect FK constraints
-  await prisma.$transaction([
-    prisma.planItemExternalEvent.deleteMany({ where: { planId } }),
-    prisma.planCalendarPublication.deleteMany({ where: { planId } }),
-    prisma.planReflowAudit.deleteMany({ where: { planId } }),
-    prisma.studyPlanItem.deleteMany({ where: { planId } }),
-    prisma.studyPlan.delete({ where: { planId } }),
-  ]);
-
-  logger.info("plan.deleted", { user_id: userId, plan_id: planId });
-
-  return NextResponse.json({ success: true });
 }

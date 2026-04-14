@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
 import { BADGE_MAP, TOTAL_BADGES } from "@/lib/badge-data";
 
@@ -350,9 +351,9 @@ export default function DashboardPage() {
       <section style={{ marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Achievements</h2>
-          <a href="/achievements" style={{ fontSize: "0.75rem", color: "#7a7060", textDecoration: "none" }}>
-            View All ({gameState?.achievements.length || 0}/12)
-          </a>
+          <Link href="/achievements" style={{ fontSize: "0.75rem", color: "#7a7060", textDecoration: "none" }}>
+            View All ({gameState?.achievements.length || 0}/{TOTAL_BADGES})
+          </Link>
         </div>
         {gameState && gameState.achievements.length > 0 ? (
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -360,19 +361,19 @@ export default function DashboardPage() {
               const info = BADGE_MAP[a.badgeType];
               if (!info) return null;
               return (
-                <a key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
+                <Link key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
                   <span style={{ fontSize: "1.3rem" }}>{info.icon}</span>
                   <span style={{ fontSize: "0.6rem", color: "#a89a82", marginTop: "0.15rem" }}>{info.label}</span>
-                </a>
+                </Link>
               );
             })}
           </div>
         ) : (
-          <a href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
+          <Link href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
             <p style={{ fontSize: "0.9rem", margin: 0, color: "#a89a82" }}>
               No badges earned yet. Start studying to unlock achievements!
             </p>
-          </a>
+          </Link>
         )}
       </section>
 
@@ -478,9 +479,9 @@ export default function DashboardPage() {
                 : "Rest is part of effective learning."}
             </p>
             {plans.length === 0 && (
-              <a href="/plan" style={{ ...actionBtnStyle, marginTop: "1rem", display: "inline-block" }}>
+              <Link href="/plan" style={{ ...actionBtnStyle, marginTop: "1rem", display: "inline-block" }}>
                 Create Plan
-              </a>
+              </Link>
             )}
           </div>
         ) : (
@@ -527,9 +528,9 @@ export default function DashboardPage() {
 
       {/* Create plan shortcut if plans exist */}
       {plans.length > 0 && (
-        <a href="/plan" style={{ ...actionBtnStyle, display: "inline-block" }}>
+        <Link href="/plan" style={{ ...actionBtnStyle, display: "inline-block" }}>
           + New Plan
-        </a>
+        </Link>
       )}
     </main>
   );

@@ -14,17 +14,21 @@ export async function DELETE(
 
   const { guideId } = await params;
 
-  const guide = await prisma.studyGuide.findUnique({
-    where: { id: guideId },
-    select: { userId: true },
-  });
+  try {
+    const guide = await prisma.studyGuide.findUnique({
+      where: { id: guideId },
+      select: { userId: true },
+    });
 
-  if (!guide || guide.userId !== userId) {
-    return NextResponse.json({ error: "Guide not found" }, { status: 404 });
+    if (!guide || guide.userId !== userId) {
+      return NextResponse.json({ error: "Guide not found" }, { status: 404 });
+    }
+
+    await prisma.studyGuide.delete({ where: { id: guideId } });
+    logger.info("guide.deleted", { user_id: userId, guide_id: guideId });
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  await prisma.studyGuide.delete({ where: { id: guideId } });
-  logger.info("guide.deleted", { user_id: userId, guide_id: guideId });
-
-  return NextResponse.json({ success: true });
 }

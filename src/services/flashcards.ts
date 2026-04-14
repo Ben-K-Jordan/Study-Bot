@@ -66,7 +66,7 @@ async function computeMasteryContext(
   if (allCards.length === 0) return undefined;
 
   // Aggregate by tag
-  const tagStats = new Map<string, { total: number; avgEase: number; againCount: number; masteredCount: number }>();
+  const tagStats = new Map<string, { total: number; avgEase: number; againCount: number; reviewCount: number; masteredCount: number }>();
 
   for (const card of allCards) {
     const tags = (card.tags as string[] | null) || ["general"];
@@ -74,10 +74,11 @@ async function computeMasteryContext(
     const againCount = recentRatings.filter((r) => r === "AGAIN").length;
 
     for (const tag of tags) {
-      const existing = tagStats.get(tag) || { total: 0, avgEase: 0, againCount: 0, masteredCount: 0 };
+      const existing = tagStats.get(tag) || { total: 0, avgEase: 0, againCount: 0, reviewCount: 0, masteredCount: 0 };
       existing.total++;
       existing.avgEase += card.easeFactor;
       existing.againCount += againCount;
+      existing.reviewCount += recentRatings.length;
       if (card.intervalDays >= 21) existing.masteredCount++;
       tagStats.set(tag, existing);
     }
@@ -93,7 +94,7 @@ async function computeMasteryContext(
   for (const [tag, stats] of tagStats) {
     const avgEase = stats.avgEase / stats.total;
     const masteryPct = Math.round((stats.masteredCount / stats.total) * 100);
-    const againRate = stats.total > 0 ? Math.round((stats.againCount / stats.total) * 100) : 0;
+    const againRate = stats.reviewCount > 0 ? Math.round((stats.againCount / stats.reviewCount) * 100) : 0;
 
     if (avgEase < 2.0 || againRate > 40) {
       weakTopics.push(`${tag} (avg ease: ${avgEase.toFixed(1)}, ${againRate}% again rate, ${masteryPct}% mastered)`);
