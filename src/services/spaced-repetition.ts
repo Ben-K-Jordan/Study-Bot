@@ -94,43 +94,47 @@ export async function reviewCard(
   nextDueAt: string;
   rating: string;
 }> {
-  const card = await prisma.flashcard.findUnique({
-    where: { id: cardId },
-    include: { deck: { select: { userId: true } } },
-  });
+  // Read + compute + write inside a single interactive transaction to prevent
+  // concurrent reviews from clobbering each other's SM-2 state.
+  const result = await prisma.$transaction(async (tx) => {
+    const card = await tx.flashcard.findUnique({
+      where: { id: cardId },
+      include: { deck: { select: { userId: true } } },
+    });
 
-  if (!card) throw new Error("Card not found");
-  if (card.deck.userId !== userId) throw new Error("Forbidden");
+    if (!card) throw new Error("Card not found");
+    if (card.deck.userId !== userId) throw new Error("Forbidden");
 
-  const result = computeSM2(
-    card.easeFactor,
-    card.intervalDays,
-    card.repetitions,
-    rating,
-  );
+    const sm2 = computeSM2(
+      card.easeFactor,
+      card.intervalDays,
+      card.repetitions,
+      rating,
+    );
 
-  // Update card and create review log in a transaction
-  await prisma.$transaction([
-    prisma.flashcard.update({
+    await tx.flashcard.update({
       where: { id: cardId },
       data: {
-        easeFactor: result.easeFactor,
-        intervalDays: result.intervalDays,
-        repetitions: result.repetitions,
-        nextDueAt: result.nextDueAt,
+        easeFactor: sm2.easeFactor,
+        intervalDays: sm2.intervalDays,
+        repetitions: sm2.repetitions,
+        nextDueAt: sm2.nextDueAt,
       },
-    }),
-    prisma.cardReview.create({
+    });
+
+    await tx.cardReview.create({
       data: {
         cardId,
         userId,
         rating,
-        easeFactor: result.easeFactor,
-        intervalDays: result.intervalDays,
-        repetitions: result.repetitions,
+        easeFactor: sm2.easeFactor,
+        intervalDays: sm2.intervalDays,
+        repetitions: sm2.repetitions,
       },
-    }),
-  ]);
+    });
+
+    return sm2;
+  });
 
   logger.info("flashcard.reviewed", {
     user_id: userId,

@@ -129,7 +129,7 @@ export default function LearnPage() {
       </section>
 
       {/* Course stats row */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.5rem", marginBottom: "1.5rem" }}>
         <div style={miniStatStyle}>
           <span style={miniStatNumStyle}>{course.docCount}</span>
           <span style={miniStatLabelStyle}>Docs</span>

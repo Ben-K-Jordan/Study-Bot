@@ -8,24 +8,24 @@ datasource db {
 }
 
 model Session {
-  id             String       @id @default(uuid())
-  sessionId      String       @unique @map("session_id")
-  userId         String       @map("user_id")
-  courseId        String       @map("course_id")
-  courseName     String       @map("course_name")
-  examId         String       @map("exam_id")
-  examName       String       @map("exam_name")
+  id             String   @id @default(uuid())
+  sessionId      String   @unique @map("session_id")
+  userId         String   @map("user_id")
+  courseId       String   @map("course_id")
+  courseName     String   @map("course_name")
+  examId         String   @map("exam_id")
+  examName       String   @map("exam_name")
   mode           String
-  topicScope     String       @map("topic_scope")
+  topicScope     String   @map("topic_scope")
   objectives     Json?
-  targetOutcome  Json?        @map("target_outcome")
-  breakProtocol  Json?        @map("break_protocol")
+  targetOutcome  Json?    @map("target_outcome")
+  breakProtocol  Json?    @map("break_protocol")
   resources      Json?
-  plannedMinutes Int          @map("planned_minutes")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  plannedMinutes Int      @map("planned_minutes")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
-  runs           SessionRun[]
+  runs SessionRun[]
 
   @@index([userId])
   @@index([userId, createdAt(sort: Desc)], map: "sessions_user_created_idx")
@@ -33,30 +33,30 @@ model Session {
 }
 
 model SessionRun {
-  id            String             @id @default(uuid())
-  runId         String             @unique @map("run_id")
-  sessionId     String             @map("session_id")
-  userId        String             @map("user_id")
-  mode          String             @default("RETRIEVAL")
-  phase         String             @default("ACTIVE") // ACTIVE | EXAM | REVIEW | COMPLETE
-  status        String             @default("CREATED") // CREATED | ACTIVE | PAUSED | COMPLETED
-  startedAt     DateTime?          @map("started_at")
-  endedAt       DateTime?          @map("ended_at")
-  currentIndex  Int                @default(0) @map("current_index")
-  promptCount   Int                @default(0) @map("prompt_count")
-  answeredCount Int?               @map("answered_count") // EXAM_SIM: prompts answered
-  scoredCount   Int?               @map("scored_count")   // EXAM_SIM: prompts scored in review
-  prompts       Json               // Array of generated prompts (legacy, kept for backward compat)
-  policies      Json               @default("{}") // Scoring/hint/error-log policies
-  metrics       Json               @default("{}") // Rolling stats
-  breakState    Json               @default("{}") @map("break_state")
-  createdAt     DateTime           @default(now()) @map("created_at")
-  updatedAt     DateTime           @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  runId         String    @unique @map("run_id")
+  sessionId     String    @map("session_id")
+  userId        String    @map("user_id")
+  mode          String    @default("RETRIEVAL")
+  phase         String    @default("ACTIVE") // ACTIVE | EXAM | REVIEW | COMPLETE
+  status        String    @default("CREATED") // CREATED | ACTIVE | PAUSED | COMPLETED
+  startedAt     DateTime? @map("started_at")
+  endedAt       DateTime? @map("ended_at")
+  currentIndex  Int       @default(0) @map("current_index")
+  promptCount   Int       @default(0) @map("prompt_count")
+  answeredCount Int?      @map("answered_count") // EXAM_SIM: prompts answered
+  scoredCount   Int?      @map("scored_count") // EXAM_SIM: prompts scored in review
+  prompts       Json // Array of generated prompts (legacy, kept for backward compat)
+  policies      Json      @default("{}") // Scoring/hint/error-log policies
+  metrics       Json      @default("{}") // Rolling stats
+  breakState    Json      @default("{}") @map("break_state")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  session       Session            @relation(fields: [sessionId], references: [sessionId])
-  attempts      SessionAttempt[]
-  errorLogs     SessionErrorLog[]
-  runPrompts    SessionRunPrompt[]
+  session    Session            @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  attempts   SessionAttempt[]
+  errorLogs  SessionErrorLog[]
+  runPrompts SessionRunPrompt[]
 
   @@index([userId, status])
   @@index([userId, createdAt(sort: Desc)], map: "session_runs_user_created_idx")
@@ -65,21 +65,21 @@ model SessionRun {
 }
 
 model SessionAttempt {
-  id                  String     @id @default(uuid())
-  runId               String     @map("run_id")
-  promptIndex         Int        @map("prompt_index")
-  promptId            String     @map("prompt_id")
-  promptText          String     @map("prompt_text")
-  userAnswer          String     @map("user_answer")
-  selfScore           String?    @map("self_score") // CORRECT | PARTIAL | INCORRECT | null (EXAM phase)
-  timeToAnswerSeconds Int?       @map("time_to_answer_seconds")
-  confidenceRating    Int?       @map("confidence_rating") // 1-5 pre-answer confidence
-  selfExplanation     String?    @map("self_explanation") // Student's explain-back after feedback
-  generatedExample    String?    @map("generated_example") // Student's own example (generation effect)
-  createdAt           DateTime   @default(now()) @map("created_at")
+  id                  String   @id @default(uuid())
+  runId               String   @map("run_id")
+  promptIndex         Int      @map("prompt_index")
+  promptId            String   @map("prompt_id")
+  promptText          String   @map("prompt_text")
+  userAnswer          String   @map("user_answer")
+  selfScore           String?  @map("self_score") // CORRECT | PARTIAL | INCORRECT | null (EXAM phase)
+  timeToAnswerSeconds Int?     @map("time_to_answer_seconds")
+  confidenceRating    Int?     @map("confidence_rating") // 1-5 pre-answer confidence
+  selfExplanation     String?  @map("self_explanation") // Student's explain-back after feedback
+  generatedExample    String?  @map("generated_example") // Student's own example (generation effect)
+  createdAt           DateTime @default(now()) @map("created_at")
 
-  run                 SessionRun      @relation(fields: [runId], references: [runId])
-  citations           AttemptCitation[]
+  run       SessionRun        @relation(fields: [runId], references: [runId], onDelete: Cascade)
+  citations AttemptCitation[]
 
   @@unique([runId, promptIndex], map: "session_attempts_run_id_prompt_index_key")
   @@index([runId])
@@ -88,18 +88,18 @@ model SessionAttempt {
 }
 
 model SessionErrorLog {
-  id               String     @id @default(uuid())
-  runId            String     @map("run_id")
-  userId           String     @default("") @map("user_id")
-  promptIndex      Int        @map("prompt_index")
-  errorType        String     @map("error_type") // MISCONCEPTION | PROCEDURE | CARELESS | MEMORY | UNKNOWN
-  correctionRule   String     @map("correction_rule")
-  variantQuestion  String?    @map("variant_question")
-  resolvedAt       DateTime?  @map("resolved_at") @db.Timestamptz
-  resolvedByRunId  String?    @map("resolved_by_run_id")
-  createdAt        DateTime   @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  runId           String    @map("run_id")
+  userId          String    @map("user_id")
+  promptIndex     Int       @map("prompt_index")
+  errorType       String    @map("error_type") // MISCONCEPTION | PROCEDURE | CARELESS | MEMORY | UNKNOWN
+  correctionRule  String    @map("correction_rule")
+  variantQuestion String?   @map("variant_question")
+  resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedByRunId String?   @map("resolved_by_run_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
-  run              SessionRun @relation(fields: [runId], references: [runId])
+  run SessionRun @relation(fields: [runId], references: [runId], onDelete: Cascade)
 
   @@index([runId])
   @@index([userId, resolvedAt, createdAt(sort: Desc)], map: "session_error_logs_user_unresolved_idx")
@@ -107,18 +107,18 @@ model SessionErrorLog {
 }
 
 model SessionRunPrompt {
-  id          String     @id @default(uuid())
-  runId       String     @map("run_id")
-  promptIndex Int        @map("prompt_index")
-  objectiveId String?    @map("objective_id")
+  id          String   @id @default(uuid())
+  runId       String   @map("run_id")
+  promptIndex Int      @map("prompt_index")
+  objectiveId String?  @map("objective_id")
   text        String
-  difficulty  Int        @default(1)
-  sourceType  String     @default("GENERATED") @map("source_type") // GENERATED | PRACTICE_QUESTION | ERROR_LOG
-  sourceRefId String?    @map("source_ref_id")
+  difficulty  Int      @default(1)
+  sourceType  String   @default("GENERATED") @map("source_type") // GENERATED | PRACTICE_QUESTION | ERROR_LOG
+  sourceRefId String?  @map("source_ref_id")
   meta        Json?
-  createdAt   DateTime   @default(now()) @map("created_at")
+  createdAt   DateTime @default(now()) @map("created_at")
 
-  run         SessionRun @relation(fields: [runId], references: [runId], onDelete: Cascade)
+  run SessionRun @relation(fields: [runId], references: [runId], onDelete: Cascade)
 
   @@unique([runId, promptIndex], map: "session_run_prompts_run_prompt_key")
   @@index([runId, promptIndex])
@@ -126,23 +126,23 @@ model SessionRunPrompt {
 }
 
 model StudyPlan {
-  id         String          @id @default(uuid())
-  planId     String          @unique @map("plan_id")
-  userId     String          @map("user_id")
-  courseId    String          @map("course_id")
-  courseName String          @map("course_name")
-  examId     String          @map("exam_id")
-  examName   String          @map("exam_name")
-  examDate   DateTime        @map("exam_date") @db.Date
-  timezone   String          @default("America/New_York")
-  startDate  DateTime        @map("start_date") @db.Date
-  endDate    DateTime        @map("end_date") @db.Date
-  config     Json            @default("{}")
-  createdAt  DateTime        @default(now()) @map("created_at")
-  updatedAt  DateTime        @updatedAt @map("updated_at")
+  id         String   @id @default(uuid())
+  planId     String   @unique @map("plan_id")
+  userId     String   @map("user_id")
+  courseId   String   @map("course_id")
+  courseName String   @map("course_name")
+  examId     String   @map("exam_id")
+  examName   String   @map("exam_name")
+  examDate   DateTime @map("exam_date") @db.Date
+  timezone   String   @default("America/New_York")
+  startDate  DateTime @map("start_date") @db.Date
+  endDate    DateTime @map("end_date") @db.Date
+  config     Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  items         StudyPlanItem[]
-  publications  PlanCalendarPublication[]
+  items        StudyPlanItem[]
+  publications PlanCalendarPublication[]
 
   @@index([userId])
   @@index([userId, examDate], map: "study_plans_user_exam_date_idx")
@@ -152,26 +152,26 @@ model StudyPlan {
 // ---- Knowledge Layer ----
 
 model ContentDocument {
-  id               String         @id @default(uuid())
-  userId           String         @map("user_id")
-  namespace        String         // COURSE | RESEARCH
-  courseName       String?        @map("course_name")
-  examName         String?        @map("exam_name")
-  title            String
-  originalFilename String         @map("original_filename")
-  mimeType         String         @map("mime_type")
-  storageKey       String         @map("storage_key")
-  contentHash      String         @map("content_hash")
-  status           String         @default("UPLOADED") // UPLOADED | PROCESSED | FAILED
-  errorMessage     String?        @map("error_message")
-  summary          String?
-  suggestedQuestions Json?        @map("suggested_questions") // Array of strings
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  namespace          String // COURSE | RESEARCH
+  courseName         String?  @map("course_name")
+  examName           String?  @map("exam_name")
+  title              String
+  originalFilename   String   @map("original_filename")
+  mimeType           String   @map("mime_type")
+  storageKey         String   @map("storage_key")
+  contentHash        String   @map("content_hash")
+  status             String   @default("UPLOADED") // UPLOADED | PROCESSED | FAILED
+  errorMessage       String?  @map("error_message")
+  summary            String?
+  suggestedQuestions Json?    @map("suggested_questions") // Array of strings
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
-  chunks           ContentChunk[]
-  evidencePapers   EvidencePaper[]
-  flashcardDecks   FlashcardDeck[]
+  chunks         ContentChunk[]
+  evidencePapers EvidencePaper[]
+  flashcardDecks FlashcardDeck[]
 
   @@unique([userId, contentHash], map: "content_documents_user_hash_key")
   @@index([userId, namespace, courseName, examName], map: "content_documents_user_ns_course_exam_idx")
@@ -179,22 +179,22 @@ model ContentDocument {
 }
 
 model ContentChunk {
-  id                String            @id @default(uuid())
-  documentId        String            @map("document_id")
-  ordinal           Int
-  pageNumber        Int?              @map("page_number")
-  text              String
-  textHash          String            @map("text_hash")
-  embeddingStatus   String            @default("NONE") @map("embedding_status") // NONE | PENDING | READY | FAILED
-  embeddingModel    String?           @map("embedding_model")
-  embeddingDim      Int?              @map("embedding_dim")
-  embeddingUpdatedAt DateTime?        @map("embedding_updated_at") @db.Timestamptz
+  id                 String    @id @default(uuid())
+  documentId         String    @map("document_id")
+  ordinal            Int
+  pageNumber         Int?      @map("page_number")
+  text               String
+  textHash           String    @map("text_hash")
+  embeddingStatus    String    @default("NONE") @map("embedding_status") // NONE | PENDING | READY | FAILED
+  embeddingModel     String?   @map("embedding_model")
+  embeddingDim       Int?      @map("embedding_dim")
+  embeddingUpdatedAt DateTime? @map("embedding_updated_at") @db.Timestamptz
   // embedding vector stored via raw SQL (pgvector); Prisma cannot represent vector natively
-  createdAt         DateTime          @default(now()) @map("created_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
 
-  document   ContentDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  citations  AttemptCitation[]
-  anchors    ObjectiveAnchor[]
+  document  ContentDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  citations AttemptCitation[]
+  anchors   ObjectiveAnchor[]
 
   @@unique([documentId, ordinal], map: "content_chunks_doc_ordinal_key")
   @@index([embeddingStatus])
@@ -202,16 +202,16 @@ model ContentChunk {
 }
 
 model ObjectiveAnchor {
-  id          String       @id @default(uuid())
-  userId      String       @map("user_id")
-  courseName  String       @map("course_name")
-  examName    String       @default("") @map("exam_name")
-  objectiveId String       @map("objective_id")
-  chunkId     String       @map("chunk_id")
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  courseName  String   @map("course_name")
+  examName    String   @default("") @map("exam_name")
+  objectiveId String   @map("objective_id")
+  chunkId     String   @map("chunk_id")
   rank        Int
-  createdAt   DateTime     @default(now()) @map("created_at")
+  createdAt   DateTime @default(now()) @map("created_at")
 
-  chunk       ContentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  chunk ContentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@unique([userId, courseName, examName, objectiveId, chunkId], map: "objective_anchors_unique_key")
   @@index([userId, courseName, examName, objectiveId], map: "objective_anchors_lookup_idx")
@@ -219,64 +219,64 @@ model ObjectiveAnchor {
 }
 
 model PracticeSet {
-  id         String             @id @default(uuid())
-  userId     String             @map("user_id")
-  courseName String             @map("course_name")
-  examName   String?            @map("exam_name")
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  courseName String   @map("course_name")
+  examName   String?  @map("exam_name")
   title      String
-  createdAt  DateTime           @default(now()) @map("created_at")
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  questions  PracticeQuestion[]
+  questions PracticeQuestion[]
 
   @@index([userId, courseName, examName], map: "practice_sets_user_course_exam_idx")
   @@map("practice_sets")
 }
 
 model PracticeQuestion {
-  id            String      @id @default(uuid())
-  practiceSetId String      @map("practice_set_id")
-  kind          String      // SHORT_ANSWER | MCQ | CODING
-  promptText    String      @map("prompt_text")
-  answerKey     String?     @map("answer_key")
-  solutionSteps String?     @map("solution_steps")
+  id            String   @id @default(uuid())
+  practiceSetId String   @map("practice_set_id")
+  kind          String // SHORT_ANSWER | MCQ | CODING
+  promptText    String   @map("prompt_text")
+  answerKey     String?  @map("answer_key")
+  solutionSteps String?  @map("solution_steps")
   tags          Json?
-  createdAt     DateTime    @default(now()) @map("created_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  practiceSet   PracticeSet @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
+  practiceSet PracticeSet @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
 
   @@index([practiceSetId])
   @@map("practice_questions")
 }
 
 model EvidencePaper {
-  id         String          @id @default(uuid())
-  userId     String          @map("user_id")
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
   title      String
   authors    String?
   year       Int?
   venue      String?
-  documentId String          @map("document_id")
+  documentId String   @map("document_id")
   tags       Json?
-  createdAt  DateTime        @default(now()) @map("created_at")
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  document   ContentDocument @relation(fields: [documentId], references: [id])
-  cards      EvidenceCard[]
+  document ContentDocument @relation(fields: [documentId], references: [id])
+  cards    EvidenceCard[]
 
   @@index([userId])
   @@map("evidence_papers")
 }
 
 model EvidenceCard {
-  id                 String        @id @default(uuid())
-  evidencePaperId    String        @map("evidence_paper_id")
+  id                 String   @id @default(uuid())
+  evidencePaperId    String   @map("evidence_paper_id")
   claim              String
   recommendation     String
-  boundaryConditions String?       @map("boundary_conditions")
-  strength           String        // WEAK | MODERATE | STRONG
+  boundaryConditions String?  @map("boundary_conditions")
+  strength           String // WEAK | MODERATE | STRONG
   tags               Json?
-  createdAt          DateTime      @default(now()) @map("created_at")
+  createdAt          DateTime @default(now()) @map("created_at")
 
-  paper              EvidencePaper @relation(fields: [evidencePaperId], references: [id], onDelete: Cascade)
+  paper EvidencePaper @relation(fields: [evidencePaperId], references: [id], onDelete: Cascade)
 
   @@index([evidencePaperId])
   @@index([strength], map: "evidence_cards_strength_idx")
@@ -284,15 +284,15 @@ model EvidenceCard {
 }
 
 model AttemptCitation {
-  id        String         @id @default(uuid())
-  attemptId String         @map("attempt_id")
-  chunkId   String         @map("chunk_id")
+  id        String   @id @default(uuid())
+  attemptId String   @map("attempt_id")
+  chunkId   String   @map("chunk_id")
   rank      Int
   snippet   String
-  createdAt DateTime       @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  attempt   SessionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  chunk     ContentChunk   @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  attempt SessionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  chunk   ContentChunk   @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@unique([attemptId, chunkId], map: "attempt_citations_attempt_chunk_key")
   @@index([attemptId])
@@ -317,8 +317,8 @@ model StudyPlanItem {
   originalEndAt     DateTime? @map("original_end_at") @db.Timestamptz
   createdAt         DateTime  @default(now()) @map("created_at")
 
-  plan            StudyPlan              @relation(fields: [planId], references: [planId])
-  externalEvents  PlanItemExternalEvent[]
+  plan           StudyPlan               @relation(fields: [planId], references: [planId], onDelete: Cascade)
+  externalEvents PlanItemExternalEvent[]
 
   @@unique([planId, sessionId], map: "study_plan_items_plan_id_session_id_key")
   @@index([planId])
@@ -331,10 +331,10 @@ model PlanReflowAudit {
   id               String   @id @default(uuid())
   userId           String   @map("user_id")
   planId           String   @map("plan_id")
-  reason           String   // MANUAL | AUTO_MISSED | AUTO_RESCHEDULE
+  reason           String // MANUAL | AUTO_MISSED | AUTO_RESCHEDULE
   algorithmVersion String   @default("v1") @map("algorithm_version")
   inputSummary     Json     @map("input_summary")
-  changes          Json     // Array of { itemId, action, before, after }
+  changes          Json // Array of { itemId, action, before, after }
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@index([planId, createdAt(sort: Desc)], map: "plan_reflow_audits_plan_created_idx")
@@ -356,7 +356,7 @@ model PlanCalendarPublication {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  plan         StudyPlan @relation(fields: [planId], references: [planId])
+  plan StudyPlan @relation(fields: [planId], references: [planId], onDelete: Cascade)
 
   @@unique([provider, planId], map: "plan_calendar_publications_provider_plan_key")
   @@index([userId, provider])
@@ -380,7 +380,7 @@ model PlanItemExternalEvent {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  planItem        StudyPlanItem @relation(fields: [planItemId], references: [id])
+  planItem StudyPlanItem @relation(fields: [planItemId], references: [id], onDelete: Cascade)
 
   @@unique([provider, planItemId], map: "plan_item_external_events_provider_item_key")
   @@index([provider, planId])
@@ -392,24 +392,24 @@ model PlanItemExternalEvent {
 // ---- Google Calendar Integration ----
 
 model GoogleIntegration {
-  id                      String    @id @default(uuid())
-  userId                  String    @unique @map("user_id")
-  status                  String    @default("CONNECTED") // CONNECTED | DISCONNECTED | ERROR
-  connectedEmail          String?   @map("connected_email")
-  accessTokenEncrypted    String?   @map("access_token_encrypted")
-  refreshTokenEncrypted   String?   @map("refresh_token_encrypted")
-  tokenExpiryMs           BigInt    @default(0) @map("token_expiry_ms")
-  scopeString             String    @default("") @map("scope_string")
-  calendarIdSelected      String    @default("primary") @map("calendar_id_selected")
-  busyCalendarIds         String    @default("primary") @map("busy_calendar_ids") // comma-separated
-  availabilityLookaheadDays Int     @default(14) @map("availability_lookahead_days")
-  timezone                String?
-  lastRefreshAt           DateTime? @map("last_refresh_at") @db.Timestamptz
-  lastErrorCode           String?   @map("last_error_code")
-  lastErrorMessage        String?   @map("last_error_message")
-  lastHealthyAt           DateTime? @map("last_healthy_at") @db.Timestamptz
-  createdAt               DateTime  @default(now()) @map("created_at")
-  updatedAt               DateTime  @updatedAt @map("updated_at")
+  id                        String    @id @default(uuid())
+  userId                    String    @unique @map("user_id")
+  status                    String    @default("CONNECTED") // CONNECTED | DISCONNECTED | ERROR
+  connectedEmail            String?   @map("connected_email")
+  accessTokenEncrypted      String?   @map("access_token_encrypted")
+  refreshTokenEncrypted     String?   @map("refresh_token_encrypted")
+  tokenExpiryMs             BigInt    @default(0) @map("token_expiry_ms")
+  scopeString               String    @default("") @map("scope_string")
+  calendarIdSelected        String    @default("primary") @map("calendar_id_selected")
+  busyCalendarIds           String    @default("primary") @map("busy_calendar_ids") // comma-separated
+  availabilityLookaheadDays Int       @default(14) @map("availability_lookahead_days")
+  timezone                  String?
+  lastRefreshAt             DateTime? @map("last_refresh_at") @db.Timestamptz
+  lastErrorCode             String?   @map("last_error_code")
+  lastErrorMessage          String?   @map("last_error_message")
+  lastHealthyAt             DateTime? @map("last_healthy_at") @db.Timestamptz
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
 
   @@index([status])
   @@map("google_integrations")
@@ -430,7 +430,7 @@ model OAuthState {
 model AiCallLog {
   id            String   @id @default(uuid())
   userId        String   @map("user_id")
-  task          String   // EMBED_TEXTS | ANSWER_WITH_CITATIONS | GENERATE_VARIANT_QUESTION | SUGGEST_ERROR_TYPE
+  task          String // EMBED_TEXTS | ANSWER_WITH_CITATIONS | GENERATE_VARIANT_QUESTION | SUGGEST_ERROR_TYPE
   model         String
   promptVersion String   @map("prompt_version")
   cacheHit      Boolean  @map("cache_hit")
@@ -438,7 +438,7 @@ model AiCallLog {
   tokenIn       Int?     @map("token_in")
   tokenOut      Int?     @map("token_out")
   costUsdMicros BigInt?  @map("cost_usd_micros")
-  status        String   // OK | ERROR
+  status        String // OK | ERROR
   errorCode     String?  @map("error_code")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -448,15 +448,15 @@ model AiCallLog {
 }
 
 model AiCache {
-  keyHash          String   @id @map("key_hash")
+  keyHash          String    @id @map("key_hash")
   task             String
   model            String
-  promptVersion    String   @map("prompt_version")
-  inputFingerprint String   @map("input_fingerprint")
-  outputJson       Json     @map("output_json")
-  createdAt        DateTime @default(now()) @map("created_at")
-  expiresAt        DateTime @map("expires_at")
-  hitCount         Int      @default(0) @map("hit_count")
+  promptVersion    String    @map("prompt_version")
+  inputFingerprint String    @map("input_fingerprint")
+  outputJson       Json      @map("output_json")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  hitCount         Int       @default(0) @map("hit_count")
   lastHitAt        DateTime? @map("last_hit_at")
 
   @@index([task, expiresAt])
@@ -465,7 +465,7 @@ model AiCache {
 
 model JobQueue {
   id          String    @id @default(uuid())
-  type        String    // EMBED_CHUNK_BATCH
+  type        String // EMBED_CHUNK_BATCH
   payload     Json
   status      String    @default("PENDING") // PENDING | RUNNING | SUCCEEDED | FAILED | RETRY
   priority    Int       @default(100)
@@ -484,17 +484,17 @@ model JobQueue {
 }
 
 model ObjectiveMastery {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  courseName   String    @map("course_name")
-  objectiveKey String    @map("objective_key")
-  easeFactor   Float     @default(2.5) @map("ease_factor")
-  intervalDays Int       @default(0) @map("interval_days")
-  repetitions  Int       @default(0)
-  lastAccuracy Float?    @map("last_accuracy")
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  courseName    String    @map("course_name")
+  objectiveKey  String    @map("objective_key")
+  easeFactor    Float     @default(2.5) @map("ease_factor")
+  intervalDays  Int       @default(0) @map("interval_days")
+  repetitions   Int       @default(0)
+  lastAccuracy  Float?    @map("last_accuracy")
   lastStudiedAt DateTime? @map("last_studied_at") @db.Timestamptz
-  nextDueAt    DateTime?  @map("next_due_at") @db.Timestamptz
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  nextDueAt     DateTime? @map("next_due_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   @@unique([userId, courseName, objectiveKey], map: "objective_mastery_user_course_key")
   @@index([userId, courseName, nextDueAt])
@@ -508,7 +508,7 @@ model StudyGuide {
   examName   String?  @map("exam_name")
   guideType  String   @map("guide_type") // KEY_CONCEPTS | FAQ | CHEAT_SHEET
   title      String
-  content    Json     // Structured guide content (sections array)
+  content    Json // Structured guide content (sections array)
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -519,17 +519,17 @@ model StudyGuide {
 // ---- Flashcards ----
 
 model FlashcardDeck {
-  id           String      @id @default(uuid())
-  userId       String      @map("user_id")
-  courseName   String      @map("course_name")
-  examName     String?     @map("exam_name")
-  documentId   String?     @map("document_id")
-  title        String
-  cardCount    Int         @default(0) @map("card_count")
-  createdAt    DateTime    @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  courseName String   @map("course_name")
+  examName   String?  @map("exam_name")
+  documentId String?  @map("document_id")
+  title      String
+  cardCount  Int      @default(0) @map("card_count")
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  document     ContentDocument? @relation(fields: [documentId], references: [id])
-  cards        Flashcard[]
+  document ContentDocument? @relation(fields: [documentId], references: [id])
+  cards    Flashcard[]
 
   @@index([userId, courseName, examName], map: "flashcard_decks_user_course_exam_idx")
   @@map("flashcard_decks")
@@ -548,9 +548,10 @@ model Flashcard {
   nextDueAt    DateTime? @map("next_due_at") @db.Timestamptz
   createdAt    DateTime  @default(now()) @map("created_at")
 
-  deck      FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
-  reviews   CardReview[]
+  deck    FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  reviews CardReview[]
 
+  @@unique([deckId, ordinal], map: "flashcards_deck_ordinal_key")
   @@index([deckId])
   @@index([deckId, nextDueAt], map: "flashcards_deck_due_idx")
   @@map("flashcards")
@@ -562,13 +563,13 @@ model CardReview {
   id           String   @id @default(uuid())
   cardId       String   @map("card_id")
   userId       String   @map("user_id")
-  rating       String   // AGAIN | HARD | GOOD | EASY
+  rating       String // AGAIN | HARD | GOOD | EASY
   easeFactor   Float    @map("ease_factor")
   intervalDays Int      @map("interval_days")
   repetitions  Int
   createdAt    DateTime @default(now()) @map("created_at")
 
-  card         Flashcard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  card Flashcard @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId])
   @@index([userId, createdAt])
@@ -580,7 +581,7 @@ model CardReview {
 model XpEvent {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
-  action    String   // FLASHCARD_REVIEW | GUIDE_GENERATED | CHAT_QUESTION | SESSION_COMPLETED | PERFECT_DECK | STREAK_MILESTONE
+  action    String // FLASHCARD_REVIEW | GUIDE_GENERATED | CHAT_QUESTION | SESSION_COMPLETED | PERFECT_DECK | STREAK_MILESTONE
   xpAmount  Int      @map("xp_amount")
   sourceId  String?  @map("source_id")
   createdAt DateTime @default(now()) @map("created_at")
@@ -601,19 +602,19 @@ model Achievement {
 }
 
 model UserGameState {
-  id                   String    @id @default(uuid())
-  userId               String    @unique @map("user_id")
-  displayName          String?   @map("display_name")
-  dailyXpGoal          Int       @default(50) @map("daily_xp_goal")
-  streakFreezes        Int       @default(0) @map("streak_freezes")
-  streakFreezeUsedDate String?   @map("streak_freeze_used_date") // YYYY-MM-DD
-  studyStartTime       String    @default("09:00") @map("study_start_time")
-  studyEndTime         String    @default("17:00") @map("study_end_time")
-  dailyStudyCap        Int       @default(180) @map("daily_study_cap")
-  onboardingComplete   Boolean   @default(false) @map("onboarding_complete")
-  leaderboardVisible   Boolean   @default(true)  @map("leaderboard_visible")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
+  id                   String   @id @default(uuid())
+  userId               String   @unique @map("user_id")
+  displayName          String?  @map("display_name")
+  dailyXpGoal          Int      @default(50) @map("daily_xp_goal")
+  streakFreezes        Int      @default(0) @map("streak_freezes")
+  streakFreezeUsedDate String?  @map("streak_freeze_used_date") // YYYY-MM-DD
+  studyStartTime       String   @default("09:00") @map("study_start_time")
+  studyEndTime         String   @default("17:00") @map("study_end_time")
+  dailyStudyCap        Int      @default(180) @map("daily_study_cap")
+  onboardingComplete   Boolean  @default(false) @map("onboarding_complete")
+  leaderboardVisible   Boolean  @default(true) @map("leaderboard_visible")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@map("user_game_state")
 }
@@ -660,10 +661,10 @@ model PushSubscription {
 model ChatMessage {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
-  courseKey  String   @map("course_key") // "CourseName||ExamName"
-  role      String   // "user" | "assistant"
+  courseKey String   @map("course_key") // "CourseName||ExamName"
+  role      String // "user" | "assistant"
   content   String
-  citations Json?    // source excerpts for assistant messages
+  citations Json? // source excerpts for assistant messages
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -675,16 +676,16 @@ model ChatMessage {
 // ── Notification Preferences ────────────────────────────────────
 
 model NotificationPreference {
-  id                 String   @id @default(uuid())
-  userId             String   @unique @map("user_id")
-  emailReminders     Boolean  @default(true) @map("email_reminders")
-  pushReminders      Boolean  @default(true) @map("push_reminders")
-  reminderTime       String   @default("09:00") @map("reminder_time") // HH:MM
-  streakReminders    Boolean  @default(true) @map("streak_reminders")
-  weeklyDigest       Boolean  @default(true) @map("weekly_digest")
-  emailAddress       String?  @map("email_address") // override if different from User.email
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("user_id")
+  emailReminders  Boolean  @default(true) @map("email_reminders")
+  pushReminders   Boolean  @default(true) @map("push_reminders")
+  reminderTime    String   @default("09:00") @map("reminder_time") // HH:MM
+  streakReminders Boolean  @default(true) @map("streak_reminders")
+  weeklyDigest    Boolean  @default(true) @map("weekly_digest")
+  emailAddress    String?  @map("email_address") // override if different from User.email
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -696,10 +697,10 @@ model NotificationPreference {
 model ScheduledReminder {
   id           String    @id @default(uuid())
   userId       String    @map("user_id")
-  type         String    // STUDY_REMINDER | STREAK_WARNING | WEEKLY_DIGEST
+  type         String // STUDY_REMINDER | STREAK_WARNING | WEEKLY_DIGEST
   scheduledFor DateTime  @map("scheduled_for")
   sentAt       DateTime? @map("sent_at")
-  payload      Json?     // extra data (plan items, streak count, etc.)
+  payload      Json? // extra data (plan items, streak count, etc.)
   createdAt    DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -715,7 +716,7 @@ model VerificationToken {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")
   token     String    @unique
-  type      String    // EMAIL_VERIFY | PASSWORD_RESET
+  type      String // EMAIL_VERIFY | PASSWORD_RESET
   expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
   createdAt DateTime  @default(now()) @map("created_at")

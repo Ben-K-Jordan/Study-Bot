@@ -4,6 +4,7 @@ import { getUserId } from "@/lib/auth";
 import { generateStudyGuide, listStudyGuides } from "@/services/study-guides";
 import { GatewayError } from "@/lib/ai/gateway";
 import { logger } from "@/lib/logger";
+import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 const generateSchema = z.object({
   course_name: z.string().min(1),
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = aiLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {

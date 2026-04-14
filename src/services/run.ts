@@ -25,6 +25,16 @@ import type {
 } from "@/lib/validation";
 import { RUNNABLE_MODES } from "@/lib/validation";
 
+// ---- Sentinel errors for transaction control flow ----
+
+class DuplicateAttemptError extends Error {
+  constructor() { super("duplicate_attempt"); }
+}
+class WrongIndexError extends Error {
+  expected: number;
+  constructor(expected: number) { super("wrong_index"); this.expected = expected; }
+}
+
 // ---- Types ----
 
 export interface RunPolicies {
@@ -641,33 +651,43 @@ async function handleImmediateScoring(
   userId: string,
   txStart: number
 ) {
-  // Check for duplicate attempt
-  const existing = await prisma.sessionAttempt.findUnique({
-    where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
-  });
-  if (existing) return { error: "duplicate_attempt" as const };
-
-  const promptCount = run.promptCount || (run.prompts as unknown as Prompt[]).length;
-  const metrics = run.metrics as unknown as RunMetrics;
-  const newMetrics: RunMetrics = {
-    attempts_count: metrics.attempts_count + 1,
-    correct_count: metrics.correct_count + (input.self_score === "CORRECT" ? 1 : 0),
-    partial_count: metrics.partial_count + (input.self_score === "PARTIAL" ? 1 : 0),
-    incorrect_count: metrics.incorrect_count + (input.self_score === "INCORRECT" ? 1 : 0),
-    accuracy: 0,
-    time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
-  };
-  newMetrics.accuracy = newMetrics.attempts_count > 0
-    ? newMetrics.correct_count / newMetrics.attempts_count
-    : 0;
-
-  const newIndex = run.currentIndex + 1;
-  const isLastPrompt = newIndex >= promptCount;
-  const updatedBreakState = isLastPrompt ? breakState : checkBreakNeeded(breakState);
-
   let attemptId: string;
   try {
     const txResult = await prisma.$transaction(async (tx) => {
+      // Re-read inside the transaction to get fresh metrics/index and prevent
+      // concurrent submissions from clobbering each other.
+      const fresh = await tx.sessionRun.findUniqueOrThrow({ where: { id: run.id } });
+
+      // Check for duplicate attempt
+      const existing = await tx.sessionAttempt.findUnique({
+        where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
+      });
+      if (existing) throw new DuplicateAttemptError();
+
+      // Re-validate index against fresh state
+      if (input.prompt_index !== fresh.currentIndex) {
+        throw new WrongIndexError(fresh.currentIndex);
+      }
+
+      const promptCount = fresh.promptCount || (fresh.prompts as unknown as Prompt[]).length;
+      const metrics = fresh.metrics as unknown as RunMetrics;
+      const freshBreak = fresh.breakState as unknown as BreakState;
+      const newMetrics: RunMetrics = {
+        attempts_count: metrics.attempts_count + 1,
+        correct_count: metrics.correct_count + (input.self_score === "CORRECT" ? 1 : 0),
+        partial_count: metrics.partial_count + (input.self_score === "PARTIAL" ? 1 : 0),
+        incorrect_count: metrics.incorrect_count + (input.self_score === "INCORRECT" ? 1 : 0),
+        accuracy: 0,
+        time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
+      };
+      newMetrics.accuracy = newMetrics.attempts_count > 0
+        ? newMetrics.correct_count / newMetrics.attempts_count
+        : 0;
+
+      const newIndex = fresh.currentIndex + 1;
+      const isLastPrompt = newIndex >= promptCount;
+      const updatedBreakState = isLastPrompt ? freshBreak : checkBreakNeeded(freshBreak);
+
       const attempt = await tx.sessionAttempt.create({
         data: {
           runId: run.runId,
@@ -726,67 +746,73 @@ async function handleImmediateScoring(
         },
       });
 
-      return { attemptId: attempt.id };
+      return { attemptId: attempt.id, newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState };
     });
     attemptId = txResult.attemptId;
+    const { newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState } = txResult;
+
+    const dbTxMs = Date.now() - txStart;
+    const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
+      ? "PENDING" as const
+      : "NONE" as const;
+
+    logger.info("prompt.submitted", {
+      user_id: userId,
+      run_id: run.runId,
+      prompt_index: input.prompt_index,
+      self_score: input.self_score,
+      mode: run.mode,
+      is_last: isLastPrompt,
+      db_tx_ms: dbTxMs,
+    });
+
+    if (isLastPrompt) {
+      const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
+      logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
+
+      // Mastery update — awaited to prevent data loss on process exit
+      try {
+        const s = await prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } });
+        if (s) await updateObjectiveMastery(userId, run.runId, s.courseName);
+      } catch (masteryErr) {
+        logger.error("mastery.update_failed", { error: String(masteryErr) });
+      }
+
+      return {
+        data: {
+          attempt_id: attemptId,
+          feedback_status: feedbackStatus,
+          status: "COMPLETED" as const,
+          phase: "COMPLETE",
+          current_index: newIndex,
+          prompt_count: promptCount,
+          metrics: finalMetrics,
+          break_state: updatedBreakState,
+        },
+      };
+    }
+
+    return {
+      data: {
+        attempt_id: attemptId,
+        feedback_status: feedbackStatus,
+        status: "ACTIVE" as const,
+        phase: "ACTIVE",
+        current_index: newIndex,
+        prompt_count: promptCount,
+        metrics: newMetrics,
+        break_state: updatedBreakState,
+      },
+    };
   } catch (err: unknown) {
+    if (err instanceof DuplicateAttemptError) return { error: "duplicate_attempt" as const };
+    if (err instanceof WrongIndexError) return { error: "wrong_index" as const, expected: err.expected };
     if (err instanceof Error && err.message.includes("Unique constraint")) {
       return { error: "duplicate_attempt" as const };
     }
     captureException(err, { user_id: userId, run_id: run.runId, action: "submitAttempt" });
     throw err;
   }
-
-  const dbTxMs = Date.now() - txStart;
-  const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
-    ? "PENDING" as const
-    : "NONE" as const;
-
-  logger.info("prompt.submitted", {
-    user_id: userId,
-    run_id: run.runId,
-    prompt_index: input.prompt_index,
-    self_score: input.self_score,
-    mode: run.mode,
-    is_last: isLastPrompt,
-    db_tx_ms: dbTxMs,
-  });
-
-  if (isLastPrompt) {
-    const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
-    logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
-
-    // Update SM-2 mastery records (fire-and-forget)
-    prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } })
-      .then((s) => { if (s) updateObjectiveMastery(userId, run.runId, s.courseName); })
-      .catch((err) => { logger.error("mastery.update_failed_async", { error: String(err) }); });
-
-    return {
-      data: {
-        attempt_id: attemptId,
-        feedback_status: feedbackStatus,
-        status: "COMPLETED" as const,
-        phase: "COMPLETE",
-        current_index: newIndex,
-        prompt_count: promptCount,
-        metrics: finalMetrics,
-        break_state: updatedBreakState,
-      },
-    };
-  }
-
-  return {
-    data: {
-      attempt_id: attemptId,
-      feedback_status: feedbackStatus,
-      status: "ACTIVE" as const,
-      phase: "ACTIVE",
-      current_index: newIndex,
-      prompt_count: promptCount,
-      metrics: newMetrics,
-      break_state: updatedBreakState,
-    },
-  };
 }
 
 // ---- EXAM_SIM: EXAM phase (answer only, no scoring) ----
@@ -802,28 +828,28 @@ async function handleExamAnswer(
   const timeToAnswer = "time_to_answer_seconds" in input ? input.time_to_answer_seconds : undefined;
   const confidenceRating = "confidence_rating" in input ? input.confidence_rating : undefined;
 
-  // Check for duplicate
-  const existing = await prisma.sessionAttempt.findUnique({
-    where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
-  });
-  if (existing) return { error: "duplicate_attempt" as const };
-
-  const promptCount = run.promptCount || (run.prompts as unknown as Prompt[]).length;
-  const newIndex = run.currentIndex + 1;
-  const newAnsweredCount = (run.answeredCount ?? 0) + 1;
-  const isLastAnswer = newIndex >= promptCount;
-  const updatedBreakState = isLastAnswer ? breakState : checkBreakNeeded(breakState);
-
-  const metrics = run.metrics as unknown as RunMetrics;
-  const newMetrics: RunMetrics = {
-    ...metrics,
-    time_spent_seconds: metrics.time_spent_seconds + (timeToAnswer ?? 0),
-  };
-
-  let attemptId: string;
   try {
     const txResult = await prisma.$transaction(async (tx) => {
-      // Insert attempt with self_score = null
+      const fresh = await tx.sessionRun.findUniqueOrThrow({ where: { id: run.id } });
+
+      const existing = await tx.sessionAttempt.findUnique({
+        where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
+      });
+      if (existing) throw new DuplicateAttemptError();
+
+      const promptCount = fresh.promptCount || (fresh.prompts as unknown as Prompt[]).length;
+      const freshBreak = fresh.breakState as unknown as BreakState;
+      const newIndex = fresh.currentIndex + 1;
+      const newAnsweredCount = (fresh.answeredCount ?? 0) + 1;
+      const isLastAnswer = newIndex >= promptCount;
+      const updatedBreakState = isLastAnswer ? freshBreak : checkBreakNeeded(freshBreak);
+
+      const metrics = fresh.metrics as unknown as RunMetrics;
+      const newMetrics: RunMetrics = {
+        ...metrics,
+        time_spent_seconds: metrics.time_spent_seconds + (timeToAnswer ?? 0),
+      };
+
       const attempt = await tx.sessionAttempt.create({
         data: {
           runId: run.runId,
@@ -837,7 +863,6 @@ async function handleExamAnswer(
         },
       });
 
-      // Transition to REVIEW phase after last answer
       await tx.sessionRun.update({
         where: { id: run.id },
         data: {
@@ -849,41 +874,43 @@ async function handleExamAnswer(
         },
       });
 
-      return { attemptId: attempt.id };
+      return { attemptId: attempt.id, promptCount, newIndex, newAnsweredCount, isLastAnswer, updatedBreakState, newMetrics };
     });
-    attemptId = txResult.attemptId;
+
+    const { attemptId, promptCount, newIndex, newAnsweredCount, isLastAnswer, updatedBreakState, newMetrics } = txResult;
+
+    const dbTxMs = Date.now() - txStart;
+    logger.info("prompt.submitted", {
+      user_id: run.userId,
+      run_id: run.runId,
+      prompt_index: input.prompt_index,
+      mode: "EXAM_SIM",
+      phase: isLastAnswer ? "REVIEW" : "EXAM",
+      is_last_answer: isLastAnswer,
+      db_tx_ms: dbTxMs,
+    });
+
+    return {
+      data: {
+        attempt_id: attemptId,
+        feedback_status: "NONE" as const,
+        status: "ACTIVE" as const,
+        phase: isLastAnswer ? "REVIEW" : "EXAM",
+        current_index: isLastAnswer ? 0 : newIndex,
+        prompt_count: promptCount,
+        answered_count: newAnsweredCount,
+        scored_count: run.scoredCount ?? 0,
+        metrics: newMetrics,
+        break_state: updatedBreakState,
+      },
+    };
   } catch (err: unknown) {
+    if (err instanceof DuplicateAttemptError) return { error: "duplicate_attempt" as const };
     if (err instanceof Error && err.message.includes("Unique constraint")) {
       return { error: "duplicate_attempt" as const };
     }
     throw err;
   }
-
-  const dbTxMs = Date.now() - txStart;
-  logger.info("prompt.submitted", {
-    user_id: run.userId,
-    run_id: run.runId,
-    prompt_index: input.prompt_index,
-    mode: "EXAM_SIM",
-    phase: isLastAnswer ? "REVIEW" : "EXAM",
-    is_last_answer: isLastAnswer,
-    db_tx_ms: dbTxMs,
-  });
-
-  return {
-    data: {
-      attempt_id: attemptId,
-      feedback_status: "NONE" as const,
-      status: "ACTIVE" as const,
-      phase: isLastAnswer ? "REVIEW" : "EXAM",
-      current_index: isLastAnswer ? 0 : newIndex,
-      prompt_count: promptCount,
-      answered_count: newAnsweredCount,
-      scored_count: run.scoredCount ?? 0,
-      metrics: newMetrics,
-      break_state: updatedBreakState,
-    },
-  };
 }
 
 // ---- EXAM_SIM: REVIEW phase (score existing attempt) ----
@@ -903,34 +930,36 @@ async function handleExamScore(
 
   if (!selfScore) return { error: "missing_score" as const };
 
-  // Find existing attempt (must exist from EXAM phase)
-  const existing = await prisma.sessionAttempt.findUnique({
-    where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
-  });
-  if (!existing) return { error: "no_attempt_to_score" as const };
-  if (existing.selfScore !== null) return { error: "already_scored" as const };
-
-  const promptCount = run.promptCount || (run.prompts as unknown as Prompt[]).length;
-  const metrics = run.metrics as unknown as RunMetrics;
-  const newScoredCount = (run.scoredCount ?? 0) + 1;
-  const newIndex = run.currentIndex + 1;
-  const isLastScore = newIndex >= promptCount;
-
-  const newMetrics: RunMetrics = {
-    attempts_count: metrics.attempts_count + 1,
-    correct_count: metrics.correct_count + (selfScore === "CORRECT" ? 1 : 0),
-    partial_count: metrics.partial_count + (selfScore === "PARTIAL" ? 1 : 0),
-    incorrect_count: metrics.incorrect_count + (selfScore === "INCORRECT" ? 1 : 0),
-    accuracy: 0,
-    time_spent_seconds: metrics.time_spent_seconds,
-  };
-  newMetrics.accuracy = newMetrics.attempts_count > 0
-    ? newMetrics.correct_count / newMetrics.attempts_count
-    : 0;
-
-  let attemptId: string;
   try {
-    await prisma.$transaction(async (tx) => {
+    const txResult = await prisma.$transaction(async (tx) => {
+      // Re-read inside the transaction to get fresh metrics/index
+      const fresh = await tx.sessionRun.findUniqueOrThrow({ where: { id: run.id } });
+
+      // Find existing attempt (must exist from EXAM phase)
+      const existing = await tx.sessionAttempt.findUnique({
+        where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
+      });
+      if (!existing) throw new Error("no_attempt_to_score");
+      if (existing.selfScore !== null) throw new Error("already_scored");
+
+      const promptCount = fresh.promptCount || (fresh.prompts as unknown as Prompt[]).length;
+      const metrics = fresh.metrics as unknown as RunMetrics;
+      const newScoredCount = (fresh.scoredCount ?? 0) + 1;
+      const newIndex = fresh.currentIndex + 1;
+      const isLastScore = newIndex >= promptCount;
+
+      const newMetrics: RunMetrics = {
+        attempts_count: metrics.attempts_count + 1,
+        correct_count: metrics.correct_count + (selfScore === "CORRECT" ? 1 : 0),
+        partial_count: metrics.partial_count + (selfScore === "PARTIAL" ? 1 : 0),
+        incorrect_count: metrics.incorrect_count + (selfScore === "INCORRECT" ? 1 : 0),
+        accuracy: 0,
+        time_spent_seconds: metrics.time_spent_seconds,
+      };
+      newMetrics.accuracy = newMetrics.attempts_count > 0
+        ? newMetrics.correct_count / newMetrics.attempts_count
+        : 0;
+
       // Update existing attempt with score and metacognitive fields
       await tx.sessionAttempt.update({
         where: { id: existing.id },
@@ -970,67 +999,75 @@ async function handleExamScore(
           endedAt: isLastScore ? new Date() : undefined,
         },
       });
+
+      return { attemptId: existing.id, newMetrics, newIndex, promptCount, newScoredCount, isLastScore, answeredCount: fresh.answeredCount };
     });
-    attemptId = existing.id;
-  } catch (err: unknown) {
-    captureException(err, { user_id: userId, run_id: run.runId, action: "examScore" });
-    throw err;
-  }
 
-  const dbTxMs = Date.now() - txStart;
-  const feedbackStatus = (selfScore === "PARTIAL" || selfScore === "INCORRECT")
-    ? "PENDING" as const
-    : "NONE" as const;
+    const { attemptId, newMetrics, newIndex, promptCount, newScoredCount, isLastScore, answeredCount } = txResult;
 
-  logger.info("prompt.scored", {
-    user_id: userId,
-    run_id: run.runId,
-    prompt_index: input.prompt_index,
-    self_score: selfScore,
-    mode: "EXAM_SIM",
-    is_last_score: isLastScore,
-    db_tx_ms: dbTxMs,
-  });
+    const dbTxMs = Date.now() - txStart;
+    const feedbackStatus = (selfScore === "PARTIAL" || selfScore === "INCORRECT")
+      ? "PENDING" as const
+      : "NONE" as const;
 
-  if (isLastScore) {
-    const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
-    logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
+    logger.info("prompt.scored", {
+      user_id: userId,
+      run_id: run.runId,
+      prompt_index: input.prompt_index,
+      self_score: selfScore,
+      mode: "EXAM_SIM",
+      is_last_score: isLastScore,
+      db_tx_ms: dbTxMs,
+    });
 
-    // Update SM-2 mastery records (fire-and-forget)
-    prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } })
-      .then((s) => { if (s) updateObjectiveMastery(userId, run.runId, s.courseName); })
-      .catch((err) => { logger.error("mastery.update_failed_async", { error: String(err) }); });
+    if (isLastScore) {
+      const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
+      logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
+
+      // Mastery update — awaited to prevent data loss on process exit
+      try {
+        const s = await prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } });
+        if (s) await updateObjectiveMastery(userId, run.runId, s.courseName);
+      } catch (masteryErr) {
+        logger.error("mastery.update_failed", { error: String(masteryErr) });
+      }
+
+      return {
+        data: {
+          attempt_id: attemptId,
+          feedback_status: feedbackStatus,
+          status: "COMPLETED" as const,
+          phase: "COMPLETE",
+          current_index: newIndex,
+          prompt_count: promptCount,
+          answered_count: answeredCount,
+          scored_count: newScoredCount,
+          metrics: finalMetrics,
+          break_state: breakState,
+        },
+      };
+    }
 
     return {
       data: {
         attempt_id: attemptId,
         feedback_status: feedbackStatus,
-        status: "COMPLETED" as const,
-        phase: "COMPLETE",
+        status: "ACTIVE" as const,
+        phase: "REVIEW",
         current_index: newIndex,
         prompt_count: promptCount,
-        answered_count: run.answeredCount,
+        answered_count: answeredCount,
         scored_count: newScoredCount,
-        metrics: finalMetrics,
+        metrics: newMetrics,
         break_state: breakState,
       },
     };
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === "no_attempt_to_score") return { error: "no_attempt_to_score" as const };
+    if (err instanceof Error && err.message === "already_scored") return { error: "already_scored" as const };
+    captureException(err, { user_id: userId, run_id: run.runId, action: "examScore" });
+    throw err;
   }
-
-  return {
-    data: {
-      attempt_id: attemptId,
-      feedback_status: feedbackStatus,
-      status: "ACTIVE" as const,
-      phase: "REVIEW",
-      current_index: newIndex,
-      prompt_count: promptCount,
-      answered_count: run.answeredCount,
-      scored_count: newScoredCount,
-      metrics: newMetrics,
-      break_state: breakState,
-    },
-  };
 }
 
 // ---- Pre-test Prompt Generator ----
@@ -1235,10 +1272,12 @@ export async function completeRun(userId: string, runId: string) {
     },
   });
 
-  // Update SM-2 mastery records (fire-and-forget)
-  updateObjectiveMastery(userId, runId, run.session.courseName).catch((err) => {
-    logger.error("mastery.update_failed_async", { user_id: userId, run_id: runId, error: String(err) });
-  });
+  // Mastery update — awaited to prevent data loss on process exit
+  try {
+    await updateObjectiveMastery(userId, runId, run.session.courseName);
+  } catch (masteryErr) {
+    logger.error("mastery.update_failed", { user_id: userId, run_id: runId, error: String(masteryErr) });
+  }
 
   logger.info("run.completed", {
     user_id: userId,

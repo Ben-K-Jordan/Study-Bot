@@ -335,7 +335,28 @@ export async function runTask<T>(
   const latencyMs = Date.now() - startMs;
 
   // --- Parse output ---
-  const output = parseOutput(rawOutput);
+  let output: T;
+  try {
+    output = parseOutput(rawOutput);
+  } catch (parseErr) {
+    await logCall({
+      userId: ctx.userId,
+      task,
+      model,
+      promptVersion,
+      cacheHit: false,
+      latencyMs,
+      usage,
+      status: "ERROR",
+      errorCode: "PARSE_ERROR",
+    }).catch(() => {});
+
+    throw new GatewayError(
+      "PARSE_ERROR",
+      `Failed to parse AI output: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`,
+      true,
+    );
+  }
 
   // --- Cache write (fire-and-forget) ---
   if (!opts.skipCache) {

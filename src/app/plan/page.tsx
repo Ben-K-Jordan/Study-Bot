@@ -414,7 +414,7 @@ export default function PlanPage() {
                 rel="noopener noreferrer"
                 style={sessionCardStyle}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.25rem" }}>
                   <span style={{ fontWeight: "bold", color: "var(--color-text)" }}>
                     {MODE_LABELS[item.mode] || item.mode}
                   </span>
