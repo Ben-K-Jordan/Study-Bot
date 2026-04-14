@@ -284,15 +284,23 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     const plan = await createPlan(userId, basePlanInput);
     const pubResult = await publishPlanToGoogle(userId, plan.plan_id);
 
-    // Simulate manual deletion of first event in Google
-    const firstEventId = pubResult.data.item_results[0].event_id!;
-    fakeClient.simulateManualDelete(firstEventId);
-
-    // Modify times to trigger update attempt
+    // Query items from DB first so we work with a known item
     const items = await prisma.studyPlanItem.findMany({
       where: { planId: plan.plan_id },
       orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }],
     });
+
+    // Find the published event_id for items[0] by matching plan_item_id
+    const targetResult = pubResult.data.item_results.find(
+      (i: any) => i.plan_item_id === items[0].id
+    );
+    expect(targetResult).toBeTruthy();
+    const deletedEventId = targetResult!.event_id!;
+
+    // Simulate manual deletion of that specific event in Google
+    fakeClient.simulateManualDelete(deletedEventId);
+
+    // Modify the same item's time to trigger an update attempt
     const newStart = new Date(items[0].startTime);
     newStart.setMinutes(newStart.getMinutes() + 5);
     await prisma.studyPlanItem.update({
@@ -306,7 +314,7 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
     expect(firstItem).toBeTruthy();
     expect(firstItem!.action).toBe("CREATED");
     expect(firstItem!.event_id).toBeTruthy();
-    expect(firstItem!.event_id).not.toBe(firstEventId); // New event ID
+    expect(firstItem!.event_id).not.toBe(deletedEventId); // New event ID
   });
 
   it("unpublishes plan events and clears mappings", async () => {
