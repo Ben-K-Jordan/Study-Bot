@@ -29,8 +29,8 @@ export function NavBar() {
     left: 0,
     right: 0,
     height: NAV_HEIGHT,
-    background: "#1f2e1f",
-    borderBottom: "1px solid #3a5a3a",
+    background: "var(--color-bg-darkest)",
+    borderBottom: "1px solid var(--color-border-subtle)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -40,7 +40,7 @@ export function NavBar() {
   };
 
   const brandStyle: React.CSSProperties = {
-    color: "#f0dc4e",
+    color: "var(--color-primary)",
     fontSize: "1.4rem",
     fontWeight: "bold",
     textDecoration: "none",
@@ -70,7 +70,7 @@ export function NavBar() {
           const linkStyle: React.CSSProperties = {
             display: "block",
             padding: "0.35rem 0.75rem",
-            color: active ? "#f0dc4e" : "#a89a82",
+            color: active ? "var(--color-primary)" : "var(--color-text-muted)",
             textDecoration: "none",
             fontFamily: "var(--font-body)",
             fontSize: "1rem",
@@ -86,10 +86,10 @@ export function NavBar() {
                 href={href}
                 style={linkStyle}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.color = "#e8dcc8";
+                  if (!active) e.currentTarget.style.color = "var(--color-text)";
                 }}
                 onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.color = "#a89a82";
+                  if (!active) e.currentTarget.style.color = "var(--color-text-muted)";
                 }}
               >
                 {label}

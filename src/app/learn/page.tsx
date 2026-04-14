@@ -47,7 +47,7 @@ export default function LearnPage() {
       <main style={mainStyle}>
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
         <h1 style={headingStyle}>Learn</h1>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "#a89a82" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-text-muted)" }}>
           <div style={spinnerStyle} />
           <p style={{ marginTop: "1rem" }}>Loading your courses...</p>
         </div>
@@ -61,7 +61,7 @@ export default function LearnPage() {
         <h1 style={headingStyle}>Learn</h1>
         <div style={emptyCardStyle}>
           <p style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>No courses yet</p>
-          <p style={{ color: "#7a7060", fontSize: "0.95rem", marginBottom: "1.5rem" }}>
+          <p style={{ color: "var(--color-text-dim)", fontSize: "0.95rem", marginBottom: "1.5rem" }}>
             Upload your first document to start learning. Study Bot will help you create flashcards, guides, and practice sessions.
           </p>
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
@@ -90,8 +90,8 @@ export default function LearnPage() {
                 padding: "0.4rem 0.9rem",
                 fontSize: "0.9rem",
                 fontFamily: "inherit",
-                background: selectedCourse === c.courseName ? "#f0dc4e22" : "#334d33",
-                color: selectedCourse === c.courseName ? "#f0dc4e" : "#a89a82",
+                background: selectedCourse === c.courseName ? "#f0dc4e22" : "var(--color-bg-card)",
+                color: selectedCourse === c.courseName ? "var(--color-primary)" : "var(--color-text-muted)",
                 border: `1px solid ${selectedCourse === c.courseName ? "#f0dc4e66" : "#4a6a4a"}`,
                 borderRadius: 6,
                 cursor: "pointer",
@@ -102,8 +102,8 @@ export default function LearnPage() {
               {c.dueCardCount > 0 && (
                 <span style={{
                   marginLeft: "0.4rem",
-                  background: "#e8a040",
-                  color: "#1f2e1f",
+                  background: "var(--color-warning)",
+                  color: "var(--color-bg-darkest)",
                   fontSize: "0.7rem",
                   fontWeight: 700,
                   padding: "0.1rem 0.35rem",
@@ -121,7 +121,7 @@ export default function LearnPage() {
       <section style={{ marginBottom: "1.5rem" }}>
         <h2 style={courseNameStyle}>{course.courseName}</h2>
         {course.examNames.length > 0 && (
-          <p style={{ color: "#7a7060", fontSize: "0.85rem", margin: "0.2rem 0 0" }}>
+          <p style={{ color: "var(--color-text-dim)", fontSize: "0.85rem", margin: "0.2rem 0 0" }}>
             Exams: {course.examNames.join(", ")}
           </p>
         )}
@@ -134,17 +134,17 @@ export default function LearnPage() {
           <span style={miniStatLabelStyle}>Docs</span>
         </div>
         <div style={miniStatStyle}>
-          <span style={{ ...miniStatNumStyle, color: "#7ec8e3" }}>{course.deckCount}</span>
+          <span style={{ ...miniStatNumStyle, color: "var(--color-info)" }}>{course.deckCount}</span>
           <span style={miniStatLabelStyle}>Decks</span>
         </div>
         <div style={miniStatStyle}>
-          <span style={{ ...miniStatNumStyle, color: course.dueCardCount > 0 ? "#e8a040" : "#88cc88" }}>
+          <span style={{ ...miniStatNumStyle, color: course.dueCardCount > 0 ? "var(--color-warning)" : "var(--color-success)" }}>
             {course.dueCardCount}
           </span>
           <span style={miniStatLabelStyle}>Due Cards</span>
         </div>
         <div style={miniStatStyle}>
-          <span style={{ ...miniStatNumStyle, color: "#c4a0ff" }}>{course.guideCount}</span>
+          <span style={{ ...miniStatNumStyle, color: "var(--color-review)" }}>{course.guideCount}</span>
           <span style={miniStatLabelStyle}>Guides</span>
         </div>
       </section>
@@ -153,12 +153,12 @@ export default function LearnPage() {
       {course.dueCardCount > 0 && (
         <section style={recommendationStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
-            <span style={{ color: "#e8a040", fontSize: "1.1rem" }}>!</span>
-            <span style={{ color: "#e8a040", fontWeight: 600, fontSize: "0.9rem" }}>
+            <span style={{ color: "var(--color-warning)", fontSize: "1.1rem" }}>!</span>
+            <span style={{ color: "var(--color-warning)", fontWeight: 600, fontSize: "0.9rem" }}>
               {course.dueCardCount} card{course.dueCardCount !== 1 ? "s" : ""} due for review
             </span>
           </div>
-          <p style={{ color: "#7a7060", fontSize: "0.8rem", margin: 0 }}>
+          <p style={{ color: "var(--color-text-dim)", fontSize: "0.8rem", margin: 0 }}>
             Reviewing now helps retain information using spaced repetition.
           </p>
         </section>
@@ -169,49 +169,49 @@ export default function LearnPage() {
         <h3 style={sectionLabelStyle}>Quick Actions</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
           {course.dueCardCount > 0 && (
-            <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "#e8a040" }}>
+            <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "var(--color-warning)" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Review Due Cards</div>
-                <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Review Due Cards</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
                   {course.dueCardCount} card{course.dueCardCount !== 1 ? "s" : ""} ready for spaced repetition review
                 </div>
               </div>
-              <span style={{ color: "#e8a040", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Review</span>
+              <span style={{ color: "var(--color-warning)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Review</span>
             </Link>
           )}
           {course.processedDocCount > 0 && course.deckCount === 0 && (
-            <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "#7ec8e3" }}>
+            <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "var(--color-info)" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Generate Flashcards</div>
-                <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Generate Flashcards</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
                   {course.processedDocCount} doc{course.processedDocCount !== 1 ? "s" : ""} processed and ready
                 </div>
               </div>
-              <span style={{ color: "#7ec8e3", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Generate</span>
+              <span style={{ color: "var(--color-info)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Generate</span>
             </Link>
           )}
           {course.guideCount === 0 && course.processedDocCount > 0 && (
-            <Link href="/guides" style={{ ...quickActionStyle, borderLeftColor: "#c4a0ff" }}>
+            <Link href="/guides" style={{ ...quickActionStyle, borderLeftColor: "var(--color-review)" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Create Study Guide</div>
-                <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Create Study Guide</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
                   Key concepts, FAQs, or cheat sheets from your materials
                 </div>
               </div>
-              <span style={{ color: "#c4a0ff", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Create</span>
+              <span style={{ color: "var(--color-review)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Create</span>
             </Link>
           )}
-          <Link href="/chat" style={{ ...quickActionStyle, borderLeftColor: "#88cc88" }}>
+          <Link href="/chat" style={{ ...quickActionStyle, borderLeftColor: "var(--color-success)" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Ask a Question</div>
-              <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+              <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Ask a Question</div>
+              <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
                 Chat with your {course.courseName} materials
               </div>
             </div>
-            <span style={{ color: "#88cc88", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Chat</span>
+            <span style={{ color: "var(--color-success)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Chat</span>
           </Link>
           {course.dueCardCount === 0 && course.deckCount > 0 && (
-            <div style={{ textAlign: "center", padding: "0.75rem", color: "#88cc88", fontSize: "0.85rem", background: "#2d4a2d", borderRadius: 6, border: "1px solid #5a8a5a" }}>
+            <div style={{ textAlign: "center", padding: "0.75rem", color: "var(--color-success)", fontSize: "0.85rem", background: "var(--color-bg-done)", borderRadius: 6, border: "1px solid var(--color-border-done)" }}>
               All caught up! No cards due for review right now.
             </div>
           )}
@@ -262,7 +262,7 @@ export default function LearnPage() {
 
       {/* Weekly XP */}
       {data.weeklyXp > 0 && (
-        <div style={{ textAlign: "center", color: "#7a7060", fontSize: "0.8rem", marginTop: "1rem" }}>
+        <div style={{ textAlign: "center", color: "var(--color-text-dim)", fontSize: "0.8rem", marginTop: "1rem" }}>
           {data.weeklyXp} XP earned this week
         </div>
       )}
@@ -285,7 +285,7 @@ function LearningStep({ step, title, description, done, href }: {
       alignItems: "center",
       gap: "0.75rem",
       padding: "0.75rem 1rem",
-      background: done ? "#2d4a2d" : "#334d33",
+      background: done ? "var(--color-bg-done)" : "var(--color-bg-card)",
       border: `1px solid ${done ? "#5a8a5a" : "#4a6a4a"}`,
       borderRadius: 6,
       textDecoration: "none",
@@ -298,8 +298,8 @@ function LearningStep({ step, title, description, done, href }: {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: done ? "#88cc88" : "#4a6a4a",
-        color: done ? "#1f2e1f" : "#a89a82",
+        background: done ? "var(--color-success)" : "#4a6a4a",
+        color: done ? "var(--color-bg-darkest)" : "var(--color-text-muted)",
         fontSize: "0.8rem",
         fontWeight: 700,
         flexShrink: 0,
@@ -309,14 +309,14 @@ function LearningStep({ step, title, description, done, href }: {
       <div style={{ flex: 1 }}>
         <div style={{
           fontSize: "0.95rem",
-          color: done ? "#88cc88" : "#e8dcc8",
+          color: done ? "var(--color-success)" : "var(--color-text)",
           fontWeight: 600,
           textDecoration: done ? "line-through" : "none",
           opacity: done ? 0.7 : 1,
         }}>
           {title}
         </div>
-        <div style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.1rem" }}>
+        <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.1rem" }}>
           {description}
         </div>
       </div>
@@ -331,22 +331,22 @@ const mainStyle: React.CSSProperties = {
   margin: "0 auto",
   padding: "1.5rem 1rem",
   fontFamily: "var(--font-body)",
-  color: "#e8dcc8",
-  backgroundColor: "#2a3d2a",
+  color: "var(--color-text)",
+  backgroundColor: "var(--color-bg)",
   minHeight: "100vh",
 };
 
 const headingStyle: React.CSSProperties = {
   fontSize: "2rem",
   margin: "0 0 1.5rem",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   fontWeight: 700,
   fontFamily: "var(--font-display)",
 };
 
 const courseNameStyle: React.CSSProperties = {
   fontSize: "1.4rem",
-  color: "#e8dcc8",
+  color: "var(--color-text)",
   fontWeight: 700,
   margin: 0,
   fontFamily: "var(--font-display)",
@@ -354,7 +354,7 @@ const courseNameStyle: React.CSSProperties = {
 
 const sectionLabelStyle: React.CSSProperties = {
   fontSize: "0.85rem",
-  color: "#a89a82",
+  color: "var(--color-text-muted)",
   marginBottom: "0.75rem",
   fontWeight: 600,
   textTransform: "uppercase",
@@ -366,22 +366,22 @@ const miniStatStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   padding: "0.75rem 0.5rem",
-  border: "1px solid #4a6a4a",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
-  backgroundColor: "#334d33",
+  backgroundColor: "var(--color-bg-card)",
 };
 
 const miniStatNumStyle: React.CSSProperties = {
   fontSize: "1.3rem",
   fontWeight: 700,
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   lineHeight: 1,
   fontFamily: "var(--font-display)",
 };
 
 const miniStatLabelStyle: React.CSSProperties = {
   fontSize: "0.65rem",
-  color: "#9a8a7a",
+  color: "var(--color-text-faint)",
   marginTop: "0.3rem",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
@@ -400,8 +400,8 @@ const quickActionStyle: React.CSSProperties = {
   alignItems: "center",
   gap: "0.75rem",
   padding: "0.85rem 1rem",
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
   borderLeft: "3px solid #4a6a4a",
   borderRadius: 6,
   textDecoration: "none",
@@ -410,17 +410,17 @@ const quickActionStyle: React.CSSProperties = {
 
 const emptyCardStyle: React.CSSProperties = {
   padding: "3rem 2rem",
-  border: "1px dashed #5a7a5a",
+  border: "1px dashed var(--color-border-done)",
   borderRadius: 8,
   textAlign: "center",
-  color: "#c8bca8",
+  color: "var(--color-text-secondary)",
 };
 
 const primaryBtnStyle: React.CSSProperties = {
   padding: "0.6rem 1.25rem",
   fontSize: "0.95rem",
-  background: "#f0dc4e",
-  color: "#1f2e1f",
+  background: "var(--color-primary)",
+  color: "var(--color-bg-darkest)",
   border: "none",
   borderRadius: 6,
   fontWeight: 700,
@@ -433,7 +433,7 @@ const secondaryBtnStyle: React.CSSProperties = {
   padding: "0.6rem 1.25rem",
   fontSize: "0.95rem",
   background: "transparent",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   border: "1px solid #f0dc4e44",
   borderRadius: 6,
   fontWeight: 600,

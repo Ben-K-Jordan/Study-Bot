@@ -213,9 +213,9 @@ export default function ChatPage() {
             })}
           </select>
         ) : (
-          <p style={{ color: "#e8a040", fontSize: "0.85rem", margin: 0 }}>
+          <p style={{ color: "var(--color-warning)", fontSize: "0.85rem", margin: 0 }}>
             No course documents uploaded yet.{" "}
-            <Link href="/flashcards" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
+            <Link href="/flashcards" style={{ color: "var(--color-primary)", textDecoration: "underline" }}>
               Upload materials on the Flashcards page
             </Link>{" "}
             to start chatting with your content.
@@ -227,13 +227,13 @@ export default function ChatPage() {
       <div style={messagesContainer}>
         {messages.length === 0 && (
           <div style={emptyState}>
-            <p style={{ fontSize: "1.2rem", color: "#a89a82", marginBottom: "0.5rem" }}>
+            <p style={{ fontSize: "1.2rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
               Ask anything about your {parsedCourse[0] || "course"} materials
             </p>
-            <p style={{ fontSize: "0.85rem", color: "#7a7060" }}>
+            <p style={{ fontSize: "0.85rem", color: "var(--color-text-dim)" }}>
               Your answers will be grounded in your uploaded documents with inline citations.
             </p>
-            <p style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.25rem" }}>
+            <p style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.25rem" }}>
               Press <kbd style={kbdStyle}>Enter</kbd> to send, <kbd style={kbdStyle}>Shift+Enter</kbd> for new line
             </p>
           </div>
@@ -250,7 +250,7 @@ export default function ChatPage() {
               <div
                 style={{
                   fontSize: "0.7rem",
-                  color: msg.role === "user" ? "#f0dc4e" : "#7ec8e3",
+                  color: msg.role === "user" ? "var(--color-primary)" : "var(--color-info)",
                   marginBottom: "0.3rem",
                   fontWeight: 600,
                   letterSpacing: "0.05em",
@@ -269,7 +269,7 @@ export default function ChatPage() {
                 <div
                   style={{
                     fontSize: "0.7rem",
-                    color: "#7a7060",
+                    color: "var(--color-text-dim)",
                     marginBottom: "0.3rem",
                     letterSpacing: "0.05em",
                   }}
@@ -291,7 +291,7 @@ export default function ChatPage() {
                     >
                       <span style={citationBadge}>{i + 1}</span>
                       <span style={{ flex: 1, textAlign: "left" }}>{c.reason}</span>
-                      <span style={{ color: "#7a7060", fontSize: "0.75rem" }}>
+                      <span style={{ color: "var(--color-text-dim)", fontSize: "0.75rem" }}>
                         {expandedCitation === `${msg.id}-${i}` ? "▼" : "▶"}
                       </span>
                     </button>
@@ -309,7 +309,7 @@ export default function ChatPage() {
 
             {/* Meta info */}
             {msg.meta && (
-              <div style={{ fontSize: "0.65rem", color: "#7a7060", marginTop: "0.25rem", marginLeft: "0.5rem" }}>
+              <div style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", marginTop: "0.25rem", marginLeft: "0.5rem" }}>
                 {msg.meta.chunks_retrieved ?? 0} sources searched
                 {msg.meta.latency_ms ? ` · ${(msg.meta.latency_ms / 1000).toFixed(1)}s` : ""}
               </div>
@@ -319,10 +319,10 @@ export default function ChatPage() {
 
         {loading && (
           <div style={assistantBubble}>
-            <div style={{ fontSize: "0.7rem", color: "#7ec8e3", marginBottom: "0.3rem", fontWeight: 600 }}>
+            <div style={{ fontSize: "0.7rem", color: "var(--color-info)", marginBottom: "0.3rem", fontWeight: 600 }}>
               STUDY BOT
             </div>
-            <div style={{ color: "#a89a82", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <div style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
               Searching your materials
               <span style={dotAnimation}>
                 <span className="dot1">.</span>
@@ -413,16 +413,16 @@ const pageContainer: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   height: "calc(100vh - 52px)",
-  maxWidth: 720,
+  maxWidth: 700,
   margin: "0 auto",
   padding: "0 1rem",
   fontFamily: "var(--font-body)",
-  color: "#e8dcc8",
+  color: "var(--color-text)",
 };
 
 const headerStyle: React.CSSProperties = {
   padding: "1.25rem 0 1rem",
-  borderBottom: "1px solid #3a5a3a",
+  borderBottom: "1px solid var(--color-border-subtle)",
   flexShrink: 0,
 };
 
@@ -430,11 +430,11 @@ const titleStyle: React.CSSProperties = {
   fontSize: "1.6rem",
   margin: "0 0 0.25rem",
   fontFamily: "var(--font-display)",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
 };
 
 const subtitleStyle: React.CSSProperties = {
-  color: "#a89a82",
+  color: "var(--color-text-muted)",
   margin: "0 0 0.75rem",
   fontSize: "0.9rem",
 };
@@ -444,9 +444,9 @@ const selectStyle: React.CSSProperties = {
   padding: "0.5rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "#334d33",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
 };
 
@@ -463,15 +463,15 @@ const emptyState: React.CSSProperties = {
 
 const userBubble: React.CSSProperties = {
   background: "#3d4d3d",
-  border: "1px solid #4a6a4a",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
   padding: "0.75rem 1rem",
   marginLeft: "2rem",
 };
 
 const assistantBubble: React.CSSProperties = {
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
   padding: "0.75rem 1rem",
   marginRight: "2rem",
@@ -485,9 +485,9 @@ const citationButton: React.CSSProperties = {
   padding: "0.4rem 0.6rem",
   fontSize: "0.75rem",
   fontFamily: "inherit",
-  background: "#2d3d2d",
-  color: "#a89a82",
-  border: "1px solid #3a5a3a",
+  background: "var(--color-bg)",
+  color: "var(--color-text-muted)",
+  border: "1px solid var(--color-border-subtle)",
   borderRadius: 4,
   cursor: "pointer",
   textAlign: "left",
@@ -500,8 +500,8 @@ const citationBadge: React.CSSProperties = {
   width: 18,
   height: 18,
   borderRadius: "50%",
-  background: "#7ec8e3",
-  color: "#1f2e1f",
+  background: "var(--color-info)",
+  color: "var(--color-bg-darkest)",
   fontSize: "0.65rem",
   fontWeight: 700,
   flexShrink: 0,
@@ -514,8 +514,8 @@ const inlineCitationBadge: React.CSSProperties = {
   width: 16,
   height: 16,
   borderRadius: "50%",
-  background: "#7ec8e3",
-  color: "#1f2e1f",
+  background: "var(--color-info)",
+  color: "var(--color-bg-darkest)",
   fontSize: "0.6rem",
   fontWeight: 700,
   marginLeft: 2,
@@ -525,23 +525,23 @@ const inlineCitationBadge: React.CSSProperties = {
 };
 
 const citationExpanded: React.CSSProperties = {
-  background: "#2d3d2d",
-  border: "1px solid #3a5a3a",
+  background: "var(--color-bg)",
+  border: "1px solid var(--color-border-subtle)",
   borderTop: "none",
   borderRadius: "0 0 4px 4px",
   padding: "0.5rem 0.6rem",
-  color: "#c8bca8",
+  color: "var(--color-text-secondary)",
 };
 
 const inputContainer: React.CSSProperties = {
   display: "flex",
   gap: "0.5rem",
   padding: "0.75rem 0",
-  borderTop: "1px solid #3a5a3a",
+  borderTop: "1px solid var(--color-border-subtle)",
   flexShrink: 0,
   position: "sticky",
   bottom: 0,
-  background: "#2a3d2a",
+  background: "var(--color-bg)",
 };
 
 const inputStyle: React.CSSProperties = {
@@ -549,9 +549,9 @@ const inputStyle: React.CSSProperties = {
   padding: "0.6rem 0.75rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "#334d33",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
   borderRadius: 6,
   resize: "none",
 };
@@ -561,8 +561,8 @@ const sendButton: React.CSSProperties = {
   fontSize: "0.85rem",
   fontFamily: "var(--font-display)",
   fontWeight: 700,
-  background: "#f0dc4e",
-  color: "#1f2e1f",
+  background: "var(--color-primary)",
+  color: "var(--color-bg-darkest)",
   border: "none",
   borderRadius: 6,
   cursor: "pointer",
@@ -572,9 +572,9 @@ const sendButton: React.CSSProperties = {
 const clearButton: React.CSSProperties = {
   fontSize: "0.75rem",
   fontFamily: "inherit",
-  color: "#7a7060",
+  color: "var(--color-text-dim)",
   background: "none",
-  border: "1px solid #3a5a3a",
+  border: "1px solid var(--color-border-subtle)",
   borderRadius: 4,
   padding: "0.25rem 0.6rem",
   cursor: "pointer",
@@ -584,11 +584,11 @@ const kbdStyle: React.CSSProperties = {
   display: "inline-block",
   fontSize: "0.65rem",
   fontFamily: "monospace",
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
   borderRadius: 3,
   padding: "0.05rem 0.35rem",
-  color: "#e8dcc8",
+  color: "var(--color-text)",
 };
 
 const dotAnimation: React.CSSProperties = {

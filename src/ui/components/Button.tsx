@@ -22,18 +22,18 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
   primary: {
-    background: "#f0dc4e",
-    color: "#1f2e1f",
+    background: "var(--color-primary)",
+    color: "var(--color-bg-darkest)",
     border: "none",
   },
   secondary: {
-    background: "#334d33",
-    color: "#e8dcc8",
-    border: "1px solid #4a6a4a",
+    background: "var(--color-bg-card)",
+    color: "var(--color-text)",
+    border: "1px solid var(--color-border)",
   },
   danger: {
-    background: "#e88888",
-    color: "#1f2e1f",
+    background: "var(--color-error)",
+    color: "var(--color-bg-darkest)",
     border: "none",
   },
 };

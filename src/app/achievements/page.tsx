@@ -34,7 +34,7 @@ export default function AchievementsPage() {
       <main style={mainStyle}>
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
         <h1 style={headingStyle}>Achievements</h1>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "#a89a82" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-text-muted)" }}>
           <div style={spinnerStyle} />
           <p style={{ marginTop: "1rem" }}>Loading achievements...</p>
         </div>
@@ -82,10 +82,10 @@ export default function AchievementsPage() {
             </text>
           </svg>
           <div>
-            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display)" }}>
+            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
               {totalEarned} / {TOTAL_BADGES} Badges
             </div>
-            <div style={{ fontSize: "0.8rem", color: "#7a7060", marginTop: "0.2rem" }}>
+            <div style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", marginTop: "0.2rem" }}>
               {totalEarned === TOTAL_BADGES
                 ? "All achievements unlocked!"
                 : `${TOTAL_BADGES - totalEarned} more to collect`}
@@ -104,7 +104,7 @@ export default function AchievementsPage() {
           <section key={cat} style={{ marginBottom: "2rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <h2 style={{ ...sectionHeadingStyle, color: catInfo.color, margin: 0 }}>{catInfo.label}</h2>
-              <span style={{ fontSize: "0.75rem", color: "#7a7060" }}>{earned}/{badges.length}</span>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-dim)" }}>{earned}/{badges.length}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {badges.map((badge) => {
@@ -121,8 +121,8 @@ export default function AchievementsPage() {
                       alignItems: "center",
                       gap: "0.75rem",
                       padding: "0.75rem 1rem",
-                      background: isEarned ? "#2d4a2d" : "#334d33",
-                      border: `1px solid ${isEarned ? "#5a8a5a" : "#4a6a4a"}`,
+                      background: isEarned ? "var(--color-bg-done)" : "var(--color-bg-card)",
+                      border: `1px solid ${isEarned ? "var(--color-border-done)" : "var(--color-border)"}`,
                       borderRadius: 8,
                       opacity: isEarned ? 1 : 0.75,
                     }}
@@ -135,7 +135,7 @@ export default function AchievementsPage() {
                       alignItems: "center",
                       justifyContent: "center",
                       borderRadius: "50%",
-                      background: isEarned ? "#334d33" : "#2a3d2a",
+                      background: isEarned ? "var(--color-bg-card)" : "var(--color-bg)",
                       filter: isEarned ? "none" : "grayscale(100%)",
                       flexShrink: 0,
                     }}>
@@ -147,22 +147,22 @@ export default function AchievementsPage() {
                         <span style={{
                           fontSize: "0.95rem",
                           fontWeight: 600,
-                          color: isEarned ? "#e8dcc8" : "#a89a82",
+                          color: isEarned ? "var(--color-text)" : "var(--color-text-muted)",
                         }}>
                           {badge.label}
                         </span>
                         {isEarned && earnedDate && (
-                          <span style={{ fontSize: "0.65rem", color: "#5a8a5a" }}>
+                          <span style={{ fontSize: "0.65rem", color: "var(--color-border-done)" }}>
                             {new Date(earnedDate).toLocaleDateString()}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.15rem" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.15rem" }}>
                         {badge.description}
                       </div>
                       {!isEarned && (
                         <div style={{ marginTop: "0.4rem" }}>
-                          <div style={{ height: 4, background: "#1f2e1f", borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ height: 4, background: "var(--color-bg-darkest)", borderRadius: 2, overflow: "hidden" }}>
                             <div style={{
                               height: "100%",
                               width: `${pct}%`,
@@ -172,13 +172,13 @@ export default function AchievementsPage() {
                               opacity: 0.7,
                             }} />
                           </div>
-                          <div style={{ fontSize: "0.6rem", color: "#7a7060", marginTop: "0.15rem", textAlign: "right" }}>
+                          <div style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", marginTop: "0.15rem", textAlign: "right" }}>
                             {current} / {badge.threshold} {badge.unit}
                           </div>
                         </div>
                       )}
                       {isEarned && (
-                        <div style={{ fontSize: "0.7rem", color: "#88cc88", marginTop: "0.2rem", fontWeight: 600 }}>
+                        <div style={{ fontSize: "0.7rem", color: "var(--color-success)", marginTop: "0.2rem", fontWeight: 600 }}>
                           Unlocked
                         </div>
                       )}
@@ -192,7 +192,7 @@ export default function AchievementsPage() {
       })}
 
       <div style={{ textAlign: "center", marginTop: "1rem" }}>
-        <Link href="/" style={{ color: "#7a7060", fontSize: "0.85rem", textDecoration: "none" }}>Back to Dashboard</Link>
+        <Link href="/" style={{ color: "var(--color-text-dim)", fontSize: "0.85rem", textDecoration: "none" }}>Back to Dashboard</Link>
       </div>
     </main>
   );
@@ -205,15 +205,15 @@ const mainStyle: React.CSSProperties = {
   margin: "0 auto",
   padding: "1.5rem 1rem",
   fontFamily: "var(--font-body)",
-  color: "#e8dcc8",
-  backgroundColor: "#2a3d2a",
+  color: "var(--color-text)",
+  backgroundColor: "var(--color-bg)",
   minHeight: "100vh",
 };
 
 const headingStyle: React.CSSProperties = {
   fontSize: "2rem",
   margin: "0 0 1.5rem",
-  color: "#f0dc4e",
+  color: "var(--color-primary)",
   fontWeight: 700,
   fontFamily: "var(--font-display)",
 };
@@ -226,8 +226,8 @@ const sectionHeadingStyle: React.CSSProperties = {
 };
 
 const overviewCardStyle: React.CSSProperties = {
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
   borderRadius: 8,
   padding: "1.25rem",
   marginBottom: "2rem",
@@ -236,8 +236,8 @@ const overviewCardStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: "32px",
   height: "32px",
-  border: "3px solid #4a6a4a",
-  borderTop: "3px solid #f0dc4e",
+  border: "3px solid var(--color-border)",
+  borderTop: "3px solid var(--color-primary)",
   borderRadius: "50%",
   margin: "0 auto",
   animation: "dash-spin 0.8s linear infinite",

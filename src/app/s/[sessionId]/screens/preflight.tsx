@@ -15,10 +15,10 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 
   return (
     <div>
-      <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display)", color: "#f0dc4e" }}>
+      <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display)", color: "var(--color-primary)" }}>
         {session.course_name} | {session.exam_name}
       </h1>
-      <p style={{ color: "#a89a82", margin: "0 0 1.5rem", fontSize: "1rem" }}>
+      <p style={{ color: "var(--color-text-muted)", margin: "0 0 1.5rem", fontSize: "1rem" }}>
         {session.mode_label}: {session.topic_scope}
       </p>
 
@@ -64,7 +64,7 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 }
 
 const metaLabel: React.CSSProperties = {
-  color: "#7a7060",
+  color: "var(--color-text-dim)",
   fontSize: "0.8rem",
   textTransform: "uppercase",
   letterSpacing: "0.06em",
@@ -79,7 +79,7 @@ const examBanner: React.CSSProperties = {
   padding: "0.75rem 1rem",
   marginBottom: "1.5rem",
   fontSize: "0.95rem",
-  color: "#c4a0ff",
+  color: "var(--color-review)",
 };
 
 const buttonStyle: React.CSSProperties = {
@@ -88,8 +88,8 @@ const buttonStyle: React.CSSProperties = {
   fontSize: "1.05rem",
   fontFamily: "var(--font-body)",
   fontWeight: 600,
-  background: "#f0dc4e",
-  color: "#1f2e1f",
+  background: "var(--color-primary)",
+  color: "var(--color-bg-darkest)",
   border: "none",
   borderRadius: 6,
   cursor: "pointer",

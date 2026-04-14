@@ -32,7 +32,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         style={{
           fontSize: "0.85rem",
           letterSpacing: "0.1em",
-          color: "#e8a040",
+          color: "var(--color-warning)",
           marginBottom: "1rem",
           fontFamily: "var(--font-display)",
         }}
@@ -46,7 +46,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
           marginBottom: "1.5rem",
-          color: "#e8a040",
+          color: "var(--color-warning)",
           fontFamily: "var(--font-display)",
         }}
       >
@@ -55,8 +55,8 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
 
       <div
         style={{
-          background: "#334d33",
-          border: "1px solid #4a6a4a",
+          background: "var(--color-bg-card)",
+          border: "1px solid var(--color-border)",
           borderRadius: 6,
           padding: "1.25rem",
           marginBottom: "2rem",
@@ -68,7 +68,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
             margin: "0 0 0.75rem",
             fontSize: "0.9rem",
             fontWeight: 600,
-            color: "#7ec8e3",
+            color: "var(--color-info)",
           }}
         >
           DO THIS NOW:
@@ -81,7 +81,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         </ul>
       </div>
 
-      <p style={{ fontSize: "0.85rem", color: "#7a7060", marginBottom: "1rem" }}>
+      <p style={{ fontSize: "0.85rem", color: "var(--color-text-dim)", marginBottom: "1rem" }}>
         Cycle {breakState.current_cycle + 1} of {breakState.total_cycles}
       </p>
 
@@ -92,8 +92,8 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           fontSize: "0.9rem",
           fontFamily: "var(--font-body)",
           background: "transparent",
-          color: "#7a7060",
-          border: "1px solid #4a6a4a",
+          color: "var(--color-text-dim)",
+          border: "1px solid var(--color-border)",
           borderRadius: 6,
           cursor: "pointer",
         }}
