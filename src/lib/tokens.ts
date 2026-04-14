@@ -46,23 +46,28 @@ export async function createPasswordResetToken(userId: string): Promise<string> 
   return token;
 }
 
-/** Verify and consume a token. Returns the userId if valid, null otherwise. */
+/**
+ * Verify and consume a token atomically. Returns the userId if valid, null otherwise.
+ * Uses a transaction to prevent TOCTOU race conditions (double-use of same token).
+ */
 export async function consumeToken(
   token: string,
   expectedType: "EMAIL_VERIFY" | "PASSWORD_RESET",
 ): Promise<string | null> {
-  const record = await prisma.verificationToken.findUnique({ where: { token } });
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.verificationToken.findUnique({ where: { token } });
 
-  if (!record) return null;
-  if (record.type !== expectedType) return null;
-  if (record.usedAt) return null; // already used
-  if (record.expiresAt < new Date()) return null; // expired
+    if (!record) return null;
+    if (record.type !== expectedType) return null;
+    if (record.usedAt) return null; // already used
+    if (record.expiresAt < new Date()) return null; // expired
 
-  // Mark as used
-  await prisma.verificationToken.update({
-    where: { id: record.id },
-    data: { usedAt: new Date() },
+    // Mark as used atomically within the transaction
+    await tx.verificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+
+    return record.userId;
   });
-
-  return record.userId;
 }

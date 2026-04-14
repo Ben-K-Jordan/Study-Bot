@@ -35,15 +35,51 @@ export async function DELETE(request: NextRequest) {
 
   try {
     await prisma.$transaction(async (tx) => {
-      // Delete models that reference User but may lack onDelete: Cascade
-      await tx.scheduledReminder.deleteMany({ where: { userId } });
-      await tx.chatMessage.deleteMany({ where: { userId } });
-      await tx.pushSubscription.deleteMany({ where: { userId } });
-      await tx.notificationPreference.deleteMany({ where: { userId } });
+      // Phase 1: Leaf models with userId (no children, or children cascade)
+      await Promise.all([
+        tx.cardReview.deleteMany({ where: { userId } }),
+        tx.xpEvent.deleteMany({ where: { userId } }),
+        tx.achievement.deleteMany({ where: { userId } }),
+        tx.objectiveMastery.deleteMany({ where: { userId } }),
+        tx.aiCallLog.deleteMany({ where: { userId } }),
+        tx.oAuthState.deleteMany({ where: { userId } }),
+        tx.studyGuide.deleteMany({ where: { userId } }),
+        tx.planItemExternalEvent.deleteMany({ where: { userId } }),
+        tx.planCalendarPublication.deleteMany({ where: { userId } }),
+        tx.planReflowAudit.deleteMany({ where: { userId } }),
+        tx.objectiveAnchor.deleteMany({ where: { userId } }),
+        tx.sessionErrorLog.deleteMany({ where: { userId } }),
+        tx.scheduledReminder.deleteMany({ where: { userId } }),
+        tx.chatMessage.deleteMany({ where: { userId } }),
+        tx.pushSubscription.deleteMany({ where: { userId } }),
+        tx.notificationPreference.deleteMany({ where: { userId } }),
+        tx.verificationToken.deleteMany({ where: { userId } }),
+      ]);
 
-      // Delete the User record — models with onDelete: Cascade on the User
-      // relation will be cleaned up automatically by the database, but we
-      // already removed the four above explicitly for safety.
+      // Phase 2: Child models without userId (filter via parent relation)
+      await Promise.all([
+        tx.sessionAttempt.deleteMany({ where: { run: { userId } } }),
+        tx.studyPlanItem.deleteMany({ where: { plan: { userId } } }),
+      ]);
+
+      // Phase 3: Parent models with userId (their cascading children are gone)
+      await Promise.all([
+        tx.practiceSet.deleteMany({ where: { userId } }),
+        tx.evidencePaper.deleteMany({ where: { userId } }),
+        tx.flashcardDeck.deleteMany({ where: { userId } }),
+        tx.sessionRun.deleteMany({ where: { userId } }),
+        tx.googleIntegration.deleteMany({ where: { userId } }),
+        tx.userGameState.deleteMany({ where: { userId } }),
+      ]);
+
+      // Phase 4: Top-level parent models
+      await Promise.all([
+        tx.session.deleteMany({ where: { userId } }),
+        tx.contentDocument.deleteMany({ where: { userId } }),
+        tx.studyPlan.deleteMany({ where: { userId } }),
+      ]);
+
+      // Phase 5: Delete User — remaining cascade relations handle the rest
       await tx.user.delete({ where: { id: userId } });
     });
 

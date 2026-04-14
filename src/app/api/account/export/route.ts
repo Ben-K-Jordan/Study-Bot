@@ -29,6 +29,20 @@ export async function GET(request: NextRequest) {
       scheduledReminders,
       userGameState,
       aiCallLogs,
+      contentDocuments,
+      objectiveAnchors,
+      practiceSets,
+      evidencePapers,
+      planReflowAudits,
+      planCalendarPublications,
+      planItemExternalEvents,
+      googleIntegration,
+      objectiveMastery,
+      studyGuides,
+      cardReviews,
+      xpEvents,
+      achievements,
+      sessionErrorLogs,
     ] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
@@ -42,7 +56,7 @@ export async function GET(request: NextRequest) {
 
       prisma.session.findMany({
         where: { userId },
-        include: { runs: true },
+        include: { runs: { include: { attempts: true, runPrompts: true } } },
       }),
 
       prisma.flashcardDeck.findMany({
@@ -76,6 +90,70 @@ export async function GET(request: NextRequest) {
         where: { userId },
         orderBy: { createdAt: "asc" },
       }),
+
+      prisma.contentDocument.findMany({
+        where: { userId },
+        include: { chunks: { omit: { text: false } } },
+      }),
+
+      prisma.objectiveAnchor.findMany({
+        where: { userId },
+      }),
+
+      prisma.practiceSet.findMany({
+        where: { userId },
+        include: { questions: true },
+      }),
+
+      prisma.evidencePaper.findMany({
+        where: { userId },
+        include: { cards: true },
+      }),
+
+      prisma.planReflowAudit.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+      }),
+
+      prisma.planCalendarPublication.findMany({
+        where: { userId },
+      }),
+
+      prisma.planItemExternalEvent.findMany({
+        where: { userId },
+      }),
+
+      prisma.googleIntegration.findUnique({
+        where: { userId },
+        omit: { accessTokenEncrypted: true, refreshTokenEncrypted: true },
+      }),
+
+      prisma.objectiveMastery.findMany({
+        where: { userId },
+      }),
+
+      prisma.studyGuide.findMany({
+        where: { userId },
+      }),
+
+      prisma.cardReview.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+      }),
+
+      prisma.xpEvent.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+      }),
+
+      prisma.achievement.findMany({
+        where: { userId },
+      }),
+
+      prisma.sessionErrorLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+      }),
     ]);
 
     const exportData = {
@@ -83,13 +161,27 @@ export async function GET(request: NextRequest) {
       user,
       studyPlans,
       sessions,
+      contentDocuments,
       flashcardDecks,
+      practiceSets,
+      evidencePapers,
+      objectiveAnchors,
+      objectiveMastery,
+      studyGuides,
+      cardReviews,
+      sessionErrorLogs,
       chatMessages,
+      xpEvents,
+      achievements,
+      userGameState,
+      aiCallLogs,
+      planReflowAudits,
+      planCalendarPublications,
+      planItemExternalEvents,
+      googleIntegration,
       notificationPreference,
       pushSubscriptions,
       scheduledReminders,
-      userGameState,
-      aiCallLogs,
     };
 
     logger.info("account.export.success", { userId });

@@ -57,7 +57,7 @@ You&rsquo;re receiving this because you have email reminders enabled in Study Bo
 function ctaButton(text: string, href: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
 <tr><td style="background-color:${CTA_BG};border-radius:8px;padding:14px 28px;">
-<a href="${href}" style="color:${CTA_TEXT};font-weight:700;font-size:16px;text-decoration:none;display:inline-block;">${text}</a>
+<a href="${esc(href)}" style="color:${CTA_TEXT};font-weight:700;font-size:16px;text-decoration:none;display:inline-block;">${esc(text)}</a>
 </td></tr>
 </table>`;
 }
