@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   "/auth/reset-password",
   "/api/auth",
   "/api/health",
+  "/s/", // Session links are shareable; API-level auth guards operations
 ];
 
 export async function middleware(request: NextRequest) {

@@ -16,7 +16,11 @@ export async function getUserId(request: Request): Promise<string | null> {
 
   // Fallback: X-User-Id header — ONLY in non-production or explicit test mode
   if (process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_AUTH === "true") {
-    return request.headers.get("x-user-id") || null;
+    const raw = request.headers.get("x-user-id");
+    if (!raw) return null;
+    // Handle duplicate header values (e.g. "user, user" from Playwright + client fetch)
+    const first = raw.split(",")[0].trim();
+    return first || null;
   }
 
   return null;

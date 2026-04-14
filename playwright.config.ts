@@ -34,7 +34,7 @@ export default defineConfig({
   ],
   webServer: {
     command: isCI
-      ? "NO_STANDALONE=1 npm run build && ALLOW_TEST_AUTH=true npm run start"
+      ? "NO_STANDALONE=1 npm run build && ALLOW_TEST_AUTH=true NEXTAUTH_SECRET=e2e-test-secret npm run start"
       : "ALLOW_TEST_AUTH=true npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !isCI,
