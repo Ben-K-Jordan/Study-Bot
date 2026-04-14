@@ -1,4 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+
+// Load .env for DATABASE_URL (used by pg.Pool in tests).
+// Force BASE_URL to port 3000 to match the Playwright webServer.
+const savedBaseUrl = process.env.BASE_URL;
+dotenv.config();
+process.env.BASE_URL = savedBaseUrl || "http://localhost:3000";
 
 const isCI = !!process.env.CI;
 
@@ -26,7 +33,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: isCI ? "npm run build && npm run start" : "npm run dev",
+    command: isCI
+      ? "NO_STANDALONE=1 npm run build && ALLOW_TEST_AUTH=true npm run start"
+      : "ALLOW_TEST_AUTH=true npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !isCI,
     timeout: isCI ? 120_000 : 30_000,

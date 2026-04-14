@@ -24,6 +24,7 @@ export async function POST(
       if (result.error === "forbidden") {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+      return NextResponse.json({ error: result.error }, { status: 409 });
     }
 
     return NextResponse.json(result.data);

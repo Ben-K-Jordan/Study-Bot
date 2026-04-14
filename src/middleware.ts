@@ -35,16 +35,20 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Allow requests with X-User-Id header — ONLY in non-production
+  // Allow requests with X-User-Id header — ONLY in non-production or explicit test mode
   if (
     !token &&
-    process.env.NODE_ENV !== "production" &&
+    (process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_AUTH === "true") &&
     request.headers.get("x-user-id")
   ) {
     return NextResponse.next();
   }
 
   if (!token) {
+    // API routes get 401 JSON instead of redirect
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const signInUrl = new URL("/auth/signin", request.url);
     signInUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(signInUrl);
