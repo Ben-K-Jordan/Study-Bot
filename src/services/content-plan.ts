@@ -217,10 +217,11 @@ export async function buildContentAwarePlanInput(
 
   const docIds = documents.map((d) => d.id);
 
-  // Get all chunks for analysis
+  // Get chunks for analysis (capped to prevent unbounded memory usage)
   const chunks = await prisma.contentChunk.findMany({
     where: { documentId: { in: docIds } },
     select: { id: true, text: true, documentId: true, pageNumber: true },
+    take: 500,
   });
 
   const totalChunks = chunks.length;

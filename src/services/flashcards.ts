@@ -245,10 +245,12 @@ export async function generateFlashcardsFromCourse(
   };
   if (examName) docWhere.examName = examName;
 
+  // Cap fetch to avoid loading unbounded chunks into memory
   const allChunks = await prisma.contentChunk.findMany({
     where: { document: { is: docWhere } },
     orderBy: [{ documentId: "asc" }, { ordinal: "asc" }],
     select: { text: true },
+    take: 200,
   });
 
   if (allChunks.length === 0) {

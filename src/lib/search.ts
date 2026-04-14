@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { Prisma } from "../../generated/prisma/client";
 
 export interface SearchParams {
   userId: string;
@@ -19,6 +20,32 @@ export interface SearchResult {
 }
 
 /**
+ * Build reusable WHERE conditions for document-scoped queries.
+ * Uses Prisma.sql tagged templates for safe parameterization.
+ */
+function buildDocConditions(
+  userId: string,
+  namespace: string,
+  courseName?: string,
+  examName?: string,
+): Prisma.Sql {
+  const parts: Prisma.Sql[] = [
+    Prisma.sql`d."user_id" = ${userId}`,
+    Prisma.sql`d."namespace" = ${namespace}`,
+    Prisma.sql`d."status" = 'PROCESSED'`,
+  ];
+
+  if (courseName) {
+    parts.push(Prisma.sql`d."course_name" = ${courseName}`);
+  }
+  if (examName) {
+    parts.push(Prisma.sql`d."exam_name" = ${examName}`);
+  }
+
+  return Prisma.join(parts, " AND ");
+}
+
+/**
  * Full-text search over ContentChunks using PostgreSQL tsvector/tsquery.
  *
  * Uses plainto_tsquery for robustness (handles any user input).
@@ -31,53 +58,9 @@ export async function searchChunks(params: SearchParams): Promise<SearchResult[]
 
   if (!q.trim()) return [];
 
-  // Build WHERE conditions for the document filter
-  const conditions: string[] = [
-    `d."user_id" = $1`,
-    `d."namespace" = $2`,
-  ];
-  const values: (string | number)[] = [userId, namespace];
-  let paramIdx = 3;
+  const conditions = buildDocConditions(userId, namespace, courseName, examName);
 
-  if (courseName) {
-    conditions.push(`d."course_name" = $${paramIdx}`);
-    values.push(courseName);
-    paramIdx++;
-  }
-  if (examName) {
-    conditions.push(`d."exam_name" = $${paramIdx}`);
-    values.push(examName);
-    paramIdx++;
-  }
-
-  // Only search PROCESSED documents
-  conditions.push(`d."status" = 'PROCESSED'`);
-
-  const queryParamIdx = paramIdx;
-  values.push(q);
-  paramIdx++;
-
-  const limitParamIdx = paramIdx;
-  values.push(limit);
-
-  const sql = `
-    SELECT
-      c.id AS chunk_id,
-      d.id AS doc_id,
-      d.title AS doc_title,
-      c.page_number,
-      ts_rank_cd(to_tsvector('english', c.text), plainto_tsquery('english', $${queryParamIdx})) AS rank_score,
-      ts_headline('english', c.text, plainto_tsquery('english', $${queryParamIdx}),
-        'StartSel=<<, StopSel=>>, MaxWords=40, MinWords=20') AS snippet
-    FROM content_chunks c
-    JOIN content_documents d ON c.document_id = d.id
-    WHERE ${conditions.join(" AND ")}
-      AND to_tsvector('english', c.text) @@ plainto_tsquery('english', $${queryParamIdx})
-    ORDER BY rank_score DESC
-    LIMIT $${limitParamIdx}
-  `;
-
-  const rows = await prisma.$queryRawUnsafe<
+  const rows = await prisma.$queryRaw<
     {
       chunk_id: string;
       doc_id: string;
@@ -86,7 +69,22 @@ export async function searchChunks(params: SearchParams): Promise<SearchResult[]
       rank_score: number;
       snippet: string;
     }[]
-  >(sql, ...values);
+  >(Prisma.sql`
+    SELECT
+      c.id AS chunk_id,
+      d.id AS doc_id,
+      d.title AS doc_title,
+      c.page_number,
+      ts_rank_cd(to_tsvector('english', c.text), plainto_tsquery('english', ${q})) AS rank_score,
+      ts_headline('english', c.text, plainto_tsquery('english', ${q}),
+        'StartSel=<<, StopSel=>>, MaxWords=40, MinWords=20') AS snippet
+    FROM content_chunks c
+    JOIN content_documents d ON c.document_id = d.id
+    WHERE ${conditions}
+      AND to_tsvector('english', c.text) @@ plainto_tsquery('english', ${q})
+    ORDER BY rank_score DESC
+    LIMIT ${limit}
+  `);
 
   return rows.map((r) => ({
     chunk_id: r.chunk_id,
@@ -116,49 +114,9 @@ export async function vectorSearchChunks(params: VectorSearchParams): Promise<Se
   const limit = Math.min(Math.max(topK, 1), 50);
   const vectorStr = `[${embedding.join(",")}]`;
 
-  const conditions: string[] = [
-    `d."user_id" = $1`,
-    `d."namespace" = $2`,
-    `d."status" = 'PROCESSED'`,
-    `c."embedding_status" = 'DONE'`,
-  ];
-  const values: (string | number)[] = [userId, namespace];
-  let paramIdx = 3;
+  const baseConditions = buildDocConditions(userId, namespace, courseName, examName);
 
-  if (courseName) {
-    conditions.push(`d."course_name" = $${paramIdx}`);
-    values.push(courseName);
-    paramIdx++;
-  }
-  if (examName) {
-    conditions.push(`d."exam_name" = $${paramIdx}`);
-    values.push(examName);
-    paramIdx++;
-  }
-
-  const vecParamIdx = paramIdx;
-  values.push(vectorStr as unknown as string);
-  paramIdx++;
-
-  const limitParamIdx = paramIdx;
-  values.push(limit);
-
-  const sql = `
-    SELECT
-      c.id AS chunk_id,
-      d.id AS doc_id,
-      d.title AS doc_title,
-      c.page_number,
-      1 - (c.embedding <=> $${vecParamIdx}::vector) AS rank_score,
-      substring(c.text from 1 for 200) AS snippet
-    FROM content_chunks c
-    JOIN content_documents d ON c.document_id = d.id
-    WHERE ${conditions.join(" AND ")}
-    ORDER BY c.embedding <=> $${vecParamIdx}::vector ASC
-    LIMIT $${limitParamIdx}
-  `;
-
-  const rows = await prisma.$queryRawUnsafe<
+  const rows = await prisma.$queryRaw<
     {
       chunk_id: string;
       doc_id: string;
@@ -167,7 +125,21 @@ export async function vectorSearchChunks(params: VectorSearchParams): Promise<Se
       rank_score: number;
       snippet: string;
     }[]
-  >(sql, ...values);
+  >(Prisma.sql`
+    SELECT
+      c.id AS chunk_id,
+      d.id AS doc_id,
+      d.title AS doc_title,
+      c.page_number,
+      1 - (c.embedding <=> ${vectorStr}::vector) AS rank_score,
+      substring(c.text from 1 for 200) AS snippet
+    FROM content_chunks c
+    JOIN content_documents d ON c.document_id = d.id
+    WHERE ${baseConditions}
+      AND c."embedding_status" = 'DONE'
+    ORDER BY c.embedding <=> ${vectorStr}::vector ASC
+    LIMIT ${limit}
+  `);
 
   return rows.map((r) => ({
     chunk_id: r.chunk_id,

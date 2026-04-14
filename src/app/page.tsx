@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
 import { BADGE_MAP, TOTAL_BADGES } from "@/lib/badge-data";
+import { ErrorBoundary } from "@/ui/components/ErrorBoundary";
 
 // ---- Types ----
 
@@ -264,7 +265,9 @@ export default function DashboardPage() {
       `}</style>
 
       {/* Confetti overlay */}
-      {showConfetti && <ConfettiOverlay badge={celebrationBadge} />}
+      <ErrorBoundary fallback={null}>
+        {showConfetti && <ConfettiOverlay badge={celebrationBadge} />}
+      </ErrorBoundary>
 
       {/* Onboarding overlay */}
       {onboarding.show && (

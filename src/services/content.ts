@@ -152,10 +152,13 @@ export async function processDocument(userId: string, documentId: string) {
       chunk_count: chunks.length,
     });
 
-    // Fire-and-forget: generate document summary + suggested questions
-    generateDocumentSummary(userId, doc.id, doc.title, doc.courseName, doc.examName, chunks.map((c) => c.text)).catch((err) => {
-      logger.error("document.summary_failed", { document_id: doc.id, error: String(err) });
-    });
+    // Generate document summary (awaited to prevent data loss on process exit)
+    try {
+      await generateDocumentSummary(userId, doc.id, doc.title, doc.courseName, doc.examName, chunks.map((c) => c.text));
+    } catch (summaryErr) {
+      // Summary is non-critical — log and continue
+      logger.error("document.summary_failed", { document_id: doc.id, error: String(summaryErr) });
+    }
 
     return {
       data: {

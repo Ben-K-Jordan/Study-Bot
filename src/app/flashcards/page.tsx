@@ -14,6 +14,7 @@ import {
   sectionTitleStyle,
   deleteBtnStyle,
 } from "@/lib/shared-styles";
+import { ErrorBoundary } from "@/ui/components/ErrorBoundary";
 
 // --- Types ---
 
@@ -334,6 +335,7 @@ export default function FlashcardsPage() {
     const sessionComplete = isLastCard && reviewedCount >= total;
 
     return (
+      <ErrorBoundary>
       <div id="main-content" style={pageContainer}>
         <style>{`
           @keyframes xp-float { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-30px); } }
@@ -501,6 +503,7 @@ export default function FlashcardsPage() {
 
         {error && <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
       </div>
+      </ErrorBoundary>
     );
   }
 

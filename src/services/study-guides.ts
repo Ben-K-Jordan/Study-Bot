@@ -49,17 +49,29 @@ export async function generateStudyGuide(
   };
   if (examName) docWhere.examName = examName;
 
+  // Count chunks first to avoid loading unbounded data into memory
+  const totalChunks = await prisma.contentChunk.count({
+    where: { document: { is: docWhere } },
+  });
+
+  if (totalChunks === 0) {
+    throw new Error("No course materials found. Upload documents first.");
+  }
+
+  // Fetch a capped sample: if many chunks exist, skip evenly to get
+  // representative coverage without loading thousands into memory
+  const TARGET_SAMPLE = 20;
+  const MAX_FETCH = 200;
+  const fetchLimit = Math.min(totalChunks, MAX_FETCH);
+
   const allChunks = await prisma.contentChunk.findMany({
     where: { document: { is: docWhere } },
     orderBy: [{ documentId: "asc" }, { ordinal: "asc" }],
     select: { text: true },
+    take: fetchLimit,
   });
 
-  if (allChunks.length === 0) {
-    throw new Error("No course materials found. Upload documents first.");
-  }
-
-  const chunkTexts = sampleEvenly(allChunks, 20).map((c) => c.text);
+  const chunkTexts = sampleEvenly(allChunks, TARGET_SAMPLE).map((c) => c.text);
 
   // Fetch objectives if available
   let objectives: string[] | undefined;
