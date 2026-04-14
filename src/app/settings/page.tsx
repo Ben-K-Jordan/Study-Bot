@@ -115,9 +115,12 @@ export default function SettingsPage() {
     checkGoogle();
   }, []);
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
+    setSaveError(null);
 
     // Save to localStorage (always, as fallback)
     localStorage.setItem("study_bot_prefs", JSON.stringify({ studyStart, studyEnd, dailyCap }));
@@ -146,11 +149,11 @@ export default function SettingsPage() {
       if (res.ok) {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
+      } else {
+        setSaveError("Failed to save settings. Your preferences were saved locally.");
       }
     } catch {
-      // localStorage save already happened as fallback
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setSaveError("Could not reach the server. Your preferences were saved locally.");
     } finally {
       setSaving(false);
     }
@@ -366,6 +369,11 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {saveError && (
+        <div role="alert" aria-live="polite" style={{ background: "var(--color-error)", color: "var(--color-bg-darkest)", padding: "0.5rem 0.75rem", borderRadius: 6, fontSize: "0.85rem", marginBottom: "0.75rem", textAlign: "center" }}>
+          {saveError}
+        </div>
+      )}
       <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>
         {saved ? "Saved!" : saving ? "Saving..." : "Save Preferences"}
       </button>

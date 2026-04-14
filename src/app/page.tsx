@@ -102,6 +102,7 @@ export default function DashboardPage() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [celebrationBadge, setCelebrationBadge] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null);
+  const [lbLoading, setLbLoading] = useState(false);
   const [lbPeriod, setLbPeriod] = useState<"week" | "month" | "all">("week");
   const [onboarding, setOnboarding] = useState<{ show: boolean; step: number }>({ show: false, step: 0 });
   const [displayName, setDisplayName] = useState("");
@@ -182,12 +183,14 @@ export default function DashboardPage() {
   // Reload leaderboard when period changes
   useEffect(() => {
     const userId = getOrCreateUserId();
+    setLbLoading(true);
     fetch(`/api/leaderboard?period=${lbPeriod}`, {
       headers: { "X-User-Id": userId },
     })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setLeaderboard(data); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLbLoading(false));
   }, [lbPeriod]);
 
   const allItems = useMemo(() => plans.flatMap((p) => p.items), [plans]);
@@ -485,6 +488,7 @@ export default function DashboardPage() {
                 <button
                   key={p}
                   onClick={() => setLbPeriod(p)}
+                  aria-pressed={lbPeriod === p}
                   style={{
                     padding: "0.2rem 0.5rem",
                     fontSize: "0.7rem",
@@ -502,7 +506,7 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
-          <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden" }}>
+          <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden", opacity: lbLoading ? 0.5 : 1, transition: "opacity 0.15s" }}>
             {leaderboard.leaderboard.slice(0, 10).map((entry) => (
               <div
                 key={entry.rank}
@@ -650,22 +654,32 @@ function OnboardingFlow({
   const isLast = step >= steps.length - 1;
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999,
-      background: "rgba(20, 30, 20, 0.85)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: "1rem",
-    }}>
-      <div style={{
-        background: "var(--color-bg)",
-        border: "1px solid var(--color-border)",
-        borderRadius: 12,
-        padding: "2rem",
-        maxWidth: 480,
-        width: "100%",
-        textAlign: "center",
-        fontFamily: "var(--font-body)",
-      }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Welcome onboarding"
+      style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "rgba(20, 30, 20, 0.85)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "1rem",
+      }}
+    >
+      <div
+        ref={(el) => el?.focus()}
+        tabIndex={-1}
+        style={{
+          background: "var(--color-bg)",
+          border: "1px solid var(--color-border)",
+          borderRadius: 12,
+          padding: "2rem",
+          maxWidth: 480,
+          width: "100%",
+          textAlign: "center",
+          fontFamily: "var(--font-body)",
+          outline: "none",
+        }}
+      >
         {/* Step indicator */}
         <div style={{ display: "flex", justifyContent: "center", gap: "0.4rem", marginBottom: "1.5rem" }}>
           {steps.map((_, i) => (

@@ -3,6 +3,22 @@
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import {
+  containerStyle,
+  cardStyle,
+  titleStyle,
+  subtitleStyle,
+  labelStyle,
+  buttonStyle,
+  errorStyle,
+  successStyle,
+  textStyle,
+  mutedStyle,
+  linkStyle,
+  passwordWrapperStyle,
+  passwordInputStyle,
+  passwordToggleStyle,
+} from "../styles";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
@@ -10,6 +26,7 @@ function ResetPasswordForm() {
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -18,7 +35,7 @@ function ResetPasswordForm() {
     return (
       <div style={containerStyle}>
         <div style={cardStyle}>
-          <h1 style={titleStyle}>Invalid Link</h1>
+          <h1 style={{ ...titleStyle, margin: "0 0 1rem" }}>Invalid Link</h1>
           <p style={textStyle}>This password reset link is invalid or has expired.</p>
           <p style={mutedStyle}>
             <Link href="/auth/forgot-password" style={linkStyle}>Request a new reset link</Link>
@@ -66,8 +83,8 @@ function ResetPasswordForm() {
       <div style={containerStyle}>
         <div style={cardStyle}>
           <div style={{ textAlign: "center", fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
-          <h1 style={titleStyle}>Password Reset</h1>
-          <p style={textStyle}>Your password has been reset successfully.</p>
+          <h1 style={{ ...titleStyle, margin: "0 0 1rem" }}>Password Reset</h1>
+          <div style={successStyle} role="alert">Your password has been reset successfully.</div>
           <Link href="/auth/signin" style={{ ...buttonStyle, display: "block", textAlign: "center", textDecoration: "none", marginTop: "1rem" }}>
             Sign In
           </Link>
@@ -82,34 +99,47 @@ function ResetPasswordForm() {
         <h1 style={titleStyle}>Reset Password</h1>
         <p style={subtitleStyle}>Enter your new password</p>
 
-        {error && <div style={errorStyle}>{error}</div>}
+        {error && <div style={errorStyle} role="alert" aria-live="polite">{error}</div>}
 
         <form onSubmit={handleSubmit}>
           <label htmlFor="password" style={labelStyle}>New Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Min 8 characters"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            style={inputStyle}
-          />
+          <div style={passwordWrapperStyle}>
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Min 8 characters"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              style={passwordInputStyle}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={passwordToggleStyle}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="compact-btn"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
 
           <label htmlFor="confirm-password" style={labelStyle}>Confirm Password</label>
-          <input
-            id="confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Type it again"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            style={inputStyle}
-          />
+          <div style={passwordWrapperStyle}>
+            <input
+              id="confirm-password"
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Type it again"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              style={passwordInputStyle}
+            />
+          </div>
 
           <button
             type="submit"
@@ -137,104 +167,3 @@ export default function ResetPasswordPage() {
     </Suspense>
   );
 }
-
-const containerStyle: React.CSSProperties = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "1rem",
-  fontFamily: "var(--font-body)",
-  backgroundColor: "var(--color-bg)",
-};
-
-const cardStyle: React.CSSProperties = {
-  width: "100%",
-  maxWidth: 400,
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 12,
-  padding: "2rem",
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: "1.8rem",
-  fontFamily: "var(--font-display)",
-  color: "var(--color-primary)",
-  margin: "0 0 0.25rem",
-  textAlign: "center",
-};
-
-const subtitleStyle: React.CSSProperties = {
-  color: "var(--color-text-muted)",
-  textAlign: "center",
-  margin: "0 0 1.5rem",
-  fontSize: "0.95rem",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "0.85rem",
-  color: "var(--color-text-faint)",
-  marginBottom: "0.3rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.65rem 0.75rem",
-  fontSize: "1rem",
-  fontFamily: "inherit",
-  background: "var(--color-bg-input)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 6,
-  marginBottom: "1rem",
-  boxSizing: "border-box",
-};
-
-const buttonStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.75rem",
-  fontSize: "1.05rem",
-  fontFamily: "inherit",
-  fontWeight: 600,
-  background: "var(--color-primary)",
-  color: "var(--color-bg-darkest)",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  marginTop: "0.5rem",
-};
-
-const errorStyle: React.CSSProperties = {
-  background: "var(--color-error)",
-  color: "var(--color-bg-darkest)",
-  padding: "0.5rem 0.75rem",
-  borderRadius: 6,
-  fontSize: "0.85rem",
-  marginBottom: "1rem",
-  textAlign: "center",
-};
-
-const textStyle: React.CSSProperties = {
-  color: "var(--color-text)",
-  textAlign: "center",
-  fontSize: "1rem",
-  lineHeight: 1.6,
-  margin: "0 0 1rem",
-};
-
-const mutedStyle: React.CSSProperties = {
-  color: "var(--color-text-muted)",
-  textAlign: "center",
-  fontSize: "0.9rem",
-  margin: "0.5rem 0",
-};
-
-const linkStyle: React.CSSProperties = {
-  color: "var(--color-primary)",
-  textDecoration: "none",
-  fontWeight: 600,
-};

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -19,6 +19,8 @@ const NAV_HEIGHT = 52;
 export function NavBar() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
 
   function isActive(href: string): boolean {
     if (href === "/") return pathname === "/";
@@ -28,6 +30,48 @@ export function NavBar() {
   function handleLinkClick() {
     setMenuOpen(false);
   }
+
+  // Close menu on Escape key
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === "Escape" && menuOpen) {
+      setMenuOpen(false);
+      hamburgerRef.current?.focus();
+    }
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (menuOpen) {
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }
+  }, [menuOpen, handleKeyDown]);
+
+  // Focus trap: keep Tab within menu when open
+  useEffect(() => {
+    if (!menuOpen || !navRef.current) return;
+
+    function trapFocus(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const nav = navRef.current;
+      if (!nav) return;
+      const focusable = nav.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", trapFocus);
+    return () => document.removeEventListener("keydown", trapFocus);
+  }, [menuOpen]);
 
   const barStyle: React.CSSProperties = {
     position: "fixed",
@@ -65,6 +109,7 @@ export function NavBar() {
 
   return (
     <nav
+      ref={navRef}
       style={barStyle}
       className="nav-container"
       role="navigation"
@@ -75,6 +120,7 @@ export function NavBar() {
       </Link>
 
       <button
+        ref={hamburgerRef}
         className="nav-hamburger"
         aria-label="Toggle menu"
         aria-expanded={menuOpen}

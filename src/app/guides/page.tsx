@@ -175,6 +175,7 @@ export default function GuidesPage() {
 
   const handleDeleteGuide = async (guideId: string) => {
     if (deleting) return;
+    if (!window.confirm("Delete this guide? This cannot be undone.")) return;
     setDeleting(guideId);
     try {
       await apiDelete(`/api/guides/${guideId}`);
@@ -324,6 +325,45 @@ export default function GuidesPage() {
               {expandedGuide === guide.id && (
                 <div style={guideContent}>
                   {renderGuideContent(guide)}
+                  <div style={{ marginTop: "1rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.75rem", textAlign: "right" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = guide.sections
+                          .map((s) => {
+                            const parts: string[] = [];
+                            if (s.concept) parts.push(`## ${s.concept}`);
+                            if (s.question) parts.push(`**Q: ${s.question}**`);
+                            if (s.topic) parts.push(`## ${s.topic}`);
+                            if (s.explanation) parts.push(s.explanation);
+                            if (s.answer) parts.push(s.answer);
+                            if (s.content) parts.push(s.content);
+                            if (s.importance) parts.push(`_Why it matters: ${s.importance}_`);
+                            return parts.join("\n");
+                          })
+                          .join("\n\n---\n\n");
+                        const blob = new Blob([`# ${guide.title}\n\n${text}`], { type: "text/markdown" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${guide.title.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "-").toLowerCase()}.md`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      style={{
+                        fontSize: "0.75rem",
+                        fontFamily: "inherit",
+                        color: "var(--color-info)",
+                        background: "var(--color-bg)",
+                        border: "1px solid var(--color-border-subtle)",
+                        borderRadius: 4,
+                        padding: "0.35rem 0.75rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Download as Markdown
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
