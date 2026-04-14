@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { getOrCreateUserId } from "@/lib/client-utils";
+import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 
 // --- Types ---
 
@@ -77,7 +77,8 @@ const GUIDE_TYPES: { value: GuideType; label: string; description: string }[] = 
 
 export default function GuidesPage() {
   const [courses, setCourses] = useState<CourseOption[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<string>("");
+  const [selectedCourse, setSelectedCourseRaw] = useState<string>(() => getActiveCourse());
+  const setSelectedCourse = (v: string) => { setSelectedCourseRaw(v); setActiveCourse(v); };
   const [guides, setGuides] = useState<StudyGuide[]>([]);
   const [generating, setGenerating] = useState(false);
   const [selectedType, setSelectedType] = useState<GuideType>("KEY_CONCEPTS");
@@ -113,12 +114,13 @@ export default function GuidesPage() {
         }
         const options = Array.from(courseMap.values());
         setCourses(options);
-        if (options.length > 0) {
+        const active = getActiveCourse();
+        const match = active && options.some((o) => (o.exam_name ? `${o.course_name}||${o.exam_name}` : o.course_name) === active);
+        if (match) {
+          setSelectedCourse(active);
+        } else if (options.length > 0) {
           const first = options[0];
-          const val = first.exam_name
-            ? `${first.course_name}||${first.exam_name}`
-            : first.course_name;
-          setSelectedCourse(val);
+          setSelectedCourse(first.exam_name ? `${first.course_name}||${first.exam_name}` : first.course_name);
         }
       }
     }).catch(() => {});
@@ -254,13 +256,16 @@ export default function GuidesPage() {
           )}
         </div>
       ) : (
-        <div style={{ padding: "2rem 0", textAlign: "center" }}>
-          <p style={{ color: "#e8a040", fontSize: "0.9rem" }}>
-            No course documents uploaded yet.{" "}
-            <Link href="/" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
-              Upload materials on the Dashboard
-            </Link>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed #5a7a5a", borderRadius: 8 }}>
+          <p style={{ color: "#b0a090", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+            No course documents yet
           </p>
+          <p style={{ color: "#9a8a7a", fontSize: "0.85rem", margin: "0 0 1rem" }}>
+            Upload your course materials first, then come back to generate study guides.
+          </p>
+          <Link href="/flashcards" style={{ padding: "0.5rem 1rem", background: "#f0dc4e", color: "#1f2e1f", borderRadius: 6, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+            Upload Documents
+          </Link>
         </div>
       )}
 
@@ -271,9 +276,14 @@ export default function GuidesPage() {
         </p>
       )}
       {!loadingGuides && courses.length > 0 && guides.length === 0 && (
-        <p style={{ color: "#7a7060", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
-          No guides generated yet for this course. Pick a type and hit Generate!
-        </p>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed #5a7a5a", borderRadius: 8 }}>
+          <p style={{ color: "#b0a090", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
+            No guides generated yet for this course
+          </p>
+          <p style={{ color: "#9a8a7a", fontSize: "0.8rem", margin: 0 }}>
+            Pick a guide type above and hit Generate to create Key Concepts, FAQs, or Cheat Sheets from your materials.
+          </p>
+        </div>
       )}
       {guides.length > 0 && (
         <div>

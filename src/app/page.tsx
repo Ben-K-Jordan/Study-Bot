@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
 import { BADGE_MAP, TOTAL_BADGES } from "@/lib/badge-data";
 
@@ -92,6 +93,7 @@ const MODE_COLORS: Record<string, string> = {
 // ---- Component ----
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -271,7 +273,6 @@ export default function DashboardPage() {
           onComplete={async () => {
             setOnboarding({ show: false, step: 0 });
             const userId = getOrCreateUserId();
-            // Save display name if provided
             if (displayName.trim()) {
               await fetch("/api/settings", {
                 method: "PUT",
@@ -279,11 +280,11 @@ export default function DashboardPage() {
                 body: JSON.stringify({ displayName: displayName.trim() }),
               }).catch(() => {});
             }
-            // Mark onboarding as complete
             await fetch("/api/onboarding", {
               method: "POST",
               headers: { "X-User-Id": userId },
             }).catch(() => {});
+            router.push("/learn");
           }}
           onSkip={async () => {
             setOnboarding({ show: false, step: 0 });
@@ -301,8 +302,8 @@ export default function DashboardPage() {
       {/* XP Progress Ring + Stats Row */}
       <section style={{ marginBottom: "2rem" }}>
         <div style={statsGridStyle}>
-          {/* XP Progress Ring */}
-          <div style={{ ...statCardStyle, gridColumn: "span 2", display: "flex", flexDirection: "row", gap: "1rem", alignItems: "center", padding: "1rem" }}>
+          {/* XP Progress Ring — tap to adjust goal */}
+          <Link href="/settings" style={{ ...statCardStyle, gridColumn: "span 2", display: "flex", flexDirection: "row", gap: "1rem", alignItems: "center", padding: "1rem", textDecoration: "none", cursor: "pointer" }}>
             <XpProgressRing
               current={gameState?.xpToday ?? 0}
               goal={gameState?.dailyXpGoal ?? 50}
@@ -311,12 +312,12 @@ export default function DashboardPage() {
               <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
                 {gameState?.xpToday ?? 0} / {gameState?.dailyXpGoal ?? 50} XP
               </div>
-              <div style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.2rem" }}>Daily Goal</div>
-              <div style={{ fontSize: "0.7rem", color: "#a89a82", marginTop: "0.1rem" }}>
-                {totalXp} total XP
+              <div style={{ fontSize: "0.75rem", color: "#9a8a7a", marginTop: "0.2rem" }}>Daily Goal</div>
+              <div style={{ fontSize: "0.7rem", color: "#b0a090", marginTop: "0.1rem" }}>
+                {totalXp} total XP · Tap to adjust
               </div>
             </div>
-          </div>
+          </Link>
           {/* Streak */}
           <div style={statCardStyle}>
             <span style={{ ...statNumberStyle, color: "#e8a040" }}>{streak}</span>
@@ -347,125 +348,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Achievements */}
-      <section style={{ marginBottom: "2rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-          <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Achievements</h2>
-          <Link href="/achievements" style={{ fontSize: "0.75rem", color: "#7a7060", textDecoration: "none" }}>
-            View All ({gameState?.achievements.length || 0}/{TOTAL_BADGES})
-          </Link>
-        </div>
-        {gameState && gameState.achievements.length > 0 ? (
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {gameState.achievements.map((a) => {
-              const info = BADGE_MAP[a.badgeType];
-              if (!info) return null;
-              return (
-                <Link key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
-                  <span style={{ fontSize: "1.3rem" }}>{info.icon}</span>
-                  <span style={{ fontSize: "0.6rem", color: "#a89a82", marginTop: "0.15rem" }}>{info.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        ) : (
-          <Link href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
-            <p style={{ fontSize: "0.9rem", margin: 0, color: "#a89a82" }}>
-              No badges earned yet. Start studying to unlock achievements!
-            </p>
-          </Link>
-        )}
-      </section>
-
-      {/* Activity Heatmap */}
-      {activityData && (
-        <section style={{ marginBottom: "2rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Activity</h2>
-            <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem" }}>
-              <span style={{ color: "#f0dc4e" }}>
-                {totalXp} XP
-              </span>
-              <span style={{ color: "#e8a040" }}>
-                {streak} day streak
-              </span>
-            </div>
-          </div>
-          <ActivityHeatmap activity={activityData.activity} />
-        </section>
-      )}
-
-      {/* Streak milestones preview - show upcoming */}
-      {streak > 0 && (
-        <section style={{ marginBottom: "2rem" }}>
-          <StreakMilestones streak={streak} earned={gameState?.achievements.map((a) => a.badgeType) ?? []} />
-        </section>
-      )}
-
-      {/* Leaderboard */}
-      {leaderboard && leaderboard.leaderboard.length > 0 && (
-        <section style={{ marginBottom: "2rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Leaderboard</h2>
-            <div style={{ display: "flex", gap: "0.25rem" }}>
-              {(["week", "month", "all"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setLbPeriod(p)}
-                  style={{
-                    padding: "0.2rem 0.5rem",
-                    fontSize: "0.7rem",
-                    fontFamily: "inherit",
-                    background: lbPeriod === p ? "#f0dc4e22" : "transparent",
-                    color: lbPeriod === p ? "#f0dc4e" : "#7a7060",
-                    border: `1px solid ${lbPeriod === p ? "#f0dc4e44" : "#3a5a3a"}`,
-                    borderRadius: 4,
-                    cursor: "pointer",
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, overflow: "hidden" }}>
-            {leaderboard.leaderboard.slice(0, 10).map((entry) => (
-              <div
-                key={entry.rank}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0.5rem 0.75rem",
-                  borderBottom: "1px solid #3a5a3a",
-                  background: entry.isCurrentUser ? "#f0dc4e0d" : "transparent",
-                }}
-              >
-                <span style={{
-                  width: 24, textAlign: "center", fontWeight: 700, fontSize: "0.85rem",
-                  color: entry.rank === 1 ? "#f0dc4e" : entry.rank === 2 ? "#c4c4c4" : entry.rank === 3 ? "#cd7f32" : "#7a7060",
-                }}>
-                  {entry.rank}
-                </span>
-                <span style={{ flex: 1, marginLeft: "0.5rem", fontSize: "0.85rem", color: entry.isCurrentUser ? "#f0dc4e" : "#e8dcc8", fontWeight: entry.isCurrentUser ? 600 : 400 }}>
-                  {entry.displayName}
-                  {entry.isCurrentUser && <span style={{ fontSize: "0.7rem", color: "#7a7060", marginLeft: "0.35rem" }}>(you)</span>}
-                </span>
-                <span style={{ fontSize: "0.8rem", color: "#f0dc4e", fontWeight: 600 }}>
-                  {entry.xp} XP
-                </span>
-              </div>
-            ))}
-          </div>
-          {leaderboard.userRank && leaderboard.userRank > 10 && (
-            <p style={{ fontSize: "0.75rem", color: "#7a7060", marginTop: "0.4rem", textAlign: "center" }}>
-              Your rank: #{leaderboard.userRank}
-            </p>
-          )}
-        </section>
-      )}
-
-      {/* Today's Sessions */}
+      {/* Today's Sessions — primary actionable section */}
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionHeadingStyle}>Today</h2>
         {todaySessions.length === 0 ? (
@@ -532,9 +415,127 @@ export default function DashboardPage() {
 
       {/* Create plan shortcut if plans exist */}
       {plans.length > 0 && (
-        <Link href="/plan" style={{ ...actionBtnStyle, display: "inline-block" }}>
+        <Link href="/plan" style={{ ...actionBtnStyle, display: "inline-block", marginBottom: "2rem" }}>
           + New Plan
         </Link>
+      )}
+
+      {/* Achievements */}
+      <section style={{ marginBottom: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Achievements</h2>
+          <Link href="/achievements" style={{ fontSize: "0.75rem", color: "#9a8a7a", textDecoration: "none" }}>
+            View All ({gameState?.achievements.length || 0}/{TOTAL_BADGES})
+          </Link>
+        </div>
+        {gameState && gameState.achievements.length > 0 ? (
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {gameState.achievements.map((a) => {
+              const info = BADGE_MAP[a.badgeType];
+              if (!info) return null;
+              return (
+                <Link key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
+                  <span style={{ fontSize: "1.3rem" }}>{info.icon}</span>
+                  <span style={{ fontSize: "0.6rem", color: "#b0a090", marginTop: "0.15rem" }}>{info.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <Link href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
+            <p style={{ fontSize: "0.9rem", margin: 0, color: "#b0a090" }}>
+              No badges earned yet. Start studying to unlock achievements!
+            </p>
+          </Link>
+        )}
+      </section>
+
+      {/* Activity Heatmap */}
+      {activityData && (
+        <section style={{ marginBottom: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Activity</h2>
+            <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem" }}>
+              <span style={{ color: "#f0dc4e" }}>
+                {totalXp} XP
+              </span>
+              <span style={{ color: "#e8a040" }}>
+                {streak} day streak
+              </span>
+            </div>
+          </div>
+          <ActivityHeatmap activity={activityData.activity} />
+        </section>
+      )}
+
+      {/* Streak milestones preview */}
+      {streak > 0 && (
+        <section style={{ marginBottom: "2rem" }}>
+          <StreakMilestones streak={streak} earned={gameState?.achievements.map((a) => a.badgeType) ?? []} />
+        </section>
+      )}
+
+      {/* Leaderboard */}
+      {leaderboard && leaderboard.leaderboard.length > 0 && (
+        <section style={{ marginBottom: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Leaderboard</h2>
+            <div style={{ display: "flex", gap: "0.25rem" }}>
+              {(["week", "month", "all"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setLbPeriod(p)}
+                  style={{
+                    padding: "0.2rem 0.5rem",
+                    fontSize: "0.7rem",
+                    fontFamily: "inherit",
+                    background: lbPeriod === p ? "#f0dc4e22" : "transparent",
+                    color: lbPeriod === p ? "#f0dc4e" : "#9a8a7a",
+                    border: `1px solid ${lbPeriod === p ? "#f0dc4e44" : "#3a5a3a"}`,
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: "#334d33", border: "1px solid #4a6a4a", borderRadius: 6, overflow: "hidden" }}>
+            {leaderboard.leaderboard.slice(0, 10).map((entry) => (
+              <div
+                key={entry.rank}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "0.5rem 0.75rem",
+                  borderBottom: "1px solid #3a5a3a",
+                  background: entry.isCurrentUser ? "#f0dc4e0d" : "transparent",
+                }}
+              >
+                <span style={{
+                  width: 24, textAlign: "center", fontWeight: 700, fontSize: "0.85rem",
+                  color: entry.rank === 1 ? "#f0dc4e" : entry.rank === 2 ? "#c4c4c4" : entry.rank === 3 ? "#cd7f32" : "#9a8a7a",
+                }}>
+                  {entry.rank}
+                </span>
+                <span style={{ flex: 1, marginLeft: "0.5rem", fontSize: "0.85rem", color: entry.isCurrentUser ? "#f0dc4e" : "#e8dcc8", fontWeight: entry.isCurrentUser ? 600 : 400 }}>
+                  {entry.displayName}
+                  {entry.isCurrentUser && <span style={{ fontSize: "0.7rem", color: "#9a8a7a", marginLeft: "0.35rem" }}>(you)</span>}
+                </span>
+                <span style={{ fontSize: "0.8rem", color: "#f0dc4e", fontWeight: 600 }}>
+                  {entry.xp} XP
+                </span>
+              </div>
+            ))}
+          </div>
+          {leaderboard.userRank && leaderboard.userRank > 10 && (
+            <p style={{ fontSize: "0.75rem", color: "#9a8a7a", marginTop: "0.4rem", textAlign: "center" }}>
+              Your rank: #{leaderboard.userRank}
+            </p>
+          )}
+        </section>
       )}
     </main>
   );
@@ -903,8 +904,8 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
   const step = cellSize + cellGap;
 
   return (
-    <div style={{ overflow: "hidden" }}>
-      <div style={{ display: "flex", marginBottom: "0.2rem", marginLeft: 0, height: 14 }}>
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ display: "flex", marginBottom: "0.2rem", marginLeft: 0, height: 14, minWidth: weeks.length * step }}>
         <svg width={weeks.length * step} height={14} style={{ display: "block" }}>
           {monthLabels.map((m, i) => (
             <text
@@ -978,7 +979,7 @@ const headingStyle: React.CSSProperties = {
 
 const sectionHeadingStyle: React.CSSProperties = {
   fontSize: "1rem",
-  color: "#a89a82",
+  color: "#b0a090",
   marginBottom: "0.75rem",
   fontWeight: 600,
   textTransform: "uppercase",
@@ -1011,7 +1012,7 @@ const statNumberStyle: React.CSSProperties = {
 
 const statLabelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
-  color: "#7a7060",
+  color: "#9a8a7a",
   marginTop: "0.4rem",
   textTransform: "uppercase",
   letterSpacing: "0.05em",

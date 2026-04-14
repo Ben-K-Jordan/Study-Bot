@@ -49,13 +49,20 @@ export async function GET(request: NextRequest) {
     const userIds = xpByUser.map((u) => u.userId);
     const gameStates = await prisma.userGameState.findMany({
       where: { userId: { in: userIds } },
-      select: { userId: true, displayName: true },
+      select: { userId: true, displayName: true, leaderboardVisible: true },
     });
-    const nameMap = new Map(gameStates.map((g) => [g.userId, g.displayName]));
+    const stateMap = new Map(gameStates.map((g) => [g.userId, g]));
 
-    const leaderboard = xpByUser.map((entry, i) => ({
+    // Filter out users who opted out, but always include the current user
+    const visibleEntries = xpByUser.filter((entry) => {
+      if (entry.userId === userId) return true;
+      const state = stateMap.get(entry.userId);
+      return !state || state.leaderboardVisible !== false;
+    });
+
+    const leaderboard = visibleEntries.map((entry, i) => ({
       rank: i + 1,
-      displayName: nameMap.get(entry.userId) || anonymizeName(entry.userId),
+      displayName: stateMap.get(entry.userId)?.displayName || anonymizeName(entry.userId),
       xp: entry._sum.xpAmount || 0,
       isCurrentUser: entry.userId === userId,
     }));

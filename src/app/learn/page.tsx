@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getOrCreateUserId } from "@/lib/client-utils";
+import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 
 interface CourseData {
   courseName: string;
@@ -23,7 +23,8 @@ interface LearnData {
 export default function LearnPage() {
   const [data, setData] = useState<LearnData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [selectedCourse, setSelectedCourseRaw] = useState<string | null>(null);
+  const setSelectedCourse = (v: string | null) => { setSelectedCourseRaw(v); if (v) setActiveCourse(v); };
 
   useEffect(() => {
     const userId = getOrCreateUserId();
@@ -31,7 +32,11 @@ export default function LearnPage() {
       .then((r) => r.json())
       .then((d) => {
         setData(d);
-        if (d.courses?.length > 0) setSelectedCourse(d.courses[0].courseName);
+        if (d.courses?.length > 0) {
+          const active = getActiveCourse();
+          const match = d.courses.find((c: CourseData) => c.courseName === active);
+          setSelectedCourse(match ? match.courseName : d.courses[0].courseName);
+        }
       })
       .catch(() => setData({ courses: [], hasCourses: false, weeklyXp: 0 }))
       .finally(() => setLoading(false));
@@ -159,59 +164,57 @@ export default function LearnPage() {
         </section>
       )}
 
-      {/* Action cards */}
+      {/* Quick actions — focused on what matters now */}
       <section style={{ marginBottom: "1.5rem" }}>
-        <h3 style={sectionLabelStyle}>Study Actions</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-          <Link href="/flashcards" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F0CF}"}</span>
-            <span style={actionTitleStyle}>Review Flashcards</span>
-            <span style={actionDescStyle}>
-              {course.dueCardCount > 0
-                ? `${course.dueCardCount} cards due`
-                : course.deckCount > 0
-                  ? "All caught up!"
-                  : "Generate a deck first"}
-            </span>
+        <h3 style={sectionLabelStyle}>Quick Actions</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {course.dueCardCount > 0 && (
+            <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "#e8a040" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Review Due Cards</div>
+                <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                  {course.dueCardCount} card{course.dueCardCount !== 1 ? "s" : ""} ready for spaced repetition review
+                </div>
+              </div>
+              <span style={{ color: "#e8a040", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Review</span>
+            </Link>
+          )}
+          {course.processedDocCount > 0 && course.deckCount === 0 && (
+            <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "#7ec8e3" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Generate Flashcards</div>
+                <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                  {course.processedDocCount} doc{course.processedDocCount !== 1 ? "s" : ""} processed and ready
+                </div>
+              </div>
+              <span style={{ color: "#7ec8e3", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Generate</span>
+            </Link>
+          )}
+          {course.guideCount === 0 && course.processedDocCount > 0 && (
+            <Link href="/guides" style={{ ...quickActionStyle, borderLeftColor: "#c4a0ff" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Create Study Guide</div>
+                <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                  Key concepts, FAQs, or cheat sheets from your materials
+                </div>
+              </div>
+              <span style={{ color: "#c4a0ff", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Create</span>
+            </Link>
+          )}
+          <Link href="/chat" style={{ ...quickActionStyle, borderLeftColor: "#88cc88" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: "#e8dcc8", fontSize: "0.95rem" }}>Ask a Question</div>
+              <div style={{ fontSize: "0.8rem", color: "#9a8a7a", marginTop: "0.1rem" }}>
+                Chat with your {course.courseName} materials
+              </div>
+            </div>
+            <span style={{ color: "#88cc88", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Chat</span>
           </Link>
-
-          <Link href="/flashcards" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u2728"}</span>
-            <span style={actionTitleStyle}>Generate Flashcards</span>
-            <span style={actionDescStyle}>
-              {course.processedDocCount > 0
-                ? "From your documents"
-                : "Upload docs first"}
-            </span>
-          </Link>
-
-          <Link href="/guides" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F4D6}"}</span>
-            <span style={actionTitleStyle}>Study Guides</span>
-            <span style={actionDescStyle}>
-              {course.guideCount > 0
-                ? `${course.guideCount} guide${course.guideCount !== 1 ? "s" : ""} available`
-                : "Generate your first guide"}
-            </span>
-          </Link>
-
-          <Link href="/chat" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F4AC}"}</span>
-            <span style={actionTitleStyle}>Ask a Question</span>
-            <span style={actionDescStyle}>Chat with your course materials</span>
-          </Link>
-
-          <Link href="/plan" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F4C5}"}</span>
-            <span style={actionTitleStyle}>Study Plan</span>
-            <span style={actionDescStyle}>Schedule practice sessions</span>
-          </Link>
-
-          <Link href="/" style={actionCardStyle}>
-            <span style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{"\u{1F3C6}"}</span>
-            <span style={actionTitleStyle}>Dashboard</span>
-            <span style={actionDescStyle}>View your progress & XP</span>
-          </Link>
+          {course.dueCardCount === 0 && course.deckCount > 0 && (
+            <div style={{ textAlign: "center", padding: "0.75rem", color: "#88cc88", fontSize: "0.85rem", background: "#2d4a2d", borderRadius: 6, border: "1px solid #5a8a5a" }}>
+              All caught up! No cards due for review right now.
+            </div>
+          )}
         </div>
       </section>
 
@@ -378,7 +381,7 @@ const miniStatNumStyle: React.CSSProperties = {
 
 const miniStatLabelStyle: React.CSSProperties = {
   fontSize: "0.65rem",
-  color: "#7a7060",
+  color: "#9a8a7a",
   marginTop: "0.3rem",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
@@ -392,30 +395,17 @@ const recommendationStyle: React.CSSProperties = {
   marginBottom: "1.5rem",
 };
 
-const actionCardStyle: React.CSSProperties = {
+const quickActionStyle: React.CSSProperties = {
   display: "flex",
-  flexDirection: "column",
   alignItems: "center",
-  textAlign: "center",
-  padding: "1.25rem 0.75rem",
+  gap: "0.75rem",
+  padding: "0.85rem 1rem",
   background: "#334d33",
   border: "1px solid #4a6a4a",
-  borderRadius: 8,
+  borderLeft: "3px solid #4a6a4a",
+  borderRadius: 6,
   textDecoration: "none",
   cursor: "pointer",
-  transition: "border-color 0.15s, background 0.15s",
-};
-
-const actionTitleStyle: React.CSSProperties = {
-  fontSize: "0.9rem",
-  fontWeight: 600,
-  color: "#e8dcc8",
-  marginBottom: "0.2rem",
-};
-
-const actionDescStyle: React.CSSProperties = {
-  fontSize: "0.7rem",
-  color: "#7a7060",
 };
 
 const emptyCardStyle: React.CSSProperties = {

@@ -6,6 +6,7 @@
 export { MODE_LABELS } from "./calendar";
 
 const USER_ID_KEY = "study_bot_user_id";
+const COURSE_KEY = "study_bot_active_course";
 
 export function getOrCreateUserId(): string {
   if (typeof window === "undefined") return "anonymous";
@@ -15,4 +16,15 @@ export function getOrCreateUserId(): string {
     localStorage.setItem(USER_ID_KEY, uid);
   }
   return uid;
+}
+
+/** Persist the active course across pages (e.g. "Biology 101" or "Bio||Midterm"). */
+export function getActiveCourse(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(COURSE_KEY) || "";
+}
+
+export function setActiveCourse(course: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(COURSE_KEY, course);
 }
