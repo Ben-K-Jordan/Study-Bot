@@ -330,7 +330,7 @@ const mainStyle: React.CSSProperties = {
   maxWidth: 700,
   margin: "0 auto",
   padding: "1.5rem 1rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   color: "#e8dcc8",
   backgroundColor: "#2a3d2a",
   minHeight: "100vh",
@@ -341,7 +341,7 @@ const headingStyle: React.CSSProperties = {
   margin: "0 0 1.5rem",
   color: "#f0dc4e",
   fontWeight: 700,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const courseNameStyle: React.CSSProperties = {
@@ -349,7 +349,7 @@ const courseNameStyle: React.CSSProperties = {
   color: "#e8dcc8",
   fontWeight: 700,
   margin: 0,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const sectionLabelStyle: React.CSSProperties = {
@@ -376,7 +376,7 @@ const miniStatNumStyle: React.CSSProperties = {
   fontWeight: 700,
   color: "#f0dc4e",
   lineHeight: 1,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const miniStatLabelStyle: React.CSSProperties = {

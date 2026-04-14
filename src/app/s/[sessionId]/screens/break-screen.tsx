@@ -34,7 +34,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           letterSpacing: "0.1em",
           color: "#e8a040",
           marginBottom: "1rem",
-          fontFamily: "var(--font-display), 'Caveat', cursive",
+          fontFamily: "var(--font-display)",
         }}
       >
         BREAK TIME
@@ -47,7 +47,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           fontVariantNumeric: "tabular-nums",
           marginBottom: "1.5rem",
           color: "#e8a040",
-          fontFamily: "var(--font-display), 'Caveat', cursive",
+          fontFamily: "var(--font-display)",
         }}
       >
         {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
@@ -90,7 +90,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         style={{
           padding: "0.5rem 1.5rem",
           fontSize: "0.9rem",
-          fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+          fontFamily: "var(--font-body)",
           background: "transparent",
           color: "#7a7060",
           border: "1px solid #4a6a4a",

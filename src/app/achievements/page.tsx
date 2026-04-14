@@ -82,7 +82,7 @@ export default function AchievementsPage() {
             </text>
           </svg>
           <div>
-            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
+            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display)" }}>
               {totalEarned} / {TOTAL_BADGES} Badges
             </div>
             <div style={{ fontSize: "0.8rem", color: "#7a7060", marginTop: "0.2rem" }}>
@@ -204,7 +204,7 @@ const mainStyle: React.CSSProperties = {
   maxWidth: 700,
   margin: "0 auto",
   padding: "1.5rem 1rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   color: "#e8dcc8",
   backgroundColor: "#2a3d2a",
   minHeight: "100vh",
@@ -215,7 +215,7 @@ const headingStyle: React.CSSProperties = {
   margin: "0 0 1.5rem",
   color: "#f0dc4e",
   fontWeight: 700,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const sectionHeadingStyle: React.CSSProperties = {

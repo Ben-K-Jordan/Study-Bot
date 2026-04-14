@@ -416,7 +416,7 @@ const pageContainer: React.CSSProperties = {
   maxWidth: 720,
   margin: "0 auto",
   padding: "0 1rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   color: "#e8dcc8",
 };
 
@@ -429,7 +429,7 @@ const headerStyle: React.CSSProperties = {
 const titleStyle: React.CSSProperties = {
   fontSize: "1.6rem",
   margin: "0 0 0.25rem",
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
   color: "#f0dc4e",
 };
 
@@ -557,9 +557,9 @@ const inputStyle: React.CSSProperties = {
 };
 
 const sendButton: React.CSSProperties = {
-  padding: "0.6rem 1.25rem",
-  fontSize: "0.9rem",
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  padding: "0.5rem 1rem",
+  fontSize: "0.85rem",
+  fontFamily: "var(--font-display)",
   fontWeight: 700,
   background: "#f0dc4e",
   color: "#1f2e1f",

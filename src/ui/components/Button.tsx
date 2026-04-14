@@ -54,7 +54,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const baseStyle: React.CSSProperties = {
-    fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+    fontFamily: "var(--font-body)",
     fontWeight: "bold",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.6 : 1,

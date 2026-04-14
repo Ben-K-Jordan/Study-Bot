@@ -15,7 +15,7 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 
   return (
     <div>
-      <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display), 'Caveat', cursive", color: "#f0dc4e" }}>
+      <h1 style={{ fontSize: "1.8rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display)", color: "#f0dc4e" }}>
         {session.course_name} | {session.exam_name}
       </h1>
       <p style={{ color: "#a89a82", margin: "0 0 1.5rem", fontSize: "1rem" }}>
@@ -84,12 +84,13 @@ const examBanner: React.CSSProperties = {
 
 const buttonStyle: React.CSSProperties = {
   width: "100%",
-  padding: "0.85rem",
-  fontSize: "1.1rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  padding: "0.75rem 1.5rem",
+  fontSize: "1.05rem",
+  fontFamily: "var(--font-body)",
   fontWeight: 600,
   background: "#f0dc4e",
   color: "#1f2e1f",
   border: "none",
   borderRadius: 6,
+  cursor: "pointer",
 };
