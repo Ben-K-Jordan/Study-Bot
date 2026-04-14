@@ -81,6 +81,7 @@ test.describe.serial("E2E: Interleaved Practice runner", () => {
   });
 
   test("complete all prompts with immediate scoring", async ({ request }) => {
+    let lastBody: any;
     for (let i = 0; i < promptCount; i++) {
       const res = await request.post(
         `${BASE_URL}/api/runs/${runId}/attempt`,
@@ -103,15 +104,29 @@ test.describe.serial("E2E: Interleaved Practice runner", () => {
         }
       );
       expect(res.status()).toBe(200);
+      lastBody = await res.json();
     }
 
-    // Verify run completed
-    const run = await request.get(`${BASE_URL}/api/runs/${runId}`, {
-      headers: { "X-User-Id": USER_ID },
-    });
-    const body = await run.json();
-    expect(body.status).toBe("COMPLETED");
-    expect(body.metrics.attempts_count).toBe(6);
+    // INCORRECT answers inject variant repair prompts. Submit them to complete.
+    while (lastBody.status === "ACTIVE") {
+      const idx = lastBody.current_index;
+      const res = await request.post(
+        `${BASE_URL}/api/runs/${runId}/attempt`,
+        {
+          headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
+          data: {
+            prompt_index: idx,
+            user_answer: `Variant repair answer ${idx}`,
+            self_score: "CORRECT",
+            time_to_answer_seconds: 10,
+          },
+        }
+      );
+      expect(res.status()).toBe(200);
+      lastBody = await res.json();
+    }
+
+    expect(lastBody.status).toBe("COMPLETED");
   });
 
   test("session page renders in browser", async ({ page }) => {
@@ -364,21 +379,27 @@ test.describe.serial("E2E: Error Repair runner", () => {
     );
     expect(a0.status()).toBe(200);
 
-    // Complete with CORRECT
-    const a1 = await request.post(
-      `${BASE_URL}/api/runs/${retrievalRunId}/attempt`,
-      {
-        headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
-        data: {
-          prompt_index: 1,
-          user_answer: "Correct answer",
-          self_score: "CORRECT",
-          time_to_answer_seconds: 10,
-        },
-      }
-    );
-    expect(a1.status()).toBe(200);
-    expect((await a1.json()).status).toBe("COMPLETED");
+    // Complete remaining prompts (including variant repair injected by INCORRECT)
+    let lastBody: any;
+    let nextIndex = 1;
+    do {
+      const a = await request.post(
+        `${BASE_URL}/api/runs/${retrievalRunId}/attempt`,
+        {
+          headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
+          data: {
+            prompt_index: nextIndex,
+            user_answer: "Correct answer",
+            self_score: "CORRECT",
+            time_to_answer_seconds: 10,
+          },
+        }
+      );
+      expect(a.status()).toBe(200);
+      lastBody = await a.json();
+      nextIndex = lastBody.current_index;
+    } while (lastBody.status === "ACTIVE");
+    expect(lastBody.status).toBe("COMPLETED");
   });
 
   // Step 2: Create ERROR_REPAIR session and start it

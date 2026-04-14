@@ -149,8 +149,8 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
       page.getByRole("button", { name: /save.*next/i }).click(),
     ]);
 
-    // Prompt should advance to the last one
-    await expect(page.getByText("PROMPT 3 / 3")).toBeVisible({ timeout: 10_000 });
+    // Prompt should advance — variant injection extends deck from 3 to 4
+    await expect(page.getByText("PROMPT 3 / 4")).toBeVisible({ timeout: 10_000 });
   });
 
   test("refresh page mid-run preserves progress", async ({ page }) => {
@@ -167,8 +167,8 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
 
     await page.getByRole("button", { name: /resume session/i }).click();
 
-    // Should be on prompt 3 (last one)
-    await expect(page.getByText("PROMPT 3 / 3")).toBeVisible({ timeout: 5000 });
+    // Should be on prompt 3 (variant injection extended deck from 3 to 4)
+    await expect(page.getByText("PROMPT 3 / 4")).toBeVisible({ timeout: 5000 });
   });
 
   test("complete final prompt and see end screen", async ({ page }) => {
@@ -181,10 +181,17 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     await page.getByRole("button", { name: /start session|resume session/i }).click();
     await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
 
-    // Answer last prompt
-    await page.locator("textarea").fill("Final answer about E2E testing");
-    await page.getByRole("button", { name: /submit answer/i }).click();
-    await page.getByRole("button", { name: "✓ Correct" }).click();
+    // Submit remaining prompts (original + variant injected by earlier INCORRECT)
+    for (let i = 0; i < 2; i++) {
+      await page.locator("textarea").fill(`Answer ${i}`);
+      await page.getByRole("button", { name: /submit answer/i }).click();
+      await page.getByRole("button", { name: "✓ Correct" }).click();
+
+      // After last prompt, end screen appears; otherwise wait for next prompt
+      if (i < 1) {
+        await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
+      }
+    }
 
     // Should show end screen
     await expect(page.getByText("SESSION COMPLETE")).toBeVisible({ timeout: 5000 });

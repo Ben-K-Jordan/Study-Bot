@@ -534,11 +534,11 @@ async function adaptPromptDifficulty(
   await prisma.$executeRaw`
     UPDATE "session_run_prompts"
     SET "prompt_index" = CASE
-      WHEN "prompt_index" = ${currentIndex} THEN ${swapIdx}
-      WHEN "prompt_index" = ${swapIdx} THEN ${currentIndex}
+      WHEN "prompt_index" = ${currentIndex}::int THEN ${swapIdx}::int
+      WHEN "prompt_index" = ${swapIdx}::int THEN ${currentIndex}::int
     END
     WHERE "run_id" = ${runId}
-      AND "prompt_index" IN (${currentIndex}, ${swapIdx})
+      AND "prompt_index" IN (${currentIndex}::int, ${swapIdx}::int)
   `;
 
   logger.info("adaptive.swapped", {
