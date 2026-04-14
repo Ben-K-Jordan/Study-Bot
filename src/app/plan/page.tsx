@@ -218,6 +218,7 @@ export default function PlanPage() {
 
   const handleDeletePlan = async () => {
     if (!result || deletingPlan) return;
+    if (!window.confirm("Delete this study plan? This cannot be undone.")) return;
     setDeletingPlan(true);
     setError(null);
     try {
@@ -297,9 +298,11 @@ export default function PlanPage() {
             <div style={{ fontSize: "0.95rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
               Upload your course materials and we&apos;ll build a plan around them.
             </div>
-            <div
+            <button
+              type="button"
               style={dropZoneStyle(uploading)}
               onClick={() => !uploading && document.getElementById("file-input")?.click()}
+              disabled={uploading}
             >
               <input
                 id="file-input"
@@ -309,12 +312,13 @@ export default function PlanPage() {
                 onChange={handleFileUpload}
                 aria-label="Upload course materials (PDF, text, or markdown)"
                 style={{ display: "none" }}
+                tabIndex={-1}
               />
               <span style={{ color: "var(--color-primary)" }}>
                 {uploading ? "Uploading..." : "Click to upload files"}
               </span>
               <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>PDF, text, or markdown</span>
-            </div>
+            </button>
 
             {uploadedFiles.length > 0 && (
               <div style={{ marginTop: "0.5rem" }}>
@@ -350,7 +354,7 @@ export default function PlanPage() {
             </div>
           </div>
 
-          {error && <div style={errorStyle}>{error}</div>}
+          {error && <div style={errorStyle} role="alert" aria-live="polite">{error}</div>}
 
           <button type="submit" disabled={loading} style={primaryBtnStyle(loading)}>
             {loading ? "Generating plan..." : "Generate Plan"}
@@ -392,7 +396,7 @@ export default function PlanPage() {
         {result.items.length} sessions across 7 days
       </div>
 
-      {error && <div style={errorStyle}>{error}</div>}
+      {error && <div style={errorStyle} role="alert" aria-live="polite">{error}</div>}
 
       {[0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
         const dayItems = grouped[dayIdx];

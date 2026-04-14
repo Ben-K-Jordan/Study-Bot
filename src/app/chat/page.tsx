@@ -53,6 +53,8 @@ async function apiDelete(url: string) {
   return data;
 }
 
+const CHAT_PAGE_SIZE = 50;
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -61,6 +63,8 @@ export default function ChatPage() {
   const [selectedCourse, setSelectedCourseRaw] = useState<string>(() => getActiveCourse());
   const setSelectedCourse = (v: string) => { setSelectedCourseRaw(v); setActiveCourse(v); };
   const [expandedCitation, setExpandedCitation] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -68,19 +72,19 @@ export default function ChatPage() {
   useEffect(() => {
     if (!selectedCourse) return;
     let mounted = true;
-    const params = new URLSearchParams({ courseKey: selectedCourse });
+    const params = new URLSearchParams({ courseKey: selectedCourse, limit: String(CHAT_PAGE_SIZE) });
     apiGet(`/api/chat/messages?${params.toString()}`)
       .then((data) => {
         if (!mounted) return;
         if (data.messages) {
-          setMessages(
-            data.messages.map((m: { id: string; role: string; content: string; citations?: Citation[] }) => ({
-              id: m.id,
-              role: m.role as "user" | "assistant",
-              content: m.content,
-              citations: m.citations as Citation[] | undefined,
-            })),
-          );
+          const msgs = data.messages.map((m: { id: string; role: string; content: string; citations?: Citation[] }) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            citations: m.citations as Citation[] | undefined,
+          }));
+          setMessages(msgs);
+          setHasMore(msgs.length >= CHAT_PAGE_SIZE);
         }
       })
       .catch(() => {
@@ -88,6 +92,36 @@ export default function ChatPage() {
       });
     return () => { mounted = false; };
   }, [selectedCourse]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!selectedCourse || loadingMore || messages.length === 0) return;
+    setLoadingMore(true);
+    const oldest = messages[0];
+    const params = new URLSearchParams({
+      courseKey: selectedCourse,
+      limit: String(CHAT_PAGE_SIZE),
+      before: oldest.id,
+    });
+    try {
+      const data = await apiGet(`/api/chat/messages?${params.toString()}`);
+      if (data.messages && data.messages.length > 0) {
+        const older = data.messages.map((m: { id: string; role: string; content: string; citations?: Citation[] }) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          citations: m.citations as Citation[] | undefined,
+        }));
+        setMessages((prev) => [...older, ...prev]);
+        setHasMore(older.length >= CHAT_PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    } catch {
+      // Keep existing messages
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [selectedCourse, loadingMore, messages]);
 
   // Fetch available courses on mount
   useEffect(() => {
@@ -210,6 +244,7 @@ export default function ChatPage() {
           id: `e-${Date.now()}`,
           role: "assistant",
           content: err instanceof Error ? err.message : "Something went wrong. Please try again.",
+          meta: { failed: true } as any,
         },
       ]);
     } finally {
@@ -220,6 +255,7 @@ export default function ChatPage() {
 
   const clearChat = useCallback(async () => {
     if (!selectedCourse) return;
+    if (!window.confirm("Clear all messages in this chat? This cannot be undone.")) return;
     setMessages([]);
     try {
       await apiDelete(`/api/chat/messages?courseKey=${encodeURIComponent(selectedCourse)}`);
@@ -283,6 +319,28 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div style={messagesContainer} role="log" aria-live="polite">
+        {hasMore && (
+          <div style={{ textAlign: "center", paddingBottom: "0.75rem" }}>
+            <button
+              type="button"
+              onClick={loadOlderMessages}
+              disabled={loadingMore}
+              style={{
+                fontSize: "0.75rem",
+                fontFamily: "inherit",
+                background: "var(--color-bg-card)",
+                color: "var(--color-text-muted)",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: 4,
+                padding: "0.35rem 0.75rem",
+                cursor: loadingMore ? "wait" : "pointer",
+                opacity: loadingMore ? 0.6 : 1,
+              }}
+            >
+              {loadingMore ? "Loading..." : "Load older messages"}
+            </button>
+          </div>
+        )}
         {messages.length === 0 && (
           <div style={emptyState}>
             <p style={{ fontSize: "1.2rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
@@ -367,11 +425,44 @@ export default function ChatPage() {
             )}
 
             {/* Meta info */}
-            {msg.meta && (
+            {msg.meta && !(msg.meta as any).failed && (
               <div style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", marginTop: "0.25rem", marginLeft: "0.5rem" }}>
                 {msg.meta.chunks_retrieved ?? 0} sources searched
                 {msg.meta.latency_ms ? ` · ${(msg.meta.latency_ms / 1000).toFixed(1)}s` : ""}
               </div>
+            )}
+
+            {/* Retry button for failed messages */}
+            {msg.role === "assistant" && (msg.meta as any)?.failed && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Remove the error message and the user message before it, then resend
+                  const idx = messages.findIndex((m) => m.id === msg.id);
+                  const userMsg = idx > 0 ? messages[idx - 1] : null;
+                  if (userMsg && userMsg.role === "user") {
+                    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                    setInput(userMsg.content);
+                  }
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                  marginTop: "0.4rem",
+                  marginLeft: "0.5rem",
+                  padding: "0.25rem 0.6rem",
+                  fontSize: "0.75rem",
+                  fontFamily: "inherit",
+                  background: "var(--color-bg)",
+                  color: "var(--color-warning)",
+                  border: "1px solid var(--color-border-subtle)",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                }}
+              >
+                Retry
+              </button>
             )}
           </div>
         ))}

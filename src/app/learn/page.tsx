@@ -86,8 +86,9 @@ export default function LearnPage() {
             <button
               key={c.courseName}
               onClick={() => setSelectedCourse(c.courseName)}
+              aria-pressed={selectedCourse === c.courseName}
               style={{
-                padding: "0.4rem 0.9rem",
+                padding: "0.5rem 1rem",
                 fontSize: "0.9rem",
                 fontFamily: "inherit",
                 background: selectedCourse === c.courseName ? "#f0dc4e22" : "var(--color-bg-card)",

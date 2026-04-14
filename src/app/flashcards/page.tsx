@@ -343,6 +343,7 @@ export default function FlashcardsPage() {
 
   const handleDeleteDeck = useCallback(async (deckId: string) => {
     if (deleting) return;
+    if (!window.confirm("Delete this deck and all its cards? This cannot be undone.")) return;
     setDeleting(deckId);
     try {
       await apiDelete(`/api/flashcards/${deckId}`);
@@ -407,8 +408,15 @@ export default function FlashcardsPage() {
         <div style={progressBarBg}>
           <div style={{ ...progressBarFill, width: `${progressPct}%` }} />
         </div>
-        <p style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginBottom: "1rem", textAlign: "center" }}>
+        <p style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginBottom: "0.5rem", textAlign: "center" }}>
           Card {cardIndex + 1} of {total}
+        </p>
+        <p style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", marginBottom: "1rem", textAlign: "center" }}>
+          <kbd style={kbdStyle}>Space</kbd> flip &nbsp;
+          <kbd style={kbdStyle}>1</kbd> Again &nbsp;
+          <kbd style={kbdStyle}>2</kbd> Hard &nbsp;
+          <kbd style={kbdStyle}>3</kbd> Good &nbsp;
+          <kbd style={kbdStyle}>4</kbd> Easy
         </p>
 
         {/* Card */}
@@ -785,4 +793,15 @@ const tagStyle: React.CSSProperties = {
   padding: "0.1rem 0.4rem",
   borderRadius: 3,
   letterSpacing: "0.03em",
+};
+
+const kbdStyle: React.CSSProperties = {
+  display: "inline-block",
+  fontSize: "0.6rem",
+  fontFamily: "monospace",
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
+  borderRadius: 3,
+  padding: "0.05rem 0.3rem",
+  color: "var(--color-text)",
 };
