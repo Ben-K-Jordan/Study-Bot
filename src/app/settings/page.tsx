@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const [studyEnd, setStudyEnd] = useState(DEFAULTS.studyEnd);
   const [dailyCap, setDailyCap] = useState(DEFAULTS.dailyCap);
   const [dailyXpGoal, setDailyXpGoal] = useState(DEFAULTS.dailyXpGoal);
+  const [leaderboardVisible, setLeaderboardVisible] = useState(true);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -38,6 +39,7 @@ export default function SettingsPage() {
           setStudyEnd(data.studyEnd || DEFAULTS.studyEnd);
           setDailyCap(data.dailyCap ?? DEFAULTS.dailyCap);
           setDailyXpGoal(data.dailyXpGoal ?? DEFAULTS.dailyXpGoal);
+          setLeaderboardVisible(data.leaderboardVisible !== false);
           // Also sync to localStorage for plan page compatibility
           localStorage.setItem("study_bot_prefs", JSON.stringify({
             studyStart: data.studyStart || DEFAULTS.studyStart,
@@ -108,6 +110,7 @@ export default function SettingsPage() {
           studyEnd,
           dailyCap,
           dailyXpGoal,
+          leaderboardVisible,
         }),
       });
       if (res.ok) {
@@ -202,6 +205,22 @@ export default function SettingsPage() {
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
+        <h2 style={sectionStyle}>Leaderboard</h2>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={leaderboardVisible}
+            onChange={(e) => setLeaderboardVisible(e.target.checked)}
+            style={{ accentColor: "#f0dc4e", width: 18, height: 18, cursor: "pointer" }}
+          />
+          <span style={{ color: "#e8dcc8", fontSize: "0.95rem" }}>Show me on the leaderboard</span>
+        </label>
+        <p style={{ ...hintStyle, marginTop: "0.35rem" }}>
+          When off, your name won&apos;t appear to other users.
+        </p>
+      </section>
+
+      <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Google Calendar</h2>
         {googleStatus === "loading" ? (
           <p style={hintStyle}>Checking connection...</p>
@@ -259,7 +278,7 @@ const sectionStyle: React.CSSProperties = {
 };
 
 const hintStyle: React.CSSProperties = {
-  color: "#7a7060",
+  color: "#9a8a7a",
   fontSize: "0.9rem",
   margin: "0 0 0.75rem",
 };

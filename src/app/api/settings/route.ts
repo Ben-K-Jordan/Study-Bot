@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     studyEnd: state.studyEndTime,
     dailyCap: state.dailyStudyCap,
     dailyXpGoal: state.dailyXpGoal,
+    leaderboardVisible: state.leaderboardVisible,
   });
 }
 
@@ -33,6 +34,7 @@ const updateSchema = z.object({
   studyEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
   dailyCap: z.number().int().min(30).max(480).optional(),
   dailyXpGoal: z.number().int().min(10).max(500).optional(),
+  leaderboardVisible: z.boolean().optional(),
 });
 
 /**
@@ -66,6 +68,7 @@ export async function PUT(request: NextRequest) {
   if (data.studyEnd !== undefined) updateData.studyEndTime = data.studyEnd;
   if (data.dailyCap !== undefined) updateData.dailyStudyCap = data.dailyCap;
   if (data.dailyXpGoal !== undefined) updateData.dailyXpGoal = data.dailyXpGoal;
+  if (data.leaderboardVisible !== undefined) updateData.leaderboardVisible = data.leaderboardVisible;
 
   try {
     const state = await prisma.userGameState.upsert({
@@ -85,6 +88,7 @@ export async function PUT(request: NextRequest) {
       studyEnd: state.studyEndTime,
       dailyCap: state.dailyStudyCap,
       dailyXpGoal: state.dailyXpGoal,
+      leaderboardVisible: state.leaderboardVisible,
     });
   } catch (err) {
     logger.error("settings.update_failed", { userId, error: String(err) });

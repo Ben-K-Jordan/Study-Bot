@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { getOrCreateUserId } from "@/lib/client-utils";
+import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 
 // --- Types ---
 
@@ -64,10 +64,8 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState<CourseOption[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return sessionStorage.getItem("chat_selected_course") || "";
-  });
+  const [selectedCourse, setSelectedCourseRaw] = useState<string>(() => getActiveCourse());
+  const setSelectedCourse = (v: string) => { setSelectedCourseRaw(v); setActiveCourse(v); };
   const [expandedCitation, setExpandedCitation] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -76,11 +74,6 @@ export default function ChatPage() {
   useEffect(() => {
     try { sessionStorage.setItem("chat_messages", JSON.stringify(messages)); } catch {}
   }, [messages]);
-
-  // Persist selected course
-  useEffect(() => {
-    try { if (selectedCourse) sessionStorage.setItem("chat_selected_course", selectedCourse); } catch {}
-  }, [selectedCourse]);
 
   // Fetch available courses on mount
   useEffect(() => {
@@ -107,7 +100,11 @@ export default function ChatPage() {
         }
         const options = Array.from(courseMap.values());
         setCourses(options);
-        if (!selectedCourse && options.length > 0) {
+        const active = getActiveCourse();
+        const match = active && options.some((o) => (o.exam_name ? `${o.course_name}||${o.exam_name}` : o.course_name) === active);
+        if (match) {
+          setSelectedCourse(active);
+        } else if (!selectedCourse && options.length > 0) {
           setSelectedCourse(
             options[0].exam_name
               ? `${options[0].course_name}||${options[0].exam_name}`
@@ -218,9 +215,10 @@ export default function ChatPage() {
         ) : (
           <p style={{ color: "#e8a040", fontSize: "0.85rem", margin: 0 }}>
             No course documents uploaded yet.{" "}
-            <Link href="/" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
-              Upload materials on the Dashboard
-            </Link>
+            <Link href="/flashcards" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
+              Upload materials on the Flashcards page
+            </Link>{" "}
+            to start chatting with your content.
           </p>
         )}
       </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { getOrCreateUserId } from "@/lib/client-utils";
+import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 
 // --- Types ---
 
@@ -107,7 +107,8 @@ type View = "list" | "study";
 
 export default function FlashcardsPage() {
   const [courses, setCourses] = useState<CourseOption[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<string>("");
+  const [selectedCourse, setSelectedCourseRaw] = useState<string>(() => getActiveCourse());
+  const setSelectedCourse = (v: string) => { setSelectedCourseRaw(v); setActiveCourse(v); };
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +125,12 @@ export default function FlashcardsPage() {
   const [reviewing, setReviewing] = useState(false);
   const [xpPopup, setXpPopup] = useState<{ amount: number; key: number } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [lastReview, setLastReview] = useState<{
+    cardIndex: number;
+    prevCard: CardData;
+    prevXp: number;
+    prevReviewedCount: number;
+  } | null>(null);
 
   const selectedCourseRef = useRef(selectedCourse);
   selectedCourseRef.current = selectedCourse;
@@ -154,7 +161,12 @@ export default function FlashcardsPage() {
           }
           const options = Array.from(courseMap.values());
           setCourses(options);
-          if (options.length > 0) {
+          // Use persisted course if it exists in the list, else default to first
+          const active = getActiveCourse();
+          const match = active && options.some((o) => (o.exam_name ? `${o.course_name}||${o.exam_name}` : o.course_name) === active);
+          if (match) {
+            setSelectedCourse(active);
+          } else if (options.length > 0) {
             const first = options[0];
             setSelectedCourse(
               first.exam_name
@@ -238,13 +250,20 @@ export default function FlashcardsPage() {
     const card = studyData.cards[cardIndex];
     setReviewing(true);
 
+    // Save state for undo before mutating
+    setLastReview({
+      cardIndex,
+      prevCard: { ...card },
+      prevXp: sessionXp,
+      prevReviewedCount: reviewedCount,
+    });
+
     try {
       const result = await apiPost(`/api/flashcards/${studyData.deck.id}/review`, {
         card_id: card.id,
         rating,
       });
 
-      // Update card state locally
       setStudyData((prev) => {
         if (!prev) return prev;
         const updatedCards = [...prev.cards];
@@ -285,6 +304,22 @@ export default function FlashcardsPage() {
       setReviewing(false);
     }
   }, [studyData, cardIndex, reviewing]);
+
+  const handleUndo = useCallback(() => {
+    if (!lastReview || !studyData) return;
+    // Restore the card to its previous state (local only — server state already saved)
+    setStudyData((prev) => {
+      if (!prev) return prev;
+      const updatedCards = [...prev.cards];
+      updatedCards[lastReview.cardIndex] = lastReview.prevCard;
+      return { ...prev, cards: updatedCards };
+    });
+    setCardIndex(lastReview.cardIndex);
+    setSessionXp(lastReview.prevXp);
+    setReviewedCount(lastReview.prevReviewedCount);
+    setFlipped(false);
+    setLastReview(null);
+  }, [lastReview, studyData]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -334,14 +369,21 @@ export default function FlashcardsPage() {
         `}</style>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <button onClick={() => setView("list")} style={backBtn}>
-            Back to Decks
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button onClick={() => setView("list")} style={backBtn}>
+              Back to Decks
+            </button>
+            {lastReview && (
+              <button onClick={handleUndo} style={{ ...backBtn, color: "#e8a040", borderColor: "#e8a04044" }}>
+                Undo
+              </button>
+            )}
+          </div>
           <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
             <span style={{ fontSize: "0.8rem", color: "#f0dc4e", fontWeight: 600 }}>
               +{sessionXp} XP
             </span>
-            <span style={{ fontSize: "0.8rem", color: "#7a7060" }}>
+            <span style={{ fontSize: "0.8rem", color: "#9a8a7a" }}>
               {reviewedCount}/{total} reviewed
             </span>
           </div>
@@ -460,12 +502,20 @@ export default function FlashcardsPage() {
             <p style={{ fontSize: "0.85rem", color: "#a89a82", margin: "0 0 1rem" }}>
               {reviewedCount} cards reviewed
             </p>
-            <button
-              onClick={() => openStudyMode(studyData.deck.id)}
-              style={{ ...generateBtnStyle, fontSize: "0.9rem", padding: "0.6rem" }}
-            >
-              Study Again
-            </button>
+            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+              <button
+                onClick={() => openStudyMode(studyData.deck.id)}
+                style={{ ...generateBtnStyle, fontSize: "0.9rem", padding: "0.6rem" }}
+              >
+                Study Again
+              </button>
+              <button
+                onClick={() => setView("list")}
+                style={{ ...backBtn, padding: "0.6rem 1rem" }}
+              >
+                Back to Decks
+              </button>
+            </div>
           </div>
         )}
 
@@ -518,13 +568,16 @@ export default function FlashcardsPage() {
           {error && <p role="alert" style={{ color: "#e88888", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
         </div>
       ) : (
-        <div style={{ padding: "2rem 0", textAlign: "center" }}>
-          <p style={{ color: "#e8a040", fontSize: "0.9rem" }}>
-            No course documents uploaded yet.{" "}
-            <Link href="/" style={{ color: "#f0dc4e", textDecoration: "underline" }}>
-              Upload materials on the Dashboard
-            </Link>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed #5a7a5a", borderRadius: 8 }}>
+          <p style={{ color: "#b0a090", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+            No course documents yet
           </p>
+          <p style={{ color: "#9a8a7a", fontSize: "0.85rem", margin: "0 0 1rem" }}>
+            Upload your lecture notes, textbooks, or slides to get started with flashcards.
+          </p>
+          <Link href="/plan" style={{ padding: "0.5rem 1rem", background: "#f0dc4e", color: "#1f2e1f", borderRadius: 6, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+            Create a Study Plan
+          </Link>
         </div>
       )}
 
@@ -535,9 +588,14 @@ export default function FlashcardsPage() {
         </p>
       )}
       {!loadingDecks && courses.length > 0 && decks.length === 0 && (
-        <p style={{ color: "#7a7060", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
-          No flashcard decks yet. Hit Generate to create one!
-        </p>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed #5a7a5a", borderRadius: 8 }}>
+          <p style={{ color: "#b0a090", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
+            No flashcard decks yet for this course
+          </p>
+          <p style={{ color: "#9a8a7a", fontSize: "0.8rem", margin: "0 0 1rem" }}>
+            Hit the Generate button above to create your first deck from your uploaded documents.
+          </p>
+        </div>
       )}
       {decks.length > 0 && (
         <div>
