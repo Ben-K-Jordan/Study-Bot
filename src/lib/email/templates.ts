@@ -243,3 +243,57 @@ ${signOff(
 
   return { subject, html };
 }
+
+// ── 5. Email Verification ──────────────────────────────────────────────────
+
+export function emailVerification(
+  name: string,
+  verifyUrl: string,
+): { subject: string; html: string } {
+  const subject = "Verify your Study Bot account";
+
+  const html = layout(`
+${heading("Almost there!")}
+${paragraph(`Hi ${esc(name)},`)}
+${paragraph(
+  "Welcome to Study Bot! Before we can start your journey to academic greatness, we need to make sure you're a real human and not a very studious robot.",
+)}
+${paragraph(
+  "Click the button below to verify your email. This link expires in 24 hours — which is still more time than you spend studying. (We'll fix that.)",
+)}
+${ctaButton("Verify My Email", verifyUrl)}
+${paragraph(
+  `<span style="font-size:13px;color:${TEXT_MUTED};">If the button doesn't work, copy this link into your browser:<br/><a href="${esc(verifyUrl)}" style="color:${ACCENT};word-break:break-all;">${esc(verifyUrl)}</a></span>`,
+)}
+${signOff("— Study Bot (Yes, we verify emails. We're responsible like that.)")}
+  `);
+
+  return { subject, html };
+}
+
+// ── 6. Password Reset ──────────────────────────────────────────────────────
+
+export function passwordReset(
+  name: string,
+  resetUrl: string,
+): { subject: string; html: string } {
+  const subject = "Reset your Study Bot password";
+
+  const html = layout(`
+${heading("Password Reset")}
+${paragraph(`Hi ${esc(name)},`)}
+${paragraph(
+  "Someone (hopefully you) requested a password reset. If this wasn't you, just ignore this email and your password will stay the same.",
+)}
+${paragraph(
+  "This link expires in 1 hour. If you miss the window, just request another one. We've got plenty.",
+)}
+${ctaButton("Reset My Password", resetUrl)}
+${paragraph(
+  `<span style="font-size:13px;color:${TEXT_MUTED};">If the button doesn't work, copy this link:<br/><a href="${esc(resetUrl)}" style="color:${ACCENT};word-break:break-all;">${esc(resetUrl)}</a></span>`,
+)}
+${signOff("— Study Bot (Keeping your account safe since... well, today.)")}
+  `);
+
+  return { subject, html };
+}

@@ -634,6 +634,7 @@ model User {
   notificationPreference NotificationPreference?
   chatMessages           ChatMessage[]
   scheduledReminders     ScheduledReminder[]
+  verificationTokens     VerificationToken[]
 
   @@map("users")
 }
@@ -706,4 +707,22 @@ model ScheduledReminder {
   @@index([scheduledFor, sentAt])
   @@index([userId])
   @@map("scheduled_reminders")
+}
+
+// ── Verification Tokens (email verify, password reset) ──────────
+
+model VerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  token     String    @unique
+  type      String    // EMAIL_VERIFY | PASSWORD_RESET
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId, type])
+  @@map("verification_tokens")
 }
