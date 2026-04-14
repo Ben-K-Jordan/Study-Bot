@@ -24,17 +24,6 @@ export interface AiUsage {
   costUsdMicros?: number;
 }
 
-export interface AiResult<T> {
-  output: T;
-  usage?: AiUsage;
-}
-
-export interface AiError {
-  code: string;
-  message: string;
-  retryable: boolean;
-}
-
 export interface AiCallMeta {
   cacheHit: boolean;
   latencyMs: number;

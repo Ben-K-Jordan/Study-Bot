@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { apiGet, apiPost, apiDelete, type CourseOption } from "@/lib/client-api";
+import { titleStyle, subtitleStyle, selectStyle } from "@/lib/shared-styles";
 
 // --- Types ---
 
@@ -18,39 +20,6 @@ interface Message {
   content: string;
   citations?: Citation[];
   meta?: { chunks_retrieved?: number; latency_ms?: number };
-}
-
-interface CourseOption {
-  course_name: string;
-  exam_name?: string;
-  doc_count: number;
-}
-
-// --- API helpers ---
-
-async function apiGet(url: string) {
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
-}
-
-async function apiPost(url: string, body: unknown) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
-}
-
-async function apiDelete(url: string) {
-  const res = await fetch(url, { method: "DELETE" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
 }
 
 const CHAT_PAGE_SIZE = 50;
@@ -282,7 +251,7 @@ export default function ChatPage() {
             </button>
           )}
         </div>
-        <p style={subtitleStyle}>Ask questions about your course materials</p>
+        <p style={{ ...subtitleStyle, margin: "0 0 0.75rem" }}>Ask questions about your course materials</p>
 
         {/* Course selector */}
         {courses.length > 0 ? (
@@ -576,30 +545,6 @@ const headerStyle: React.CSSProperties = {
   padding: "1.25rem 0 1rem",
   borderBottom: "1px solid var(--color-border-subtle)",
   flexShrink: 0,
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: "1.6rem",
-  margin: "0 0 0.25rem",
-  fontFamily: "var(--font-display)",
-  color: "var(--color-primary)",
-};
-
-const subtitleStyle: React.CSSProperties = {
-  color: "var(--color-text-muted)",
-  margin: "0 0 0.75rem",
-  fontSize: "0.9rem",
-};
-
-const selectStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.5rem",
-  fontSize: "0.85rem",
-  fontFamily: "inherit",
-  background: "var(--color-bg-card)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 6,
 };
 
 const messagesContainer: React.CSSProperties = {

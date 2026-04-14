@@ -6,6 +6,7 @@
  */
 import { createHash } from "crypto";
 import { buildCalendarTitle, buildCalendarDescription, MODE_LABELS } from "@/lib/calendar";
+import { hashUserId } from "@/lib/calendar/hash";
 import { type SessionMode } from "@/lib/validation";
 import { type CalendarEventInput } from "./calendar-client";
 
@@ -137,13 +138,6 @@ export function computeEventHash(input: CalendarEventInput): string {
     extendedProperties: input.extendedProperties,
   });
   return createHash("sha256").update(canonical).digest("hex");
-}
-
-/**
- * Short hash of user ID for extended properties (no PII).
- */
-function hashUserId(userId: string): string {
-  return createHash("sha256").update(userId).digest("hex").slice(0, 16);
 }
 
 export { hashUserId as _hashUserIdForTest };
