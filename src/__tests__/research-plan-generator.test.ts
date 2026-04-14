@@ -12,6 +12,7 @@ vi.mock("@/lib/db", () => ({
       findMany: vi.fn(async () => []),
     },
     $queryRawUnsafe: vi.fn(async () => []),
+    $queryRaw: vi.fn(async () => []),
     aiCallLog: {
       create: vi.fn(async () => ({})),
       aggregate: vi.fn(async () => ({ _sum: { costUsdMicros: 0n } })),
