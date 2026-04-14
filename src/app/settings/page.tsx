@@ -252,7 +252,7 @@ export default function SettingsPage() {
 // ---- Styles ----
 
 const pageStyle: React.CSSProperties = {
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   background: "#2a3d2a",
   color: "#e8dcc8",
   minHeight: "100vh",
@@ -266,7 +266,7 @@ const headingStyle: React.CSSProperties = {
   fontSize: "2rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const sectionStyle: React.CSSProperties = {
@@ -274,7 +274,7 @@ const sectionStyle: React.CSSProperties = {
   fontSize: "1.2rem",
   margin: "0 0 0.25rem",
   fontWeight: 600,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const hintStyle: React.CSSProperties = {

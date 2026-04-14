@@ -35,7 +35,7 @@ export function NavBar() {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 1.25rem",
-    fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+    fontFamily: "var(--font-body)",
     zIndex: 9999,
   };
 
@@ -44,7 +44,7 @@ export function NavBar() {
     fontSize: "1.4rem",
     fontWeight: "bold",
     textDecoration: "none",
-    fontFamily: "var(--font-display), 'Caveat', cursive",
+    fontFamily: "var(--font-display)",
     letterSpacing: "0.02em",
     flexShrink: 0,
   };
@@ -72,7 +72,7 @@ export function NavBar() {
             padding: "0.35rem 0.75rem",
             color: active ? "#f0dc4e" : "#a89a82",
             textDecoration: "none",
-            fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+            fontFamily: "var(--font-body)",
             fontSize: "1rem",
             fontWeight: active ? "bold" : "normal",
             borderBottom: active ? "2px solid #f0dc4e" : "2px solid transparent",

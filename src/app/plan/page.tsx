@@ -397,7 +397,7 @@ export default function PlanPage() {
         if (!dayItems || dayItems.length === 0) return null;
         return (
           <div key={dayIdx} style={{ marginBottom: "1.25rem" }}>
-            <h2 style={{ color: "#f0dc4e", fontSize: "1.3rem", margin: "0 0 0.5rem", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
+            <h2 style={{ color: "#f0dc4e", fontSize: "1.3rem", margin: "0 0 0.5rem", fontFamily: "var(--font-display)" }}>
               {DAY_LABELS[dayIdx]}
             </h2>
             {dayItems.map((item) => (
@@ -433,7 +433,7 @@ export default function PlanPage() {
 // ---- Styles ----
 
 const pageStyle: React.CSSProperties = {
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   background: "#2a3d2a",
   color: "#e8dcc8",
   minHeight: "100vh",
@@ -447,7 +447,7 @@ const headingStyle: React.CSSProperties = {
   fontSize: "2rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const labelStyle: React.CSSProperties = {
@@ -510,10 +510,10 @@ function primaryBtnStyle(disabled: boolean): React.CSSProperties {
     padding: "0.75rem 1.5rem",
     fontFamily: "inherit",
     fontWeight: "bold",
-    fontSize: "1.1rem",
+    fontSize: "1.05rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
-    borderRadius: "4px",
+    borderRadius: 6,
     width: "100%",
   };
 }
@@ -524,10 +524,10 @@ const btnStyle: React.CSSProperties = {
   border: "1px solid #4a6a4a",
   padding: "0.4rem 0.75rem",
   fontFamily: "inherit",
-  fontSize: "0.9rem",
+  fontSize: "0.85rem",
   cursor: "pointer",
   textDecoration: "none",
-  borderRadius: "4px",
+  borderRadius: 6,
 };
 
 function googleBtnStyle(disabled: boolean): React.CSSProperties {
@@ -538,10 +538,10 @@ function googleBtnStyle(disabled: boolean): React.CSSProperties {
     padding: "0.4rem 0.75rem",
     fontFamily: "inherit",
     fontWeight: "bold",
-    fontSize: "0.9rem",
+    fontSize: "0.85rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
-    borderRadius: "4px",
+    borderRadius: 6,
   };
 }
 
@@ -552,5 +552,5 @@ const sessionCardStyle: React.CSSProperties = {
   marginBottom: "0.4rem",
   borderLeft: "3px solid #f0dc4e",
   textDecoration: "none",
-  borderRadius: "2px",
+  borderRadius: 4,
 };

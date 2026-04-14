@@ -309,7 +309,7 @@ export default function DashboardPage() {
               goal={gameState?.dailyXpGoal ?? 50}
             />
             <div>
-              <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display), 'Caveat', cursive" }}>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#f0dc4e", fontFamily: "var(--font-display)" }}>
                 {gameState?.xpToday ?? 0} / {gameState?.dailyXpGoal ?? 50} XP
               </div>
               <div style={{ fontSize: "0.75rem", color: "#9a8a7a", marginTop: "0.2rem" }}>Daily Goal</div>
@@ -664,7 +664,7 @@ function OnboardingFlow({
         maxWidth: 480,
         width: "100%",
         textAlign: "center",
-        fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+        fontFamily: "var(--font-body)",
       }}>
         {/* Step indicator */}
         <div style={{ display: "flex", justifyContent: "center", gap: "0.4rem", marginBottom: "1.5rem" }}>
@@ -682,7 +682,7 @@ function OnboardingFlow({
 
         <h2 style={{
           fontSize: "1.5rem", color: "#f0dc4e", fontWeight: 700, margin: "0 0 1rem",
-          fontFamily: "var(--font-display), 'Caveat', cursive",
+          fontFamily: "var(--font-display)",
         }}>
           {currentStep.title}
         </h2>
@@ -828,7 +828,7 @@ function ConfettiOverlay({ badge }: { badge: string | null }) {
           animation: "celebrate-pop 0.5s ease-out forwards",
         }}>
           <div style={{ fontSize: "3rem", marginBottom: "0.5rem" }}>{info.icon}</div>
-          <div style={{ fontSize: "1.3rem", color: "#f0dc4e", fontWeight: 700, fontFamily: "var(--font-display), 'Caveat', cursive" }}>
+          <div style={{ fontSize: "1.3rem", color: "#f0dc4e", fontWeight: 700, fontFamily: "var(--font-display)" }}>
             {info.label}!
           </div>
           <div style={{ fontSize: "0.85rem", color: "#e8dcc8", marginTop: "0.25rem" }}>
@@ -963,7 +963,7 @@ const mainStyle: React.CSSProperties = {
   maxWidth: 700,
   margin: "0 auto",
   padding: "1.5rem 1rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   color: "#e8dcc8",
   backgroundColor: "#2a3d2a",
   minHeight: "100vh",
@@ -974,7 +974,7 @@ const headingStyle: React.CSSProperties = {
   margin: "0 0 1.5rem",
   color: "#f0dc4e",
   fontWeight: 700,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const sectionHeadingStyle: React.CSSProperties = {
@@ -1007,7 +1007,7 @@ const statNumberStyle: React.CSSProperties = {
   fontWeight: 700,
   color: "#f0dc4e",
   lineHeight: 1,
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const statLabelStyle: React.CSSProperties = {

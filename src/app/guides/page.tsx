@@ -414,7 +414,7 @@ const pageContainer: React.CSSProperties = {
   maxWidth: 720,
   margin: "0 auto",
   padding: "1.5rem 1rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   color: "#e8dcc8",
 };
 
@@ -425,7 +425,7 @@ const headerStyle: React.CSSProperties = {
 const titleStyle: React.CSSProperties = {
   fontSize: "1.6rem",
   margin: "0 0 0.25rem",
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
   color: "#f0dc4e",
 };
 
@@ -468,14 +468,15 @@ const typeButton: React.CSSProperties = {
 
 const generateBtn: React.CSSProperties = {
   width: "100%",
-  padding: "0.85rem",
+  padding: "0.75rem 1.5rem",
   fontSize: "1.05rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   fontWeight: 600,
   background: "#f0dc4e",
   color: "#1f2e1f",
   border: "none",
   borderRadius: 6,
+  cursor: "pointer",
 };
 
 const sectionTitle: React.CSSProperties = {
@@ -483,7 +484,7 @@ const sectionTitle: React.CSSProperties = {
   letterSpacing: "0.08em",
   color: "#7ec8e3",
   margin: "0 0 0.75rem",
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const guideHeader: React.CSSProperties = {
@@ -521,7 +522,7 @@ const guideContent: React.CSSProperties = {
 };
 
 const deleteBtn: React.CSSProperties = {
-  padding: "0 0.6rem",
+  padding: "0 0.65rem",
   fontFamily: "inherit",
   fontSize: "1.1rem",
   fontWeight: 700,

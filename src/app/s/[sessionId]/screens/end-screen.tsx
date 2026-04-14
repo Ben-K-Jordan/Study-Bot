@@ -54,7 +54,7 @@ export function EndScreen({ run, session, onNewRun }: Props) {
   if (!metrics || metrics.attempts_count === 0) {
     return (
       <div style={{ textAlign: "center", padding: "2rem 0" }}>
-        <h1 style={{ fontSize: "1.6rem", fontFamily: "var(--font-display), 'Caveat', cursive" }}>No completed run yet</h1>
+        <h1 style={{ fontSize: "1.6rem", fontFamily: "var(--font-display)" }}>No completed run yet</h1>
         <p style={{ color: "#a89a82", marginBottom: "1.5rem" }}>
           Start a session to see your results here.
         </p>
@@ -83,12 +83,12 @@ export function EndScreen({ run, session, onNewRun }: Props) {
             letterSpacing: "0.1em",
             color: "#7ec8e3",
             marginBottom: "0.5rem",
-            fontFamily: "var(--font-display), 'Caveat', cursive",
+            fontFamily: "var(--font-display)",
           }}
         >
           SESSION COMPLETE
         </div>
-        <h1 style={{ fontSize: "1.6rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display), 'Caveat', cursive", color: "#f0dc4e" }}>
+        <h1 style={{ fontSize: "1.6rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display)", color: "#f0dc4e" }}>
           {session.course_name} | {session.exam_name}
         </h1>
         <p style={{ color: "#a89a82", margin: 0 }}>
@@ -253,7 +253,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: "1.5rem", fontWeight: 700, color, fontFamily: "var(--font-display), 'Caveat', cursive" }}>{value}</div>
+      <div style={{ fontSize: "1.5rem", fontWeight: 700, color, fontFamily: "var(--font-display)" }}>{value}</div>
       <div style={{ fontSize: "0.8rem", color: "#a89a82", marginTop: "0.25rem" }}>{label}</div>
     </div>
   );
@@ -270,14 +270,14 @@ const sectionTitle: React.CSSProperties = {
   letterSpacing: "0.08em",
   color: "#7ec8e3",
   margin: "0 0 0.5rem",
-  fontFamily: "var(--font-display), 'Caveat', cursive",
+  fontFamily: "var(--font-display)",
 };
 
 const primaryBtn: React.CSSProperties = {
   width: "100%",
-  padding: "0.85rem",
+  padding: "0.75rem 1.5rem",
   fontSize: "1.05rem",
-  fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+  fontFamily: "var(--font-body)",
   fontWeight: 600,
   background: "#f0dc4e",
   color: "#1f2e1f",

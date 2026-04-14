@@ -363,7 +363,7 @@ export function SessionRunner({ session }: Props) {
         maxWidth: 700,
         margin: "0 auto",
         padding: "1.5rem 1rem",
-        fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+        fontFamily: "var(--font-body)",
         color: "#e8dcc8",
         backgroundColor: "#2a3d2a",
         minHeight: "100vh",
