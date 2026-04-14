@@ -643,7 +643,7 @@ export function estimateBedtime(events: CalendarEvent[]): number {
   let latestHour = 0;
   for (const event of events) {
     const endHour = new Date(event.end).getHours();
-    if (endHour > latestHour && endHour < 4) {
+    if (endHour < 4) {
       // After midnight — they sleep very late
       return Math.min(endHour + 1, 3);
     }
@@ -652,6 +652,6 @@ export function estimateBedtime(events: CalendarEvent[]): number {
     }
   }
 
-  // Assume bedtime is ~1-2 hours after latest event, capped at 24 (midnight)
-  return Math.min(latestHour + 2, 24) % 24 || 23;
+  // Assume bedtime is ~1-2 hours after latest event, capped at 23 (11 PM)
+  return Math.min(latestHour + 2, 23);
 }

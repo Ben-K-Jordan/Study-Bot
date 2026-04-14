@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 /**
  * GET /api/leaderboard
@@ -12,6 +13,9 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const { searchParams } = new URL(request.url);
   const rawPeriod = searchParams.get("period") || "week";

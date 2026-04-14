@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
 
   const statusFilter = request.nextUrl.searchParams.get("status");
-  const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "20", 10), 100);
+  const limit = Math.max(1, Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "20", 10), 100));
 
   const where = statusFilter ? { status: statusFilter } : {};
 
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       priority: j.priority,
       attempts: j.attempts,
       max_attempts: j.maxAttempts,
-      last_error: j.lastError,
+      last_error: j.lastError ? j.lastError.slice(0, 200) : null,
       created_at: j.createdAt.toISOString(),
       updated_at: j.updatedAt.toISOString(),
       run_after: j.runAfter.toISOString(),
