@@ -24,6 +24,7 @@ import type {
   RunnableMode,
 } from "@/lib/validation";
 import { RUNNABLE_MODES } from "@/lib/validation";
+import { generateVariantQuestion, MAX_VARIANTS_PER_SESSION } from "@/lib/variant-questions";
 
 // ---- Sentinel errors for transaction control flow ----
 
@@ -279,15 +280,19 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       break;
   }
 
-  // ---- Pre-test + Spaced Review Warm-ups ----
+  // ---- Pre-test + Spaced Review + Cross-Session Error Repair Warm-ups ----
   // Skip for EXAM_SIM (fixed format) and ERROR_REPAIR (already targeted).
   if (mode !== "EXAM_SIM" && mode !== "ERROR_REPAIR") {
     // Pre-test: generate diagnostic questions for new objectives with no mastery records
     const pretestPrompts = await generatePretestPrompts(userId, session.courseName, objectives);
     // Spaced review: prepend review questions on due objectives
     const warmupPrompts = await generateWarmupPrompts(userId, session.courseName, objectives);
+    // Cross-session error repair: inject unresolved errors from previous sessions
+    // Research (Rawson & Dunlosky 2011): Successive relearning — re-testing errors
+    // from prior sessions produces cumulative retention gains across sessions.
+    const errorRepairPrompts = await generateCrossSessionRepairs(userId, session.courseName);
 
-    const prependedPrompts = [...pretestPrompts, ...warmupPrompts];
+    const prependedPrompts = [...pretestPrompts, ...warmupPrompts, ...errorRepairPrompts];
     if (prependedPrompts.length > 0) {
       prompts = [...prependedPrompts, ...prompts];
       logger.info("run.warmup_prepended", {
@@ -295,6 +300,7 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
         session_id: sessionId,
         pretest_count: pretestPrompts.length,
         warmup_count: warmupPrompts.length,
+        error_repair_count: errorRepairPrompts.length,
       });
     }
   }
@@ -703,11 +709,12 @@ async function handleImmediateScoring(
         },
       });
 
+      let errorLogId: string | undefined;
       if (
         (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
         input.error_log
       ) {
-        await tx.sessionErrorLog.create({
+        const errorLog = await tx.sessionErrorLog.create({
           data: {
             runId: run.runId,
             userId: run.userId,
@@ -717,10 +724,11 @@ async function handleImmediateScoring(
             variantQuestion: input.error_log.variant_question ?? null,
           },
         });
+        errorLogId = errorLog.id;
       }
 
-      // ERROR_REPAIR: resolve the linked error log on CORRECT
-      if (run.mode === "ERROR_REPAIR" && input.self_score === "CORRECT" && prompt.meta?.source_error_log_id) {
+      // Resolve linked error log on CORRECT (ERROR_REPAIR mode, cross-session repairs, and variant questions)
+      if (input.self_score === "CORRECT" && prompt.meta?.source_error_log_id) {
         await tx.sessionErrorLog.update({
           where: { id: prompt.meta.source_error_log_id },
           data: {
@@ -730,7 +738,55 @@ async function handleImmediateScoring(
         });
       }
 
-      const metricsToStore = isLastPrompt
+      // ---- In-session error repair: inject variant question ----
+      // When the student gets a question wrong, append a variant question to the
+      // end of the deck. This provides natural spacing (1-3 intervening items)
+      // before the retry, which research shows enhances the retrieval effect
+      // (Kornell & Bjork 2008).
+      let variantInjected = false;
+      let finalPromptCount = promptCount;
+      if (
+        (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
+        input.error_log &&
+        run.mode !== "ERROR_REPAIR" // ERROR_REPAIR already has targeted repair prompts
+      ) {
+        // Count existing variants in this session to cap injection
+        const existingVariants = await tx.sessionRunPrompt.count({
+          where: { runId: run.runId, sourceType: "VARIANT_REPAIR" },
+        });
+
+        if (existingVariants < MAX_VARIANTS_PER_SESSION) {
+          const variantPrompt = generateVariantQuestion(
+            promptCount, // append at end of current deck
+            prompt.text,
+            input.error_log.error_type,
+            input.error_log.correction_rule,
+            prompt.objective_id,
+            errorLogId,
+          );
+
+          await tx.sessionRunPrompt.create({
+            data: {
+              runId: run.runId,
+              promptIndex: promptCount,
+              objectiveId: variantPrompt.objective_id ?? null,
+              text: variantPrompt.text,
+              difficulty: variantPrompt.difficulty,
+              sourceType: "VARIANT_REPAIR",
+              sourceRefId: errorLogId ?? null,
+              meta: variantPrompt.meta ? (variantPrompt.meta as object) : undefined,
+            },
+          });
+
+          finalPromptCount = promptCount + 1;
+          variantInjected = true;
+        }
+      }
+
+      const isLastPromptFinal = newIndex >= finalPromptCount;
+      const updatedBreakStateFinal = isLastPromptFinal ? freshBreak : updatedBreakState;
+
+      const metricsToStore = isLastPromptFinal
         ? { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) }
         : newMetrics;
 
@@ -738,18 +794,19 @@ async function handleImmediateScoring(
         where: { id: run.id },
         data: {
           currentIndex: newIndex,
+          promptCount: finalPromptCount,
           metrics: metricsToStore as object,
-          breakState: updatedBreakState as object,
-          status: isLastPrompt ? "COMPLETED" : "ACTIVE",
-          phase: isLastPrompt ? "COMPLETE" : undefined,
-          endedAt: isLastPrompt ? new Date() : undefined,
+          breakState: updatedBreakStateFinal as object,
+          status: isLastPromptFinal ? "COMPLETED" : "ACTIVE",
+          phase: isLastPromptFinal ? "COMPLETE" : undefined,
+          endedAt: isLastPromptFinal ? new Date() : undefined,
         },
       });
 
-      return { attemptId: attempt.id, newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState };
+      return { attemptId: attempt.id, newMetrics, newIndex, promptCount: finalPromptCount, isLastPrompt: isLastPromptFinal, updatedBreakState: updatedBreakStateFinal, variantInjected };
     });
     attemptId = txResult.attemptId;
-    const { newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState } = txResult;
+    const { newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState, variantInjected } = txResult;
 
     const dbTxMs = Date.now() - txStart;
     const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
@@ -763,6 +820,7 @@ async function handleImmediateScoring(
       self_score: input.self_score,
       mode: run.mode,
       is_last: isLastPrompt,
+      variant_injected: variantInjected,
       db_tx_ms: dbTxMs,
     });
 
@@ -1116,6 +1174,90 @@ async function generatePretestPrompts(
     return pretests;
   } catch (err) {
     logger.error("pretest.generation_failed", { user_id: userId, error: String(err) });
+    return [];
+  }
+}
+
+// ---- Cross-Session Error Repair Generator ----
+
+/**
+ * Generate repair prompts from unresolved errors in PREVIOUS sessions.
+ *
+ * Research basis (Rawson & Dunlosky 2011): Successive relearning — re-testing
+ * errors from prior sessions — produces cumulative retention gains. Each
+ * retrieval attempt on a previously-failed concept strengthens the corrected
+ * memory trace and reduces future interference from the original error.
+ *
+ * Max 2 repair prompts to avoid overwhelming the session. These are injected
+ * as warm-ups alongside pre-test and spaced review questions.
+ */
+async function generateCrossSessionRepairs(
+  userId: string,
+  courseName: string,
+): Promise<Prompt[]> {
+  try {
+    // Find unresolved errors from this course's sessions, newest first
+    const unresolvedErrors = await prisma.sessionErrorLog.findMany({
+      where: {
+        userId,
+        resolvedAt: null,
+        run: {
+          session: { courseName },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 4, // fetch more than needed to filter
+      include: {
+        run: {
+          select: {
+            attempts: {
+              select: { promptText: true, promptIndex: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (unresolvedErrors.length === 0) return [];
+
+    const repairs: Prompt[] = [];
+    const maxRepairs = Math.min(2, unresolvedErrors.length);
+
+    for (let i = 0; i < maxRepairs; i++) {
+      const err = unresolvedErrors[i];
+      const originalAttempt = err.run.attempts.find(
+        (a) => a.promptIndex === err.promptIndex,
+      );
+      const originalText = originalAttempt?.promptText || "a previous question";
+      const daysSince = Math.floor(
+        (Date.now() - err.createdAt.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const variant = err.variantQuestion?.trim();
+      const text = variant
+        ? `Error repair (from ${daysSince}d ago): You previously made a ${err.errorType.toLowerCase()} error. Try this variant:\n\n${variant}\n\nAnswer from memory, then state the correction rule.`
+        : `Error repair (from ${daysSince}d ago): You made a ${err.errorType.toLowerCase()} error on: "${originalText}"\n\nFrom memory, state the correct rule and explain why the common mistake happens. Then give a new example where this rule applies.`;
+
+      repairs.push({
+        id: `repair_${i}`,
+        objective_id: undefined,
+        text,
+        difficulty: 2,
+        meta: {
+          pack: "CROSS_SESSION_REPAIR",
+          source_error_log_id: err.id,
+          original_prompt_text: originalText,
+          expected_correction_rule: err.correctionRule,
+        },
+      });
+    }
+
+    return repairs;
+  } catch (err) {
+    logger.error("cross_session_repair.generation_failed", {
+      user_id: userId,
+      error: String(err),
+    });
     return [];
   }
 }
