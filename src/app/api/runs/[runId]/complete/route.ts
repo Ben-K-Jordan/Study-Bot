@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { completeRun } from "@/services/run";
 import { logger } from "@/lib/logger";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 export async function POST(
   request: NextRequest,
@@ -11,6 +12,9 @@ export async function POST(
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const { runId } = await params;
 

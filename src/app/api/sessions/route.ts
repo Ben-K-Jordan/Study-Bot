@@ -3,12 +3,16 @@ import { getUserId } from "@/lib/auth";
 import { createSession } from "@/services/session";
 import { z } from "zod/v4";
 import { logger } from "@/lib/logger";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {

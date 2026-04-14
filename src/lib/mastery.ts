@@ -113,54 +113,60 @@ export async function updateMastery(
   now: Date = new Date(),
   examDate?: Date,
 ): Promise<SM2Update> {
-  const existing = await prisma.objectiveMastery.findUnique({
-    where: {
-      userId_courseName_objectiveKey: {
+  // Read + compute + write in a single transaction to prevent concurrent
+  // run completions from clobbering each other's mastery state.
+  const update = await prisma.$transaction(async (tx) => {
+    const existing = await tx.objectiveMastery.findUnique({
+      where: {
+        userId_courseName_objectiveKey: {
+          userId,
+          courseName,
+          objectiveKey,
+        },
+      },
+    });
+
+    const current: SM2State = existing
+      ? {
+          easeFactor: existing.easeFactor,
+          intervalDays: existing.intervalDays,
+          repetitions: existing.repetitions,
+        }
+      : { easeFactor: 2.5, intervalDays: 0, repetitions: 0 };
+
+    const quality = accuracyToQuality(accuracy);
+    const result = sm2Next(current, quality, now, examDate);
+
+    await tx.objectiveMastery.upsert({
+      where: {
+        userId_courseName_objectiveKey: {
+          userId,
+          courseName,
+          objectiveKey,
+        },
+      },
+      create: {
         userId,
         courseName,
         objectiveKey,
+        easeFactor: result.easeFactor,
+        intervalDays: result.intervalDays,
+        repetitions: result.repetitions,
+        lastAccuracy: accuracy,
+        lastStudiedAt: now,
+        nextDueAt: result.nextDueAt,
       },
-    },
-  });
-
-  const current: SM2State = existing
-    ? {
-        easeFactor: existing.easeFactor,
-        intervalDays: existing.intervalDays,
-        repetitions: existing.repetitions,
-      }
-    : { easeFactor: 2.5, intervalDays: 0, repetitions: 0 };
-
-  const quality = accuracyToQuality(accuracy);
-  const update = sm2Next(current, quality, now, examDate);
-
-  await prisma.objectiveMastery.upsert({
-    where: {
-      userId_courseName_objectiveKey: {
-        userId,
-        courseName,
-        objectiveKey,
+      update: {
+        easeFactor: result.easeFactor,
+        intervalDays: result.intervalDays,
+        repetitions: result.repetitions,
+        lastAccuracy: accuracy,
+        lastStudiedAt: now,
+        nextDueAt: result.nextDueAt,
       },
-    },
-    create: {
-      userId,
-      courseName,
-      objectiveKey,
-      easeFactor: update.easeFactor,
-      intervalDays: update.intervalDays,
-      repetitions: update.repetitions,
-      lastAccuracy: accuracy,
-      lastStudiedAt: now,
-      nextDueAt: update.nextDueAt,
-    },
-    update: {
-      easeFactor: update.easeFactor,
-      intervalDays: update.intervalDays,
-      repetitions: update.repetitions,
-      lastAccuracy: accuracy,
-      lastStudiedAt: now,
-      nextDueAt: update.nextDueAt,
-    },
+    });
+
+    return result;
   });
 
   return update;

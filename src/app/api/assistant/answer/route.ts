@@ -14,6 +14,7 @@ import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
+import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 const answerRequestSchema = z.object({
   question: z.string().min(1).max(2000),
@@ -39,6 +40,9 @@ export async function POST(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = aiLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {

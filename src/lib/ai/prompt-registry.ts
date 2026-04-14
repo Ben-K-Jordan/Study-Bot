@@ -6,6 +6,15 @@
  */
 import { AiTask } from "./types";
 
+/**
+ * Fence user-provided text to prevent prompt injection.
+ * Wraps content in XML-like delimiters and strips any nested closing tags.
+ */
+function fence(label: string, text: string): string {
+  const sanitized = text.replace(new RegExp(`</${label}>`, "gi"), "");
+  return `<${label}>\n${sanitized}\n</${label}>`;
+}
+
 export interface PromptTemplate {
   task: AiTask;
   version: string;
@@ -128,7 +137,7 @@ Rules:
       const context = chunks
         .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 800)}`)
         .join("\n\n");
-      return `Question: ${question}\n\nMax words: ${maxWords}\nVerbosity: ${verbosity}\n\nSupporting materials:\n${context}`;
+      return `${fence("student_question", question)}\n\nMax words: ${maxWords}\nVerbosity: ${verbosity}\n\nSupporting materials:\n${context}`;
     },
   },
 
@@ -140,7 +149,7 @@ Given an original question that a student got wrong, generate a variant question
 Output valid JSON: { "variant_question": string }`,
     buildUserPrompt: (input: unknown) => {
       const { originalQuestion, errorType, correctionRule } = input as VariantInput;
-      return `Original question: ${originalQuestion}\nError type: ${errorType}\nCorrection: ${correctionRule}\n\nGenerate a variant question.`;
+      return `Original question: ${originalQuestion}\nError type: ${errorType}\nCorrection: ${fence("student_correction", correctionRule)}\n\nGenerate a variant question.`;
     },
   },
 
@@ -152,7 +161,7 @@ Classify the student's error into one of: MISCONCEPTION, PROCEDURE, CARELESS, ME
 Output valid JSON: { "error_type": string, "confidence": number }`,
     buildUserPrompt: (input: unknown) => {
       const { question, userAnswer, correctConcept } = input as ErrorTypeInput;
-      return `Question: ${question}\nStudent answer: ${userAnswer}\nCorrect concept: ${correctConcept}`;
+      return `Question: ${question}\n${fence("student_answer", userAnswer)}\nCorrect concept: ${correctConcept}`;
     },
   },
 
@@ -364,9 +373,9 @@ Output valid JSON:
       const context = chunks
         .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 600)}`)
         .join("\n\n");
-      let prompt = `Question: ${question}\nStudent's answer: ${userAnswer}\nScore: ${selfScore}`;
+      let prompt = `Question: ${question}\n${fence("student_answer", userAnswer)}\nScore: ${selfScore}`;
       if (errorType) prompt += `\nError type: ${errorType}`;
-      if (correctionRule) prompt += `\nStudent's correction note: ${correctionRule}`;
+      if (correctionRule) prompt += `\nStudent's correction note: ${fence("student_correction", correctionRule)}`;
       if (mistakePatterns && mistakePatterns.length > 0) {
         prompt += `\nStudent's mistake patterns (across recent sessions): ${mistakePatterns.map((p) => `${p.error_type}: ${p.count} occurrences`).join(", ")}`;
       }
@@ -402,7 +411,7 @@ Output valid JSON:
       const context = chunks.length > 0
         ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
         : "(No course material available)";
-      return `Question: ${question}\nStudent's correct answer: ${userAnswer}\n\nCourse material context:\n${context}\n\nReinforce their understanding with a brief insight and connect to related concepts.`;
+      return `Question: ${question}\n${fence("student_answer", userAnswer)}\n\nCourse material context:\n${context}\n\nReinforce their understanding with a brief insight and connect to related concepts.`;
     },
   },
 
@@ -439,8 +448,8 @@ Output valid JSON:
       const context = chunks.length > 0
         ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
         : "(No course material available)";
-      let prompt = `Question: ${question}\nStudent's answer: ${userAnswer}\nScore: ${selfScore}`;
-      if (explanation) prompt += `\nExplanation given: ${explanation}`;
+      let prompt = `Question: ${question}\n${fence("student_answer", userAnswer)}\nScore: ${selfScore}`;
+      if (explanation) prompt += `\nExplanation given: ${fence("student_explanation", explanation)}`;
       prompt += `\n\nCourse material:\n${context}\n\nGenerate a Socratic follow-up question to deepen understanding.`;
       return prompt;
     },

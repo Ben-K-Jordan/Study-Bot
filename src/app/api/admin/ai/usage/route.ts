@@ -6,12 +6,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserId } from "@/lib/auth";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const filterUserId = userId;
   const days = parseInt(request.nextUrl.searchParams.get("days") || "7", 10);

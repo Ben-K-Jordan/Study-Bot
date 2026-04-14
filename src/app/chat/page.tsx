@@ -563,7 +563,7 @@ const userBubble: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: 6,
   padding: "0.75rem 1rem",
-  marginLeft: "2rem",
+  marginLeft: "min(2rem, 10%)",
 };
 
 const assistantBubble: React.CSSProperties = {
@@ -571,7 +571,7 @@ const assistantBubble: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: 6,
   padding: "0.75rem 1rem",
-  marginRight: "2rem",
+  marginRight: "min(2rem, 10%)",
 };
 
 const citationButton: React.CSSProperties = {
