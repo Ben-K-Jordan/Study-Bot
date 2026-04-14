@@ -15,12 +15,9 @@ import { prisma } from "@/lib/db";
 import { getGoogleClient, GoogleApiError, GoogleReconnectError, type CalendarEventInput } from "@/lib/google/calendar-client";
 import { buildEventPayload } from "@/lib/google/event-builder";
 import { logger } from "@/lib/logger";
+import { getBaseUrl } from "@/lib/config";
 
 const CONCURRENCY_LIMIT = parseInt(process.env.GOOGLE_CALENDAR_SYNC_CONCURRENCY || "5", 10);
-
-function getBaseUrl(): string {
-  return process.env.BASE_URL || "http://localhost:3000";
-}
 
 // ---- Types ----
 

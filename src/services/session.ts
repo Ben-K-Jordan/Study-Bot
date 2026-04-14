@@ -6,10 +6,7 @@ import {
   SessionMode,
 } from "@/lib/validation";
 import { logger } from "@/lib/logger";
-
-function getBaseUrl(): string {
-  return process.env.BASE_URL || "http://localhost:3000";
-}
+import { getBaseUrl } from "@/lib/config";
 
 function defaultPlanSteps(minutes: number): string[] {
   if (minutes <= 30) {

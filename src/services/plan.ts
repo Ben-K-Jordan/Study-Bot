@@ -21,10 +21,7 @@ import {
   type Chronotype,
   type SessionMode as IntelMode,
 } from "@/lib/schedule-intelligence";
-
-function getBaseUrl(): string {
-  return process.env.BASE_URL || "http://localhost:3000";
-}
+import { getBaseUrl } from "@/lib/config";
 
 function computeStartTime(
   startDate: Date,
