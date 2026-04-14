@@ -50,6 +50,8 @@ interface GeneratePromptsInput {
   courseName: string;
   examName?: string;
   masteryContext?: string;
+  /** Real student errors to use as distractor source material for MCQs. */
+  errorPatterns?: { errorType: string; correctionRule: string; objectiveTitle: string }[];
 }
 
 interface GenerateFeedbackInput {
@@ -249,54 +251,67 @@ Design the optimal study schedule.`;
 
   [AiTask.GENERATE_PROMPTS]: {
     task: AiTask.GENERATE_PROMPTS,
-    version: "v2",
+    version: "v3",
     systemPrompt: `You are an expert professor creating study questions directly from course materials. Task: GENERATE_PROMPTS.
 
 You generate questions grounded in learning science research on retrieval practice and the testing effect. Your questions are designed to maximize long-term retention, not just assess knowledge.
 
 EVIDENCE-BASED QUESTION DESIGN PRINCIPLES (from Roediger & Karpicke 2006, Adesope et al. 2017, Karpicke 2025):
 
-1. RETRIEVAL EFFORT: Questions should require effortful recall, not recognition. Free-recall and short-answer formats produce stronger learning effects (d=0.48-0.80) than simple recognition. Ask students to PRODUCE answers from memory, not choose from options.
+1. RETRIEVAL EFFORT: Free-recall and short-answer formats produce stronger learning effects (d=0.48-0.80) than simple recognition. Use FREE_RECALL for foundational knowledge building.
 
-2. TRANSFER-APPROPRIATE PROCESSING: Match question format to how knowledge will be assessed on the exam. If the exam uses problem-solving, ask problem-solving questions. If it uses essay-style, ask for explanations.
+2. TRANSFER-APPROPRIATE PROCESSING: Match question format to how knowledge will be assessed. If the exam uses MCQ, include MCQ questions. If it uses essays, use FREE_RECALL. MIXED formats within a session produce the strongest learning (effect size g=0.80).
 
-3. MIXED FORMAT: Use a mix of question types within a session (effect size g=0.80 for mixed vs g=0.48 for single format). Combine recall, application, comparison, and analysis questions.
+3. DESIRABLE DIFFICULTY: Questions should be challenging but achievable. Retrieval that requires effort produces stronger memory traces. Include questions that force the student to connect ideas across different parts of the material.
 
-4. DESIRABLE DIFFICULTY: Questions should be challenging but achievable. Retrieval that requires effort produces stronger memory traces. Include questions that force the student to connect ideas across different parts of the material.
+4. ELABORATIVE RETRIEVAL: Ask questions that require students to generate explanations, connections, and inferences beyond surface facts. "Why" and "how" questions produce deeper encoding than "what" questions.
 
-5. ELABORATIVE RETRIEVAL: Ask questions that require students to generate explanations, connections, and inferences beyond surface facts. "Why" and "how" questions produce deeper encoding than "what" questions.
+5. SUCCESSIVE RELEARNING: Reference specific content from the materials so students can verify and correct their answers.
 
-6. SUCCESSIVE RELEARNING: Reference specific content from the materials so students can verify and correct their answers. This supports the test-restudy cycle that maximizes retention.
-
-7. CONTEXT REINSTATEMENT: Questions that evoke the original learning context (referencing specific examples, diagrams, or problems from the material) enhance retrieval.
-
-8. NEAR-TRANSFER: Include questions that require applying concepts to slightly different scenarios than those in the materials. This tests genuine understanding vs. memorization.
+6. NEAR-TRANSFER: Include questions that require applying concepts to slightly different scenarios than those in the materials.
 
 QUESTION CONSTRUCTION PRINCIPLES (from Burton et al. 1991, Clay 2001, CEE/UC Davis 2018):
 
-9. BLOOM'S TAXONOMY TARGETING: Distribute questions across cognitive levels. Teachers write 80-90% of questions at the lowest "knowledge" level — you must do better. Target: ~20% recall, ~30% comprehension/application, ~30% analysis, ~20% synthesis/evaluation.
+7. BLOOM'S TAXONOMY TARGETING: Target: ~20% recall, ~30% comprehension/application, ~30% analysis, ~20% synthesis/evaluation.
 
-10. ONE OBJECTIVE PER QUESTION: Each question must assess a single, clear learning objective. Do not combine multiple unrelated concepts in one question.
+8. ONE OBJECTIVE PER QUESTION: Each question must assess a single, clear learning objective.
 
-11. CLEAR PROBLEM STATEMENT: State the problem precisely. After reading the question, the student should know exactly what is being asked. Avoid vague prompts like "discuss X" — instead ask a specific question about X.
+9. CLEAR PROBLEM STATEMENT: State the problem precisely. The student should know exactly what is being asked.
 
-12. AVOID TRIVIAL DETAILS: Focus on important concepts, not minutiae. Do not test obscure facts like page numbers or footnotes. Test understanding of the core ideas.
+10. NO TRICK QUESTIONS: Difficulty should come from the content, not from confusing wording.
 
-13. HIGHER-ORDER QUESTIONS: Include questions that require students to: analyze phenomena, apply principles to new situations, interpret cause-and-effect, discriminate between similar concepts, solve problems, and evaluate arguments.
+FORMAT MIX — FREE_RECALL vs MCQ:
+Generate a MIX of formats within each session. The ratio depends on mode:
+- RETRIEVAL: ~60% FREE_RECALL, ~40% MCQ (build recall first, test discrimination second)
+- INTERLEAVED_PRACTICE: ~40% FREE_RECALL, ~60% MCQ (MCQ excels at "which concept applies?" discrimination)
+- EXAM_SIM: ~30% FREE_RECALL, ~70% MCQ (match typical exam format)
+- ERROR_REPAIR: 100% FREE_RECALL (force the student to reconstruct, not recognize)
 
-14. NO TRICK QUESTIONS: Questions should be straightforward and unambiguous. Difficulty should come from the content, not from confusing wording.
+MCQ DISTRACTOR RULES — THIS IS CRITICAL:
+The #1 failure mode of study bots is obvious wrong answers. Every distractor MUST follow these rules:
+
+D1. MISCONCEPTION-BASED: Each distractor must represent a SPECIFIC, COMMON student error — not a random wrong answer. Ask yourself: "What would a student who misunderstands X in way Y choose?" Each distractor targets a different misconception.
+
+D2. HOMOGENEOUS FORMAT: All 4 choices must be the SAME grammatical form, similar length (within 20%), and same level of specificity. If the correct answer is a 15-word sentence, every distractor must also be ~12-18 words. If the correct answer uses technical terminology, every distractor must use technical terminology. A student should NEVER be able to eliminate a choice based on how it looks.
+
+D3. PLAUSIBLE REASONING: Each distractor must be defensible under a specific wrong mental model. Provide a rationale for why a confused student would pick it. Common sources: confusing similar formulas, swapping cause and effect, applying a rule from a different context, off-by-one errors, partial understanding.
+
+D4. NO GIVEAWAYS: Never use "All of the above", "None of the above", or absolute qualifiers ("always", "never", "only") that signal the answer. Never make one choice obviously longer or more detailed than others.
+
+D5. NEAR-MISS DISTRACTORS: At least one distractor should differ from the correct answer by exactly one step, one word, or one concept. This forces precision.
+
+D6. DOMAIN-GROUNDED: Distractors must use real terminology from the course material. Never use generic filler like "It depends on the situation" or "All methods are equally valid."
+
+D7. DISTRACTOR RATIONALES: For each choice, provide a short rationale explaining why a student might select it. For the correct answer, explain why it's right. For distractors, name the specific misconception.
 
 QUESTION GENERATION RULES:
 1. Every question MUST be grounded in the provided course material excerpts.
 2. Use specific terminology, examples, formulas, and concepts from the materials.
-3. For RETRIEVAL mode: Focus on closed-book free recall. Ask students to explain, define, list, or derive from memory. Include both factual and conceptual questions.
-4. For INTERLEAVED_PRACTICE mode: Mix questions across different objectives. Include "which concept applies?" questions that force discrimination between similar ideas.
-5. For EXAM_SIM mode: Write multi-step questions requiring synthesis. Match likely exam format and difficulty.
-6. For ERROR_REPAIR mode: Target commonly confused concepts. Create "near-miss" questions where subtle distinctions matter.
-7. Assign difficulty 1-5 mapped to Bloom's levels (1=remember/recall, 2=understand/explain, 3=apply to new scenario, 4=analyze/compare/contrast, 5=evaluate/synthesize/create).
-8. NEVER write trivial questions. Even difficulty-1 questions should require genuine retrieval effort.
-9. Reference specific examples or problems from the material when possible.
-10. Generate exactly the requested number of prompts.
+3. Assign difficulty 1-5 mapped to Bloom's levels (1=remember/recall, 2=understand/explain, 3=apply, 4=analyze, 5=evaluate/synthesize).
+4. NEVER write trivial questions. Even difficulty-1 questions should require genuine effort.
+5. Reference specific examples or problems from the material when possible.
+6. Generate exactly the requested number of prompts.
+7. For MCQ: generate exactly 4 choices. The correct answer index (0-3) must be valid.
 
 Output valid JSON:
 {
@@ -304,12 +319,19 @@ Output valid JSON:
     {
       "objective_id": string,
       "text": string,
-      "difficulty": number
+      "difficulty": number,
+      "format": "FREE_RECALL" | "MCQ",
+      "choices": string[] | null,
+      "correct_index": number | null,
+      "distractor_rationales": string[] | null
     }
   ]
-}`,
+}
+
+For FREE_RECALL: set choices, correct_index, and distractor_rationales to null.
+For MCQ: choices must have exactly 4 strings, correct_index must be 0-3, distractor_rationales must have exactly 4 strings (one per choice, in same order).`,
     buildUserPrompt: (input: unknown) => {
-      const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName, masteryContext } =
+      const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName, masteryContext, errorPatterns } =
         input as GeneratePromptsInput;
 
       const objStr = objectives
@@ -328,16 +350,21 @@ Output valid JSON:
         masteryStr = `\n\n${masteryContext}\n\nADAPT question difficulty to the student's mastery level for each objective. Do NOT generate the same difficulty for all objectives.`;
       }
 
+      let errorStr = "";
+      if (errorPatterns && errorPatterns.length > 0) {
+        errorStr = `\n\nSTUDENT ERROR HISTORY (use these to craft targeted distractors):\n${errorPatterns.map((e, i) => `${i + 1}. [${e.errorType}] "${e.correctionRule}" (objective: ${e.objectiveTitle})`).join("\n")}\n\nUse these real misconceptions as the basis for MCQ distractors. A distractor that matches a student's actual past error is maximally effective.`;
+      }
+
       return `${header}
 Topic scope: ${topicScope}
 Session mode: ${mode}
-Generate exactly ${promptCount} questions.
+Generate exactly ${promptCount} questions with a mix of FREE_RECALL and MCQ formats.
 
 Learning objectives:
 ${objStr}
 
 Course material excerpts (use these to ground your questions):
-${contentStr}${masteryStr}
+${contentStr}${masteryStr}${errorStr}
 
 Generate ${promptCount} study questions that test mastery of this specific course material.`;
     },

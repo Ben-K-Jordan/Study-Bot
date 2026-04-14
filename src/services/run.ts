@@ -62,6 +62,13 @@ export interface PromptView {
   objective_id?: string;
   difficulty?: number;
   source_type?: string;
+  format?: "FREE_RECALL" | "MCQ";
+  choices?: string[];
+  correctIndex?: number;
+  meta?: {
+    distractorRationales?: string[];
+    [key: string]: unknown;
+  };
 }
 
 function emptyMetrics(): RunMetrics {
@@ -103,12 +110,21 @@ function initialPhaseForMode(mode: string): string {
 
 /** Convert a generated Prompt to a PromptView for API responses */
 function toPromptView(prompt: Prompt, index: number): PromptView {
-  return {
+  const view: PromptView = {
     prompt_index: index,
     text: prompt.text,
     objective_id: prompt.objective_id,
     difficulty: prompt.difficulty,
   };
+  if (prompt.format === "MCQ" && prompt.choices && prompt.correctIndex != null) {
+    view.format = "MCQ";
+    view.choices = prompt.choices;
+    view.correctIndex = prompt.correctIndex;
+    if (prompt.meta?.distractorRationales) {
+      view.meta = { distractorRationales: prompt.meta.distractorRationales };
+    }
+  }
+  return view;
 }
 
 // ---- Post-completion side effects ----
@@ -377,6 +393,13 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
     // Write prompts to normalized table
     for (let i = 0; i < prompts.length; i++) {
       const p = prompts[i];
+      // Merge MCQ fields into meta JSON for storage
+      const storedMeta: Record<string, unknown> = p.meta ? { ...p.meta } : {};
+      if (p.format === "MCQ" && p.choices && p.correctIndex != null) {
+        storedMeta.format = p.format;
+        storedMeta.choices = p.choices;
+        storedMeta.correctIndex = p.correctIndex;
+      }
       await tx.sessionRunPrompt.create({
         data: {
           runId,
@@ -386,7 +409,7 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
           difficulty: p.difficulty ?? 1,
           sourceType: p.meta?.source_error_log_id ? "ERROR_LOG" : "GENERATED",
           sourceRefId: p.meta?.source_error_log_id ?? null,
-          meta: p.meta ? (p.meta as object) : undefined,
+          meta: Object.keys(storedMeta).length > 0 ? (storedMeta as object) : undefined,
         },
       });
     }
@@ -431,13 +454,24 @@ async function getPromptAt(runId: string, index: number, fallbackPrompts: Prompt
     where: { runId_promptIndex: { runId, promptIndex: index } },
   });
   if (row) {
-    return {
+    const meta = row.meta as Record<string, unknown> | null;
+    const view: PromptView = {
       prompt_index: row.promptIndex,
       text: row.text,
       objective_id: row.objectiveId ?? undefined,
       difficulty: row.difficulty,
       source_type: row.sourceType,
     };
+    // Extract MCQ fields stored in meta JSON
+    if (meta?.format === "MCQ" && Array.isArray(meta.choices) && meta.correctIndex != null) {
+      view.format = "MCQ";
+      view.choices = meta.choices as string[];
+      view.correctIndex = meta.correctIndex as number;
+      if (Array.isArray(meta.distractorRationales)) {
+        view.meta = { distractorRationales: meta.distractorRationales as string[] };
+      }
+    }
+    return view;
   }
   // Fallback to JSONB for runs created before migration
   const p = fallbackPrompts[index];
@@ -550,13 +584,23 @@ async function adaptPromptDifficulty(
     target_range: `${targetMin}-${targetMax}`,
   });
 
-  return {
+  const swapMeta = betterFit.meta as Record<string, unknown> | null;
+  const swapView: PromptView = {
     prompt_index: currentIndex,
     text: betterFit.text,
     objective_id: betterFit.objectiveId ?? undefined,
     difficulty: betterFit.difficulty,
     source_type: betterFit.sourceType,
   };
+  if (swapMeta?.format === "MCQ" && Array.isArray(swapMeta.choices) && swapMeta.correctIndex != null) {
+    swapView.format = "MCQ";
+    swapView.choices = swapMeta.choices as string[];
+    swapView.correctIndex = swapMeta.correctIndex as number;
+    if (Array.isArray(swapMeta.distractorRationales)) {
+      swapView.meta = { distractorRationales: swapMeta.distractorRationales as string[] };
+    }
+  }
+  return swapView;
 }
 
 // ---- Get Run ----
@@ -668,7 +712,19 @@ export async function submitAttempt(userId: string, runId: string, input: Attemp
     where: { runId_promptIndex: { runId, promptIndex } },
   });
   const prompt: Prompt = promptRow
-    ? { id: promptRow.id, text: promptRow.text, objective_id: promptRow.objectiveId ?? undefined, difficulty: promptRow.difficulty, meta: promptRow.meta as Prompt["meta"] }
+    ? (() => {
+        const rowMeta = promptRow.meta as Record<string, unknown> | null;
+        return {
+          id: promptRow.id,
+          text: promptRow.text,
+          objective_id: promptRow.objectiveId ?? undefined,
+          difficulty: promptRow.difficulty,
+          format: rowMeta?.format as Prompt["format"],
+          choices: rowMeta?.choices as string[] | undefined,
+          correctIndex: rowMeta?.correctIndex as number | undefined,
+          meta: rowMeta as Prompt["meta"],
+        };
+      })()
     : prompts[promptIndex];
   if (!prompt) return { error: "invalid_index" as const };
 

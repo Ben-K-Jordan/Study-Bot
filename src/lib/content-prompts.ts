@@ -17,7 +17,9 @@ import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
 import { getMasterySummary } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
-import type { Prompt } from "@/lib/prompts";
+import { prisma } from "@/lib/db";
+import type { Prompt, PromptFormat } from "@/lib/prompts";
+import { shuffleMcqChoices } from "@/lib/prompts";
 
 interface ContentPromptParams {
   userId: string;
@@ -34,6 +36,10 @@ interface GeneratedPrompt {
   objective_id: string;
   text: string;
   difficulty: number;
+  format?: PromptFormat;
+  choices?: string[] | null;
+  correct_index?: number | null;
+  distractor_rationales?: string[] | null;
 }
 
 /**
@@ -104,6 +110,35 @@ export async function generateContentAwarePrompts(
     });
   }
 
+  // Fetch recent error patterns for this student+course to source MCQ distractors
+  let errorPatterns: { errorType: string; correctionRule: string; objectiveTitle: string }[] = [];
+  try {
+    const recentErrors = await prisma.sessionErrorLog.findMany({
+      where: {
+        userId,
+        resolvedAt: null, // unresolved errors = active misconceptions
+        run: { session: { courseName } },
+      },
+      select: {
+        errorType: true,
+        correctionRule: true,
+        promptIndex: true,
+        run: { select: { session: { select: { topicScope: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+    errorPatterns = recentErrors
+      .filter((e) => e.correctionRule)
+      .map((e) => ({
+        errorType: e.errorType,
+        correctionRule: e.correctionRule,
+        objectiveTitle: e.run.session.topicScope ?? "unknown",
+      }));
+  } catch {
+    // Error history is optional — continue without it
+  }
+
   try {
     const result = await runTask<{ prompts: GeneratedPrompt[] }>(gatewayCtx, {
       task: AiTask.GENERATE_PROMPTS,
@@ -122,6 +157,7 @@ export async function generateContentAwarePrompts(
         courseName,
         examName,
         masteryContext,
+        errorPatterns: errorPatterns.length > 0 ? errorPatterns : undefined,
       },
       parseOutput: (raw: unknown) => {
         const data = raw as Record<string, unknown>;
@@ -136,20 +172,39 @@ export async function generateContentAwarePrompts(
       return null;
     }
 
-    // Map to Prompt format with sequential IDs
-    const mapped: Prompt[] = generated.map((g, i) => ({
-      id: `p_${i}`,
-      objective_id: g.objective_id,
-      text: g.text,
-      difficulty: Math.max(1, Math.min(5, g.difficulty || 1)),
-    }));
+    // Generate a run-level seed for MCQ choice shuffling
+    const runSeed = `${userId}:${courseName}:${Date.now()}`;
 
+    // Map to Prompt format with sequential IDs
+    const mapped: Prompt[] = generated.map((g, i) => {
+      const isMcq = g.format === "MCQ" && Array.isArray(g.choices) && g.choices.length === 4 && g.correct_index != null;
+
+      const base: Prompt = {
+        id: `p_${i}`,
+        objective_id: g.objective_id,
+        text: g.text,
+        difficulty: Math.max(1, Math.min(5, g.difficulty || 1)),
+        format: isMcq ? "MCQ" : "FREE_RECALL",
+        ...(isMcq ? {
+          choices: g.choices as string[],
+          correctIndex: g.correct_index as number,
+          meta: g.distractor_rationales ? { distractorRationales: g.distractor_rationales as string[] } : undefined,
+        } : {}),
+      };
+
+      // Shuffle MCQ choices so correct answer position varies per prompt
+      return isMcq ? shuffleMcqChoices(base, runSeed) : base;
+    });
+
+    const mcqCount = mapped.filter((p) => p.format === "MCQ").length;
     logger.info("content_prompts.generated", {
       user_id: userId,
       course_name: courseName,
       mode,
       count: mapped.length,
+      mcq_count: mcqCount,
       content_chunks_used: content.snippets.length,
+      error_patterns_supplied: errorPatterns.length,
     });
 
     return mapped;

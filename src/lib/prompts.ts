@@ -6,17 +6,26 @@
  * in session_runs.prompts — no DB randomness needed at runtime.
  */
 
+export type PromptFormat = "FREE_RECALL" | "MCQ";
+
 export interface Prompt {
   id: string;
   objective_id?: string;
   text: string;
   difficulty: number;
+  format?: PromptFormat;
+  /** 4 answer choices (already shuffled). Present only when format = "MCQ". */
+  choices?: string[];
+  /** Index of the correct answer within choices. Present only when format = "MCQ". */
+  correctIndex?: number;
   meta?: {
     pack?: string;
     source_error_log_id?: string;
     original_prompt_text?: string;
     expected_correction_rule?: string;
     variant_question?: string;
+    /** Why each distractor is plausible — aids post-answer feedback. */
+    distractorRationales?: string[];
   };
 }
 
@@ -173,6 +182,44 @@ function simpleHash(s: string): number {
     h = ((h << 5) - h + s.charCodeAt(i)) >>> 0;
   }
   return h || 1;
+}
+
+// ---- MCQ choice shuffling ----
+
+/**
+ * Shuffle MCQ choices deterministically so the correct answer doesn't always
+ * land in the same position. Uses a per-prompt seed (prompt ID + run-level seed)
+ * so the order is stable across page refreshes but varies across prompts.
+ *
+ * Returns a new Prompt with shuffled choices and updated correctIndex.
+ */
+export function shuffleMcqChoices(prompt: Prompt, runSeed: string): Prompt {
+  if (prompt.format !== "MCQ" || !prompt.choices || prompt.correctIndex == null) {
+    return prompt;
+  }
+
+  // Build index array [0, 1, 2, 3] and shuffle it
+  const indices = prompt.choices.map((_, i) => i);
+  const seed = `${runSeed}:${prompt.id}`;
+  deterministicShuffle(indices, seed);
+
+  const shuffledChoices = indices.map((i) => prompt.choices![i]);
+  const newCorrectIndex = indices.indexOf(prompt.correctIndex);
+
+  // Reorder distractor rationales to match new positions
+  let shuffledRationales: string[] | undefined;
+  if (prompt.meta?.distractorRationales) {
+    shuffledRationales = indices.map((i) => prompt.meta!.distractorRationales![i]);
+  }
+
+  return {
+    ...prompt,
+    choices: shuffledChoices,
+    correctIndex: newCorrectIndex,
+    meta: prompt.meta
+      ? { ...prompt.meta, distractorRationales: shuffledRationales }
+      : undefined,
+  };
 }
 
 // ---- EXAM_SIM ----

@@ -30,6 +30,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     isReviewPhase ? "scoring" : "answering"
   );
   const [answer, setAnswer] = useState("");
+  const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
   const [score, setScore] = useState<string | null>(null);
   const [errorType, setErrorType] = useState("MISCONCEPTION");
   const [correctionRule, setCorrectionRule] = useState("");
@@ -106,6 +107,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       setUIPhase("answering");
     }
     setAnswer("");
+    setSelectedChoice(null);
     setScore(null);
     setCorrectionRule("");
     setVariantQuestion("");
@@ -165,6 +167,43 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       confidence_rating: confidence,
     });
     setSubmitting(false);
+  };
+
+  const isMcq = currentPrompt?.format === "MCQ" && Array.isArray(currentPrompt.choices);
+
+  const handleMcqSelect = async (choiceIndex: number) => {
+    if (submitting) return;
+    setSelectedChoice(choiceIndex);
+    setSubmitting(true);
+
+    const isCorrect = choiceIndex === currentPrompt?.correctIndex;
+    const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
+    const choiceLabel = String.fromCharCode(65 + choiceIndex); // A, B, C, D
+    const choiceText = currentPrompt?.choices?.[choiceIndex] ?? "";
+
+    const attempt: Record<string, unknown> = {
+      prompt_index: currentIndex,
+      user_answer: `[${choiceLabel}] ${choiceText}`,
+      self_score: isCorrect ? "CORRECT" : "INCORRECT",
+      time_to_answer_seconds: elapsed,
+      confidence_rating: confidence,
+      mcq_choice_index: choiceIndex,
+    };
+
+    // For incorrect MCQ, auto-generate error log from distractor rationale
+    if (!isCorrect) {
+      const rationale = currentPrompt?.meta?.distractorRationales?.[choiceIndex];
+      attempt.error_log = {
+        error_type: "MISCONCEPTION",
+        correction_rule: rationale || `Selected "${choiceText}" instead of the correct answer`,
+      };
+    }
+
+    setAnswer(`[${choiceLabel}] ${choiceText}`);
+    setLastScore(isCorrect ? "CORRECT" : "INCORRECT");
+    await onSubmit(attempt);
+    setSubmitting(false);
+    setUIPhase("review");
   };
 
   const handleScore = (s: string) => {
@@ -361,8 +400,50 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         </div>
       )}
 
-      {/* Answering phase */}
-      {uiPhase === "answering" && !isReviewPhase && (
+      {/* MCQ answering phase */}
+      {uiPhase === "answering" && !isReviewPhase && isMcq && currentPrompt.choices && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
+          {currentPrompt.choices.map((choice: string, idx: number) => {
+            const label = String.fromCharCode(65 + idx);
+            const isSelected = selectedChoice === idx;
+            return (
+              <button
+                key={idx}
+                onClick={() => handleMcqSelect(idx)}
+                disabled={submitting}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "0.75rem",
+                  padding: "0.85rem 1rem",
+                  background: isSelected ? "#3d5a80" : "#2a2a2a",
+                  border: `2px solid ${isSelected ? "#7ec8e3" : "#444"}`,
+                  borderRadius: 8,
+                  color: "#e0d6c8",
+                  fontSize: "0.9rem",
+                  lineHeight: 1.5,
+                  cursor: submitting ? "wait" : "pointer",
+                  textAlign: "left",
+                  fontFamily: "inherit",
+                  opacity: submitting ? 0.6 : 1,
+                  transition: "border-color 0.15s, background 0.15s",
+                }}
+              >
+                <span style={{
+                  fontWeight: 700,
+                  color: "#7ec8e3",
+                  minWidth: "1.5rem",
+                  fontSize: "0.95rem",
+                }}>{label}.</span>
+                <span>{choice}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Free-recall answering phase */}
+      {uiPhase === "answering" && !isReviewPhase && !isMcq && (
         <div>
           <textarea
             ref={textareaRef}
