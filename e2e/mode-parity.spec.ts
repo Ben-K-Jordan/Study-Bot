@@ -379,27 +379,29 @@ test.describe.serial("E2E: Error Repair runner", () => {
     );
     expect(a0.status()).toBe(200);
 
-    // Complete remaining prompts (including variant repair injected by INCORRECT)
-    let lastBody: any;
-    let nextIndex = 1;
-    do {
-      const a = await request.post(
-        `${BASE_URL}/api/runs/${retrievalRunId}/attempt`,
-        {
-          headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
-          data: {
-            prompt_index: nextIndex,
-            user_answer: "Correct answer",
-            self_score: "CORRECT",
-            time_to_answer_seconds: 10,
-          },
-        }
-      );
-      expect(a.status()).toBe(200);
-      lastBody = await a.json();
-      nextIndex = lastBody.current_index;
-    } while (lastBody.status === "ACTIVE");
-    expect(lastBody.status).toBe("COMPLETED");
+    // Complete the second original prompt
+    const a1 = await request.post(
+      `${BASE_URL}/api/runs/${retrievalRunId}/attempt`,
+      {
+        headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
+        data: {
+          prompt_index: 1,
+          user_answer: "Correct answer",
+          self_score: "CORRECT",
+          time_to_answer_seconds: 10,
+        },
+      }
+    );
+    expect(a1.status()).toBe(200);
+
+    // Force-complete the run. Variant prompt (injected by INCORRECT) is skipped
+    // so the error log stays UNRESOLVED for the ERROR_REPAIR test below.
+    const completeRes = await request.post(
+      `${BASE_URL}/api/runs/${retrievalRunId}/complete`,
+      { headers: { "X-User-Id": USER_ID } }
+    );
+    expect(completeRes.status()).toBe(200);
+    expect((await completeRes.json()).status).toBe("COMPLETED");
   });
 
   // Step 2: Create ERROR_REPAIR session and start it
