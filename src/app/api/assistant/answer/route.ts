@@ -120,7 +120,6 @@ export async function POST(request: NextRequest) {
         chunks_retrieved: searchResults.length,
         cache_hit: result.meta.cacheHit,
         latency_ms: result.meta.latencyMs,
-        model: result.meta.model,
       },
     });
   } catch (err) {

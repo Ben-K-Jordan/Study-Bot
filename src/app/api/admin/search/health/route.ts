@@ -3,10 +3,20 @@
  *
  * Reports: pgvector availability, embedding coverage, index stats.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getUserId } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const userId = await getUserId(request);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").filter(Boolean);
+  if (!adminIds.includes(userId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     // Check pgvector extension
     let pgvectorAvailable = false;
@@ -46,7 +56,7 @@ export async function GET() {
     });
   } catch (err) {
     return NextResponse.json(
-      { error: "Health check failed", detail: String(err) },
+      { error: "Health check failed" },
       { status: 500 },
     );
   }

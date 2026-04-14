@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const tagsParam = searchParams.get("tags");
-  const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
+  const limit = Math.max(1, Math.min(parseInt(searchParams.get("limit") || "50", 10), 100));
   const cursor = searchParams.get("cursor") || undefined;
 
   // Build query — cards are accessed through papers which have userId

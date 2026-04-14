@@ -111,6 +111,46 @@ function toPromptView(prompt: Prompt, index: number): PromptView {
   };
 }
 
+// ---- Post-completion side effects ----
+
+/**
+ * Shared post-completion work: mastery update, flashcard generation,
+ * plan item completion. Called from all three completion paths
+ * (handleImmediateScoring, handleExamScore, completeRun) to ensure
+ * consistency.
+ */
+async function runPostCompletionEffects(
+  userId: string,
+  runId: string,
+  sessionId: string,
+): Promise<void> {
+  try {
+    const s = await prisma.session.findUnique({
+      where: { sessionId },
+      select: { courseName: true },
+    });
+    if (!s) return;
+
+    await updateObjectiveMastery(userId, runId, s.courseName);
+
+    // Auto-generate flashcards from errors (Roediger & Butler 2011)
+    try {
+      await createFlashcardsFromErrors(userId, runId, s.courseName);
+    } catch (fcErr) {
+      logger.error("auto_flashcards.call_failed", { user_id: userId, run_id: runId, error: String(fcErr) });
+    }
+
+    // Auto-complete plan items linked to this session
+    try {
+      await completePlanItemsForSession(sessionId, runId);
+    } catch (planErr) {
+      logger.error("plan_item.auto_complete_failed", { user_id: userId, run_id: runId, error: String(planErr) });
+    }
+  } catch (masteryErr) {
+    logger.error("mastery.update_failed", { user_id: userId, run_id: runId, error: String(masteryErr) });
+  }
+}
+
 // ---- Start / Resume ----
 
 export async function startOrResumeRun(userId: string, sessionId: string) {
@@ -488,21 +528,18 @@ async function adaptPromptDifficulty(
 
   if (!betterFit) return null;
 
-  // Swap: move the better-fit prompt to currentIndex and current to betterFit's position
-  await prisma.$transaction([
-    prisma.sessionRunPrompt.update({
-      where: { runId_promptIndex: { runId, promptIndex: currentIndex } },
-      data: { promptIndex: -1 }, // temp index to avoid unique constraint
-    }),
-    prisma.sessionRunPrompt.update({
-      where: { runId_promptIndex: { runId, promptIndex: betterFit.promptIndex } },
-      data: { promptIndex: currentIndex },
-    }),
-    prisma.sessionRunPrompt.update({
-      where: { runId_promptIndex: { runId, promptIndex: -1 } },
-      data: { promptIndex: betterFit.promptIndex },
-    }),
-  ]);
+  // Atomic swap using a single SQL CASE statement — avoids temp index
+  // and eliminates data corruption risk from partial failures.
+  const swapIdx = betterFit.promptIndex;
+  await prisma.$executeRaw`
+    UPDATE "session_run_prompts"
+    SET "prompt_index" = CASE
+      WHEN "prompt_index" = ${currentIndex} THEN ${swapIdx}
+      WHEN "prompt_index" = ${swapIdx} THEN ${currentIndex}
+    END
+    WHERE "run_id" = ${runId}
+      AND "prompt_index" IN (${currentIndex}, ${swapIdx})
+  `;
 
   logger.info("adaptive.swapped", {
     run_id: runId,
@@ -829,27 +866,7 @@ async function handleImmediateScoring(
       const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
       logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
 
-      // Mastery update — awaited to prevent data loss on process exit
-      try {
-        const s = await prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } });
-        if (s) {
-          await updateObjectiveMastery(userId, run.runId, s.courseName);
-          // Auto-generate flashcards from errors (Roediger & Butler 2011)
-          try {
-            await createFlashcardsFromErrors(userId, run.runId, s.courseName);
-          } catch (fcErr) {
-            logger.error("auto_flashcards.call_failed", { error: String(fcErr) });
-          }
-          // Auto-complete plan items linked to this session
-          try {
-            await completePlanItemsForSession(run.sessionId, run.runId);
-          } catch (planErr) {
-            logger.error("plan_item.auto_complete_failed", { error: String(planErr) });
-          }
-        }
-      } catch (masteryErr) {
-        logger.error("mastery.update_failed", { error: String(masteryErr) });
-      }
+      await runPostCompletionEffects(userId, run.runId, run.sessionId);
 
       return {
         data: {
@@ -1097,27 +1114,7 @@ async function handleExamScore(
       const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
       logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
 
-      // Mastery update — awaited to prevent data loss on process exit
-      try {
-        const s = await prisma.session.findUnique({ where: { sessionId: run.sessionId }, select: { courseName: true } });
-        if (s) {
-          await updateObjectiveMastery(userId, run.runId, s.courseName);
-          // Auto-generate flashcards from errors (Roediger & Butler 2011)
-          try {
-            await createFlashcardsFromErrors(userId, run.runId, s.courseName);
-          } catch (fcErr) {
-            logger.error("auto_flashcards.call_failed", { error: String(fcErr) });
-          }
-          // Auto-complete plan items linked to this session
-          try {
-            await completePlanItemsForSession(run.sessionId, run.runId);
-          } catch (planErr) {
-            logger.error("plan_item.auto_complete_failed", { error: String(planErr) });
-          }
-        }
-      } catch (masteryErr) {
-        logger.error("mastery.update_failed", { error: String(masteryErr) });
-      }
+      await runPostCompletionEffects(userId, run.runId, run.sessionId);
 
       return {
         data: {
@@ -1236,28 +1233,43 @@ async function generateCrossSessionRepairs(
       },
       orderBy: { createdAt: "desc" },
       take: 4, // fetch more than needed to filter
-      include: {
-        run: {
-          select: {
-            attempts: {
-              select: { promptText: true, promptIndex: true },
-            },
-          },
-        },
+      select: {
+        id: true,
+        promptIndex: true,
+        errorType: true,
+        correctionRule: true,
+        variantQuestion: true,
+        createdAt: true,
+        runId: true,
       },
     });
 
     if (unresolvedErrors.length === 0) return [];
+
+    // Batch-fetch only the specific attempts we need (avoids loading all attempts per run)
+    const attemptKeys = unresolvedErrors.map((e) => ({
+      runId: e.runId,
+      promptIndex: e.promptIndex,
+    }));
+    const relevantAttempts = await prisma.sessionAttempt.findMany({
+      where: {
+        OR: attemptKeys.map((k) => ({
+          runId: k.runId,
+          promptIndex: k.promptIndex,
+        })),
+      },
+      select: { runId: true, promptIndex: true, promptText: true },
+    });
+    const attemptMap = new Map(
+      relevantAttempts.map((a) => [`${a.runId}:${a.promptIndex}`, a.promptText]),
+    );
 
     const repairs: Prompt[] = [];
     const maxRepairs = Math.min(2, unresolvedErrors.length);
 
     for (let i = 0; i < maxRepairs; i++) {
       const err = unresolvedErrors[i];
-      const originalAttempt = err.run.attempts.find(
-        (a) => a.promptIndex === err.promptIndex,
-      );
-      const originalText = originalAttempt?.promptText || "a previous question";
+      const originalText = attemptMap.get(`${err.runId}:${err.promptIndex}`) || "a previous question";
       const daysSince = Math.floor(
         (Date.now() - err.createdAt.getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -1448,26 +1460,7 @@ export async function completeRun(userId: string, runId: string) {
     },
   });
 
-  // Mastery update — awaited to prevent data loss on process exit
-  try {
-    await updateObjectiveMastery(userId, runId, run.session.courseName);
-  } catch (masteryErr) {
-    logger.error("mastery.update_failed", { user_id: userId, run_id: runId, error: String(masteryErr) });
-  }
-
-  // Auto-generate flashcards from errors (Roediger & Butler 2011)
-  try {
-    await createFlashcardsFromErrors(userId, runId, run.session.courseName);
-  } catch (fcErr) {
-    logger.error("auto_flashcards.call_failed", { user_id: userId, run_id: runId, error: String(fcErr) });
-  }
-
-  // Auto-complete plan items linked to this session
-  try {
-    await completePlanItemsForSession(run.sessionId, runId);
-  } catch (planErr) {
-    logger.error("plan_item.auto_complete_failed", { user_id: userId, run_id: runId, error: String(planErr) });
-  }
+  await runPostCompletionEffects(userId, runId, run.sessionId);
 
   logger.info("run.completed", {
     user_id: userId,

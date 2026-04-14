@@ -95,8 +95,13 @@ export async function generateContentAwarePrompts(
       lines.push("- For MASTERED objectives: generate synthesis/evaluation questions (edge cases, novel applications, critique). Bloom's level 4-5.");
       masteryContext = lines.join("\n");
     }
-  } catch {
-    // Mastery data is optional — continue without it
+  } catch (err) {
+    // Mastery data is optional — continue without it, but log for visibility
+    logger.warn("content_prompts.mastery_fetch_failed", {
+      user_id: userId,
+      course_name: courseName,
+      error: String(err),
+    });
   }
 
   try {

@@ -8,10 +8,11 @@ import { AiTask } from "./types";
 
 /**
  * Fence user-provided text to prevent prompt injection.
- * Wraps content in XML-like delimiters and strips any nested closing tags.
+ * Strips ALL XML/HTML-like tags from user input, then wraps in delimiters.
+ * This prevents injection of closing tags, system tags, or role tags.
  */
 function fence(label: string, text: string): string {
-  const sanitized = text.replace(new RegExp(`</${label}>`, "gi"), "");
+  const sanitized = text.replace(/<\/?[a-zA-Z][a-zA-Z0-9_-]*\b[^>]*>/g, "");
   return `<${label}>\n${sanitized}\n</${label}>`;
 }
 

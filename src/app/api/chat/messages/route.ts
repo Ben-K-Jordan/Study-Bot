@@ -15,6 +15,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rl = chatLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+
   const courseKey = request.nextUrl.searchParams.get("courseKey");
   if (!courseKey) {
     return NextResponse.json({ error: "courseKey query parameter is required" }, { status: 400 });
@@ -25,6 +28,7 @@ export async function GET(request: NextRequest) {
       where: { userId, courseKey },
       orderBy: { createdAt: "asc" },
       take: 100,
+      select: { id: true, role: true, content: true, citations: true, createdAt: true },
     });
 
     return NextResponse.json({ messages });
@@ -80,6 +84,7 @@ export async function POST(request: NextRequest) {
         content,
         citations: citations ?? undefined,
       },
+      select: { id: true, role: true, content: true, citations: true, createdAt: true },
     });
 
     logger.info("chat.message.created", { userId, courseKey, role, messageId: message.id });
