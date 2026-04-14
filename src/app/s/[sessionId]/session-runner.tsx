@@ -28,6 +28,13 @@ export interface PromptView {
   objective_id?: string;
   difficulty?: number;
   source_type?: string;
+  format?: "FREE_RECALL" | "MCQ";
+  choices?: string[];
+  correctIndex?: number;
+  meta?: {
+    distractorRationales?: string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface RunMetrics {
