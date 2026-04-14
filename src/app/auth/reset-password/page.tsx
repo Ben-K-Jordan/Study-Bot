@@ -1,17 +1,32 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function SignUpPage() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+function ResetPasswordForm() {
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+
+  if (!token) {
+    return (
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <h1 style={titleStyle}>Invalid Link</h1>
+          <p style={textStyle}>This password reset link is invalid or has expired.</p>
+          <p style={mutedStyle}>
+            <Link href="/auth/forgot-password" style={linkStyle}>Request a new reset link</Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,62 +40,52 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ token, password }),
       });
 
       const data = await res.json();
+
       if (!res.ok) {
-        setError(data.error || "Failed to create account");
+        setError(data.error || "Something went wrong");
         setLoading(false);
         return;
       }
 
-      // Redirect to verify-email page
-      router.push("/auth/verify-email");
+      setSuccess(true);
     } catch {
       setError("Something went wrong. Please try again.");
       setLoading(false);
     }
   }
 
+  if (success) {
+    return (
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <div style={{ textAlign: "center", fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
+          <h1 style={titleStyle}>Password Reset</h1>
+          <p style={textStyle}>Your password has been reset successfully.</p>
+          <Link href="/auth/signin" style={{ ...buttonStyle, display: "block", textAlign: "center", textDecoration: "none", marginTop: "1rem" }}>
+            Sign In
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
-        <h1 style={titleStyle}>Create Account</h1>
-        <p style={subtitleStyle}>Start your study journey</p>
+        <h1 style={titleStyle}>Reset Password</h1>
+        <p style={subtitleStyle}>Enter your new password</p>
 
         {error && <div style={errorStyle}>{error}</div>}
 
         <form onSubmit={handleSubmit}>
-          <label htmlFor="name" style={labelStyle}>Name</label>
-          <input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-            required
-            maxLength={50}
-            autoComplete="name"
-            style={inputStyle}
-          />
-
-          <label htmlFor="email" style={labelStyle}>Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            required
-            autoComplete="email"
-            style={inputStyle}
-          />
-
-          <label htmlFor="password" style={labelStyle}>Password</label>
+          <label htmlFor="password" style={labelStyle}>New Password</label>
           <input
             id="password"
             type="password"
@@ -111,16 +116,25 @@ export default function SignUpPage() {
             disabled={loading}
             style={{ ...buttonStyle, opacity: loading ? 0.6 : 1 }}
           >
-            {loading ? "Creating account..." : "Create Account"}
+            {loading ? "Resetting..." : "Reset Password"}
           </button>
         </form>
-
-        <p style={switchStyle}>
-          Already have an account?{" "}
-          <Link href="/auth/signin" style={linkStyle}>Sign in</Link>
-        </p>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <p style={{ textAlign: "center", color: "var(--color-text-muted)" }}>Loading...</p>
+        </div>
+      </div>
+    }>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
 
@@ -204,11 +218,19 @@ const errorStyle: React.CSSProperties = {
   textAlign: "center",
 };
 
-const switchStyle: React.CSSProperties = {
+const textStyle: React.CSSProperties = {
+  color: "var(--color-text)",
   textAlign: "center",
+  fontSize: "1rem",
+  lineHeight: 1.6,
+  margin: "0 0 1rem",
+};
+
+const mutedStyle: React.CSSProperties = {
   color: "var(--color-text-muted)",
+  textAlign: "center",
   fontSize: "0.9rem",
-  marginTop: "1.5rem",
+  margin: "0.5rem 0",
 };
 
 const linkStyle: React.CSSProperties = {

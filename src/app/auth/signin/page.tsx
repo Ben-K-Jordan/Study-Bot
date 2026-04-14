@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { signIn } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function SignInPage() {
+function SignInForm() {
+  const searchParams = useSearchParams();
+  const justVerified = searchParams.get("verified") === "true";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +38,10 @@ export default function SignInPage() {
       <div style={cardStyle}>
         <h1 style={titleStyle}>Welcome Back</h1>
         <p style={subtitleStyle}>Sign in to continue studying</p>
+
+        {justVerified && (
+          <div style={successStyle}>Email verified! You can now sign in.</div>
+        )}
 
         {error && <div style={errorStyle}>{error}</div>}
 
@@ -72,12 +80,32 @@ export default function SignInPage() {
           </button>
         </form>
 
+        <p style={{ textAlign: "center", marginTop: "1rem" }}>
+          <Link href="/auth/forgot-password" style={{ ...linkStyle, fontSize: "0.85rem", fontWeight: 400 }}>
+            Forgot your password?
+          </Link>
+        </p>
+
         <p style={switchStyle}>
           Don&apos;t have an account?{" "}
           <Link href="/auth/signup" style={linkStyle}>Sign up</Link>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <p style={{ textAlign: "center", color: "var(--color-text-muted)" }}>Loading...</p>
+        </div>
+      </div>
+    }>
+      <SignInForm />
+    </Suspense>
   );
 }
 
@@ -172,4 +200,15 @@ const linkStyle: React.CSSProperties = {
   color: "var(--color-primary)",
   textDecoration: "none",
   fontWeight: 600,
+};
+
+const successStyle: React.CSSProperties = {
+  background: "#2d5a2d",
+  color: "#a8e6a8",
+  padding: "0.5rem 0.75rem",
+  borderRadius: 6,
+  fontSize: "0.85rem",
+  marginBottom: "1rem",
+  textAlign: "center",
+  border: "1px solid #3a7a3a",
 };

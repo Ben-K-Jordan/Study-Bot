@@ -1,73 +1,67 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export default function SignUpPage() {
-  const [name, setName] = useState("");
+export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
-    if (password !== confirmPassword) {
-      setError("Passwords don't match");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to create account");
+      if (res.status === 429) {
+        setError("Too many requests. Please try again later.");
         setLoading(false);
         return;
       }
 
-      // Redirect to verify-email page
-      router.push("/auth/verify-email");
+      setSent(true);
     } catch {
       setError("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
     }
+  }
+
+  if (sent) {
+    return (
+      <div style={containerStyle}>
+        <div style={cardStyle}>
+          <div style={{ textAlign: "center", fontSize: "3rem", marginBottom: "1rem" }}>📬</div>
+          <h1 style={titleStyle}>Check Your Email</h1>
+          <p style={textStyle}>
+            If an account with that email exists, we&apos;ve sent a password reset link.
+            Check your inbox (and spam folder).
+          </p>
+          <p style={mutedStyle}>
+            <Link href="/auth/signin" style={linkStyle}>Back to sign in</Link>
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
-        <h1 style={titleStyle}>Create Account</h1>
-        <p style={subtitleStyle}>Start your study journey</p>
+        <h1 style={titleStyle}>Forgot Password</h1>
+        <p style={subtitleStyle}>Enter your email and we&apos;ll send you a reset link</p>
 
         {error && <div style={errorStyle}>{error}</div>}
 
         <form onSubmit={handleSubmit}>
-          <label htmlFor="name" style={labelStyle}>Name</label>
-          <input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-            required
-            maxLength={50}
-            autoComplete="name"
-            style={inputStyle}
-          />
-
           <label htmlFor="email" style={labelStyle}>Email</label>
           <input
             id="email"
@@ -80,43 +74,17 @@ export default function SignUpPage() {
             style={inputStyle}
           />
 
-          <label htmlFor="password" style={labelStyle}>Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Min 8 characters"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            style={inputStyle}
-          />
-
-          <label htmlFor="confirm-password" style={labelStyle}>Confirm Password</label>
-          <input
-            id="confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Type it again"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            style={inputStyle}
-          />
-
           <button
             type="submit"
             disabled={loading}
             style={{ ...buttonStyle, opacity: loading ? 0.6 : 1 }}
           >
-            {loading ? "Creating account..." : "Create Account"}
+            {loading ? "Sending..." : "Send Reset Link"}
           </button>
         </form>
 
         <p style={switchStyle}>
-          Already have an account?{" "}
+          Remember your password?{" "}
           <Link href="/auth/signin" style={linkStyle}>Sign in</Link>
         </p>
       </div>
@@ -202,6 +170,21 @@ const errorStyle: React.CSSProperties = {
   fontSize: "0.85rem",
   marginBottom: "1rem",
   textAlign: "center",
+};
+
+const textStyle: React.CSSProperties = {
+  color: "var(--color-text)",
+  textAlign: "center",
+  fontSize: "1rem",
+  lineHeight: 1.6,
+  margin: "0 0 1rem",
+};
+
+const mutedStyle: React.CSSProperties = {
+  color: "var(--color-text-muted)",
+  textAlign: "center",
+  fontSize: "0.9rem",
+  margin: "0.5rem 0",
 };
 
 const switchStyle: React.CSSProperties = {
