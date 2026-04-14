@@ -2,7 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { apiGet, apiPost, apiDelete, type CourseOption } from "@/lib/client-api";
+import {
+  headerStyle,
+  titleStyle,
+  subtitleStyle,
+  labelStyle,
+  selectStyle,
+  generateBtnStyle,
+  sectionTitleStyle,
+  deleteBtnStyle,
+} from "@/lib/shared-styles";
 
 // --- Types ---
 
@@ -35,48 +46,7 @@ interface DeckSummary {
   created_at: string;
 }
 
-interface CourseOption {
-  course_name: string;
-  exam_name?: string;
-  doc_count: number;
-}
-
 type ReviewRating = "AGAIN" | "HARD" | "GOOD" | "EASY";
-
-// --- API helpers ---
-
-async function apiGet(url: string) {
-  const res = await fetch(url, {
-    headers: { "X-User-Id": getOrCreateUserId() },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
-}
-
-async function apiPost(url: string, body: unknown) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-User-Id": getOrCreateUserId(),
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
-}
-
-async function apiDelete(url: string) {
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: { "X-User-Id": getOrCreateUserId() },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
-}
 
 // --- Status helpers ---
 
@@ -609,7 +579,7 @@ export default function FlashcardsPage() {
       )}
       {decks.length > 0 && (
         <div>
-          <h2 style={sectionTitle}>YOUR DECKS</h2>
+          <h2 style={sectionTitleStyle}>YOUR DECKS</h2>
           {decks.map((deck) => (
             <div key={deck.id} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
               <button
@@ -655,58 +625,6 @@ const pageContainer: React.CSSProperties = {
   color: "var(--color-text)",
 };
 
-const headerStyle: React.CSSProperties = { marginBottom: "1.5rem" };
-
-const titleStyle: React.CSSProperties = {
-  fontSize: "1.6rem",
-  margin: "0 0 0.25rem",
-  fontFamily: "var(--font-display)",
-  color: "var(--color-primary)",
-};
-
-const subtitleStyle: React.CSSProperties = { color: "var(--color-text-muted)", margin: 0, fontSize: "0.9rem" };
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "0.75rem",
-  color: "var(--color-text-dim)",
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  marginBottom: "0.35rem",
-};
-
-const selectStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.5rem",
-  fontSize: "0.85rem",
-  fontFamily: "inherit",
-  background: "var(--color-bg-card)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 6,
-};
-
-const generateBtnStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.75rem 1.5rem",
-  fontSize: "1.05rem",
-  fontFamily: "var(--font-body)",
-  fontWeight: 600,
-  background: "var(--color-primary)",
-  color: "var(--color-bg-darkest)",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-};
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: "0.8rem",
-  letterSpacing: "0.08em",
-  color: "var(--color-info)",
-  margin: "0 0 0.75rem",
-  fontFamily: "var(--font-display)",
-};
-
 const deckCard: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -720,18 +638,6 @@ const deckCard: React.CSSProperties = {
   textAlign: "left",
 };
 
-const deleteBtnStyle: React.CSSProperties = {
-  padding: "0 0.65rem",
-  fontFamily: "inherit",
-  fontSize: "1.1rem",
-  fontWeight: 700,
-  background: "none",
-  color: "var(--color-error)",
-  border: "1px solid #e8888844",
-  borderRadius: 6,
-  cursor: "pointer",
-  flexShrink: 0,
-};
 
 const cardStyle: React.CSSProperties = {
   minHeight: 200,
