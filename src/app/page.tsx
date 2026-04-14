@@ -116,6 +116,8 @@ export default function DashboardPage() {
   const [celebrationBadge, setCelebrationBadge] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null);
   const [lbPeriod, setLbPeriod] = useState<"week" | "month" | "all">("week");
+  const [onboarding, setOnboarding] = useState<{ show: boolean; step: number }>({ show: false, step: 0 });
+  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
     const userId = getOrCreateUserId();
@@ -180,10 +182,26 @@ export default function DashboardPage() {
         // Non-critical
       }
     }
+    async function checkOnboarding() {
+      try {
+        const res = await fetch("/api/onboarding", {
+          headers: { "X-User-Id": userId },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.complete) {
+            setOnboarding({ show: true, step: 0 });
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+    }
     fetchPlans();
     fetchActivity();
     fetchGameState();
     fetchLeaderboard();
+    checkOnboarding();
   }, []);
 
   // Reload leaderboard when period changes
@@ -270,6 +288,41 @@ export default function DashboardPage() {
       {/* Confetti overlay */}
       {showConfetti && <ConfettiOverlay badge={celebrationBadge} />}
 
+      {/* Onboarding overlay */}
+      {onboarding.show && (
+        <OnboardingFlow
+          step={onboarding.step}
+          displayName={displayName}
+          onDisplayNameChange={setDisplayName}
+          onNext={() => setOnboarding((prev) => ({ ...prev, step: prev.step + 1 }))}
+          onComplete={async () => {
+            setOnboarding({ show: false, step: 0 });
+            const userId = getOrCreateUserId();
+            // Save display name if provided
+            if (displayName.trim()) {
+              await fetch("/api/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "X-User-Id": userId },
+                body: JSON.stringify({ displayName: displayName.trim() }),
+              }).catch(() => {});
+            }
+            // Mark onboarding as complete
+            await fetch("/api/onboarding", {
+              method: "POST",
+              headers: { "X-User-Id": userId },
+            }).catch(() => {});
+          }}
+          onSkip={async () => {
+            setOnboarding({ show: false, step: 0 });
+            const userId = getOrCreateUserId();
+            await fetch("/api/onboarding", {
+              method: "POST",
+              headers: { "X-User-Id": userId },
+            }).catch(() => {});
+          }}
+        />
+      )}
+
       <h1 style={headingStyle}>Dashboard</h1>
 
       {/* XP Progress Ring + Stats Row */}
@@ -322,23 +375,34 @@ export default function DashboardPage() {
       </section>
 
       {/* Achievements */}
-      {gameState && gameState.achievements.length > 0 && (
-        <section style={{ marginBottom: "2rem" }}>
-          <h2 style={sectionHeadingStyle}>Achievements</h2>
+      <section style={{ marginBottom: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Achievements</h2>
+          <a href="/achievements" style={{ fontSize: "0.75rem", color: "#7a7060", textDecoration: "none" }}>
+            View All ({gameState?.achievements.length || 0}/12)
+          </a>
+        </div>
+        {gameState && gameState.achievements.length > 0 ? (
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             {gameState.achievements.map((a) => {
               const info = BADGE_INFO[a.badgeType];
               if (!info) return null;
               return (
-                <div key={a.badgeType} style={badgeStyle} title={`${info.label}: ${info.description}`}>
+                <a key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
                   <span style={{ fontSize: "1.3rem" }}>{info.icon}</span>
                   <span style={{ fontSize: "0.6rem", color: "#a89a82", marginTop: "0.15rem" }}>{info.label}</span>
-                </div>
+                </a>
               );
             })}
           </div>
-        </section>
-      )}
+        ) : (
+          <a href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
+            <p style={{ fontSize: "0.9rem", margin: 0, color: "#a89a82" }}>
+              No badges earned yet. Start studying to unlock achievements!
+            </p>
+          </a>
+        )}
+      </section>
 
       {/* Activity Heatmap */}
       {activityData && (
@@ -496,6 +560,177 @@ export default function DashboardPage() {
         </a>
       )}
     </main>
+  );
+}
+
+// ---- Onboarding Flow ----
+
+function OnboardingFlow({
+  step,
+  displayName,
+  onDisplayNameChange,
+  onNext,
+  onComplete,
+  onSkip,
+}: {
+  step: number;
+  displayName: string;
+  onDisplayNameChange: (v: string) => void;
+  onNext: () => void;
+  onComplete: () => void;
+  onSkip: () => void;
+}) {
+  const steps = [
+    {
+      title: "Welcome to Study Bot!",
+      content: (
+        <div>
+          <p style={{ fontSize: "1rem", color: "#e8dcc8", lineHeight: 1.6, marginBottom: "1rem" }}>
+            Your AI-powered study companion. Upload your course materials and let Study Bot help you learn more effectively.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", textAlign: "left" }}>
+            {[
+              { icon: "\u{1F0CF}", text: "Generate flashcards with spaced repetition" },
+              { icon: "\u{1F4D6}", text: "Create study guides and cheat sheets" },
+              { icon: "\u{1F4AC}", text: "Chat with your course materials" },
+              { icon: "\u{1F4C5}", text: "Plan study sessions and track progress" },
+              { icon: "\u{1F3C6}", text: "Earn XP and unlock achievements" },
+            ].map((item) => (
+              <div key={item.text} style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.9rem", color: "#c8bca8" }}>
+                <span style={{ fontSize: "1.1rem" }}>{item.icon}</span>
+                <span>{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: "Set your display name",
+      content: (
+        <div>
+          <p style={{ fontSize: "0.9rem", color: "#a89a82", marginBottom: "1rem" }}>
+            Choose a name for the leaderboard. You can always change this later in Settings.
+          </p>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => onDisplayNameChange(e.target.value)}
+            placeholder="Your display name"
+            maxLength={50}
+            style={{
+              width: "100%",
+              background: "#2d422d",
+              color: "#e8dcc8",
+              border: "1px solid #4a6a4a",
+              padding: "0.6rem 0.75rem",
+              fontFamily: "inherit",
+              fontSize: "1rem",
+              borderRadius: 4,
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+      ),
+    },
+    {
+      title: "Your learning journey",
+      content: (
+        <div>
+          <p style={{ fontSize: "0.9rem", color: "#a89a82", marginBottom: "1rem" }}>
+            Here&apos;s how to get the most out of Study Bot:
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {[
+              { step: "1", title: "Upload documents", desc: "Add your lecture notes, textbooks, or slides via the Flashcards page" },
+              { step: "2", title: "Generate study materials", desc: "Create flashcard decks and study guides from your content" },
+              { step: "3", title: "Review regularly", desc: "Use spaced repetition to build lasting knowledge" },
+              { step: "4", title: "Track progress", desc: "Watch your XP grow and unlock achievements" },
+            ].map((item) => (
+              <div key={item.step} style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
+                <div style={{
+                  width: 24, height: 24, borderRadius: "50%",
+                  background: "#f0dc4e", color: "#1f2e1f",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "0.75rem", fontWeight: 700, flexShrink: 0,
+                }}>
+                  {item.step}
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.9rem", color: "#e8dcc8", fontWeight: 600 }}>{item.title}</div>
+                  <div style={{ fontSize: "0.75rem", color: "#7a7060" }}>{item.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  const currentStep = steps[step] || steps[steps.length - 1];
+  const isLast = step >= steps.length - 1;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(20, 30, 20, 0.85)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "1rem",
+    }}>
+      <div style={{
+        background: "#2a3d2a",
+        border: "1px solid #4a6a4a",
+        borderRadius: 12,
+        padding: "2rem",
+        maxWidth: 480,
+        width: "100%",
+        textAlign: "center",
+        fontFamily: "var(--font-body), 'Patrick Hand', cursive",
+      }}>
+        {/* Step indicator */}
+        <div style={{ display: "flex", justifyContent: "center", gap: "0.4rem", marginBottom: "1.5rem" }}>
+          {steps.map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: i <= step ? "#f0dc4e" : "#4a6a4a",
+                transition: "background 0.3s",
+              }}
+            />
+          ))}
+        </div>
+
+        <h2 style={{
+          fontSize: "1.5rem", color: "#f0dc4e", fontWeight: 700, margin: "0 0 1rem",
+          fontFamily: "var(--font-display), 'Caveat', cursive",
+        }}>
+          {currentStep.title}
+        </h2>
+
+        {currentStep.content}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.5rem" }}>
+          <button onClick={onSkip} style={{
+            background: "none", border: "none", color: "#7a7060", fontSize: "0.8rem",
+            fontFamily: "inherit", cursor: "pointer", padding: "0.3rem",
+          }}>
+            Skip
+          </button>
+          <button
+            onClick={isLast ? onComplete : onNext}
+            style={{
+              background: "#f0dc4e", color: "#1f2e1f", border: "none",
+              padding: "0.55rem 1.5rem", fontSize: "0.95rem", fontWeight: 700,
+              fontFamily: "inherit", borderRadius: 6, cursor: "pointer",
+            }}
+          >
+            {isLast ? "Get Started" : "Next"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

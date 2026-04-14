@@ -610,6 +610,7 @@ model UserGameState {
   studyStartTime       String    @default("09:00") @map("study_start_time")
   studyEndTime         String    @default("17:00") @map("study_end_time")
   dailyStudyCap        Int       @default(180) @map("daily_study_cap")
+  onboardingComplete   Boolean   @default(false) @map("onboarding_complete")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 
