@@ -4,6 +4,7 @@ import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
+import { sampleEvenly } from "@/lib/config";
 
 interface FlashcardGenerated {
   front: string;
@@ -148,19 +149,7 @@ export async function generateFlashcardsFromDocument(
     throw new Error("No content chunks found for this document");
   }
 
-  // Sample evenly across the document (max 12 chunks for token budget)
-  const MAX_CHUNKS = 12;
-  let sampled: { text: string }[];
-  if (allChunks.length <= MAX_CHUNKS) {
-    sampled = allChunks;
-  } else {
-    const step = (allChunks.length - 1) / (MAX_CHUNKS - 1);
-    sampled = Array.from({ length: MAX_CHUNKS }, (_, i) =>
-      allChunks[Math.round(i * step)]
-    );
-  }
-
-  const chunkTexts = sampled.map((c) => c.text);
+  const chunkTexts = sampleEvenly(allChunks, 12).map((c) => c.text);
 
   // Compute mastery context for adaptive difficulty
   const masteryContext = await computeMasteryContext(userId, doc.courseName!);
@@ -266,19 +255,7 @@ export async function generateFlashcardsFromCourse(
     throw new Error("No course materials found. Upload documents first.");
   }
 
-  // Sample evenly (max 15 chunks for broader coverage)
-  const MAX_CHUNKS = 15;
-  let sampled: { text: string }[];
-  if (allChunks.length <= MAX_CHUNKS) {
-    sampled = allChunks;
-  } else {
-    const step = (allChunks.length - 1) / (MAX_CHUNKS - 1);
-    sampled = Array.from({ length: MAX_CHUNKS }, (_, i) =>
-      allChunks[Math.round(i * step)]
-    );
-  }
-
-  const chunkTexts = sampled.map((c) => c.text);
+  const chunkTexts = sampleEvenly(allChunks, 15).map((c) => c.text);
 
   // Compute mastery context for adaptive difficulty
   const masteryContext = await computeMasteryContext(userId, courseName);

@@ -4,6 +4,7 @@ import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
+import { sampleEvenly } from "@/lib/config";
 
 export type GuideType = "KEY_CONCEPTS" | "FAQ" | "CHEAT_SHEET";
 
@@ -58,20 +59,7 @@ export async function generateStudyGuide(
     throw new Error("No course materials found. Upload documents first.");
   }
 
-  // Sample evenly across the corpus (max 20 chunks to stay within token budget)
-  // Always include first and last chunk for full coverage
-  const MAX_CHUNKS = 20;
-  let sampled: { text: string }[];
-  if (allChunks.length <= MAX_CHUNKS) {
-    sampled = allChunks;
-  } else {
-    const step = (allChunks.length - 1) / (MAX_CHUNKS - 1);
-    sampled = Array.from({ length: MAX_CHUNKS }, (_, i) =>
-      allChunks[Math.round(i * step)]
-    );
-  }
-
-  const chunkTexts = sampled.map((c) => c.text);
+  const chunkTexts = sampleEvenly(allChunks, 20).map((c) => c.text);
 
   // Fetch objectives if available
   let objectives: string[] | undefined;
