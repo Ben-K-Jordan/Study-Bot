@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { Prisma } from "../../generated/prisma/client";
 
 export interface EvidenceCardResult {
   id: string;
@@ -26,26 +27,12 @@ export async function queryEvidenceCards(
 
   const limit = options?.limit ?? 20;
 
-  // Build WHERE conditions to filter in SQL instead of loading all cards
-  const conditions: string[] = [];
-  const values: unknown[] = [];
-  let paramIdx = 1;
+  // Build WHERE with safe parameterization via Prisma.sql
+  const strengthFilter = options?.strength
+    ? Prisma.sql`AND c.strength = ${options.strength}`
+    : Prisma.empty;
 
-  // Filter by tags using JSONB ?| operator (matches ANY tag in the array)
-  conditions.push(`c.tags ?| $${paramIdx}::text[]`);
-  values.push(tags);
-  paramIdx++;
-
-  if (options?.strength) {
-    conditions.push(`c.strength = $${paramIdx}`);
-    values.push(options.strength);
-    paramIdx++;
-  }
-
-  const whereClause = conditions.join(" AND ");
-
-  // Use raw SQL for tag filtering + sorting, then map to typed results
-  const rows = await prisma.$queryRawUnsafe<
+  const rows = await prisma.$queryRaw<
     {
       id: string;
       claim: string;
@@ -57,20 +44,18 @@ export async function queryEvidenceCards(
       paper_authors: string | null;
       paper_year: number | null;
     }[]
-  >(
-    `SELECT c.id, c.claim, c.recommendation, c.boundary_conditions, c.strength, c.tags,
-            p.title AS paper_title, p.authors AS paper_authors, p.year AS paper_year
-     FROM evidence_cards c
-     JOIN evidence_papers p ON c.evidence_paper_id = p.id
-     WHERE ${whereClause}
-     ORDER BY
-       CASE c.strength WHEN 'STRONG' THEN 3 WHEN 'MODERATE' THEN 2 WHEN 'WEAK' THEN 1 ELSE 0 END DESC,
-       -- Count matching tags for secondary sort
-       (SELECT COUNT(*) FROM jsonb_array_elements_text(c.tags) t WHERE t = ANY($1::text[])) DESC
-     LIMIT $${paramIdx}`,
-    ...values,
-    limit,
-  );
+  >(Prisma.sql`
+    SELECT c.id, c.claim, c.recommendation, c.boundary_conditions, c.strength, c.tags,
+           p.title AS paper_title, p.authors AS paper_authors, p.year AS paper_year
+    FROM evidence_cards c
+    JOIN evidence_papers p ON c.evidence_paper_id = p.id
+    WHERE c.tags ?| ${tags}::text[]
+      ${strengthFilter}
+    ORDER BY
+      CASE c.strength WHEN 'STRONG' THEN 3 WHEN 'MODERATE' THEN 2 WHEN 'WEAK' THEN 1 ELSE 0 END DESC,
+      (SELECT COUNT(*) FROM jsonb_array_elements_text(c.tags) t WHERE t = ANY(${tags}::text[])) DESC
+    LIMIT ${limit}
+  `);
 
   return rows.map((row) => ({
     id: row.id,

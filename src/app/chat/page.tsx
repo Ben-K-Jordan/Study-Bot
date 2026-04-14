@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 import { apiGet, apiPost, apiDelete, type CourseOption } from "@/lib/client-api";
 import { titleStyle, subtitleStyle, selectStyle } from "@/lib/shared-styles";
+import { ErrorBoundary } from "@/ui/components/ErrorBoundary";
 
 // --- Types ---
 
@@ -325,7 +326,8 @@ export default function ChatPage() {
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} style={{ marginBottom: "1rem" }} role="article">
+          <ErrorBoundary key={msg.id} fallback={<div style={{ padding: "0.5rem", color: "#888" }}>Failed to render message.</div>}>
+          <div style={{ marginBottom: "1rem" }} role="article">
             {/* Message bubble */}
             <div
               style={
@@ -434,6 +436,7 @@ export default function ChatPage() {
               </button>
             )}
           </div>
+          </ErrorBoundary>
         ))}
 
         {loading && (
