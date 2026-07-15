@@ -21,6 +21,7 @@ export interface Prompt {
     original_prompt_text?: string;
     expected_correction_rule?: string;
     variant_question?: string;
+    pack?: string;
   };
 }
 
@@ -54,8 +55,16 @@ export interface PromptView {
   meta?: {
     distractorRationales?: string[];
     original_prompt_text?: string;
+    /** Deck-pack marker (PRE_TEST, WORKED_EXAMPLE, WE_*) — drives UI framing. */
+    pack?: string;
     [key: string]: unknown;
   };
+}
+
+/** Model answer / key points revealed after the student commits an answer. */
+export interface AnswerReveal {
+  model_answer: string | null;
+  key_points: string[] | null;
 }
 
 export interface RunMetrics {
@@ -195,10 +204,35 @@ export async function fetchFeedback(attemptId: string): Promise<FeedbackResult> 
   return apiGet(`/api/attempts/${attemptId}/feedback`);
 }
 
-/** Attach post-review metacognition (explanation/example) to an existing attempt */
+/**
+ * Poll feedback until generation completes. The server generates feedback
+ * eagerly at submit time; PENDING means another worker owns generation, so
+ * we poll instead of duplicating the AI calls.
+ */
+export async function pollFeedback(
+  attemptId: string,
+  isCancelled: () => boolean,
+  maxAttempts = 25,
+  intervalMs = 1000
+): Promise<FeedbackResult | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (isCancelled()) return null;
+    const result = await fetchFeedback(attemptId);
+    if (result.status !== "PENDING") return result;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
+/** Reveal the model answer / key points for the current prompt (post-commit). */
+export async function fetchReveal(runId: string, index: number): Promise<AnswerReveal> {
+  return apiGet(`/api/runs/${runId}/reveal?index=${index}`);
+}
+
+/** Attach post-review metacognition (explanation/example/socratic answer) to an existing attempt */
 export async function patchAttemptMeta(
   attemptId: string,
-  meta: { self_explanation?: string; generated_example?: string }
+  meta: { self_explanation?: string; generated_example?: string; socratic_answer?: string }
 ): Promise<void> {
   const res = await fetch(`/api/attempts/${attemptId}/meta`, {
     method: "PATCH",
@@ -218,6 +252,9 @@ export async function patchAttemptMeta(
  *  Preserves MCQ fields so a multiple-choice prompt never degrades to a
  *  free-recall textarea. The deck is redacted server-side (no answer key). */
 function promptToView(p: Prompt, index: number): PromptView {
+  const meta: PromptView["meta"] = {};
+  if (p.meta?.original_prompt_text) meta.original_prompt_text = p.meta.original_prompt_text;
+  if (p.meta?.pack) meta.pack = p.meta.pack;
   return {
     prompt_index: index,
     text: p.text,
@@ -225,9 +262,7 @@ function promptToView(p: Prompt, index: number): PromptView {
     difficulty: p.difficulty,
     format: p.format,
     choices: p.choices,
-    meta: p.meta?.original_prompt_text
-      ? { original_prompt_text: p.meta.original_prompt_text }
-      : undefined,
+    meta: Object.keys(meta).length > 0 ? meta : undefined,
   };
 }
 

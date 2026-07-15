@@ -27,7 +27,13 @@ const anchorRows: AnchorRow[] = [];
 // Mock prisma before importing the service
 vi.mock("@/lib/db", () => {
   const prisma = {
-    sessionAttempt: { findUnique: vi.fn() },
+    sessionAttempt: {
+      findUnique: vi.fn(),
+      // Claim (NONE -> GENERATING) always succeeds in these tests
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      // Persist (READY + feedbackJson)
+      update: vi.fn(async () => ({})),
+    },
     sessionErrorLog: {
       findFirst: vi.fn(async () => null),
       findMany: vi.fn(async () => []),
@@ -91,6 +97,9 @@ const ATTEMPT = {
   promptText: "What is osmosis?",
   userAnswer: "something wrong",
   selfScore: "INCORRECT",
+  confidenceRating: null,
+  feedbackStatus: "NONE",
+  feedbackJson: null,
   run: {
     userId: "user-1",
     session: {

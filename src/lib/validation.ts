@@ -16,6 +16,7 @@ export const RUNNABLE_MODES = [
   "INTERLEAVED_PRACTICE",
   "EXAM_SIM",
   "ERROR_REPAIR",
+  "WORKED_EXAMPLES",
 ] as const;
 
 export type RunnableMode = (typeof RUNNABLE_MODES)[number];
@@ -90,6 +91,12 @@ export const submitAttemptSchema = z
     user_answer: z.string().min(1, "Answer is required"),
     self_score: z.enum(SELF_SCORES).optional(),
     mcq_choice_index: z.number().int().min(0).max(3).optional(),
+    // Pretest items are diagnostic — errors are expected and are not logged.
+    // The server verifies against the stored prompt meta before honoring this.
+    is_pretest: z.boolean().optional(),
+    // Repair prompts (variants / error-repair decks) already carry their
+    // correction rule server-side — no new error log is collected.
+    is_repair: z.boolean().optional(),
     time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
     confidence_rating: z.number().int().min(1).max(5).optional(),
     self_explanation: z.string().max(2000).optional(),
@@ -102,8 +109,10 @@ export const submitAttemptSchema = z
   )
   .refine(
     (data) => {
-      // Server-graded MCQ attempts build their own error log
-      if (data.mcq_choice_index != null) return true;
+      // Server-graded MCQ attempts build their own error log; pretest
+      // attempts are diagnostic and never produce error logs; repair
+      // prompts update their source error log instead of minting one.
+      if (data.mcq_choice_index != null || data.is_pretest || data.is_repair) return true;
       if (data.self_score !== "PARTIAL" && data.self_score !== "INCORRECT") return true;
       return data.error_log != null;
     },
@@ -156,10 +165,14 @@ export const updateAttemptMetaSchema = z
   .object({
     self_explanation: z.string().max(2000).optional(),
     generated_example: z.string().max(2000).optional(),
+    socratic_answer: z.string().max(2000).optional(),
   })
   .refine(
-    (data) => data.self_explanation != null || data.generated_example != null,
-    { message: "Provide self_explanation or generated_example" }
+    (data) =>
+      data.self_explanation != null ||
+      data.generated_example != null ||
+      data.socratic_answer != null,
+    { message: "Provide self_explanation, generated_example, or socratic_answer" }
   );
 
 export type UpdateAttemptMetaInput = z.infer<typeof updateAttemptMetaSchema>;

@@ -8,9 +8,10 @@ import type { GatewayContext } from "@/lib/ai/gateway";
 import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
+import type { Prisma } from "../../generated/prisma/client";
 
 export interface FeedbackResponse {
-  status: "OK" | "UNAVAILABLE" | "NOT_FOUND";
+  status: "OK" | "UNAVAILABLE" | "NOT_FOUND" | "PENDING";
   excerpts: FeedbackExcerpt[];
   // AI explanation (PARTIAL/INCORRECT)
   explanation?: string;
@@ -30,184 +31,381 @@ export interface FeedbackResponse {
 }
 
 /**
- * Generate feedback for a scored attempt. Called via the deferred feedback endpoint.
+ * Feedback generation lifecycle (persisted on SessionAttempt):
  *
- * 1. If citations already exist, return them (idempotent).
- * 2. Otherwise, check objective anchors first, then fall back to FTS.
- * 3. Store AttemptCitation rows and return excerpts.
- * 4. For PARTIAL/INCORRECT: AI explanation + concept connections + mnemonics + mistake patterns.
- * 5. For CORRECT: AI reinforcement + concept connections.
- * 6. For all: Socratic follow-up question.
- * 7. On failure, return { status: "UNAVAILABLE" } — never throw.
- * 8. For missing attempts or attempts owned by another user, return { status: "NOT_FOUND" }.
+ *   feedbackStatus: NONE -> GENERATING (claimed) -> READY
+ *
+ * - The claim is taken atomically via updateMany({ where: { feedbackStatus:
+ *   "NONE" } }), so a concurrent GET and an eager submit-path call can never
+ *   both run the AI generation.
+ * - While GENERATING, feedbackJson holds { feedbackClaimedAt: ISO } — the
+ *   claim timestamp. Readers only trust feedbackJson as a FeedbackResponse
+ *   when feedbackStatus is READY.
+ * - Stale-claim policy: a GENERATING row whose claim stamp is older than
+ *   2 minutes (or unparsable) is treated as abandoned — the worker crashed
+ *   before its catch block could reset the status — and may be reclaimed.
+ *   The reclaim compare-and-swaps on the old stamp so two readers cannot
+ *   both reclaim the same stale row.
+ * - On generation failure, the claim is released (feedbackStatus back to
+ *   NONE) so a later request can retry.
+ *
+ * Rationale: elaborated feedback has one of the largest effect sizes in the
+ * feedback literature (Van der Kleij 2015, g = 0.49) — it must survive
+ * refetch instead of being regenerated (or silently dropped) on every GET.
+ */
+const STALE_CLAIM_MS = 2 * 60 * 1000;
+
+function loadAttempt(attemptId: string) {
+  return prisma.sessionAttempt.findUnique({
+    where: { id: attemptId },
+    include: {
+      run: {
+        include: {
+          session: {
+            select: { courseName: true, examName: true, objectives: true },
+          },
+        },
+      },
+    },
+  });
+}
+
+type LoadedAttempt = NonNullable<Awaited<ReturnType<typeof loadAttempt>>>;
+
+/** Read the claim stamp stored inside feedbackJson while GENERATING. */
+function readClaimStamp(json: unknown): string | null {
+  if (json && typeof json === "object" && !Array.isArray(json)) {
+    const value = (json as Record<string, unknown>).feedbackClaimedAt;
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
+function newClaimStamp(): { feedbackClaimedAt: string } {
+  return { feedbackClaimedAt: new Date().toISOString() };
+}
+
+/**
+ * Atomically claim generation for a loaded attempt. Returns true when this
+ * caller now owns generation, false when another caller does (live claim).
+ */
+async function claimGeneration(attempt: LoadedAttempt): Promise<boolean> {
+  const data = { feedbackStatus: "GENERATING", feedbackJson: newClaimStamp() };
+
+  if (attempt.feedbackStatus === "GENERATING") {
+    // Stale-claim recovery: claims newer than 2 minutes belong to a live
+    // worker — do not duplicate its AI calls.
+    const stamp = readClaimStamp(attempt.feedbackJson);
+    const claimedMs = stamp === null ? NaN : Date.parse(stamp);
+    if (!Number.isNaN(claimedMs) && Date.now() - claimedMs < STALE_CLAIM_MS) {
+      return false;
+    }
+    if (stamp !== null) {
+      // CAS on the old stamp so two readers cannot both reclaim a stale row.
+      const reclaimed = await prisma.sessionAttempt.updateMany({
+        where: {
+          id: attempt.id,
+          feedbackStatus: "GENERATING",
+          feedbackJson: { path: ["feedbackClaimedAt"], equals: stamp },
+        },
+        data,
+      });
+      if (reclaimed.count > 0) {
+        logger.info("feedback.claim_reclaimed", { attempt_id: attempt.id, stale_stamp: stamp });
+      }
+      return reclaimed.count > 0;
+    }
+    // GENERATING without a stamp (unexpected): reclaim on status alone.
+    const reclaimed = await prisma.sessionAttempt.updateMany({
+      where: { id: attempt.id, feedbackStatus: "GENERATING" },
+      data,
+    });
+    return reclaimed.count > 0;
+  }
+
+  // Normal path: atomically claim NONE -> GENERATING. Matching on the loaded
+  // status (rather than hardcoding "NONE") also self-heals the unexpected
+  // READY-with-null-feedbackJson state, which would otherwise never regenerate.
+  const claimed = await prisma.sessionAttempt.updateMany({
+    where: { id: attempt.id, feedbackStatus: attempt.feedbackStatus },
+    data,
+  });
+  return claimed.count > 0;
+}
+
+/**
+ * Release a held claim so a later request can retry. Leaves feedbackJson
+ * as-is: readers only trust it when feedbackStatus is READY, and the next
+ * claim overwrites it.
+ */
+async function releaseClaim(attemptId: string): Promise<void> {
+  await prisma.sessionAttempt.updateMany({
+    where: { id: attemptId, feedbackStatus: "GENERATING" },
+    data: { feedbackStatus: "NONE" },
+  });
+}
+
+/**
+ * Generate feedback for a scored attempt. Called via the deferred feedback
+ * endpoint (GET) — see generateFeedbackEager for the submit-path variant.
+ *
+ * 1. If persisted feedback exists (feedbackStatus READY), return it verbatim.
+ * 2. If another caller is generating (GENERATING, claim < 2 min old), return
+ *    { status: "PENDING" } so the client polls instead of duplicating work.
+ * 3. Otherwise claim generation, run it, persist the full FeedbackResponse
+ *    into feedbackJson, and return it.
+ * 4. For PARTIAL/INCORRECT: AI explanation + concept connections + mnemonics
+ *    + mistake patterns. For CORRECT: AI reinforcement + concept connections.
+ *    For all: Socratic follow-up question.
+ * 5. On failure, release the claim and return { status: "UNAVAILABLE" } —
+ *    never throw.
+ * 6. For missing attempts or attempts owned by another user, return
+ *    { status: "NOT_FOUND" }.
  */
 export async function generateFeedback(
   userId: string,
   attemptId: string
 ): Promise<FeedbackResponse> {
-  const ftsStart = Date.now();
-
   try {
-    // Load attempt with run + session context
-    const attempt = await prisma.sessionAttempt.findUnique({
-      where: { id: attemptId },
-      include: {
-        run: {
-          include: {
-            session: {
-              select: { courseName: true, examName: true, objectives: true },
-            },
-          },
-        },
-        citations: {
-          include: {
-            chunk: {
-              include: { document: { select: { title: true } } },
-            },
-          },
-          orderBy: { rank: "asc" },
-        },
-      },
-    });
+    const attempt = await loadAttempt(attemptId);
 
     if (!attempt) return { status: "NOT_FOUND", excerpts: [] };
     if (attempt.run.userId !== userId) return { status: "NOT_FOUND", excerpts: [] };
 
-    // Idempotent: if citations already exist, return them
-    if (attempt.citations.length > 0) {
-      const excerpts: FeedbackExcerpt[] = attempt.citations.map((c) => ({
-        chunk_id: c.chunkId,
-        doc_title: c.chunk.document.title,
-        page_number: c.chunk.pageNumber,
-        snippet: c.snippet,
-        rank: c.rank,
-      }));
-      logger.info("feedback.cached", { attempt_id: attemptId, count: excerpts.length });
-      return { status: "OK", excerpts };
+    // Idempotent: persisted feedback is returned verbatim — the elaborated
+    // AI fields survive refetch (previously only citation excerpts did).
+    if (attempt.feedbackStatus === "READY" && attempt.feedbackJson != null) {
+      logger.info("feedback.cached", { attempt_id: attemptId });
+      return attempt.feedbackJson as unknown as FeedbackResponse;
     }
 
-    const session = attempt.run.session;
-    const courseName = session.courseName;
-    const examName = session.examName;
-    const isCorrect = attempt.selfScore === "CORRECT";
-
-    // For CORRECT answers: generate reinforcement + Socratic follow-up
-    if (isCorrect) {
-      const [reinforcement, socratic] = await Promise.all([
-        generateReinforcement(
-          userId, attempt.promptText, attempt.userAnswer || "", courseName, examName,
-        ),
-        generateSocraticFollowup(
-          userId, attempt.promptText, attempt.userAnswer || "", "CORRECT",
-          undefined, courseName, examName,
-        ),
-      ]);
-      return { status: "OK", excerpts: [], ...reinforcement, ...socratic };
-    }
-
-    // For unscored: nothing to do
+    // Unscored (EXAM phase): nothing to generate yet. Do not claim or
+    // persist, so feedback still generates once the attempt is scored.
     if (attempt.selfScore === null) {
       return { status: "OK", excerpts: [] };
     }
 
-    // Fetch error log, prompt row, and mistake patterns in parallel
-    const [errorLog, promptRow, mistakePatterns] = await Promise.all([
-      prisma.sessionErrorLog.findFirst({
-        where: { runId: attempt.runId, promptIndex: attempt.promptIndex },
-      }),
-      prisma.sessionRunPrompt.findUnique({
-        where: { runId_promptIndex: { runId: attempt.runId, promptIndex: attempt.promptIndex } },
-      }),
-      detectMistakePatterns(userId, courseName),
-    ]);
-    const objectives = session.objectives as { id: string; title: string }[] | null;
-    const objectiveTitle = promptRow?.objectiveId
-      ? objectives?.find((o) => o.id === promptRow.objectiveId)?.title
-      : objectives?.[0]?.title;
-
-    // Phase 3: Try objective anchors first
-    let results: SearchResult[] = [];
-    if (promptRow?.objectiveId) {
-      results = await tryObjectiveAnchors(
-        userId, courseName, examName, promptRow.objectiveId
-      );
+    const claimed = await claimGeneration(attempt);
+    if (!claimed) {
+      // Another request/worker owns generation (or just finished) — client polls.
+      logger.info("feedback.pending", { attempt_id: attemptId });
+      return { status: "PENDING", excerpts: [] };
     }
 
-    // Fall back to FTS if anchors returned nothing
-    if (results.length === 0) {
-      const query = buildFeedbackQuery(
-        attempt.promptText,
-        errorLog?.correctionRule,
-        objectiveTitle
-      );
-
-      // Run both scoped (with examName) and unscoped searches in parallel
-      const [scopedResults, unscopedResults] = await Promise.all([
-        searchChunks({ userId, q: query, namespace: "COURSE", courseName, examName, topK: 5 }),
-        searchChunks({ userId, q: query, namespace: "COURSE", courseName, topK: 5 }),
-      ]);
-      results = scopedResults.length > 0 ? scopedResults : unscopedResults;
-    }
-
-    const ftsMs = Date.now() - ftsStart;
-
-    if (results.length === 0) {
-      logger.info("feedback.empty", { attempt_id: attemptId, fts_ms: ftsMs });
-      return { status: "OK", excerpts: [] };
-    }
-
-    // Build excerpts and store citations in a single batch transaction
-    const excerpts: FeedbackExcerpt[] = results.map((r, i) => ({
-      chunk_id: r.chunk_id,
-      doc_title: r.doc_title,
-      page_number: r.page_number,
-      snippet: r.snippet,
-      rank: i + 1,
-    }));
-
-    await prisma.$transaction(
-      results.map((r, i) =>
-        prisma.attemptCitation.upsert({
-          where: { attemptId_chunkId: { attemptId, chunkId: r.chunk_id } },
-          create: { attemptId, chunkId: r.chunk_id, rank: i + 1, snippet: r.snippet },
-          update: { rank: i + 1, snippet: r.snippet },
-        }),
-      ),
-    );
-
-    // Generate AI explanation and Socratic follow-up in parallel
-    const [aiExplanation, socratic] = await Promise.all([
-      generateAIExplanation(
-        userId,
-        attempt.promptText,
-        attempt.userAnswer || "",
-        attempt.selfScore || "INCORRECT",
-        errorLog?.errorType,
-        errorLog?.correctionRule,
-        mistakePatterns,
-        results,
-      ),
-      generateSocraticFollowup(
-        userId, attempt.promptText, attempt.userAnswer || "",
-        attempt.selfScore || "INCORRECT", undefined, courseName, examName,
-      ),
-    ]);
-
-    logger.info("feedback.generated", {
-      attempt_id: attemptId,
-      count: excerpts.length,
-      has_explanation: !!aiExplanation?.explanation,
-      has_socratic: !!socratic?.socratic_followup,
-      has_patterns: mistakePatterns.length > 0,
-      fts_ms: ftsMs,
-    });
-
-    return { status: "OK", excerpts, ...aiExplanation, ...socratic };
+    return await generateAndPersist(userId, attempt);
   } catch (err: unknown) {
+    // Pre-claim failure (e.g. the attempt load): no claim is held here, so
+    // there is nothing to release — generateAndPersist handles its own.
     captureException(err, { user_id: userId, attempt_id: attemptId, action: "generateFeedback" });
     logger.error("feedback.failed", { user_id: userId, attempt_id: attemptId, error: String(err) });
     return { status: "UNAVAILABLE", excerpts: [] };
   }
+}
+
+/**
+ * Eagerly generate feedback right after an attempt is submitted (Kulik &
+ * Kulik 1988: immediate feedback outperforms delayed). Intended to be called
+ * fire-and-forget from the submit path.
+ *
+ * Atomically claims generation (NONE -> GENERATING); returns null when the
+ * claim is lost — another caller owns generation or feedback is already
+ * READY — so a concurrent GET and this eager call never both run the AI
+ * generation.
+ */
+export async function generateFeedbackEager(
+  userId: string,
+  attemptId: string
+): Promise<FeedbackResponse | null> {
+  let claimed = false;
+  try {
+    const claim = await prisma.sessionAttempt.updateMany({
+      where: { id: attemptId, feedbackStatus: "NONE" },
+      data: { feedbackStatus: "GENERATING", feedbackJson: newClaimStamp() },
+    });
+    if (claim.count === 0) return null;
+    claimed = true;
+
+    const attempt = await loadAttempt(attemptId);
+    if (!attempt || attempt.run.userId !== userId) {
+      await releaseClaim(attemptId);
+      return { status: "NOT_FOUND", excerpts: [] };
+    }
+
+    // Unscored (EXAM phase): release so the post-scoring request can claim.
+    if (attempt.selfScore === null) {
+      await releaseClaim(attemptId);
+      return { status: "OK", excerpts: [] };
+    }
+
+    return await generateAndPersist(userId, attempt);
+  } catch (err: unknown) {
+    captureException(err, { user_id: userId, attempt_id: attemptId, action: "generateFeedbackEager" });
+    logger.error("feedback.eager_failed", { user_id: userId, attempt_id: attemptId, error: String(err) });
+    if (claimed) {
+      await releaseClaim(attemptId).catch(() => {});
+    }
+    return { status: "UNAVAILABLE", excerpts: [] };
+  }
+}
+
+/**
+ * Run generation while holding the claim, persist the result (READY), and
+ * release the claim (back to NONE) on failure so a later request can retry.
+ */
+async function generateAndPersist(
+  userId: string,
+  attempt: LoadedAttempt
+): Promise<FeedbackResponse> {
+  try {
+    const result = await generateContent(userId, attempt);
+
+    // Persist the full FeedbackResponse so refetch/polling returns it
+    // verbatim and never re-runs the AI calls.
+    await prisma.sessionAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        feedbackStatus: "READY",
+        feedbackJson: result as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return result;
+  } catch (err: unknown) {
+    captureException(err, { user_id: userId, attempt_id: attempt.id, action: "generateFeedback" });
+    logger.error("feedback.failed", { user_id: userId, attempt_id: attempt.id, error: String(err) });
+    await releaseClaim(attempt.id).catch((releaseErr) => {
+      logger.error("feedback.claim_release_failed", {
+        attempt_id: attempt.id,
+        error: String(releaseErr),
+      });
+    });
+    return { status: "UNAVAILABLE", excerpts: [] };
+  }
+}
+
+/**
+ * The actual generation work. Assumes the caller holds the GENERATING claim
+ * and that the attempt is scored (selfScore != null). Throws on failure —
+ * generateAndPersist owns error handling.
+ */
+async function generateContent(
+  userId: string,
+  attempt: LoadedAttempt
+): Promise<FeedbackResponse> {
+  const ftsStart = Date.now();
+  const attemptId = attempt.id;
+  const session = attempt.run.session;
+  const courseName = session.courseName;
+  const examName = session.examName;
+
+  // For CORRECT answers: generate reinforcement + Socratic follow-up
+  if (attempt.selfScore === "CORRECT") {
+    const [reinforcement, socratic] = await Promise.all([
+      generateReinforcement(
+        userId, attempt.promptText, attempt.userAnswer || "", courseName, examName,
+      ),
+      generateSocraticFollowup(
+        userId, attempt.promptText, attempt.userAnswer || "", "CORRECT",
+        undefined, courseName, examName,
+      ),
+    ]);
+    return { status: "OK", excerpts: [], ...reinforcement, ...socratic };
+  }
+
+  // Fetch error log, prompt row, and mistake patterns in parallel
+  const [errorLog, promptRow, mistakePatterns] = await Promise.all([
+    prisma.sessionErrorLog.findFirst({
+      where: { runId: attempt.runId, promptIndex: attempt.promptIndex },
+    }),
+    prisma.sessionRunPrompt.findUnique({
+      where: { runId_promptIndex: { runId: attempt.runId, promptIndex: attempt.promptIndex } },
+    }),
+    detectMistakePatterns(userId, courseName),
+  ]);
+  const objectives = session.objectives as { id: string; title: string }[] | null;
+  const objectiveTitle = promptRow?.objectiveId
+    ? objectives?.find((o) => o.id === promptRow.objectiveId)?.title
+    : objectives?.[0]?.title;
+
+  // Phase 3: Try objective anchors first
+  let results: SearchResult[] = [];
+  if (promptRow?.objectiveId) {
+    results = await tryObjectiveAnchors(
+      userId, courseName, examName, promptRow.objectiveId
+    );
+  }
+
+  // Fall back to FTS if anchors returned nothing
+  if (results.length === 0) {
+    const query = buildFeedbackQuery(
+      attempt.promptText,
+      errorLog?.correctionRule,
+      objectiveTitle
+    );
+
+    // Run both scoped (with examName) and unscoped searches in parallel
+    const [scopedResults, unscopedResults] = await Promise.all([
+      searchChunks({ userId, q: query, namespace: "COURSE", courseName, examName, topK: 5 }),
+      searchChunks({ userId, q: query, namespace: "COURSE", courseName, topK: 5 }),
+    ]);
+    results = scopedResults.length > 0 ? scopedResults : unscopedResults;
+  }
+
+  const ftsMs = Date.now() - ftsStart;
+
+  if (results.length === 0) {
+    logger.info("feedback.empty", { attempt_id: attemptId, fts_ms: ftsMs });
+    return { status: "OK", excerpts: [] };
+  }
+
+  // Build excerpts and store citations in a single batch transaction
+  const excerpts: FeedbackExcerpt[] = results.map((r, i) => ({
+    chunk_id: r.chunk_id,
+    doc_title: r.doc_title,
+    page_number: r.page_number,
+    snippet: r.snippet,
+    rank: i + 1,
+  }));
+
+  await prisma.$transaction(
+    results.map((r, i) =>
+      prisma.attemptCitation.upsert({
+        where: { attemptId_chunkId: { attemptId, chunkId: r.chunk_id } },
+        create: { attemptId, chunkId: r.chunk_id, rank: i + 1, snippet: r.snippet },
+        update: { rank: i + 1, snippet: r.snippet },
+      }),
+    ),
+  );
+
+  // Generate AI explanation and Socratic follow-up in parallel
+  const [aiExplanation, socratic] = await Promise.all([
+    generateAIExplanation(
+      userId,
+      attempt.promptText,
+      attempt.userAnswer || "",
+      attempt.selfScore || "INCORRECT",
+      attempt.confidenceRating,
+      errorLog?.errorType,
+      errorLog?.correctionRule,
+      mistakePatterns,
+      results,
+    ),
+    generateSocraticFollowup(
+      userId, attempt.promptText, attempt.userAnswer || "",
+      attempt.selfScore || "INCORRECT", undefined, courseName, examName,
+    ),
+  ]);
+
+  logger.info("feedback.generated", {
+    attempt_id: attemptId,
+    count: excerpts.length,
+    has_explanation: !!aiExplanation?.explanation,
+    has_socratic: !!socratic?.socratic_followup,
+    has_patterns: mistakePatterns.length > 0,
+    fts_ms: ftsMs,
+  });
+
+  return { status: "OK", excerpts, ...aiExplanation, ...socratic };
 }
 
 // ---- Mistake Pattern Detection ----
@@ -265,6 +463,7 @@ async function generateAIExplanation(
   question: string,
   userAnswer: string,
   selfScore: string,
+  confidence: number | null | undefined,
   errorType?: string | null,
   correctionRule?: string | null,
   mistakePatterns: MistakePattern[] = [],
@@ -300,6 +499,10 @@ async function generateAIExplanation(
           question,
           userAnswer,
           selfScore,
+          // Hypercorrection (Butterfield & Metcalfe 2001): pre-answer
+          // confidence lets the template correct high-confidence errors
+          // more emphatically.
+          confidence: confidence ?? undefined,
           errorType: errorType || undefined,
           correctionRule: correctionRule || undefined,
           mistakePatterns: mistakePatterns.length > 0 ? mistakePatterns : undefined,

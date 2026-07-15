@@ -19,6 +19,11 @@ export async function GET(
     if (result.status === "NOT_FOUND") {
       return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
     }
+    if (result.status === "PENDING") {
+      // Another request/worker is generating — clients poll until READY.
+      logger.info("feedback.response", { attempt_id: attemptId, status: "PENDING" });
+      return NextResponse.json({ status: "PENDING", excerpts: [] }, { status: 200 });
+    }
     const payload = JSON.stringify(result);
     logger.info("feedback.response", {
       attempt_id: attemptId,

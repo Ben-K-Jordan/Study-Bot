@@ -76,6 +76,12 @@ model SessionAttempt {
   confidenceRating    Int?     @map("confidence_rating") // 1-5 pre-answer confidence
   selfExplanation     String?  @map("self_explanation") // Student's explain-back after feedback
   generatedExample    String?  @map("generated_example") // Student's own example (generation effect)
+  socraticAnswer      String?  @map("socratic_answer") // Student's answer to the Socratic follow-up
+  // Persisted AI feedback (Van der Kleij 2015: elaborated feedback must survive
+  // refetch). NONE -> GENERATING (claimed) -> READY; feedbackJson holds the
+  // full FeedbackResponse so eager generation + client polling never regenerate.
+  feedbackStatus      String   @default("NONE") @map("feedback_status")
+  feedbackJson        Json?    @map("feedback_json")
   createdAt           DateTime @default(now()) @map("created_at")
 
   run       SessionRun        @relation(fields: [runId], references: [runId], onDelete: Cascade)
@@ -95,6 +101,13 @@ model SessionErrorLog {
   errorType       String    @map("error_type") // MISCONCEPTION | PROCEDURE | CARELESS | MEMORY | UNKNOWN
   correctionRule  String    @map("correction_rule")
   variantQuestion String?   @map("variant_question")
+  // Hypercorrection (Butterfield & Metcalfe 2001): confidence at the time of
+  // the error — high-confidence misses get prioritized, emphatic correction.
+  confidenceRating Int?     @map("confidence_rating")
+  // Successive relearning (Rawson & Dunlosky 2011): resolve only after 2
+  // correct retrievals on different days, not one lucky hit.
+  correctStreak   Int       @default(0) @map("correct_streak")
+  lastCorrectAt   DateTime? @map("last_correct_at") @db.Timestamptz
   resolvedAt      DateTime? @map("resolved_at") @db.Timestamptz
   resolvedByRunId String?   @map("resolved_by_run_id")
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -531,6 +544,7 @@ model FlashcardDeck {
   document ContentDocument? @relation(fields: [documentId], references: [id])
   cards    Flashcard[]
 
+  @@unique([userId, courseName, title], map: "flashcard_decks_user_course_title_key")
   @@index([userId, courseName, examName], map: "flashcard_decks_user_course_exam_idx")
   @@map("flashcard_decks")
 }

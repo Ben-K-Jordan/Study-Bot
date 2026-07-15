@@ -26,6 +26,15 @@ export interface Prompt {
     variant_question?: string;
     /** Why each distractor is plausible — aids post-answer feedback. */
     distractorRationales?: string[];
+    /**
+     * Reference solution for a worked-example FULL problem (pack "WE_FULL")
+     * or the ideal answer for an AI-generated prompt. Revealed by the server
+     * only when the learner commits an answer; redacted from client payloads
+     * before that.
+     */
+    model_answer?: string;
+    /** Bullet points a correct answer must contain (self-scoring standard). */
+    key_points?: string[];
   };
 }
 
@@ -161,6 +170,44 @@ export function generateInterleavedPrompts(session: {
   }
 
   return result;
+}
+
+/**
+ * Re-interleave an existing deck so consecutive prompts differ by objective
+ * as much as possible (Rohrer & Taylor 2007). Used for AI-generated decks,
+ * which arrive grouped by objective and would otherwise be blocked practice.
+ * Preserves the prompts themselves; only order and sequential IDs change.
+ */
+export function interleaveByObjective(prompts: Prompt[], seed: string): Prompt[] {
+  const buckets = new Map<string, Prompt[]>();
+  for (const p of prompts) {
+    const key = p.objective_id ?? "__none__";
+    const list = buckets.get(key);
+    if (list) list.push(p);
+    else buckets.set(key, [p]);
+  }
+  if (buckets.size <= 1) return prompts;
+
+  const lists = [...buckets.values()];
+  for (const list of lists) {
+    deterministicShuffle(list, seed);
+  }
+
+  const result: Prompt[] = [];
+  const pointers = new Array(lists.length).fill(0);
+  while (result.length < prompts.length) {
+    let advanced = false;
+    for (let b = 0; b < lists.length; b++) {
+      if (pointers[b] < lists[b].length) {
+        result.push(lists[b][pointers[b]]);
+        pointers[b]++;
+        advanced = true;
+      }
+    }
+    if (!advanced) break;
+  }
+
+  return result.map((p, i) => ({ ...p, id: `p_${i}` }));
 }
 
 /**

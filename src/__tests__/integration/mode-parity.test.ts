@@ -396,7 +396,7 @@ describe.skipIf(!hasDb)("Integration: ERROR_REPAIR mode", () => {
     expect(firstPrompt.meta?.source_error_log_id).toBe(errorLogId);
   });
 
-  it("CORRECT repair marks the error log as resolved", async () => {
+  it("one CORRECT repair increments the streak but does not resolve (criterion: 2 days)", async () => {
     const run = await getRun(userId, repairRunId);
     const prompts = run.data!.prompts as any[];
 
@@ -410,12 +410,52 @@ describe.skipIf(!hasDb)("Integration: ERROR_REPAIR mode", () => {
       });
     }
 
-    // Verify error log resolved_at is set
+    // Successive relearning (Rawson & Dunlosky 2011): one correct retrieval
+    // is not resolution — the streak advances, resolution needs a second
+    // correct retrieval on a different day.
+    const errorLog = await prisma.sessionErrorLog.findUnique({
+      where: { id: errorLogId },
+    });
+    expect(errorLog.resolvedAt).toBeNull();
+    expect(errorLog.correctStreak).toBe(1);
+    expect(errorLog.lastCorrectAt).not.toBeNull();
+  });
+
+  it("a second CORRECT retrieval on a later day resolves the error", async () => {
+    // Simulate the first success having happened yesterday (the criterion
+    // requires correct retrievals on different calendar days)
+    await prisma.sessionErrorLog.update({
+      where: { id: errorLogId },
+      data: { lastCorrectAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    });
+
+    const result = await createSession(userId, {
+      course_name: "REPAIR TEST DAY2",
+      exam_name: "Quiz 1",
+      mode: "ERROR_REPAIR",
+      topic_scope: "Errors",
+      planned_minutes: 15,
+      target_outcome: { prompt_count: 5 },
+      break_protocol: { type: "TEST_3_2", cycles: 1 },
+    });
+    const startResult = await startOrResumeRun(userId, result.session_id);
+    const d = startResult.data!;
+    const prompts = d.prompts as any[];
+
+    for (let i = 0; i < prompts.length; i++) {
+      await submitAttempt(userId, d.run_id, {
+        prompt_index: i,
+        user_answer: "Correct repair answer, day 2",
+        self_score: "CORRECT",
+        time_to_answer_seconds: 10,
+      });
+    }
+
     const errorLog = await prisma.sessionErrorLog.findUnique({
       where: { id: errorLogId },
     });
     expect(errorLog.resolvedAt).not.toBeNull();
-    expect(errorLog.resolvedByRunId).toBe(repairRunId);
+    expect(errorLog.correctStreak).toBe(2);
   });
 
   it("resolved errors are not included in new ERROR_REPAIR decks", async () => {

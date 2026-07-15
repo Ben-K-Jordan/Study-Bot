@@ -58,6 +58,8 @@ interface GenerateFeedbackInput {
   question: string;
   userAnswer: string;
   selfScore: string;
+  /** Student's confidence rating (1-5) given before seeing the correct answer. */
+  confidence?: number;
   errorType?: string;
   correctionRule?: string;
   mistakePatterns?: { error_type: string; count: number }[];
@@ -120,6 +122,15 @@ interface PlanGeneratorInput {
     studyStyle: "intensive" | "balanced" | "relaxed";
   };
   contentContext?: string;
+}
+
+interface GenerateWorkedExamplesInput {
+  courseName: string;
+  examName?: string;
+  topicScope: string;
+  objectives: { id: string; title: string }[];
+  contentChunks: { doc_title: string; page_number: number | null; text: string }[];
+  setCount: number; // how many example sets to produce
 }
 
 const maxWordsByVerbosity = { SHORT: 80, MEDIUM: 200, LONG: 500 };
@@ -251,7 +262,7 @@ Design the optimal study schedule.`;
 
   [AiTask.GENERATE_PROMPTS]: {
     task: AiTask.GENERATE_PROMPTS,
-    version: "v4",
+    version: "v5",
     systemPrompt: `You are an expert professor creating study questions directly from course materials. Task: GENERATE_PROMPTS.
 
 You generate questions grounded in learning science research on retrieval practice and the testing effect. Your questions are designed to maximize long-term retention, not just assess knowledge.
@@ -313,6 +324,11 @@ QUESTION GENERATION RULES:
 6. Generate exactly the requested number of prompts.
 7. For MCQ: generate exactly 4 choices. The correct answer index (0-3) must be valid.
 
+MODEL ANSWER & KEY POINTS — REQUIRED FOR EVERY PROMPT (Rawson & Dunlosky criterion relearning: accurate self-assessment requires an answer standard):
+For EVERY prompt — both FREE_RECALL and MCQ — you must also emit:
+- "model_answer": a 2-3 sentence ideal answer, grounded ONLY in the provided course material. Do not introduce facts, terminology, or examples that are not in the excerpts.
+- "key_points": 2-4 short bullet strings naming the specific points a correct answer must contain. Each key point should be independently checkable so the student can score their own answer against it.
+
 Output valid JSON:
 {
   "prompts": [
@@ -323,13 +339,16 @@ Output valid JSON:
       "format": "FREE_RECALL" | "MCQ",
       "choices": string[] | null,
       "correct_index": number | null,
-      "distractor_rationales": string[] | null
+      "distractor_rationales": string[] | null,
+      "model_answer": string,
+      "key_points": string[]
     }
   ]
 }
 
 For FREE_RECALL: set choices, correct_index, and distractor_rationales to null.
-For MCQ: choices must have exactly 4 strings, correct_index must be 0-3, distractor_rationales must have exactly 4 strings (one per choice, in same order).`,
+For MCQ: choices must have exactly 4 strings, correct_index must be 0-3, distractor_rationales must have exactly 4 strings (one per choice, in same order).
+For ALL prompts: model_answer must be a 2-3 sentence string and key_points must have 2-4 short strings.`,
     buildUserPrompt: (input: unknown) => {
       const { mode, objectives, topicScope, promptCount, contentChunks, courseName, examName, masteryContext, errorPatterns } =
         input as GeneratePromptsInput;
@@ -372,7 +391,7 @@ Generate ${promptCount} study questions that test mastery of this specific cours
 
   [AiTask.GENERATE_FEEDBACK]: {
     task: AiTask.GENERATE_FEEDBACK,
-    version: "v3",
+    version: "v4",
     systemPrompt: `You are an expert professor helping a student understand where they went wrong. Task: GENERATE_FEEDBACK.
 
 Given a student's question, their incorrect/partial answer, the error classification, and relevant course material excerpts, generate a clear, supportive explanation.
@@ -391,6 +410,10 @@ MEMORY AIDS: If this concept involves something easily confused or hard to remem
 
 MISTAKE PATTERNS: If the student has a pattern of making similar errors (provided in mistake_patterns), address the pattern directly. E.g., "I notice you keep confusing X with Y — here's a reliable way to tell them apart."
 
+CONFIDENCE CALIBRATION (hypercorrection effect — Butterfield & Metcalfe 2001): If a confidence rating (1-5) is provided, calibrate your correction to it:
+- Confidence >= 4 AND the answer was wrong: OPEN the explanation by explicitly flagging the mismatch (e.g., "You were confident here, but...") and give the fullest, most memorable correction — high-confidence errors, once corrected emphatically, are the best remembered. Make this correction vivid, thorough, and impossible to forget.
+- Confidence <= 2 AND the answer was wrong: frame the error as expected gap-filling — "This is exactly the kind of gap studying is for; let's fill it." Keep the feedback task-focused on the material and the concept, never person-focused on the student's ability (Kluger & DeNisi 1996).
+
 Tone: Supportive, never condescending. Use "you" directly. Acknowledge what the student got right before correcting what they got wrong.
 
 Output valid JSON:
@@ -403,11 +426,12 @@ Output valid JSON:
   "referenced_chunk_ids": string[]
 }`,
     buildUserPrompt: (input: unknown) => {
-      const { question, userAnswer, selfScore, errorType, correctionRule, mistakePatterns, chunks } = input as GenerateFeedbackInput;
+      const { question, userAnswer, selfScore, confidence, errorType, correctionRule, mistakePatterns, chunks } = input as GenerateFeedbackInput;
       const context = chunks
         .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 600))}`)
         .join("\n\n");
       let prompt = `Question: ${question}\n${fence("student_answer", userAnswer)}\nScore: ${selfScore}`;
+      if (confidence !== undefined) prompt += `\nStudent's confidence (1-5, rated before seeing the correct answer): ${confidence}`;
       if (errorType) prompt += `\nError type: ${errorType}`;
       if (correctionRule) prompt += `\nStudent's correction note: ${fence("student_correction", correctionRule)}`;
       if (mistakePatterns && mistakePatterns.length > 0) {
@@ -665,6 +689,74 @@ Tags should be 1-3 short topic labels per card (e.g., ["definitions", "chapter 3
       }
       prompt += `\n\nGenerate flashcards from this material${masteryContext ? ", adapting to the student's strengths and weaknesses" : ""}.`;
       return prompt;
+    },
+  },
+
+  [AiTask.GENERATE_WORKED_EXAMPLES]: {
+    task: AiTask.GENERATE_WORKED_EXAMPLES,
+    version: "v1",
+    systemPrompt: `You are an expert professor creating worked examples from course materials. Task: GENERATE_WORKED_EXAMPLES.
+
+You generate worked-example sets grounded in the worked-example effect (Sweller) with backward fading (Renkl): novices learn most efficiently by first studying a fully worked solution, then completing versions of the SAME problem type with progressively more steps removed from the END, and finally solving a novel problem unaided.
+
+Each set follows this backward-fading sequence:
+1. WORKED EXAMPLE: a complete problem with 3-5 fully worked solution steps.
+2. COMPLETION PROBLEM 1: the same problem type with the FINAL step missing — the student supplies it.
+3. COMPLETION PROBLEM 2: the same problem type with the final TWO steps missing.
+4. FULL PROBLEM: a novel near-transfer problem with no steps given, plus a model answer.
+
+Rules:
+1. Ground every problem, step, and answer in the provided course material excerpts. Use the material's specific terminology, formulas, definitions, and examples. Do not fabricate content not supported by the excerpts.
+2. Steps must be genuinely ordered: each step must build on the previous one, and reordering them must break the solution. No arbitrary or interchangeable sequences.
+3. Each step's "action" states what to do; its "why" must state the PRINCIPLE, rule, definition, or theorem from the material that licenses the step — never a restatement of the action.
+4. Completion problems must reuse the SAME problem structure as the worked example with different surface values (different numbers, names, or contexts). This is backward fading — do NOT change the problem type between the worked example and the completion problems.
+5. completion_problem_1 must be solvable by supplying only the final step; completion_problem_2 by supplying only the final two steps. State each problem so the student knows which steps they must complete.
+6. full_problem must be NEAR transfer: same underlying concept and solution procedure, moderately new surface scenario. Not far transfer — do not require concepts or procedures beyond those in the worked example.
+7. model_answer is the correct final answer (or a brief solution sketch) for full_problem.
+8. Generate exactly the requested number of sets. Each set's objective_id must be one of the provided objective ids.
+
+Output valid JSON:
+{
+  "sets": [
+    {
+      "objective_id": string,
+      "problem": string,
+      "steps": [{ "action": string, "why": string }],
+      "completion_problem_1": string,
+      "completion_problem_2": string,
+      "full_problem": string,
+      "model_answer": string
+    }
+  ]
+}
+
+steps must contain 3-5 entries, in solution order.`,
+    buildUserPrompt: (input: unknown) => {
+      const { courseName, examName, topicScope, objectives, contentChunks, setCount } =
+        input as GenerateWorkedExamplesInput;
+
+      const objStr = objectives
+        .map((o, i) => `${i + 1}. [${o.id}] ${o.title}`)
+        .join("\n");
+
+      const contentStr = contentChunks
+        .map((c, i) => `[${i + 1}] ${c.doc_title}${c.page_number ? ` (p.${c.page_number})` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 600))}`)
+        .join("\n\n");
+
+      let header = `Course: ${courseName}`;
+      if (examName) header += ` | Exam: ${examName}`;
+
+      return `${header}
+Topic scope: ${topicScope}
+Generate exactly ${setCount} worked-example sets.
+
+Learning objectives:
+${objStr}
+
+Course material excerpts (ground every problem, step, and answer in these):
+${contentStr}
+
+Generate ${setCount} backward-faded worked-example sets from this course material.`;
     },
   },
 };
