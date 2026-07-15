@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const courseName = searchParams.get("course_name") || undefined;
   const examName = searchParams.get("exam_name") || undefined;
-  const limit = Math.max(1, Math.min(parseInt(searchParams.get("limit") || "50", 10), 100));
+  const limitRaw = parseInt(searchParams.get("limit") || "50", 10);
+  const limit = Math.max(1, Math.min(Number.isNaN(limitRaw) ? 50 : limitRaw, 100));
   const cursor = searchParams.get("cursor") || undefined;
 
   const where: Record<string, unknown> = { userId };

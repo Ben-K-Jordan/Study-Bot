@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { RunData, SessionData, FeedbackExcerpt, FeedbackResult } from "../session-runner";
-import { fetchFeedback } from "../session-runner";
+import type { RunData, SessionData, FeedbackExcerpt, FeedbackResult, AttemptSubmitResult, McqResult } from "../session-runner";
+import { fetchFeedback, patchAttemptMeta } from "../session-runner";
 
 const ERROR_TYPES = [
   { value: "MISCONCEPTION", label: "Misconception" },
@@ -15,7 +15,7 @@ const ERROR_TYPES = [
 interface Props {
   run: RunData;
   session: SessionData;
-  onSubmit: (attempt: Record<string, unknown>) => void;
+  onSubmit: (attempt: Record<string, unknown>) => Promise<AttemptSubmitResult | null>;
   onComplete: () => void;
 }
 
@@ -46,6 +46,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [selfExplanation, setSelfExplanation] = useState("");
   const [generatedExample, setGeneratedExample] = useState("");
   const [highlightedCitation, setHighlightedCitation] = useState<number | null>(null);
+  const [mcqResult, setMcqResult] = useState<McqResult | null>(null);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const excerptRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -54,6 +55,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const currentPrompt = run.current_prompt;
   const currentIndex = run.current_index;
   const total = run.prompt_count || run.prompts?.length || 0;
+
+  // Identity of the prompt the current UI state belongs to. Used to reset
+  // per-prompt state exactly once per prompt without racing the review phase
+  // (the parent advances current_index at submit time, BEFORE the user has
+  // seen the review panel).
+  const promptKey = `${run.phase}:${currentIndex}`;
+  const uiPromptKeyRef = useRef(promptKey);
 
   // For EXAM_SIM, progress tracking differs by phase
   const progressLabel = isExamSim
@@ -98,14 +106,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     return () => { mounted = false; };
   }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, fb.explanation, fb.reinforcement]);
 
-  // Reset state when prompt changes
-  useEffect(() => {
-    if (uiPhase === "review" && (feedbackExcerpts.length > 0 || feedbackLoading)) return;
-    if (isReviewPhase) {
-      setUIPhase("scoring");
-    } else {
-      setUIPhase("answering");
-    }
+  const resetForPrompt = (key: string) => {
+    uiPromptKeyRef.current = key;
+    setUIPhase(isReviewPhase ? "scoring" : "answering");
     setAnswer("");
     setSelectedChoice(null);
     setScore(null);
@@ -115,6 +118,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setFeedbackExcerpts([]);
     setFeedbackLoading(false);
     setLastScore(null);
+    setMcqResult(null);
     setFb(emptyFeedback);
     setConfidence(3);
     setSelfExplanation("");
@@ -125,8 +129,42 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     if (!isReviewPhase) {
       textareaRef.current?.focus();
     }
+  };
+
+  // Reset state when the prompt changes UNDERNEATH the UI (exam answering,
+  // phase transitions, resume). While the review panel is up, the parent has
+  // already advanced current_index — the reset is deferred to "Next Prompt"
+  // (goNext), so the review content can never be wiped by this effect.
+  useEffect(() => {
+    if (promptKey === uiPromptKeyRef.current) return;
+    if (uiPhase === "review") return;
+    resetForPrompt(promptKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex, isReviewPhase]);
+  }, [promptKey, uiPhase]);
+
+  // Draft preservation: a break can interrupt at submit time (the server
+  // rejects the attempt and this screen unmounts) — keep the free-recall
+  // draft in sessionStorage so it survives the break and reloads.
+  const draftKey = `draft:${run.run_id}:${promptKey}`;
+  useEffect(() => {
+    if (isReviewPhase) return;
+    try {
+      const saved = sessionStorage.getItem(draftKey);
+      if (saved) setAnswer((prev) => prev || saved);
+    } catch { /* storage unavailable */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey, isReviewPhase]);
+  useEffect(() => {
+    if (isReviewPhase) return;
+    try {
+      if (answer) sessionStorage.setItem(draftKey, answer);
+      else sessionStorage.removeItem(draftKey);
+    } catch { /* storage unavailable */ }
+  }, [answer, draftKey, isReviewPhase]);
+
+  const clearDraft = () => {
+    try { sessionStorage.removeItem(draftKey); } catch { /* noop */ }
+  };
 
   if (!currentPrompt) {
     // All prompts completed for this phase
@@ -159,14 +197,20 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const doExamAnswer = async () => {
     setSubmitting(true);
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
-    await onSubmit({
-      prompt_index: currentIndex,
-      kind: "ANSWER",
-      user_answer: answer,
-      time_to_answer_seconds: elapsed,
-      confidence_rating: confidence,
-    });
-    setSubmitting(false);
+    try {
+      await onSubmit({
+        prompt_index: currentIndex,
+        kind: "ANSWER",
+        user_answer: answer,
+        time_to_answer_seconds: elapsed,
+        confidence_rating: confidence,
+      });
+      clearDraft();
+    } catch {
+      // Not recorded — the parent shows the error banner; stay on this prompt.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const isMcq = currentPrompt?.format === "MCQ" && Array.isArray(currentPrompt.choices);
@@ -176,37 +220,52 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setSelectedChoice(choiceIndex);
     setSubmitting(true);
 
-    const isCorrect = choiceIndex === currentPrompt?.correctIndex;
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
     const choiceLabel = String.fromCharCode(65 + choiceIndex); // A, B, C, D
     const choiceText = currentPrompt?.choices?.[choiceIndex] ?? "";
+    const userAnswer = `[${choiceLabel}] ${choiceText}`;
 
-    const attempt: Record<string, unknown> = {
-      prompt_index: currentIndex,
-      user_answer: `[${choiceLabel}] ${choiceText}`,
-      self_score: isCorrect ? "CORRECT" : "INCORRECT",
-      time_to_answer_seconds: elapsed,
-      confidence_rating: confidence,
-      mcq_choice_index: choiceIndex,
-    };
+    try {
+      if (isExamPhase) {
+        // DELAYED scoring: record the choice only. Correctness is revealed
+        // in the REVIEW phase, never mid-exam.
+        await onSubmit({
+          prompt_index: currentIndex,
+          kind: "ANSWER",
+          user_answer: userAnswer,
+          time_to_answer_seconds: elapsed,
+          mcq_choice_index: choiceIndex,
+        });
+        return;
+      }
 
-    // For incorrect MCQ, auto-generate error log from distractor rationale
-    if (!isCorrect) {
-      const rationale = currentPrompt?.meta?.distractorRationales?.[choiceIndex];
-      attempt.error_log = {
-        error_type: "MISCONCEPTION",
-        correction_rule: rationale || `Selected "${choiceText}" instead of the correct answer`,
-      };
+      // Immediate modes: the server grades the choice (the client never has
+      // the answer key) and returns the outcome.
+      const res = await onSubmit({
+        prompt_index: currentIndex,
+        user_answer: userAnswer,
+        time_to_answer_seconds: elapsed,
+        mcq_choice_index: choiceIndex,
+        // No confidence_rating: the picker isn't shown for MCQ, and a
+        // fabricated default would corrupt the calibration dashboard.
+      });
+      if (!res) return; // break intercepted the submit — nothing recorded
+
+      setAnswer(userAnswer);
+      const result = res.mcq_result ?? null;
+      setMcqResult(result);
+      setLastScore(result ? (result.is_correct ? "CORRECT" : "INCORRECT") : "CORRECT");
+      setUIPhase("review");
+    } catch {
+      // Not recorded — stay on the choices so the user can retry.
+      setSelectedChoice(null);
+    } finally {
+      setSubmitting(false);
     }
-
-    setAnswer(`[${choiceLabel}] ${choiceText}`);
-    setLastScore(isCorrect ? "CORRECT" : "INCORRECT");
-    await onSubmit(attempt);
-    setSubmitting(false);
-    setUIPhase("review");
   };
 
   const handleScore = (s: string) => {
+    if (submitting) return;
     setScore(s);
     if (s === "CORRECT") {
       if (isReviewPhase) {
@@ -223,7 +282,6 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     const s = finalScore || score;
     if (!s) return;
     setSubmitting(true);
-    setLastScore(s);
 
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
     const attempt: Record<string, unknown> = {
@@ -245,18 +303,24 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       };
     }
 
-    await onSubmit(attempt);
-    setSubmitting(false);
-
-    // Show review phase for all scores (CORRECT gets reinforcement, others get explanation)
-    setUIPhase("review");
+    try {
+      const res = await onSubmit(attempt);
+      if (!res) return; // break intercepted — nothing recorded
+      clearDraft();
+      setLastScore(s);
+      // Show review phase for all scores (CORRECT gets reinforcement, others get explanation)
+      setUIPhase("review");
+    } catch {
+      // Not recorded — stay in the current phase so nothing is lost.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const doReviewScore = async (finalScore?: string) => {
+  const doReviewScore = async (finalScore?: string, autoErrorLog?: { error_type: string; correction_rule: string }) => {
     const s = finalScore || score;
     if (!s) return;
     setSubmitting(true);
-    setLastScore(s);
 
     const attempt: Record<string, unknown> = {
       prompt_index: currentIndex,
@@ -264,19 +328,70 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       self_score: s,
     };
 
-    if (s !== "CORRECT" && correctionRule.trim()) {
-      attempt.error_log = {
-        error_type: errorType,
-        correction_rule: correctionRule.trim(),
-        variant_question: variantQuestion.trim() || undefined,
-      };
+    if (s !== "CORRECT") {
+      if (autoErrorLog) {
+        attempt.error_log = autoErrorLog;
+      } else if (correctionRule.trim()) {
+        attempt.error_log = {
+          error_type: errorType,
+          correction_rule: correctionRule.trim(),
+          variant_question: variantQuestion.trim() || undefined,
+        };
+      }
     }
 
-    await onSubmit(attempt);
-    setSubmitting(false);
+    try {
+      const res = await onSubmit(attempt);
+      if (!res) return; // break intercepted — nothing recorded
+      setLastScore(s);
+      // Show review phase for all scores
+      setUIPhase("review");
+    } catch {
+      // Not recorded — stay in the current phase.
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-    // Show review phase for all scores
-    setUIPhase("review");
+  // EXAM_SIM REVIEW of an MCQ: the answer key is now available
+  // (currentPrompt.correctIndex is only served in REVIEW), so derive the
+  // score objectively from the recorded choice instead of blind self-scoring.
+  const savedChoiceMatch = savedAnswer.match(/^\[([A-D])\]/);
+  const savedChoiceIndex = savedChoiceMatch
+    ? savedChoiceMatch[1].charCodeAt(0) - 65
+    : null;
+  const reviewMcqScorable =
+    isReviewPhase &&
+    isMcq &&
+    currentPrompt?.correctIndex != null &&
+    savedChoiceIndex != null;
+  const reviewMcqCorrect =
+    reviewMcqScorable && savedChoiceIndex === currentPrompt!.correctIndex;
+
+  const confirmReviewMcqScore = () => {
+    if (!reviewMcqScorable || submitting) return;
+    const correctChoice = currentPrompt?.choices?.[currentPrompt.correctIndex!] ?? "";
+    if (reviewMcqCorrect) {
+      doReviewScore("CORRECT");
+    } else {
+      doReviewScore("INCORRECT", {
+        error_type: "MISCONCEPTION",
+        correction_rule: `The correct answer is "${correctChoice}".`,
+      });
+    }
+  };
+
+  const goNext = () => {
+    // Persist review-panel metacognition against the attempt it belongs to.
+    // Never POST a new attempt here — the run has already advanced, and a
+    // fake attempt would silently answer the NEXT (unseen) prompt.
+    if ((selfExplanation.trim() || generatedExample.trim()) && run.last_attempt_id) {
+      patchAttemptMeta(run.last_attempt_id, {
+        self_explanation: selfExplanation.trim() || undefined,
+        generated_example: generatedExample.trim() || undefined,
+      }).catch(() => { /* non-fatal — reflection is best-effort */ });
+    }
+    resetForPrompt(promptKey);
   };
 
   return (
@@ -537,20 +652,67 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           )}
 
-          <p style={{ fontSize: "0.85rem", color: "#c8bca8", marginBottom: "0.75rem" }}>
-            How did you do? Be honest.
-          </p>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button onClick={() => handleScore("CORRECT")} style={scoreBtn("#88cc88")}>
-              ✓ Correct
-            </button>
-            <button onClick={() => handleScore("PARTIAL")} style={scoreBtn("#e8a040")}>
-              ~ Partial
-            </button>
-            <button onClick={() => handleScore("INCORRECT")} style={scoreBtn("#e88888")}>
-              ✗ Incorrect
-            </button>
-          </div>
+          {reviewMcqScorable ? (
+            <div>
+              {/* Objective MCQ review: show the key, derive the score */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
+                {currentPrompt.choices!.map((choice: string, idx: number) => {
+                  const label = String.fromCharCode(65 + idx);
+                  const isCorrectChoice = idx === currentPrompt.correctIndex;
+                  const isPicked = idx === savedChoiceIndex;
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "0.75rem",
+                        padding: "0.85rem 1rem",
+                        background: isCorrectChoice ? "#2d4a2d" : isPicked ? "#4a3030" : "#2a2a2a",
+                        border: `2px solid ${isCorrectChoice ? "#88cc88" : isPicked ? "#e88888" : "#444"}`,
+                        borderRadius: 8,
+                        color: "#e0d6c8",
+                        fontSize: "0.9rem",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: isCorrectChoice ? "#88cc88" : "#7ec8e3", minWidth: "1.5rem", fontSize: "0.95rem" }}>{label}.</span>
+                      <span style={{ flex: 1 }}>{choice}</span>
+                      {isCorrectChoice && <span style={{ color: "#88cc88", fontWeight: 700 }}>✓</span>}
+                      {isPicked && !isCorrectChoice && <span style={{ color: "#e88888", fontWeight: 700 }}>your pick</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: "0.85rem", color: reviewMcqCorrect ? "#88cc88" : "#e88888", marginBottom: "0.75rem", fontWeight: 600 }}>
+                {reviewMcqCorrect ? "✓ You picked the correct answer." : "✗ You picked a different answer."}
+              </p>
+              <button
+                onClick={confirmReviewMcqScore}
+                disabled={submitting}
+                style={{ ...primaryBtn, opacity: submitting ? 0.4 : 1 }}
+              >
+                {submitting ? "Saving..." : "Confirm & Continue"}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p style={{ fontSize: "0.85rem", color: "#c8bca8", marginBottom: "0.75rem" }}>
+                How did you do? Be honest.
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button onClick={() => handleScore("CORRECT")} disabled={submitting} style={scoreBtn("#88cc88", submitting)}>
+                  ✓ Correct
+                </button>
+                <button onClick={() => handleScore("PARTIAL")} disabled={submitting} style={scoreBtn("#e8a040", submitting)}>
+                  ~ Partial
+                </button>
+                <button onClick={() => handleScore("INCORRECT")} disabled={submitting} style={scoreBtn("#e88888", submitting)}>
+                  ✗ Incorrect
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -620,6 +782,34 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {/* Review & Repair panel — shown AFTER scoring with deferred feedback */}
       {uiPhase === "review" && (
         <div data-testid="review-panel">
+          {/* Server-graded MCQ outcome: correct answer + why the pick was tempting */}
+          {mcqResult && (
+            <div
+              style={{
+                background: mcqResult.is_correct ? "#2d4a2d" : "#4a3030",
+                border: `1px solid ${mcqResult.is_correct ? "#88cc88" : "#e88888"}`,
+                borderRadius: 6,
+                padding: "1rem",
+                marginBottom: "1rem",
+              }}
+              data-testid="mcq-result"
+            >
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", fontWeight: 600, color: mcqResult.is_correct ? "#88cc88" : "#e88888" }}>
+                {mcqResult.is_correct
+                  ? `✓ Correct — ${String.fromCharCode(65 + mcqResult.correct_index)}`
+                  : `✗ Incorrect — the answer is ${String.fromCharCode(65 + mcqResult.correct_index)}`}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5 }}>
+                <strong>{mcqResult.correct_choice}</strong>
+              </p>
+              {!mcqResult.is_correct && mcqResult.rationale && (
+                <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#c8bca8" }}>
+                  Why your pick was tempting: {mcqResult.rationale}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* AI Reinforcement for CORRECT answers */}
           {lastScore === "CORRECT" && (fb.reinforcement || fb.deeper_insight || fb.concept_connection || fb.socratic_followup) && (
             <div
@@ -918,34 +1108,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           )}
 
-          <button
-            onClick={() => {
-              // If user typed self-explanation or example, submit update
-              if (selfExplanation.trim() || generatedExample.trim()) {
-                onSubmit({
-                  prompt_index: currentIndex,
-                  user_answer: answer || "(review update)",
-                  self_score: lastScore || "CORRECT",
-                  self_explanation: selfExplanation.trim() || undefined,
-                  generated_example: generatedExample.trim() || undefined,
-                  _meta_update: true, // Signal this is a metadata-only update
-                });
-              }
-              setFeedbackExcerpts([]);
-              setFeedbackLoading(false);
-              setLastScore(null);
-              setFb(emptyFeedback);
-              setConfidence(3);
-              setSelfExplanation("");
-              setGeneratedExample("");
-              if (isReviewPhase) {
-                setUIPhase("scoring");
-              } else {
-                setUIPhase("answering");
-              }
-            }}
-            style={primaryBtn}
-          >
+          <button onClick={goNext} style={primaryBtn}>
             Next Prompt
           </button>
         </div>
@@ -993,7 +1156,7 @@ const primaryBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const scoreBtn = (color: string): React.CSSProperties => ({
+const scoreBtn = (color: string, disabled = false): React.CSSProperties => ({
   flex: 1,
   padding: "0.75rem",
   fontSize: "0.85rem",
@@ -1003,7 +1166,8 @@ const scoreBtn = (color: string): React.CSSProperties => ({
   color,
   border: `2px solid ${color}`,
   borderRadius: 6,
-  cursor: "pointer",
+  cursor: disabled ? "wait" : "pointer",
+  opacity: disabled ? 0.5 : 1,
 });
 
 const textareaStyle: React.CSSProperties = {

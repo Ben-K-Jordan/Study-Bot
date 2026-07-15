@@ -201,6 +201,37 @@ describe("ics: text escaping", () => {
     const ics = generateIcs(events);
     expect(ics).toContain("Line 1\\nLine 2\\nLine 3");
   });
+
+  it("normalizes CRLF in text to \\n with no raw CR mid-line", () => {
+    const events: IcsEvent[] = [
+      {
+        uid: "test-crlf",
+        summary: "Title",
+        description: "line1\r\nline2",
+        dtstart: new Date("2024-01-15T14:00:00Z"),
+        dtend: new Date("2024-01-15T15:00:00Z"),
+      },
+    ];
+    const ics = generateIcs(events);
+    expect(ics).toContain("line1\\nline2");
+    // Every CR must be part of a CRLF line ending — no bare CR anywhere
+    expect(ics).not.toMatch(/\r(?!\n)/);
+  });
+
+  it("normalizes a lone CR in text to \\n", () => {
+    const events: IcsEvent[] = [
+      {
+        uid: "test-lone-cr",
+        summary: "old\rmac",
+        description: "Desc",
+        dtstart: new Date("2024-01-15T14:00:00Z"),
+        dtend: new Date("2024-01-15T15:00:00Z"),
+      },
+    ];
+    const ics = generateIcs(events);
+    expect(ics).toContain("old\\nmac");
+    expect(ics).not.toMatch(/\r(?!\n)/);
+  });
 });
 
 // ---------------------------------------------------------------------------

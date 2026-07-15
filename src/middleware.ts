@@ -2,6 +2,10 @@ import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// One-time flag: warn loudly if the test-auth header path is exercised in a
+// production build (ALLOW_TEST_AUTH=true) so it can't be silently left on.
+let warnedTestAuthInProduction = false;
+
 const PUBLIC_PATHS = [
   "/auth/signin",
   "/auth/signup",
@@ -42,6 +46,17 @@ export async function middleware(request: NextRequest) {
     (process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_AUTH === "true") &&
     request.headers.get("x-user-id")
   ) {
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.ALLOW_TEST_AUTH === "true" &&
+      !warnedTestAuthInProduction
+    ) {
+      warnedTestAuthInProduction = true;
+      // Middleware runs on the edge runtime; console.warn instead of the structured logger
+      console.warn(
+        "auth.test_auth_active_in_production: X-User-Id header is being trusted as identity because ALLOW_TEST_AUTH=true. This must never be enabled in a real deployment.",
+      );
+    }
     return NextResponse.next();
   }
 

@@ -235,6 +235,13 @@ describe("generateErrorRepairPrompts", () => {
     expect(prompts[1].text).toContain("near-transfer example");
   });
 
+  it("references the original question when no variant_question exists", () => {
+    // Without this, every no-variant repair prompt is the same generic
+    // sentence and the student can't tell which error it refers to.
+    const prompts = generateErrorRepairPrompts(sampleLogs, 3);
+    expect(prompts[1].text).toContain("Define arrays");
+  });
+
   it("does not reveal the correction rule in prompt text", () => {
     const prompts = generateErrorRepairPrompts(sampleLogs, 3);
     for (const p of prompts) {

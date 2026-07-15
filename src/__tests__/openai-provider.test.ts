@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpenAIProvider } from "@/lib/ai/providers/openai";
+import { logger } from "@/lib/logger";
 
 // Mock the API key
 const ORIGINAL_ENV = { ...process.env };
@@ -68,6 +69,7 @@ describe("OpenAIProvider", () => {
       expect((options as RequestInit).headers).toMatchObject({
         Authorization: "Bearer test-key-123",
       });
+      expect((options as RequestInit).signal).toBeInstanceOf(AbortSignal);
     });
 
     it("throws on API error", async () => {
@@ -98,6 +100,60 @@ describe("OpenAIProvider", () => {
       await expect(
         provider.completeJson("system", "user", "gpt-4o-mini"),
       ).rejects.toThrow("invalid JSON");
+    });
+
+    it("falls back to conservative non-zero pricing for unknown models", async () => {
+      const mockResponse = {
+        choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
+        usage: { prompt_tokens: 100, completion_tokens: 50 },
+      };
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(JSON.stringify(mockResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const provider = new OpenAIProvider();
+      const result = await provider.completeJson(
+        "system",
+        "user",
+        "gpt-99-not-in-pricing-map",
+      );
+
+      // Must never record $0 for an unknown model — falls back to the most
+      // expensive known entry (gpt-4-turbo: 10000/30000 micros per 1k):
+      // ceil(100/1000 * 10000 + 50/1000 * 30000) = 2500
+      expect(result.usage?.costUsdMicros).toBe(2500);
+      expect(result.usage?.costUsdMicros).toBeGreaterThan(0);
+    });
+
+    it("warns once per unknown model name", async () => {
+      const mockResponse = {
+        choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      };
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+        new Response(JSON.stringify(mockResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      const warnSpy = vi.spyOn(logger, "warn");
+
+      const provider = new OpenAIProvider();
+      await provider.completeJson("system", "user", "gpt-99-warn-once");
+      await provider.completeJson("system", "user", "gpt-99-warn-once");
+
+      const unknownModelWarns = warnSpy.mock.calls.filter(
+        ([event]) => event === "openai.unknown_model_pricing",
+      );
+      expect(unknownModelWarns).toHaveLength(1);
+      expect(unknownModelWarns[0][1]).toMatchObject({
+        model: "gpt-99-warn-once",
+      });
     });
 
     it("throws on empty response", async () => {
@@ -153,6 +209,39 @@ describe("OpenAIProvider", () => {
       const body = JSON.parse((options as RequestInit).body as string);
       expect(body.model).toBe("text-embedding-3-small");
       expect(body.input).toEqual(["hello", "world"]);
+    });
+  });
+
+  describe("request timeout", () => {
+    it("passes an abort signal to fetch", async () => {
+      const mockResponse = {
+        data: [{ embedding: [0.1] }],
+        usage: { prompt_tokens: 5, total_tokens: 5 },
+      };
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(JSON.stringify(mockResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const provider = new OpenAIProvider();
+      await provider.embed(["hello"], "text-embedding-3-small");
+
+      const [, options] = vi.mocked(fetch).mock.calls[0];
+      expect((options as RequestInit).signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it("surfaces timeout aborts as thrown errors", async () => {
+      const timeoutError = new Error("The operation was aborted due to timeout");
+      timeoutError.name = "TimeoutError";
+      vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(timeoutError);
+
+      const provider = new OpenAIProvider();
+      await expect(
+        provider.completeJson("system", "user", "gpt-4o-mini"),
+      ).rejects.toThrow("timed out after");
     });
   });
 

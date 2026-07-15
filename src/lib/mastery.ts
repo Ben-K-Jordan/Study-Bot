@@ -38,7 +38,8 @@ export function accuracyToQuality(accuracy: number): number {
  *
  * Confidence calibration reveals dangerous blind spots and fragile knowledge:
  * - High confidence + wrong → blind spot: penalize quality (-1)
- * - Low confidence + right → fragile: reduce quality boost (-1)
+ * - Low confidence + right → fragile: reduce quality boost (-1, never below
+ *   the passing grade of 3 — the goal is slower advancement, not a reset)
  * - Well-calibrated → no adjustment
  *
  * @param baseQuality SM-2 quality from accuracyToQuality (0-5)
@@ -61,8 +62,10 @@ export function confidenceAdjustedQuality(
   }
 
   if (accuracy >= 0.7 && normalizedConfidence < 0.3) {
-    // Fragile knowledge: student is right but unsure — don't advance as fast
-    return Math.max(0, baseQuality - 1);
+    // Fragile knowledge: student is right but unsure — don't advance as fast.
+    // Clamp at 3 (the minimum passing grade in sm2Next) so a correct answer
+    // never becomes a failure that resets repetitions and interval.
+    return Math.max(3, baseQuality - 1);
   }
 
   return baseQuality;

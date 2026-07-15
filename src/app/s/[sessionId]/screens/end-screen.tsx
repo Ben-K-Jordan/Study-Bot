@@ -197,7 +197,7 @@ export function EndScreen({ run, session, onNewRun }: Props) {
           <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.95rem", lineHeight: 1.8 }}>
             {metrics.recommended_followups.map((f, i) => (
               <li key={i}>
-                {f.label} — <span style={{ color: "var(--color-info)" }}>{f.date}</span>
+                {f.label} — <span style={{ color: "var(--color-info)" }}>{followupDisplayDate(f)}</span>
               </li>
             ))}
           </ul>
@@ -257,6 +257,16 @@ function StatCard({ label, value, color }: { label: string; value: string; color
       <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>{label}</div>
     </div>
   );
+}
+
+function followupDisplayDate(f: { days_from_now?: number; date: string }): string {
+  // Compute the date in the user's own timezone from the day offset so it
+  // matches the "in N days" label; fall back to the server-provided date.
+  if (f.days_from_now == null) return f.date;
+  const d = new Date(Date.now() + f.days_from_now * 86400000);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 function accuracyColor(accuracy: number): string {

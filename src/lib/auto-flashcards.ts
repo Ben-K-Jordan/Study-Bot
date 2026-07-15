@@ -50,86 +50,124 @@ export async function createFlashcardsFromErrors(
     });
     const errorByIndex = new Map(errorLogs.map((e) => [e.promptIndex, e]));
 
-    // Find or create the auto-repair deck for this course
     const deckTitle = `${AUTO_DECK_TITLE_PREFIX} — ${courseName}`;
-    let deck = await prisma.flashcardDeck.findFirst({
-      where: { userId, courseName, title: deckTitle },
-      select: { id: true, cardCount: true },
-    });
 
-    if (!deck) {
-      deck = await prisma.flashcardDeck.create({
-        data: {
-          userId,
-          courseName,
-          title: deckTitle,
-          cardCount: 0,
-        },
-        select: { id: true, cardCount: true },
-      });
-    }
-
-    // Check which attempts already have flashcards (idempotency)
-    // Use the promptText as a dedup key since we don't have a direct link
-    const existingCards = await prisma.flashcard.findMany({
-      where: { deckId: deck.id },
-      select: { front: true },
-    });
-    const existingFronts = new Set(existingCards.map((c) => c.front));
-
-    // Create flashcards for new errors
-    let created = 0;
-    let nextOrdinal = deck.cardCount;
-
-    for (const attempt of attempts) {
-      const front = attempt.promptText;
-      if (existingFronts.has(front)) continue; // already exists
-
-      const error = errorByIndex.get(attempt.promptIndex);
-      const backParts: string[] = [];
-
-      if (error) {
-        backParts.push(`Error type: ${error.errorType}`);
-        backParts.push(`Correction: ${error.correctionRule}`);
-        backParts.push("");
-      }
-
-      if (attempt.userAnswer) {
-        backParts.push(`Your answer: ${attempt.userAnswer}`);
-        backParts.push("");
-      }
-
-      backParts.push(
-        error
-          ? `Remember: ${error.correctionRule}`
-          : "Review this concept and write the correct answer from memory.",
-      );
-
-      await prisma.flashcard.create({
-        data: {
-          deckId: deck.id,
-          front,
-          back: backParts.join("\n"),
-          tags: error ? [error.errorType.toLowerCase(), "auto-repair"] : ["auto-repair"],
-          ordinal: nextOrdinal,
-        },
+    // Deck lookup/creation, card inserts, and the cardCount update all run
+    // in one transaction so concurrent run completions can't interleave and
+    // leave the deck with colliding ordinals or a stale cardCount.
+    const { deckId, created } = await prisma.$transaction(async (tx) => {
+      // Find or create the auto-repair deck for this course
+      let deck = await tx.flashcardDeck.findFirst({
+        where: { userId, courseName, title: deckTitle },
+        select: { id: true },
       });
 
-      nextOrdinal++;
-      created++;
-    }
+      if (!deck) {
+        try {
+          deck = await tx.flashcardDeck.create({
+            data: {
+              userId,
+              courseName,
+              title: deckTitle,
+              cardCount: 0,
+            },
+            select: { id: true },
+          });
+        } catch (err: unknown) {
+          // Unique constraint violation (P2002) — a concurrent completion
+          // created the deck first; re-fetch it and proceed.
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            "code" in err &&
+            (err as { code: string }).code === "P2002"
+          ) {
+            deck = await tx.flashcardDeck.findFirst({
+              where: { userId, courseName, title: deckTitle },
+              select: { id: true },
+            });
+          }
+          if (!deck) throw err;
+        }
+      }
+
+      // Check which attempts already have flashcards (idempotency)
+      // Use the promptText as a dedup key since we don't have a direct link
+      const existingCards = await tx.flashcard.findMany({
+        where: { deckId: deck.id },
+        select: { front: true },
+      });
+      const existingFronts = new Set(existingCards.map((c) => c.front));
+
+      // Derive the next ordinal from the deck's actual cards — the cached
+      // cardCount can go stale if a previous invocation failed midway.
+      const { _max } = await tx.flashcard.aggregate({
+        where: { deckId: deck.id },
+        _max: { ordinal: true },
+      });
+      let nextOrdinal = (_max.ordinal ?? -1) + 1;
+
+      // Create flashcards for new errors
+      let createdCount = 0;
+
+      for (const attempt of attempts) {
+        const front = attempt.promptText;
+        if (existingFronts.has(front)) continue; // already exists
+
+        const error = errorByIndex.get(attempt.promptIndex);
+        const backParts: string[] = [];
+
+        if (error) {
+          backParts.push(`Error type: ${error.errorType}`);
+          backParts.push(`Correction: ${error.correctionRule}`);
+          backParts.push("");
+        }
+
+        if (attempt.userAnswer) {
+          backParts.push(`Your answer: ${attempt.userAnswer}`);
+          backParts.push("");
+        }
+
+        backParts.push(
+          error
+            ? `Remember: ${error.correctionRule}`
+            : "Review this concept and write the correct answer from memory.",
+        );
+
+        await tx.flashcard.create({
+          data: {
+            deckId: deck.id,
+            front,
+            back: backParts.join("\n"),
+            tags: error ? [error.errorType.toLowerCase(), "auto-repair"] : ["auto-repair"],
+            ordinal: nextOrdinal,
+          },
+        });
+
+        nextOrdinal++;
+        createdCount++;
+      }
+
+      if (createdCount > 0) {
+        // Set cardCount from the real number of cards in the deck
+        const totalCards = await tx.flashcard.count({
+          where: { deckId: deck.id },
+        });
+        await tx.flashcardDeck.update({
+          where: { id: deck.id },
+          data: { cardCount: totalCards },
+        });
+      }
+
+      return { deckId: deck.id, created: createdCount };
+    });
 
     if (created > 0) {
-      await prisma.flashcardDeck.update({
-        where: { id: deck.id },
-        data: { cardCount: nextOrdinal },
-      });
-
       logger.info("auto_flashcards.created", {
         user_id: userId,
         run_id: runId,
         course_name: courseName,
-        deck_id: deck.id,
+        deck_id: deckId,
         cards_created: created,
       });
     }

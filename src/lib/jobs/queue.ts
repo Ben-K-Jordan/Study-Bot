@@ -77,6 +77,29 @@ export async function claimJobs(
   }));
 }
 
+/** RUNNING jobs locked longer than this are considered abandoned by a dead worker. */
+const STALE_LOCK_MS = 10 * 60 * 1000;
+
+/**
+ * Recover jobs stuck in RUNNING by a crashed worker.
+ *
+ * Rows whose lock is older than `staleMs` are reset to RETRY so they can be
+ * claimed again, or to FAILED when attempts are already exhausted (claimJobs
+ * increments attempts at claim time). Returns the number of jobs recovered.
+ */
+export async function recoverStaleJobs(staleMs: number = STALE_LOCK_MS): Promise<number> {
+  return prisma.$executeRawUnsafe(
+    `UPDATE job_queue
+     SET status = CASE WHEN attempts >= max_attempts THEN 'FAILED' ELSE 'RETRY' END,
+         last_error = 'Stale lock recovered: worker did not complete the job',
+         locked_at = NULL,
+         locked_by = NULL
+     WHERE status = 'RUNNING'
+       AND locked_at < NOW() - ($1::int * interval '1 millisecond')`,
+    staleMs,
+  );
+}
+
 interface RawJob {
   id: string;
   type: string;

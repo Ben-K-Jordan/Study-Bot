@@ -2,7 +2,7 @@
  * Unit tests for the SM-2 mastery engine.
  */
 import { describe, it, expect } from "vitest";
-import { accuracyToQuality, sm2Next, type SM2State } from "@/lib/mastery";
+import { accuracyToQuality, confidenceAdjustedQuality, sm2Next, type SM2State } from "@/lib/mastery";
 
 describe("accuracyToQuality", () => {
   it("maps high accuracy to quality 5", () => {
@@ -22,6 +22,36 @@ describe("accuracyToQuality", () => {
     expect(accuracyToQuality(0.3)).toBe(1);
     expect(accuracyToQuality(0.2)).toBe(0);
     expect(accuracyToQuality(0.0)).toBe(0);
+  });
+});
+
+describe("confidenceAdjustedQuality", () => {
+  it("returns base quality when confidence is null", () => {
+    expect(confidenceAdjustedQuality(4, 0.8, null)).toBe(4);
+  });
+
+  it("leaves well-calibrated answers unchanged", () => {
+    expect(confidenceAdjustedQuality(5, 0.95, 5)).toBe(5);
+    expect(confidenceAdjustedQuality(2, 0.6, 3)).toBe(2);
+  });
+
+  it("penalizes blind spots (confident but wrong)", () => {
+    // accuracy 0.4 → quality 1; confidence 4/5 → normalized 0.75
+    expect(confidenceAdjustedQuality(1, 0.4, 4)).toBe(0);
+  });
+
+  it("slows advancement for fragile knowledge (right but unsure)", () => {
+    // accuracy 0.9 → quality 5; confidence 1/5 → normalized 0
+    expect(confidenceAdjustedQuality(5, 0.9, 1)).toBe(4);
+    expect(confidenceAdjustedQuality(4, 0.8, 1)).toBe(3);
+  });
+
+  it("never drops fragile knowledge below the passing grade of 3", () => {
+    // Regression: accuracy 0.75 → base quality 3, the minimum passing grade
+    // in sm2Next. A correct-but-unsure answer must stay at 3 — dropping to 2
+    // would reset repetitions and interval, wiping out spacing progress.
+    expect(confidenceAdjustedQuality(3, 0.75, 1)).toBe(3);
+    expect(confidenceAdjustedQuality(3, 0.7, 2)).toBe(3);
   });
 });
 

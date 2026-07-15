@@ -41,4 +41,36 @@ describe("logger", () => {
     expect(logged.level).toBe("error");
     expect(logged.event).toBe("test.error");
   });
+
+  it("treats uppercase LOG_LEVEL=INFO as info and still logs errors", async () => {
+    process.env.LOG_LEVEL = "INFO";
+    const { logger } = await import("@/lib/logger");
+    logger.error("test.uppercase.error");
+    logger.info("test.uppercase.info");
+    logger.debug("test.uppercase.debug");
+
+    expect(console.error).toHaveBeenCalledOnce();
+    const logged = JSON.parse((console.error as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(logged.event).toBe("test.uppercase.error");
+    // info is at or above the min level, debug is below it
+    expect(console.log).toHaveBeenCalledOnce();
+    const infoLogged = JSON.parse((console.log as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(infoLogged.event).toBe("test.uppercase.info");
+  });
+
+  it("falls back to info for unrecognized LOG_LEVEL values", async () => {
+    process.env.LOG_LEVEL = "garbage";
+    const { logger } = await import("@/lib/logger");
+    logger.error("test.garbage.error");
+    logger.info("test.garbage.info");
+    logger.debug("test.garbage.debug");
+
+    expect(console.error).toHaveBeenCalledOnce();
+    const logged = JSON.parse((console.error as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(logged.event).toBe("test.garbage.error");
+    // info still logs, debug is suppressed by the info fallback
+    expect(console.log).toHaveBeenCalledOnce();
+    const infoLogged = JSON.parse((console.log as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(infoLogged.event).toBe("test.garbage.info");
+  });
 });

@@ -22,9 +22,12 @@ export async function POST(request: NextRequest) {
   try {
     if (integration.accessTokenEncrypted) {
       const token = decrypt(integration.accessTokenEncrypted);
-      await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, {
+      // Send the token in the POST body — never in the URL, where it would
+      // leak into proxy/APM logs
+      await fetch("https://oauth2.googleapis.com/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token }),
       });
     }
   } catch {

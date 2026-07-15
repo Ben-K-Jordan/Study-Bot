@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateRetrievalPrompts } from "@/lib/prompts";
+import { generateRetrievalPrompts, shuffleMcqChoices, type Prompt } from "@/lib/prompts";
 
 describe("generateRetrievalPrompts", () => {
   it("generates the exact number of prompts from target_outcome.prompt_count", () => {
@@ -69,5 +69,56 @@ describe("generateRetrievalPrompts", () => {
     // They should not all be the same
     const uniqueTexts = new Set(prompts.map((p) => p.text));
     expect(uniqueTexts.size).toBe(6);
+  });
+});
+
+describe("shuffleMcqChoices", () => {
+  const mcq: Prompt = {
+    id: "p_0",
+    text: "Which process moves water across a membrane?",
+    difficulty: 2,
+    format: "MCQ",
+    choices: ["Osmosis", "Active transport", "Endocytosis", "Phagocytosis"],
+    correctIndex: 0,
+    meta: { distractorRationales: ["r0", "r1", "r2", "r3"] },
+  };
+
+  it("keeps correctIndex pointing at the correct choice after shuffling", () => {
+    const shuffled = shuffleMcqChoices(mcq, "seed-a");
+    expect(shuffled.choices).toHaveLength(4);
+    expect(shuffled.choices![shuffled.correctIndex!]).toBe("Osmosis");
+  });
+
+  it("keeps rationales aligned with their choices after shuffling", () => {
+    const shuffled = shuffleMcqChoices(mcq, "seed-b");
+    const originalPairs = new Map(mcq.choices!.map((c, i) => [c, mcq.meta!.distractorRationales![i]]));
+    shuffled.choices!.forEach((c, i) => {
+      expect(shuffled.meta!.distractorRationales![i]).toBe(originalPairs.get(c));
+    });
+  });
+
+  it("is deterministic for the same seed", () => {
+    const a = shuffleMcqChoices(mcq, "seed-c");
+    const b = shuffleMcqChoices(mcq, "seed-c");
+    expect(a.choices).toEqual(b.choices);
+    expect(a.correctIndex).toBe(b.correctIndex);
+  });
+
+  it("refuses to shuffle an out-of-range correctIndex (would become -1)", () => {
+    const bad = { ...mcq, correctIndex: 4 };
+    const result = shuffleMcqChoices(bad, "seed-d");
+    expect(result).toBe(bad);
+    expect(result.correctIndex).toBe(4);
+  });
+
+  it("drops misaligned rationales instead of misattributing them", () => {
+    const shortRationales = { ...mcq, meta: { distractorRationales: ["r0", "r1", "r2"] } };
+    const shuffled = shuffleMcqChoices(shortRationales, "seed-e");
+    expect(shuffled.meta?.distractorRationales).toBeUndefined();
+  });
+
+  it("returns non-MCQ prompts unchanged", () => {
+    const freeRecall: Prompt = { id: "p_1", text: "Explain osmosis", difficulty: 1 };
+    expect(shuffleMcqChoices(freeRecall, "seed-f")).toBe(freeRecall);
   });
 });

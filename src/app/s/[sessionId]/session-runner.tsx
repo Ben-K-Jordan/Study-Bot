@@ -14,12 +14,31 @@ export interface Prompt {
   objective_id?: string;
   text: string;
   difficulty: number;
+  format?: "FREE_RECALL" | "MCQ";
+  choices?: string[];
   meta?: {
     source_error_log_id?: string;
     original_prompt_text?: string;
     expected_correction_rule?: string;
     variant_question?: string;
   };
+}
+
+/** Server-graded MCQ outcome, returned by POST /attempt for MCQ prompts. */
+export interface McqResult {
+  selected_index: number;
+  correct_index: number;
+  is_correct: boolean;
+  correct_choice: string;
+  rationale?: string;
+}
+
+/** Response payload of a successful attempt submission. */
+export interface AttemptSubmitResult {
+  attempt_id?: string;
+  status?: string;
+  mcq_result?: McqResult | null;
+  [key: string]: unknown;
 }
 
 export interface PromptView {
@@ -30,9 +49,11 @@ export interface PromptView {
   source_type?: string;
   format?: "FREE_RECALL" | "MCQ";
   choices?: string[];
+  /** Only present during EXAM_SIM REVIEW — the server withholds the answer key pre-answer. */
   correctIndex?: number;
   meta?: {
     distractorRationales?: string[];
+    original_prompt_text?: string;
     [key: string]: unknown;
   };
 }
@@ -174,6 +195,42 @@ export async function fetchFeedback(attemptId: string): Promise<FeedbackResult> 
   return apiGet(`/api/attempts/${attemptId}/feedback`);
 }
 
+/** Attach post-review metacognition (explanation/example) to an existing attempt */
+export async function patchAttemptMeta(
+  attemptId: string,
+  meta: { self_explanation?: string; generated_example?: string }
+): Promise<void> {
+  const res = await fetch(`/api/attempts/${attemptId}/meta`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Id": getOrCreateUserId(),
+    },
+    body: JSON.stringify(meta),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to save reflection");
+  }
+}
+
+/** Map a raw deck prompt to a PromptView (fallback when GET /prompt fails).
+ *  Preserves MCQ fields so a multiple-choice prompt never degrades to a
+ *  free-recall textarea. The deck is redacted server-side (no answer key). */
+function promptToView(p: Prompt, index: number): PromptView {
+  return {
+    prompt_index: index,
+    text: p.text,
+    objective_id: p.objective_id,
+    difficulty: p.difficulty,
+    format: p.format,
+    choices: p.choices,
+    meta: p.meta?.original_prompt_text
+      ? { original_prompt_text: p.meta.original_prompt_text }
+      : undefined,
+  };
+}
+
 // --- Main Component ---
 
 interface Props {
@@ -203,14 +260,10 @@ export function SessionRunner({ session }: Props) {
 
       // Fallback for backward compat: if no current_prompt but prompts array exists
       if (!currentPrompt && data.prompts && data.prompts.length > 0) {
-        const p = data.prompts[data.current_index ?? 0];
+        const idx = data.current_index ?? 0;
+        const p = data.prompts[idx];
         if (p) {
-          currentPrompt = {
-            prompt_index: data.current_index ?? 0,
-            text: p.text,
-            objective_id: p.objective_id,
-            difficulty: p.difficulty,
-          };
+          currentPrompt = promptToView(p, idx);
         }
       }
 
@@ -246,8 +299,8 @@ export function SessionRunner({ session }: Props) {
   }, [session.session_id, session.mode]);
 
   const handleAttemptSubmit = useCallback(
-    async (attempt: Record<string, unknown>) => {
-      if (!run) return;
+    async (attempt: Record<string, unknown>): Promise<AttemptSubmitResult | null> => {
+      if (!run) return null;
       setError(null);
       try {
         const data = await apiPost(
@@ -264,10 +317,9 @@ export function SessionRunner({ session }: Props) {
           try {
             nextPrompt = await fetchPrompt(run.run_id, newIndex);
           } catch {
-            // Fallback to prompts array if available
+            // Fallback to prompts array if available (stale but better than blank)
             if (run.prompts && run.prompts[newIndex]) {
-              const p = run.prompts[newIndex];
-              nextPrompt = { prompt_index: newIndex, text: p.text, objective_id: p.objective_id, difficulty: p.difficulty };
+              nextPrompt = promptToView(run.prompts[newIndex], newIndex);
             }
           }
         }
@@ -290,8 +342,10 @@ export function SessionRunner({ session }: Props) {
 
         // When transitioning to REVIEW, fetch attempts for display
         if (data.phase === "REVIEW" && run.phase === "EXAM") {
-          const full = await apiGet(`/api/runs/${run.run_id}`);
-          updatedRun.attempts = full.attempts;
+          try {
+            const full = await apiGet(`/api/runs/${run.run_id}`);
+            updatedRun.attempts = full.attempts;
+          } catch { /* non-fatal — review can refetch */ }
         }
 
         setRun(updatedRun);
@@ -307,26 +361,37 @@ export function SessionRunner({ session }: Props) {
         } else if (data.break_state?.on_break) {
           setScreen("break");
         }
+        return data as AttemptSubmitResult;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Failed to submit";
         if (msg.includes("break")) {
-          const fresh = await apiGet(`/api/runs/${run.run_id}`);
-          setRun({
-            ...run,
-            run_id: fresh.run_id,
-            status: fresh.status,
-            current_index: fresh.current_index,
-            prompt_count: fresh.prompt_count ?? run.prompt_count,
-            current_prompt: run.current_prompt,
-            metrics: fresh.metrics,
-            break_state: fresh.break_state,
-            phase: fresh.phase ?? run.phase,
-            policies: fresh.policies ?? run.policies,
-          });
+          // Server rejected the attempt because a break started; the attempt
+          // was NOT recorded. Refresh break state and show the break screen.
+          try {
+            const fresh = await apiGet(`/api/runs/${run.run_id}`);
+            setRun({
+              ...run,
+              run_id: fresh.run_id,
+              status: fresh.status,
+              current_index: fresh.current_index,
+              prompt_count: fresh.prompt_count ?? run.prompt_count,
+              current_prompt: run.current_prompt,
+              metrics: fresh.metrics,
+              break_state: fresh.break_state,
+              phase: fresh.phase ?? run.phase,
+              policies: fresh.policies ?? run.policies,
+            });
+          } catch {
+            // Recovery fetch failed — still show the break screen with the
+            // state we have rather than stranding the submit button.
+          }
           setScreen("break");
-        } else {
-          setError(msg);
+          return null;
         }
+        setError(msg);
+        // Rethrow so callers never advance to the review phase for an
+        // attempt that was not recorded.
+        throw e;
       }
     },
     [run]
@@ -348,14 +413,18 @@ export function SessionRunner({ session }: Props) {
     if (!run) return;
     setError(null);
     try {
-      const [data, full] = await Promise.all([
-        apiPost(`/api/runs/${run.run_id}/complete`),
-        apiGet(`/api/runs/${run.run_id}`),
-      ]);
-      setRun({ ...run, status: "COMPLETED", metrics: data.metrics, attempts: full.attempts });
+      const data = await apiPost(`/api/runs/${run.run_id}/complete`);
+      let attempts = run.attempts;
+      try {
+        const full = await apiGet(`/api/runs/${run.run_id}`);
+        attempts = full.attempts;
+      } catch { /* non-fatal — end screen works without attempt details */ }
+      setRun({ ...run, status: "COMPLETED", metrics: data.metrics, attempts });
       setScreen("end");
-    } catch {
-      setScreen("end");
+    } catch (e: unknown) {
+      // The run is still ACTIVE server-side — showing the end screen would
+      // fake completion (no mastery update, no follow-ups). Stay and retry.
+      setError(e instanceof Error ? e.message : "Failed to complete session — please try again.");
     }
   }, [run]);
 

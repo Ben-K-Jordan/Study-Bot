@@ -10,7 +10,7 @@
  *   JOB_POLL_INTERVAL_MS   — poll interval in ms (default: 2000)
  *   AI_PROVIDER            — "mock" for testing, "openai" for production
  */
-import { claimJobs, succeedJob, failJob, type ClaimedJob } from "../src/lib/jobs/queue";
+import { claimJobs, succeedJob, failJob, recoverStaleJobs, type ClaimedJob } from "../src/lib/jobs/queue";
 import { handleEmbedChunkBatch } from "../src/lib/jobs/handlers/embed-chunks";
 import { createProvider } from "../src/lib/ai/provider-factory";
 
@@ -47,10 +47,21 @@ async function pollLoop(): Promise<void> {
   console.log(`[${WORKER_ID}] Starting worker (concurrency=${CONCURRENCY}, poll=${POLL_INTERVAL_MS}ms)`);
 
   const MAX_BACKOFF_MS = 30_000;
+  const STALE_RECOVERY_INTERVAL_MS = 60_000;
   let currentInterval = POLL_INTERVAL_MS;
+  let nextStaleRecoveryAt = 0;
 
   while (running) {
     try {
+      // Reclaim jobs left RUNNING by crashed workers (at most once a minute)
+      if (Date.now() >= nextStaleRecoveryAt) {
+        nextStaleRecoveryAt = Date.now() + STALE_RECOVERY_INTERVAL_MS;
+        const recovered = await recoverStaleJobs();
+        if (recovered > 0) {
+          console.log(`[${WORKER_ID}] Recovered ${recovered} stale RUNNING job(s)`);
+        }
+      }
+
       const jobs = await claimJobs(WORKER_ID, CONCURRENCY);
 
       if (jobs.length > 0) {

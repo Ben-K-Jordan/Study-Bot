@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { sha256, saveFile, resolveStoragePath } from "@/lib/storage";
 import { extractDocumentText } from "@/lib/extractor";
@@ -44,30 +45,52 @@ export async function uploadDocument(
     };
   }
 
-  // Create document record first to get the ID for storage key
-  const doc = await prisma.contentDocument.create({
-    data: {
-      userId,
-      namespace,
-      courseName: courseName ?? null,
-      examName: examName ?? null,
-      title,
-      originalFilename,
-      mimeType,
-      storageKey: "", // will update after saving
-      contentHash,
-      status: "UPLOADED",
-    },
-  });
+  // Save the file to disk FIRST, then create the DB row. If the row were
+  // created first and saveFile failed, the broken row (empty storageKey)
+  // would permanently satisfy the dedupe check for this content hash.
+  // The storage key needs a document ID, so generate it up front.
+  const documentId = randomUUID();
+  const storageKey = await saveFile(userId, documentId, originalFilename, fileData);
 
-  // Save file to disk
-  const storageKey = await saveFile(userId, doc.id, originalFilename, fileData);
-
-  // Update storage key
-  await prisma.contentDocument.update({
-    where: { id: doc.id },
-    data: { storageKey },
-  });
+  let doc;
+  try {
+    doc = await prisma.contentDocument.create({
+      data: {
+        id: documentId,
+        userId,
+        namespace,
+        courseName: courseName ?? null,
+        examName: examName ?? null,
+        title,
+        originalFilename,
+        mimeType,
+        storageKey,
+        contentHash,
+        status: "UPLOADED",
+      },
+    });
+  } catch (err: unknown) {
+    // Unique constraint violation (P2002) — a concurrent upload of the same
+    // file won the race. Return the winning row as a dedupe hit.
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code: string }).code === "P2002"
+    ) {
+      const winner = await prisma.contentDocument.findUnique({
+        where: { userId_contentHash: { userId, contentHash } },
+      });
+      if (winner) {
+        return {
+          document_id: winner.id,
+          status: winner.status,
+          deduped: true,
+        };
+      }
+    }
+    throw err;
+  }
 
   logger.info("document.uploaded", {
     user_id: userId,

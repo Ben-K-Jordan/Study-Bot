@@ -36,6 +36,9 @@ class WrongIndexError extends Error {
   expected: number;
   constructor(expected: number) { super("wrong_index"); this.expected = expected; }
 }
+class RunCompletedError extends Error {
+  constructor() { super("run_completed"); }
+}
 
 // ---- Types ----
 
@@ -108,23 +111,58 @@ function initialPhaseForMode(mode: string): string {
   return mode === "EXAM_SIM" ? "EXAM" : "ACTIVE";
 }
 
-/** Convert a generated Prompt to a PromptView for API responses */
-function toPromptView(prompt: Prompt, index: number): PromptView {
+/**
+ * Convert a generated Prompt to a PromptView for API responses.
+ *
+ * The answer key (correctIndex, distractorRationales) is withheld unless
+ * includeAnswer is true — it is only exposed during EXAM_SIM REVIEW, after
+ * all answers are locked in. Immediate-scoring modes grade MCQ selections
+ * server-side, so the client never needs the key before answering.
+ */
+function toPromptView(prompt: Prompt, index: number, includeAnswer = false): PromptView {
   const view: PromptView = {
     prompt_index: index,
     text: prompt.text,
     objective_id: prompt.objective_id,
     difficulty: prompt.difficulty,
   };
-  if (prompt.format === "MCQ" && prompt.choices && prompt.correctIndex != null) {
+  if (prompt.format === "MCQ" && prompt.choices) {
     view.format = "MCQ";
     view.choices = prompt.choices;
-    view.correctIndex = prompt.correctIndex;
-    if (prompt.meta?.distractorRationales) {
-      view.meta = { distractorRationales: prompt.meta.distractorRationales };
+    if (includeAnswer && prompt.correctIndex != null) {
+      view.correctIndex = prompt.correctIndex;
+      if (prompt.meta?.distractorRationales) {
+        view.meta = { distractorRationales: prompt.meta.distractorRationales };
+      }
     }
   }
+  // Error-repair context (not an answer key) — lets the UI show which
+  // question the repair prompt refers to.
+  if (prompt.meta?.original_prompt_text) {
+    view.meta = { ...(view.meta ?? {}), original_prompt_text: prompt.meta.original_prompt_text };
+  }
   return view;
+}
+
+/**
+ * Redact answer keys from a raw prompts array before returning it to the
+ * client (run start/resume and GET /runs/:id responses include the full
+ * deck; without redaction that response is a one-click answer key).
+ */
+function redactPrompts(prompts: Prompt[]): Prompt[] {
+  return prompts.map((p) => {
+    const { correctIndex: _ci, ...rest } = p;
+    let meta = p.meta;
+    if (meta) {
+      const {
+        distractorRationales: _dr,
+        expected_correction_rule: _ecr,
+        ...metaRest
+      } = meta;
+      meta = Object.keys(metaRest).length > 0 ? metaRest : undefined;
+    }
+    return { ...rest, meta } as Prompt;
+  });
 }
 
 // ---- Post-completion side effects ----
@@ -195,8 +233,14 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       });
     }
 
-    // Fetch current prompt from run_prompts table, falling back to JSONB
-    const currentPrompt = await getPromptAt(existingRun.runId, existingRun.currentIndex, existingRun.prompts as unknown as Prompt[]);
+    // Fetch current prompt from run_prompts table, falling back to JSONB.
+    // MCQ answer keys are only included during EXAM_SIM REVIEW.
+    const currentPrompt = await getPromptAt(
+      existingRun.runId,
+      existingRun.currentIndex,
+      existingRun.prompts as unknown as Prompt[],
+      existingRun.phase === "REVIEW",
+    );
 
     logger.info("run.resumed", {
       user_id: userId,
@@ -218,7 +262,7 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
         current_prompt: currentPrompt,
         answered_count: existingRun.answeredCount,
         scored_count: existingRun.scoredCount,
-        prompts: existingRun.prompts,
+        prompts: redactPrompts(existingRun.prompts as unknown as Prompt[]),
         policies: existingRun.policies,
         metrics: existingRun.metrics,
         break_state: updatedBreakState,
@@ -368,8 +412,22 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
   const policies = policiesForMode(mode);
   const phase = initialPhaseForMode(mode);
 
-  // Create run + persist prompts to SessionRunPrompt table in one transaction
+  // Create run + persist prompts to SessionRunPrompt table in one transaction.
+  // An advisory lock + re-check closes the find-then-create race: two
+  // overlapping /runs/start requests must not both create an ACTIVE run for
+  // the same session (deck generation above is too slow to hold a lock over,
+  // so the loser discards its generated deck and resumes the winner's run).
+  let concurrentRunId: string | null = null;
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${session.sessionId}))`;
+    const concurrent = await tx.sessionRun.findFirst({
+      where: { sessionId: session.sessionId, userId, status: { in: ["CREATED", "ACTIVE"] } },
+      select: { runId: true },
+    });
+    if (concurrent) {
+      concurrentRunId = concurrent.runId;
+      return;
+    }
     await tx.sessionRun.create({
       data: {
         runId,
@@ -415,6 +473,17 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
     }
   });
 
+  // Lost the race — another request created a run for this session while we
+  // were generating the deck. Resume that run instead of duplicating it.
+  if (concurrentRunId) {
+    logger.info("run.start_race_resolved", {
+      user_id: userId,
+      session_id: sessionId,
+      winner_run_id: concurrentRunId,
+    });
+    return startOrResumeRun(userId, sessionId);
+  }
+
   const currentPrompt = toPromptView(prompts[0], 0);
 
   logger.info("run.started", {
@@ -438,7 +507,7 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       current_prompt: currentPrompt,
       answered_count: mode === "EXAM_SIM" ? 0 : null,
       scored_count: mode === "EXAM_SIM" ? 0 : null,
-      prompts,
+      prompts: redactPrompts(prompts),
       policies,
       metrics,
       break_state: breakState,
@@ -449,7 +518,12 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
 
 // ---- Get Prompt by Index ----
 
-async function getPromptAt(runId: string, index: number, fallbackPrompts: Prompt[]): Promise<PromptView> {
+async function getPromptAt(
+  runId: string,
+  index: number,
+  fallbackPrompts: Prompt[],
+  includeAnswer = false,
+): Promise<PromptView> {
   const row = await prisma.sessionRunPrompt.findUnique({
     where: { runId_promptIndex: { runId, promptIndex: index } },
   });
@@ -462,27 +536,33 @@ async function getPromptAt(runId: string, index: number, fallbackPrompts: Prompt
       difficulty: row.difficulty,
       source_type: row.sourceType,
     };
-    // Extract MCQ fields stored in meta JSON
-    if (meta?.format === "MCQ" && Array.isArray(meta.choices) && meta.correctIndex != null) {
+    // Extract MCQ fields stored in meta JSON; withhold the answer key
+    // unless explicitly requested (EXAM_SIM REVIEW phase).
+    if (meta?.format === "MCQ" && Array.isArray(meta.choices)) {
       view.format = "MCQ";
       view.choices = meta.choices as string[];
-      view.correctIndex = meta.correctIndex as number;
-      if (Array.isArray(meta.distractorRationales)) {
-        view.meta = { distractorRationales: meta.distractorRationales as string[] };
+      if (includeAnswer && meta.correctIndex != null) {
+        view.correctIndex = meta.correctIndex as number;
+        if (Array.isArray(meta.distractorRationales)) {
+          view.meta = { distractorRationales: meta.distractorRationales as string[] };
+        }
       }
+    }
+    if (typeof meta?.original_prompt_text === "string") {
+      view.meta = { ...(view.meta ?? {}), original_prompt_text: meta.original_prompt_text };
     }
     return view;
   }
   // Fallback to JSONB for runs created before migration
   const p = fallbackPrompts[index];
   if (!p) return { prompt_index: index, text: "" };
-  return toPromptView(p, index);
+  return toPromptView(p, index, includeAnswer);
 }
 
 export async function getRunPrompt(userId: string, runId: string, index: number) {
   const run = await prisma.sessionRun.findUnique({
     where: { runId },
-    select: { userId: true, promptCount: true, prompts: true, metrics: true, mode: true, phase: true },
+    select: { userId: true, promptCount: true, prompts: true, metrics: true, mode: true, phase: true, status: true, currentIndex: true },
   });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
@@ -490,12 +570,19 @@ export async function getRunPrompt(userId: string, runId: string, index: number)
   const count = run.promptCount || (run.prompts as unknown as Prompt[]).length;
   if (index < 0 || index >= count) return { error: "invalid_index" as const };
 
-  // Adaptive difficulty: reorder remaining prompts based on running accuracy
-  // Skip for EXAM_SIM (fixed order required) or REVIEW phase
+  // MCQ answer keys are only revealed during EXAM_SIM REVIEW, after all
+  // answers are locked in.
+  const includeAnswer = run.phase === "REVIEW";
+
+  // Adaptive difficulty: reorder remaining prompts based on running accuracy.
+  // Only on an ACTIVE run's CURRENT prompt — GET must otherwise stay a pure
+  // read (a stale tab fetching an answered index must never reorder the deck).
   const metrics = run.metrics as unknown as RunMetrics;
   if (
     run.mode !== "EXAM_SIM" &&
-    run.phase !== "REVIEW" &&
+    run.status === "ACTIVE" &&
+    run.phase === "ACTIVE" &&
+    index === run.currentIndex &&
     metrics.attempts_count >= 2 &&
     index > 0
   ) {
@@ -503,7 +590,7 @@ export async function getRunPrompt(userId: string, runId: string, index: number)
     if (adapted) return { data: adapted };
   }
 
-  const prompt = await getPromptAt(runId, index, run.prompts as unknown as Prompt[]);
+  const prompt = await getPromptAt(runId, index, run.prompts as unknown as Prompt[], includeAnswer);
   return { data: prompt };
 }
 
@@ -562,18 +649,25 @@ async function adaptPromptDifficulty(
 
   if (!betterFit) return null;
 
-  // Atomic swap using a single SQL CASE statement — avoids temp index
-  // and eliminates data corruption risk from partial failures.
+  // Swap the two rows inside a transaction, parking the current row at a
+  // temporary out-of-range index first. A single-statement CASE swap would
+  // violate the non-deferrable unique index on (run_id, prompt_index) —
+  // PostgreSQL enforces unique indexes per-row during UPDATE.
   const swapIdx = betterFit.promptIndex;
-  await prisma.$executeRaw`
-    UPDATE "session_run_prompts"
-    SET "prompt_index" = CASE
-      WHEN "prompt_index" = ${currentIndex}::int THEN ${swapIdx}::int
-      WHEN "prompt_index" = ${swapIdx}::int THEN ${currentIndex}::int
-    END
-    WHERE "run_id" = ${runId}
-      AND "prompt_index" IN (${currentIndex}::int, ${swapIdx}::int)
-  `;
+  await prisma.$transaction([
+    prisma.sessionRunPrompt.update({
+      where: { runId_promptIndex: { runId, promptIndex: currentIndex } },
+      data: { promptIndex: -1 },
+    }),
+    prisma.sessionRunPrompt.update({
+      where: { runId_promptIndex: { runId, promptIndex: swapIdx } },
+      data: { promptIndex: currentIndex },
+    }),
+    prisma.sessionRunPrompt.update({
+      where: { runId_promptIndex: { runId, promptIndex: -1 } },
+      data: { promptIndex: swapIdx },
+    }),
+  ]);
 
   logger.info("adaptive.swapped", {
     run_id: runId,
@@ -584,6 +678,7 @@ async function adaptPromptDifficulty(
     target_range: `${targetMin}-${targetMax}`,
   });
 
+  // Answer key deliberately omitted — this view is served pre-answer.
   const swapMeta = betterFit.meta as Record<string, unknown> | null;
   const swapView: PromptView = {
     prompt_index: currentIndex,
@@ -592,13 +687,9 @@ async function adaptPromptDifficulty(
     difficulty: betterFit.difficulty,
     source_type: betterFit.sourceType,
   };
-  if (swapMeta?.format === "MCQ" && Array.isArray(swapMeta.choices) && swapMeta.correctIndex != null) {
+  if (swapMeta?.format === "MCQ" && Array.isArray(swapMeta.choices)) {
     swapView.format = "MCQ";
     swapView.choices = swapMeta.choices as string[];
-    swapView.correctIndex = swapMeta.correctIndex as number;
-    if (Array.isArray(swapMeta.distractorRationales)) {
-      swapView.meta = { distractorRationales: swapMeta.distractorRationales as string[] };
-    }
   }
   return swapView;
 }
@@ -629,7 +720,7 @@ export async function getRun(userId: string, runId: string) {
       prompt_count: run.promptCount,
       answered_count: run.answeredCount,
       scored_count: run.scoredCount,
-      prompts: run.prompts,
+      prompts: redactPrompts((run.prompts as unknown as Prompt[]) ?? []),
       policies: run.policies,
       metrics: run.metrics,
       break_state: run.breakState,
@@ -751,12 +842,59 @@ async function handleImmediateScoring(
   userId: string,
   txStart: number
 ) {
+  // ---- Server-side MCQ grading ----
+  // The client never receives the answer key, so it submits only the chosen
+  // index. The server grades against the stored correctIndex and builds the
+  // error log from the correct answer (never from the distractor's
+  // misconception rationale alone — that would drill the misconception).
+  let effectiveScore = input.self_score;
+  let effectiveErrorLog = input.error_log;
+  let mcqResult:
+    | { selected_index: number; correct_index: number; is_correct: boolean; correct_choice: string; rationale?: string }
+    | null = null;
+
+  if (
+    prompt.format === "MCQ" &&
+    prompt.choices &&
+    prompt.correctIndex != null &&
+    input.mcq_choice_index != null &&
+    input.mcq_choice_index < prompt.choices.length
+  ) {
+    const selected = input.mcq_choice_index;
+    const isCorrect = selected === prompt.correctIndex;
+    const correctChoice = prompt.choices[prompt.correctIndex];
+    const rationale = isCorrect ? undefined : prompt.meta?.distractorRationales?.[selected];
+
+    effectiveScore = isCorrect ? "CORRECT" : "INCORRECT";
+    if (!isCorrect) {
+      effectiveErrorLog = {
+        error_type: "MISCONCEPTION",
+        correction_rule: `The correct answer is "${correctChoice}".${rationale ? ` Common trap: ${rationale}` : ""}`,
+      };
+    }
+    mcqResult = {
+      selected_index: selected,
+      correct_index: prompt.correctIndex,
+      is_correct: isCorrect,
+      correct_choice: correctChoice,
+      rationale,
+    };
+  }
+
+  if (!effectiveScore) return { error: "missing_score" as const };
+  const finalScoreValue = effectiveScore;
+  const finalErrorLog = effectiveErrorLog;
+
   let attemptId: string;
   try {
     const txResult = await prisma.$transaction(async (tx) => {
       // Re-read inside the transaction to get fresh metrics/index and prevent
       // concurrent submissions from clobbering each other.
       const fresh = await tx.sessionRun.findUniqueOrThrow({ where: { id: run.id } });
+
+      // A concurrent completeRun may have finished the run since the
+      // pre-transaction check — never resurrect a completed run.
+      if (fresh.status === "COMPLETED") throw new RunCompletedError();
 
       // Check for duplicate attempt
       const existing = await tx.sessionAttempt.findUnique({
@@ -774,9 +912,9 @@ async function handleImmediateScoring(
       const freshBreak = fresh.breakState as unknown as BreakState;
       const newMetrics: RunMetrics = {
         attempts_count: metrics.attempts_count + 1,
-        correct_count: metrics.correct_count + (input.self_score === "CORRECT" ? 1 : 0),
-        partial_count: metrics.partial_count + (input.self_score === "PARTIAL" ? 1 : 0),
-        incorrect_count: metrics.incorrect_count + (input.self_score === "INCORRECT" ? 1 : 0),
+        correct_count: metrics.correct_count + (finalScoreValue === "CORRECT" ? 1 : 0),
+        partial_count: metrics.partial_count + (finalScoreValue === "PARTIAL" ? 1 : 0),
+        incorrect_count: metrics.incorrect_count + (finalScoreValue === "INCORRECT" ? 1 : 0),
         accuracy: 0,
         time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
       };
@@ -795,7 +933,7 @@ async function handleImmediateScoring(
           promptId: prompt.id,
           promptText: prompt.text,
           userAnswer: input.user_answer,
-          selfScore: input.self_score,
+          selfScore: finalScoreValue,
           timeToAnswerSeconds: input.time_to_answer_seconds ?? null,
           confidenceRating: input.confidence_rating ?? null,
           selfExplanation: input.self_explanation ?? null,
@@ -805,24 +943,24 @@ async function handleImmediateScoring(
 
       let errorLogId: string | undefined;
       if (
-        (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
-        input.error_log
+        (finalScoreValue === "PARTIAL" || finalScoreValue === "INCORRECT") &&
+        finalErrorLog
       ) {
         const errorLog = await tx.sessionErrorLog.create({
           data: {
             runId: run.runId,
             userId: run.userId,
             promptIndex: input.prompt_index,
-            errorType: input.error_log.error_type,
-            correctionRule: input.error_log.correction_rule,
-            variantQuestion: input.error_log.variant_question ?? null,
+            errorType: finalErrorLog.error_type,
+            correctionRule: finalErrorLog.correction_rule,
+            variantQuestion: finalErrorLog.variant_question ?? null,
           },
         });
         errorLogId = errorLog.id;
       }
 
       // Resolve linked error log on CORRECT (ERROR_REPAIR mode, cross-session repairs, and variant questions)
-      if (input.self_score === "CORRECT" && prompt.meta?.source_error_log_id) {
+      if (finalScoreValue === "CORRECT" && prompt.meta?.source_error_log_id) {
         await tx.sessionErrorLog.update({
           where: { id: prompt.meta.source_error_log_id },
           data: {
@@ -840,8 +978,8 @@ async function handleImmediateScoring(
       let variantInjected = false;
       let finalPromptCount = promptCount;
       if (
-        (input.self_score === "PARTIAL" || input.self_score === "INCORRECT") &&
-        input.error_log &&
+        (finalScoreValue === "PARTIAL" || finalScoreValue === "INCORRECT") &&
+        finalErrorLog &&
         run.mode !== "ERROR_REPAIR" // ERROR_REPAIR already has targeted repair prompts
       ) {
         // Count existing variants in this session to cap injection
@@ -850,11 +988,16 @@ async function handleImmediateScoring(
         });
 
         if (existingVariants < MAX_VARIANTS_PER_SESSION) {
+          // MCQ stems say "which of the following" — the free-recall variant
+          // must carry the answer context or the reference is incoherent.
+          const variantSourceText = mcqResult && prompt.choices
+            ? `${prompt.text} (Correct answer: "${mcqResult.correct_choice}"; you chose "${prompt.choices[mcqResult.selected_index]}")`
+            : prompt.text;
           const variantPrompt = generateVariantQuestion(
             promptCount, // append at end of current deck
-            prompt.text,
-            input.error_log.error_type,
-            input.error_log.correction_rule,
+            variantSourceText,
+            finalErrorLog.error_type,
+            finalErrorLog.correction_rule,
             prompt.objective_id,
             errorLogId,
           );
@@ -903,7 +1046,7 @@ async function handleImmediateScoring(
     const { newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState, variantInjected } = txResult;
 
     const dbTxMs = Date.now() - txStart;
-    const feedbackStatus = (input.self_score === "PARTIAL" || input.self_score === "INCORRECT")
+    const feedbackStatus = (finalScoreValue === "PARTIAL" || finalScoreValue === "INCORRECT")
       ? "PENDING" as const
       : "NONE" as const;
 
@@ -911,10 +1054,11 @@ async function handleImmediateScoring(
       user_id: userId,
       run_id: run.runId,
       prompt_index: input.prompt_index,
-      self_score: input.self_score,
+      self_score: finalScoreValue,
       mode: run.mode,
       is_last: isLastPrompt,
       variant_injected: variantInjected,
+      mcq_graded: mcqResult != null,
       db_tx_ms: dbTxMs,
     });
 
@@ -934,6 +1078,7 @@ async function handleImmediateScoring(
           prompt_count: promptCount,
           metrics: finalMetrics,
           break_state: updatedBreakState,
+          mcq_result: mcqResult,
         },
       };
     }
@@ -948,11 +1093,13 @@ async function handleImmediateScoring(
         prompt_count: promptCount,
         metrics: newMetrics,
         break_state: updatedBreakState,
+        mcq_result: mcqResult,
       },
     };
   } catch (err: unknown) {
     if (err instanceof DuplicateAttemptError) return { error: "duplicate_attempt" as const };
     if (err instanceof WrongIndexError) return { error: "wrong_index" as const, expected: err.expected };
+    if (err instanceof RunCompletedError) return { error: "run_completed" as const };
     if (err instanceof Error && err.message.includes("Unique constraint")) {
       return { error: "duplicate_attempt" as const };
     }
@@ -977,6 +1124,7 @@ async function handleExamAnswer(
   try {
     const txResult = await prisma.$transaction(async (tx) => {
       const fresh = await tx.sessionRun.findUniqueOrThrow({ where: { id: run.id } });
+      if (fresh.status === "COMPLETED") throw new RunCompletedError();
 
       const existing = await tx.sessionAttempt.findUnique({
         where: { runId_promptIndex: { runId: run.runId, promptIndex: input.prompt_index } },
@@ -1052,6 +1200,7 @@ async function handleExamAnswer(
     };
   } catch (err: unknown) {
     if (err instanceof DuplicateAttemptError) return { error: "duplicate_attempt" as const };
+    if (err instanceof RunCompletedError) return { error: "run_completed" as const };
     if (err instanceof Error && err.message.includes("Unique constraint")) {
       return { error: "duplicate_attempt" as const };
     }
@@ -1080,6 +1229,7 @@ async function handleExamScore(
     const txResult = await prisma.$transaction(async (tx) => {
       // Re-read inside the transaction to get fresh metrics/index
       const fresh = await tx.sessionRun.findUniqueOrThrow({ where: { id: run.id } });
+      if (fresh.status === "COMPLETED") throw new RunCompletedError();
 
       // Find existing attempt (must exist from EXAM phase)
       const existing = await tx.sessionAttempt.findUnique({
@@ -1205,6 +1355,7 @@ async function handleExamScore(
   } catch (err: unknown) {
     if (err instanceof Error && err.message === "no_attempt_to_score") return { error: "no_attempt_to_score" as const };
     if (err instanceof Error && err.message === "already_scored") return { error: "already_scored" as const };
+    if (err instanceof RunCompletedError) return { error: "run_completed" as const };
     captureException(err, { user_id: userId, run_id: run.runId, action: "examScore" });
     throw err;
   }
@@ -1483,46 +1634,64 @@ async function updateObjectiveMastery(userId: string, runId: string, courseName:
 export async function completeRun(userId: string, runId: string) {
   const run = await prisma.sessionRun.findUnique({
     where: { runId },
-    include: { session: { select: { courseName: true } } },
+    select: { id: true, runId: true, userId: true, sessionId: true, status: true },
   });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
 
-  if (run.status === "COMPLETED") {
-    const metrics = run.metrics as unknown as RunMetrics;
+  // Atomically claim the ACTIVE -> COMPLETED transition inside a transaction:
+  // metrics are re-read fresh (so a just-committed final attempt is included)
+  // and the conditional updateMany guarantees exactly one caller wins.
+  // Post-completion effects (SM-2 mastery, auto-flashcards) must run at most
+  // once per run — a double-click on "End Session" must not double-advance
+  // spaced-repetition schedules.
+  const endedAt = new Date();
+  const txResult = await prisma.$transaction(async (tx) => {
+    const fresh = await tx.sessionRun.findUniqueOrThrow({
+      where: { id: run.id },
+      select: { status: true, metrics: true, startedAt: true, endedAt: true },
+    });
+    if (fresh.status === "COMPLETED") {
+      return { won: false as const, metrics: fresh.metrics as unknown as RunMetrics, startedAt: fresh.startedAt, endedAt: fresh.endedAt };
+    }
+
+    const metrics = fresh.metrics as unknown as RunMetrics;
+    const finalMetrics = { ...metrics, recommended_followups: computeFollowups(metrics.accuracy) };
+
+    const updated = await tx.sessionRun.updateMany({
+      where: { id: run.id, status: { not: "COMPLETED" } },
+      data: {
+        status: "COMPLETED",
+        phase: "COMPLETE",
+        endedAt,
+        metrics: finalMetrics as object,
+      },
+    });
+    if (updated.count === 0) {
+      return { won: false as const, metrics: finalMetrics, startedAt: fresh.startedAt, endedAt: fresh.endedAt };
+    }
+    return { won: true as const, metrics: finalMetrics, startedAt: fresh.startedAt, endedAt };
+  });
+
+  if (!txResult.won) {
     return {
       data: {
         run_id: run.runId,
         status: "COMPLETED" as const,
-        metrics,
-        started_at: run.startedAt?.toISOString() ?? null,
-        ended_at: run.endedAt?.toISOString() ?? null,
+        metrics: txResult.metrics,
+        started_at: txResult.startedAt?.toISOString() ?? null,
+        ended_at: txResult.endedAt?.toISOString() ?? null,
       },
     };
   }
-
-  const metrics = run.metrics as unknown as RunMetrics;
-  const followups = computeFollowups(metrics.accuracy);
-  const finalMetrics = { ...metrics, recommended_followups: followups };
-  const endedAt = new Date();
-
-  await prisma.sessionRun.update({
-    where: { id: run.id },
-    data: {
-      status: "COMPLETED",
-      phase: "COMPLETE",
-      endedAt,
-      metrics: finalMetrics as object,
-    },
-  });
 
   await runPostCompletionEffects(userId, runId, run.sessionId);
 
   logger.info("run.completed", {
     user_id: userId,
     run_id: runId,
-    accuracy: finalMetrics.accuracy,
-    attempts_count: finalMetrics.attempts_count,
+    accuracy: txResult.metrics.accuracy,
+    attempts_count: txResult.metrics.attempts_count,
     manual: true,
   });
 
@@ -1530,11 +1699,42 @@ export async function completeRun(userId: string, runId: string) {
     data: {
       run_id: run.runId,
       status: "COMPLETED" as const,
-      metrics: finalMetrics,
-      started_at: run.startedAt?.toISOString() ?? null,
+      metrics: txResult.metrics,
+      started_at: txResult.startedAt?.toISOString() ?? null,
       ended_at: endedAt.toISOString(),
     },
   };
+}
+
+// ---- Post-review metacognition update ----
+
+/**
+ * Attach a self-explanation / generated example to an already-submitted
+ * attempt. The review panel collects these AFTER the attempt is recorded;
+ * they must never be posted as a new attempt (that would fabricate a scored
+ * attempt against the next, unseen prompt).
+ */
+export async function updateAttemptMeta(
+  userId: string,
+  attemptId: string,
+  input: { self_explanation?: string; generated_example?: string },
+) {
+  const attempt = await prisma.sessionAttempt.findUnique({
+    where: { id: attemptId },
+    select: { id: true, run: { select: { userId: true } } },
+  });
+  if (!attempt) return { error: "not_found" as const };
+  if (attempt.run.userId !== userId) return { error: "forbidden" as const };
+
+  await prisma.sessionAttempt.update({
+    where: { id: attemptId },
+    data: {
+      selfExplanation: input.self_explanation ?? undefined,
+      generatedExample: input.generated_example ?? undefined,
+    },
+  });
+
+  return { data: { ok: true } };
 }
 
 // ---- End break early ----

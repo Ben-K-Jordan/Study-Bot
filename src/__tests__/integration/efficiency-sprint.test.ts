@@ -222,7 +222,12 @@ The loop invariant for binary search is that the target element, if present, mus
 
     it("feedback endpoint enforces ownership", async () => {
       const result = await generateFeedback("wrong_user", attemptId);
-      expect(result.status).toBe("UNAVAILABLE");
+      expect(result.status).toBe("NOT_FOUND");
+    });
+
+    it("feedback returns NOT_FOUND for a nonexistent attempt", async () => {
+      const result = await generateFeedback(USER, "no_such_attempt");
+      expect(result.status).toBe("NOT_FOUND");
     });
   });
 

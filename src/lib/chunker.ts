@@ -31,24 +31,32 @@ function chunkPlainText(text: string): Chunk[] {
   const chunks: Chunk[] = [];
   const paragraphs = splitIntoParagraphs(text);
   let buffer = "";
+  let bufferOverlap = "";
   let ordinal = 0;
 
   for (const para of paragraphs) {
     if (buffer.length + para.length + 1 > MAX_CHUNK_SIZE && buffer.length >= MIN_CHUNK_SIZE) {
       chunks.push(makeChunk(buffer.trim(), ordinal++, null));
       // Overlap: keep tail of previous chunk
-      buffer = getOverlap(buffer) + para + "\n";
+      bufferOverlap = getOverlap(buffer);
+      buffer = bufferOverlap + para + "\n";
     } else {
       buffer += para + "\n";
     }
   }
 
   if (buffer.trim().length > 0) {
-    // If last buffer is too small and we have previous chunks, merge overlap
+    // If last buffer is too small and we have previous chunks, merge into last chunk
     if (chunks.length > 0 && buffer.trim().length < MIN_CHUNK_SIZE / 2) {
-      // Append to last chunk's overlap region
-      const last = chunks[chunks.length - 1];
-      chunks[chunks.length - 1] = makeChunk(last.text + "\n" + buffer.trim(), last.ordinal, null);
+      // Strip the overlap prefix first — it already exists at the end of the
+      // last chunk, so appending it again would duplicate that text
+      const remainder = buffer.startsWith(bufferOverlap)
+        ? buffer.slice(bufferOverlap.length)
+        : buffer;
+      if (remainder.trim().length > 0) {
+        const last = chunks[chunks.length - 1];
+        chunks[chunks.length - 1] = makeChunk(last.text + "\n" + remainder.trim(), last.ordinal, null);
+      }
     } else {
       chunks.push(makeChunk(buffer.trim(), ordinal++, null));
     }
@@ -97,23 +105,44 @@ function splitIntoParagraphs(text: string): string[] {
     if (para.length <= MAX_CHUNK_SIZE) {
       result.push(para.trim());
     } else {
-      // Split on sentence boundaries
-      const sentences = para.match(/[^.!?]+[.!?]+[\s]*/g) || [para];
+      // Split on sentence boundaries (ASCII and fullwidth CJK terminators)
+      const sentences = para.match(/[^.!?。！？]+[.!?。！？]+[\s]*/g) || [para];
       let group = "";
       for (const sentence of sentences) {
         if (group.length + sentence.length > MAX_CHUNK_SIZE && group.length > 0) {
-          result.push(group.trim());
+          pushWithHardSplit(result, group);
           group = sentence;
         } else {
           group += sentence;
         }
       }
       if (group.trim().length > 0) {
-        result.push(group.trim());
+        pushWithHardSplit(result, group);
       }
     }
   }
   return result;
+}
+
+/**
+ * Push a unit, hard-splitting anything still exceeding MAX_CHUNK_SIZE
+ * (e.g. text with no sentence terminators at all) into fixed-size windows.
+ * Windows leave room for the overlap prefix added during chunk assembly
+ * so the assembled chunks stay within MAX_CHUNK_SIZE.
+ */
+function pushWithHardSplit(result: string[], unit: string): void {
+  const trimmed = unit.trim();
+  if (trimmed.length <= MAX_CHUNK_SIZE) {
+    result.push(trimmed);
+    return;
+  }
+  const windowSize = MAX_CHUNK_SIZE - OVERLAP_SIZE;
+  for (let i = 0; i < trimmed.length; i += windowSize) {
+    const window = trimmed.slice(i, i + windowSize).trim();
+    if (window.length > 0) {
+      result.push(window);
+    }
+  }
 }
 
 function getOverlap(text: string): string {
