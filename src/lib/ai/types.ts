@@ -1,0 +1,48 @@
+/**
+ * Core types for the AI control plane.
+ */
+
+export enum AiTask {
+  EMBED_TEXTS = "EMBED_TEXTS",
+  ANSWER_WITH_CITATIONS = "ANSWER_WITH_CITATIONS",
+  GENERATE_VARIANT_QUESTION = "GENERATE_VARIANT_QUESTION",
+  SUGGEST_ERROR_TYPE = "SUGGEST_ERROR_TYPE",
+  GENERATE_STUDY_PLAN = "GENERATE_STUDY_PLAN",
+  EXTRACT_OBJECTIVES = "EXTRACT_OBJECTIVES",
+  GENERATE_PROMPTS = "GENERATE_PROMPTS",
+  GENERATE_FEEDBACK = "GENERATE_FEEDBACK",
+  REINFORCE_CORRECT = "REINFORCE_CORRECT",
+  SOCRATIC_FOLLOWUP = "SOCRATIC_FOLLOWUP",
+  SUMMARIZE_DOCUMENT = "SUMMARIZE_DOCUMENT",
+  GENERATE_STUDY_GUIDE = "GENERATE_STUDY_GUIDE",
+  GENERATE_FLASHCARDS = "GENERATE_FLASHCARDS",
+  GENERATE_WORKED_EXAMPLES = "GENERATE_WORKED_EXAMPLES",
+}
+
+export interface AiUsage {
+  tokenIn?: number;
+  tokenOut?: number;
+  costUsdMicros?: number;
+}
+
+export interface AiCallMeta {
+  cacheHit: boolean;
+  latencyMs: number;
+  promptVersion: string;
+  model: string;
+  task: AiTask;
+}
+
+export interface TaskSpec<T> {
+  task: AiTask;
+  promptVersion: string;
+  model: string;
+  input: unknown;
+  /** Parse and validate the raw output into the expected type */
+  parseOutput: (raw: unknown) => T;
+}
+
+export interface RunTaskResult<T> {
+  output: T;
+  meta: AiCallMeta;
+}
