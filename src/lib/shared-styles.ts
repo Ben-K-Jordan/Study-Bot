@@ -7,10 +7,11 @@ import type React from "react";
 export const headerStyle: React.CSSProperties = { marginBottom: "1.5rem" };
 
 export const titleStyle: React.CSSProperties = {
-  fontSize: "1.6rem",
+  fontSize: "1.5rem",
+  fontWeight: 700,
   margin: "0 0 0.25rem",
   fontFamily: "var(--font-display)",
-  color: "var(--color-primary)",
+  color: "var(--color-text)",
 };
 
 export const subtitleStyle: React.CSSProperties = {
@@ -36,7 +37,7 @@ export const selectStyle: React.CSSProperties = {
   background: "var(--color-bg-card)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
 };
 
 export const generateBtnStyle: React.CSSProperties = {
@@ -48,14 +49,16 @@ export const generateBtnStyle: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   cursor: "pointer",
 };
 
 export const sectionTitleStyle: React.CSSProperties = {
   fontSize: "0.8rem",
   letterSpacing: "0.08em",
-  color: "var(--color-info)",
+  textTransform: "uppercase",
+  fontWeight: 600,
+  color: "var(--color-text-muted)",
   margin: "0 0 0.75rem",
   fontFamily: "var(--font-display)",
 };
@@ -67,8 +70,8 @@ export const deleteBtnStyle: React.CSSProperties = {
   fontWeight: 700,
   background: "none",
   color: "var(--color-error)",
-  border: "1px solid #e8888844",
-  borderRadius: 6,
+  border: "1px solid var(--color-error)",
+  borderRadius: "var(--radius-sm)",
   cursor: "pointer",
   flexShrink: 0,
 };

@@ -57,7 +57,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         style={{
           background: "var(--color-bg-card)",
           border: "1px solid var(--color-border)",
-          borderRadius: 6,
+          borderRadius: "var(--radius)",
           padding: "1.25rem",
           marginBottom: "2rem",
           textAlign: "left",
@@ -94,7 +94,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           background: "transparent",
           color: "var(--color-text-dim)",
           border: "1px solid var(--color-border)",
-          borderRadius: 6,
+          borderRadius: "var(--radius)",
           cursor: "pointer",
         }}
       >

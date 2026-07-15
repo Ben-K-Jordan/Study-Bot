@@ -100,9 +100,9 @@ export function EndScreen({ run, session, onNewRun }: Props) {
       {session.mode === "EXAM_SIM" && run && (
         <div
           style={{
-            background: "#3d3050",
-            border: "1px solid #9a70d0",
-            borderRadius: 6,
+            background: "var(--color-bg-review-tint)",
+            border: "1px solid var(--color-review)",
+            borderRadius: "var(--radius)",
             padding: "0.75rem 1rem",
             marginBottom: "1rem",
             fontSize: "0.9rem",
@@ -140,13 +140,13 @@ export function EndScreen({ run, session, onNewRun }: Props) {
         style={{
           background: "var(--color-bg-card)",
           border: "1px solid var(--color-border)",
-          borderRadius: 6,
+          borderRadius: "var(--radius)",
           padding: "1rem",
           marginBottom: "1.5rem",
         }}
       >
         <h2 style={sectionTitle}>SCORE BREAKDOWN</h2>
-        <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: "0.5rem" }}>
+        <div style={{ display: "flex", height: 8, borderRadius: "var(--radius-sm)", overflow: "hidden", marginBottom: "0.5rem" }}>
           {metrics.correct_count > 0 && (
             <div
               style={{
@@ -188,7 +188,7 @@ export function EndScreen({ run, session, onNewRun }: Props) {
           style={{
             background: "var(--color-bg-card)",
             border: "1px solid var(--color-border)",
-            borderRadius: 6,
+            borderRadius: "var(--radius)",
             padding: "1rem",
             marginBottom: "1.5rem",
           }}
@@ -222,7 +222,7 @@ function CalibrationDashboard({ attempts }: { attempts?: RunData["attempts"] }) 
   const color = gap < 0.15 ? "var(--color-success)" : gap < 0.3 ? "var(--color-warning)" : "var(--color-error)";
 
   return (
-    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, padding: "1rem", marginBottom: "1.5rem" }}>
+    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "1rem", marginBottom: "1.5rem" }}>
       <h2 style={sectionTitle}>CONFIDENCE CALIBRATION</h2>
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: overconfidentCount > 0 || underconfidentCount > 0 ? "0.5rem" : 0 }}>
         <span style={{ fontSize: "1.05rem", color, fontWeight: 600 }}>{label}</span>
@@ -248,7 +248,7 @@ function StatCard({ label, value, color }: { label: string; value: string; color
       style={{
         background: "var(--color-bg-card)",
         border: "1px solid var(--color-border)",
-        borderRadius: 6,
+        borderRadius: "var(--radius)",
         padding: "0.85rem",
         textAlign: "center",
       }}
@@ -292,6 +292,6 @@ const primaryBtn: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
 };

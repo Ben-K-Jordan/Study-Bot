@@ -199,8 +199,8 @@ export default function GuidesPage() {
                 onClick={() => setSelectedType(t.value)}
                 style={{
                   ...typeButton,
-                  background: selectedType === t.value ? "#7ec8e333" : "var(--color-bg-card)",
-                  borderColor: selectedType === t.value ? "var(--color-info)" : "#4a6a4a",
+                  background: selectedType === t.value ? "var(--color-bg-info-tint)" : "var(--color-bg-card)",
+                  borderColor: selectedType === t.value ? "var(--color-info)" : "var(--color-border)",
                   color: selectedType === t.value ? "var(--color-info)" : "var(--color-text-muted)",
                 }}
               >
@@ -227,14 +227,14 @@ export default function GuidesPage() {
           )}
         </div>
       ) : (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: 8 }}>
-          <p style={{ color: "#b0a090", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
+          <p style={{ color: "var(--color-text-muted)", fontSize: "1rem", margin: "0 0 0.5rem" }}>
             No course documents yet
           </p>
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Upload your course materials first, then come back to generate study guides.
           </p>
-          <Link href="/flashcards" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: 6, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+          <Link href="/flashcards" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
             Upload Documents
           </Link>
         </div>

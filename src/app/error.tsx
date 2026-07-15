@@ -24,8 +24,9 @@ export default function GlobalError({
           width: "100%",
           maxWidth: 400,
           background: "var(--color-bg-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: 12,
+          border: "1px solid var(--color-border-subtle)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-card)",
           padding: "2rem",
           textAlign: "center",
         }}
@@ -62,7 +63,7 @@ export default function GlobalError({
             background: "var(--color-primary)",
             color: "var(--color-bg-darkest)",
             border: "none",
-            borderRadius: 6,
+            borderRadius: "var(--radius-sm)",
             cursor: "pointer",
           }}
         >

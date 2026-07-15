@@ -6,6 +6,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -19,6 +20,9 @@
     "assets:check": "tsx scripts/assets-check.ts",
     "prebuild": "npm run assets:build",
     "worker": "tsx scripts/worker.ts",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f db",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",

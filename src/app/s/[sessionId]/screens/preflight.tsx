@@ -73,9 +73,9 @@ const metaLabel: React.CSSProperties = {
 };
 
 const examBanner: React.CSSProperties = {
-  background: "#3d3050",
-  border: "1px solid #9a70d0",
-  borderRadius: 6,
+  background: "var(--color-bg-review-tint)",
+  border: "1px solid var(--color-review)",
+  borderRadius: "var(--radius)",
   padding: "0.75rem 1rem",
   marginBottom: "1.5rem",
   fontSize: "0.95rem",
@@ -91,6 +91,6 @@ const buttonStyle: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
 };

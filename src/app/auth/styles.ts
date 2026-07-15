@@ -14,8 +14,9 @@ export const cardStyle: React.CSSProperties = {
   width: "100%",
   maxWidth: 400,
   background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 12,
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius-lg)",
+  boxShadow: "var(--shadow-card)",
   padding: "2rem",
 };
 
@@ -51,7 +52,7 @@ export const inputStyle: React.CSSProperties = {
   background: "var(--color-bg-input)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   marginBottom: "1rem",
   boxSizing: "border-box",
 };
@@ -65,26 +66,27 @@ export const buttonStyle: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   cursor: "pointer",
   marginTop: "0.5rem",
 };
 
 export const errorStyle: React.CSSProperties = {
-  background: "var(--color-error)",
-  color: "var(--color-bg-darkest)",
+  background: "var(--color-bg-error-tint)",
+  color: "var(--color-error)",
   padding: "0.5rem 0.75rem",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   fontSize: "0.85rem",
   marginBottom: "1rem",
   textAlign: "center",
+  border: "1px solid var(--color-error)",
 };
 
 export const successStyle: React.CSSProperties = {
-  background: "var(--color-bg-done)",
+  background: "var(--color-bg-success-tint)",
   color: "var(--color-success)",
   padding: "0.5rem 0.75rem",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   fontSize: "0.85rem",
   marginBottom: "1rem",
   textAlign: "center",

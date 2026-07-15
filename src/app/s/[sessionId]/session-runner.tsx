@@ -486,7 +486,7 @@ export function SessionRunner({ session }: Props) {
             background: "var(--color-error)",
             color: "var(--color-bg-darkest)",
             padding: "0.5rem 1rem",
-            borderRadius: 4,
+            borderRadius: "var(--radius-sm)",
             marginBottom: "1rem",
             fontSize: "0.85rem",
           }}
