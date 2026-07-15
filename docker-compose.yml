@@ -1,0 +1,40 @@
+services:
+  db:
+    # pgvector/pgvector is the official postgres image + the pgvector extension
+    # (a drop-in superset of postgres:16 — needed for the hybrid-search roadmap).
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-studybot}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-studybot}?schema=public"
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env or environment}
+      CRON_SECRET: ${CRON_SECRET:-}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
+      GOOGLE_PROVIDER: ${GOOGLE_PROVIDER:-fake}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      NODE_ENV: "production"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
