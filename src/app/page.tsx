@@ -83,12 +83,12 @@ function isSameDay(a: Date, b: Date): boolean {
 }
 
 const MODE_COLORS: Record<string, string> = {
-  RETRIEVAL: "#7ec8e3",
-  INTERLEAVED_PRACTICE: "#c4a0ff",
-  ERROR_REPAIR: "#e88888",
-  EXAM_SIM: "#f0dc4e",
-  WORKED_EXAMPLES: "#88cc88",
-  OFFICE_HOURS_PREP: "#e8a040",
+  RETRIEVAL: "var(--color-info)",
+  INTERLEAVED_PRACTICE: "var(--color-review)",
+  ERROR_REPAIR: "var(--color-error)",
+  EXAM_SIM: "var(--color-primary)",
+  WORKED_EXAMPLES: "var(--color-success)",
+  OFFICE_HOURS_PREP: "var(--color-warning)",
 };
 
 // ---- Component ----
@@ -319,7 +319,7 @@ export default function DashboardPage() {
                 {gameState?.xpToday ?? 0} / {gameState?.dailyXpGoal ?? 50} XP
               </div>
               <div style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", marginTop: "0.2rem" }}>Daily Goal</div>
-              <div style={{ fontSize: "0.7rem", color: "#b0a090", marginTop: "0.1rem" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--color-text-muted)", marginTop: "0.1rem" }}>
                 {totalXp} total XP · Tap to adjust
               </div>
             </div>
@@ -376,7 +376,7 @@ export default function DashboardPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {todaySessions.map((item) => {
-              const mc = MODE_COLORS[item.mode] || "#7ec8e3";
+              const mc = MODE_COLORS[item.mode] || "var(--color-info)";
               const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
               const cardContent = (
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -442,14 +442,14 @@ export default function DashboardPage() {
               return (
                 <Link key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
                   <span style={{ fontSize: "1.3rem" }}>{info.icon}</span>
-                  <span style={{ fontSize: "0.6rem", color: "#b0a090", marginTop: "0.15rem" }}>{info.label}</span>
+                  <span style={{ fontSize: "0.6rem", color: "var(--color-text-muted)", marginTop: "0.15rem" }}>{info.label}</span>
                 </Link>
               );
             })}
           </div>
         ) : (
           <Link href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
-            <p style={{ fontSize: "0.9rem", margin: 0, color: "#b0a090" }}>
+            <p style={{ fontSize: "0.9rem", margin: 0, color: "var(--color-text-muted)" }}>
               No badges earned yet. Start studying to unlock achievements!
             </p>
           </Link>
@@ -496,10 +496,10 @@ export default function DashboardPage() {
                     padding: "0.2rem 0.5rem",
                     fontSize: "0.7rem",
                     fontFamily: "inherit",
-                    background: lbPeriod === p ? "#f0dc4e22" : "transparent",
+                    background: lbPeriod === p ? "var(--color-bg-selected)" : "transparent",
                     color: lbPeriod === p ? "var(--color-primary)" : "var(--color-text-faint)",
-                    border: `1px solid ${lbPeriod === p ? "#f0dc4e44" : "var(--color-border-subtle)"}`,
-                    borderRadius: 4,
+                    border: `1px solid ${lbPeriod === p ? "var(--color-primary)" : "var(--color-border-subtle)"}`,
+                    borderRadius: "var(--radius-sm)",
                     cursor: "pointer",
                     textTransform: "capitalize",
                   }}
@@ -509,7 +509,7 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
-          <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, overflow: "hidden", opacity: lbLoading ? 0.5 : 1, transition: "opacity 0.15s" }}>
+          <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius)", boxShadow: "var(--shadow-card)", overflow: "hidden", opacity: lbLoading ? 0.5 : 1, transition: "opacity 0.15s" }}>
             {leaderboard.leaderboard.slice(0, 10).map((entry) => (
               <div
                 key={entry.rank}
@@ -518,7 +518,7 @@ export default function DashboardPage() {
                   alignItems: "center",
                   padding: "0.5rem 0.75rem",
                   borderBottom: "1px solid var(--color-border-subtle)",
-                  background: entry.isCurrentUser ? "#f0dc4e0d" : "transparent",
+                  background: entry.isCurrentUser ? "var(--color-bg-selected)" : "transparent",
                 }}
               >
                 <span style={{
@@ -611,7 +611,7 @@ function OnboardingFlow({
               padding: "0.6rem 0.75rem",
               fontFamily: "inherit",
               fontSize: "1rem",
-              borderRadius: 4,
+              borderRadius: "var(--radius-sm)",
               boxSizing: "border-box",
             }}
           />
@@ -663,7 +663,7 @@ function OnboardingFlow({
       aria-label="Welcome onboarding"
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
-        background: "rgba(20, 30, 20, 0.85)",
+        background: "rgba(11, 14, 20, 0.8)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "1rem",
       }}
@@ -674,7 +674,8 @@ function OnboardingFlow({
         style={{
           background: "var(--color-bg)",
           border: "1px solid var(--color-border)",
-          borderRadius: 12,
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-card)",
           padding: "2rem",
           maxWidth: 480,
           width: "100%",
@@ -717,8 +718,8 @@ function OnboardingFlow({
             onClick={isLast ? onComplete : onNext}
             style={{
               background: "var(--color-primary)", color: "var(--color-bg-darkest)", border: "none",
-              padding: "0.55rem 1.5rem", fontSize: "0.95rem", fontWeight: 700,
-              fontFamily: "inherit", borderRadius: 6, cursor: "pointer",
+              padding: "0.55rem 1.5rem", fontSize: "0.95rem", fontWeight: 600,
+              fontFamily: "inherit", borderRadius: "var(--radius-sm)", cursor: "pointer",
             }}
           >
             {isLast ? "Get Started" : "Next"}
@@ -741,12 +742,12 @@ function XpProgressRing({ current, goal }: { current: number; goal: number }) {
   return (
     <svg width={68} height={68} viewBox="0 0 68 68" style={{ flexShrink: 0 }}>
       {/* Background circle */}
-      <circle cx={34} cy={34} r={r} fill="none" stroke="#334d33" strokeWidth={5} />
+      <circle cx={34} cy={34} r={r} fill="none" stroke="var(--color-border)" strokeWidth={5} />
       {/* Progress arc */}
       <circle
         cx={34} cy={34} r={r}
         fill="none"
-        stroke={complete ? "#88cc88" : "#f0dc4e"}
+        stroke={complete ? "var(--color-success)" : "var(--color-primary)"}
         strokeWidth={5}
         strokeLinecap="round"
         strokeDasharray={circumference}
@@ -755,7 +756,7 @@ function XpProgressRing({ current, goal }: { current: number; goal: number }) {
         style={{ transition: "stroke-dashoffset 0.5s" }}
       />
       {/* Center text */}
-      <text x={34} y={36} textAnchor="middle" fill={complete ? "#88cc88" : "#f0dc4e"} fontSize="13" fontWeight="bold" fontFamily="inherit">
+      <text x={34} y={36} textAnchor="middle" fill={complete ? "var(--color-success)" : "var(--color-primary)"} fontSize="13" fontWeight="bold" fontFamily="inherit">
         {complete ? "\u2713" : `${Math.round(pct * 100)}%`}
       </text>
     </svg>
@@ -783,7 +784,7 @@ function StreakMilestones({ streak, earned }: { streak: number; earned: string[]
   const info = BADGE_MAP[next.badge];
 
   return (
-    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 6, padding: "0.75rem 1rem" }}>
+    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius)", padding: "0.75rem 1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
         <span style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Next Milestone
@@ -807,7 +808,14 @@ function StreakMilestones({ streak, earned }: { streak: number; earned: string[]
 function ConfettiOverlay({ badge }: { badge: string | null }) {
   const info = badge ? BADGE_MAP[badge] : null;
   const particles = useMemo(() => {
-    const colors = ["#f0dc4e", "#e8a040", "#88cc88", "#7ec8e3", "#c4a0ff", "#e88888"];
+    const colors = [
+      "var(--color-primary)",
+      "var(--color-warning)",
+      "var(--color-success)",
+      "var(--color-info)",
+      "var(--color-review)",
+      "var(--color-error)",
+    ];
     return Array.from({ length: 40 }, (_, i) => ({
       id: i,
       left: Math.random() * 100,
@@ -909,11 +917,11 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
   }, [activity]);
 
   const getColor = useCallback((count: number) => {
-    if (count === 0) return "#1f2e1f";
-    if (count === 1) return "#2d5a2d";
-    if (count === 2) return "#3d7a3d";
-    if (count <= 4) return "#5aa05a";
-    return "#88cc88";
+    if (count === 0) return "var(--color-bg-darkest)";
+    if (count === 1) return "rgba(88, 201, 139, 0.3)"; // --color-success @ 30%
+    if (count === 2) return "rgba(88, 201, 139, 0.5)";
+    if (count <= 4) return "rgba(88, 201, 139, 0.72)";
+    return "var(--color-success)";
   }, []);
 
   const cellSize = 11;
@@ -929,7 +937,7 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
               key={`${m.label}-${i}`}
               x={m.weekIndex * step}
               y={11}
-              fill="#7a7060"
+              fill="var(--color-text-faint)"
               fontSize="9"
               fontFamily="inherit"
             >
@@ -953,7 +961,7 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
               height={cellSize}
               rx={2}
               fill={getColor(day.count)}
-              stroke="#2a3d2a"
+              stroke="var(--color-bg)"
               strokeWidth={0.5}
             >
               <title>{day.date}: {day.count} session{day.count !== 1 ? "s" : ""}</title>
@@ -987,16 +995,16 @@ const mainStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  fontSize: "2rem",
+  fontSize: "1.5rem",
   margin: "0 0 1.5rem",
-  color: "var(--color-primary)",
+  color: "var(--color-text)",
   fontWeight: 700,
   fontFamily: "var(--font-display)",
 };
 
 const sectionHeadingStyle: React.CSSProperties = {
-  fontSize: "1rem",
-  color: "#b0a090",
+  fontSize: "0.8rem",
+  color: "var(--color-text-muted)",
   marginBottom: "0.75rem",
   fontWeight: 600,
   textTransform: "uppercase",
@@ -1014,9 +1022,10 @@ const statCardStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   padding: "1rem 0.5rem",
-  border: "1px solid var(--color-border)",
-  borderRadius: "6px",
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius)",
   backgroundColor: "var(--color-bg-card)",
+  boxShadow: "var(--shadow-card)",
 };
 
 const statNumberStyle: React.CSSProperties = {
@@ -1041,22 +1050,23 @@ const badgeStyle: React.CSSProperties = {
   alignItems: "center",
   padding: "0.5rem 0.6rem",
   background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius)",
   minWidth: 60,
 };
 
 const sessionCardStyle: React.CSSProperties = {
   padding: "0.75rem 1rem",
-  border: "1px solid var(--color-border)",
-  borderRadius: "6px",
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius)",
   backgroundColor: "var(--color-bg-card)",
+  boxShadow: "var(--shadow-card)",
 };
 
 const emptyCardStyle: React.CSSProperties = {
   padding: "2rem",
   border: "1px dashed var(--color-border-done)",
-  borderRadius: "8px",
+  borderRadius: "var(--radius-lg)",
   textAlign: "center",
   color: "var(--color-text-secondary)",
 };
@@ -1064,10 +1074,11 @@ const emptyCardStyle: React.CSSProperties = {
 const actionBtnStyle: React.CSSProperties = {
   padding: "0.5rem 1rem",
   fontSize: "0.9rem",
+  fontWeight: 600,
   color: "var(--color-primary)",
-  border: "1px solid #f0dc4e44",
-  borderRadius: "6px",
-  backgroundColor: "#f0dc4e11",
+  border: "1px solid var(--color-primary)",
+  borderRadius: "var(--radius-sm)",
+  backgroundColor: "var(--color-bg-selected)",
   textDecoration: "none",
   cursor: "pointer",
   fontFamily: "inherit",

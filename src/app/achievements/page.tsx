@@ -65,19 +65,18 @@ export default function AchievementsPage() {
       <section style={overviewCardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <svg width={64} height={64} viewBox="0 0 64 64" style={{ flexShrink: 0 }}>
-            <circle cx={32} cy={32} r={26} fill="none" stroke="#1f2e1f" strokeWidth={5} />
+            <circle cx={32} cy={32} r={26} fill="none" strokeWidth={5} style={{ stroke: "var(--color-bg-darkest)" }} />
             <circle
               cx={32} cy={32} r={26}
               fill="none"
-              stroke="#f0dc4e"
               strokeWidth={5}
               strokeLinecap="round"
               strokeDasharray={2 * Math.PI * 26}
               strokeDashoffset={2 * Math.PI * 26 * (1 - completionPct / 100)}
               transform="rotate(-90 32 32)"
-              style={{ transition: "stroke-dashoffset 0.5s" }}
+              style={{ transition: "stroke-dashoffset 0.5s", stroke: "var(--color-primary)" }}
             />
-            <text x={32} y={35} textAnchor="middle" fill="#f0dc4e" fontSize="14" fontWeight="bold" fontFamily="inherit">
+            <text x={32} y={35} textAnchor="middle" fontSize="14" fontWeight="bold" fontFamily="inherit" style={{ fill: "var(--color-primary)" }}>
               {completionPct}%
             </text>
           </svg>
@@ -123,7 +122,7 @@ export default function AchievementsPage() {
                       padding: "0.75rem 1rem",
                       background: isEarned ? "var(--color-bg-done)" : "var(--color-bg-card)",
                       border: `1px solid ${isEarned ? "var(--color-border-done)" : "var(--color-border)"}`,
-                      borderRadius: 8,
+                      borderRadius: "var(--radius)",
                       opacity: isEarned ? 1 : 0.75,
                     }}
                   >
@@ -227,8 +226,9 @@ const sectionHeadingStyle: React.CSSProperties = {
 
 const overviewCardStyle: React.CSSProperties = {
   background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 8,
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius)",
+  boxShadow: "var(--shadow-card)",
   padding: "1.25rem",
   marginBottom: "2rem",
 };

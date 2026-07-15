@@ -385,7 +385,7 @@ export default function PlanPage() {
           <button
             onClick={handleDeletePlan}
             disabled={deletingPlan}
-            style={{ ...btnStyle, color: "var(--color-error)", borderColor: "#e8888844" }}
+            style={{ ...btnStyle, color: "var(--color-error)", borderColor: "var(--color-error)" }}
           >
             {deletingPlan ? "Deleting..." : "Delete"}
           </button>
@@ -403,7 +403,7 @@ export default function PlanPage() {
         if (!dayItems || dayItems.length === 0) return null;
         return (
           <div key={dayIdx} style={{ marginBottom: "1.25rem" }}>
-            <h2 style={{ color: "var(--color-primary)", fontSize: "1.3rem", margin: "0 0 0.5rem", fontFamily: "var(--font-display)" }}>
+            <h2 style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 0.5rem", fontFamily: "var(--font-display)" }}>
               {DAY_LABELS[dayIdx]}
             </h2>
             {dayItems.map((item) => (
@@ -450,7 +450,7 @@ const pageStyle: React.CSSProperties = {
 
 const headingStyle: React.CSSProperties = {
   color: "var(--color-primary)",
-  fontSize: "2rem",
+  fontSize: "1.5rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
   fontFamily: "var(--font-display)",
@@ -471,13 +471,13 @@ const inputStyle: React.CSSProperties = {
   padding: "0.5rem 0.75rem",
   fontFamily: "inherit",
   fontSize: "1rem",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
 };
 
 function dropZoneStyle(busy: boolean): React.CSSProperties {
   return {
     border: "2px dashed var(--color-border)",
-    borderRadius: "6px",
+    borderRadius: "var(--radius)",
     padding: "1.25rem",
     textAlign: "center",
     cursor: busy ? "wait" : "pointer",
@@ -501,10 +501,11 @@ const fileRowStyle: React.CSSProperties = {
 
 const errorStyle: React.CSSProperties = {
   color: "var(--color-error)",
-  padding: "0.5rem",
+  background: "var(--color-bg-error-tint)",
+  padding: "0.5rem 0.75rem",
   marginBottom: "1rem",
   border: "1px solid var(--color-error)",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
   fontSize: "0.95rem",
 };
 
@@ -519,7 +520,7 @@ function primaryBtnStyle(disabled: boolean): React.CSSProperties {
     fontSize: "1.05rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
-    borderRadius: 6,
+    borderRadius: "var(--radius)",
     width: "100%",
   };
 }
@@ -533,7 +534,7 @@ const btnStyle: React.CSSProperties = {
   fontSize: "0.85rem",
   cursor: "pointer",
   textDecoration: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
 };
 
 function googleBtnStyle(disabled: boolean): React.CSSProperties {
@@ -547,16 +548,17 @@ function googleBtnStyle(disabled: boolean): React.CSSProperties {
     fontSize: "0.85rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
-    borderRadius: 6,
+    borderRadius: "var(--radius)",
   };
 }
 
 const sessionCardStyle: React.CSSProperties = {
   display: "block",
   background: "var(--color-bg-card)",
-  padding: "0.65rem 0.75rem",
+  padding: "0.75rem 1rem",
   marginBottom: "0.4rem",
-  borderLeft: "3px solid #f0dc4e",
+  border: "1px solid var(--color-border-subtle)",
+  borderLeft: "3px solid var(--color-primary)",
   textDecoration: "none",
-  borderRadius: 4,
+  borderRadius: "var(--radius-sm)",
 };

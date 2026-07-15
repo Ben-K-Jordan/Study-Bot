@@ -2,42 +2,101 @@
    Study Bot — Global Styles
    =========================== */
 
-/* ---- CSS Custom Properties ---- */
+/* ---- Design tokens ----
+   A calm, high-contrast dark system. One accent color; semantic colors
+   reserved for meaning (success/warning/error/review). Cognitive-load
+   principle: the interface recedes, the content leads. */
 
 :root {
-  --font-display: 'Caveat', cursive;
-  --font-body: 'Patrick Hand', cursive;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
 
-  --color-bg-darkest: #1f2e1f;
-  --color-bg: #2a3d2a;
-  --color-bg-card: #334d33;
-  --color-bg-input: #2d422d;
-  --color-bg-done: #2d4a2d;
+  /* Surfaces (deep neutral slate, not pure black) */
+  --color-bg-darkest: #0b0e14;
+  --color-bg: #10141c;
+  --color-bg-card: #171c26;
+  --color-bg-input: #1c2230;
+  --color-bg-done: #14231b;
 
-  --color-border: #4a6a4a;
-  --color-border-subtle: #3a5a3a;
-  --color-border-done: #5a8a5a;
+  /* Tinted surfaces for semantic callouts */
+  --color-bg-info-tint: #142230;
+  --color-bg-success-tint: #14231b;
+  --color-bg-warning-tint: #2a2314;
+  --color-bg-error-tint: #2a171c;
+  --color-bg-review-tint: #221d33;
+  --color-bg-selected: #1e2c47;
 
-  --color-text: #e8dcc8;
-  --color-text-secondary: #c8bca8;
-  --color-text-muted: #c0b49a;
-  --color-text-faint: #a89a82;
-  --color-text-dim: #8a7e68;
+  /* Borders */
+  --color-border: #2a3242;
+  --color-border-subtle: #202634;
+  --color-border-done: #2f4a3a;
 
-  --color-primary: #f0dc4e;
-  --color-info: #8ad0e8;
-  --color-success: #88cc88;
-  --color-warning: #e8a040;
-  --color-error: #e88888;
-  --color-review: #c4a0ff;
+  /* Text (4 steps of hierarchy is plenty) */
+  --color-text: #e7eaf0;
+  --color-text-secondary: #b8bfcc;
+  --color-text-muted: #949dae;
+  --color-text-faint: #737d90;
+  --color-text-dim: #5a6375;
+
+  /* Accent + semantics */
+  --color-primary: #6ea8fe;
+  --color-info: #66c5da;
+  --color-success: #58c98b;
+  --color-warning: #e2a94f;
+  --color-error: #e5737f;
+  --color-review: #a78bfa;
+
+  /* Shape & depth */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.22);
 
   --nav-height: 52px;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   margin: 0;
   background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
   line-height: 1.5;
+}
+
+/* ---- Shared surface + control primitives ---- */
+
+.card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+::selection {
+  background: rgba(110, 168, 254, 0.28);
+}
+
+/* Scrollbars that don't shout */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ---- Skip-to-content link (accessibility) ---- */

@@ -370,14 +370,14 @@ export default function SettingsPage() {
       </section>
 
       {saveError && (
-        <div role="alert" aria-live="polite" style={{ background: "var(--color-error)", color: "var(--color-bg-darkest)", padding: "0.5rem 0.75rem", borderRadius: 6, fontSize: "0.85rem", marginBottom: "0.75rem", textAlign: "center" }}>
+        <div role="alert" aria-live="polite" style={{ background: "var(--color-bg-error-tint)", color: "var(--color-error)", border: "1px solid var(--color-error)", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", marginBottom: "0.75rem", textAlign: "center" }}>
           {saveError}
         </div>
       )}
       <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>
         {saved ? "Saved!" : saving ? "Saving..." : "Save Preferences"}
       </button>
-      <p style={{ fontSize: "0.7rem", color: "#5a7a5a", marginTop: "0.5rem" }}>
+      <p style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", marginTop: "0.5rem" }}>
         Settings are synced to your account and available on all devices.
       </p>
     </div>
@@ -426,7 +426,7 @@ const textInputStyle: React.CSSProperties = {
   padding: "0.5rem 0.75rem",
   fontFamily: "inherit",
   fontSize: "1rem",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
 };
 
 const timeInputStyle: React.CSSProperties = {
@@ -436,7 +436,7 @@ const timeInputStyle: React.CSSProperties = {
   padding: "0.35rem 0.5rem",
   fontFamily: "inherit",
   fontSize: "0.95rem",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
 };
 
 const saveBtnStyle: React.CSSProperties = {
@@ -448,7 +448,7 @@ const saveBtnStyle: React.CSSProperties = {
   fontWeight: "bold",
   fontSize: "1.05rem",
   cursor: "pointer",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
 };
 
 const toggleRowStyle: React.CSSProperties = {
@@ -475,5 +475,5 @@ const connectBtnStyle: React.CSSProperties = {
   fontWeight: "bold",
   fontSize: "0.95rem",
   cursor: "pointer",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
 };

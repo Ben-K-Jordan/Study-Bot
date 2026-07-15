@@ -119,10 +119,10 @@ export default function LearnPage() {
                 padding: "0.5rem 1rem",
                 fontSize: "0.9rem",
                 fontFamily: "inherit",
-                background: selectedCourse === c.courseName ? "#f0dc4e22" : "var(--color-bg-card)",
+                background: selectedCourse === c.courseName ? "var(--color-bg-selected)" : "var(--color-bg-card)",
                 color: selectedCourse === c.courseName ? "var(--color-primary)" : "var(--color-text-muted)",
-                border: `1px solid ${selectedCourse === c.courseName ? "#f0dc4e66" : "#4a6a4a"}`,
-                borderRadius: 6,
+                border: `1px solid ${selectedCourse === c.courseName ? "var(--color-primary)" : "var(--color-border)"}`,
+                borderRadius: "var(--radius)",
                 cursor: "pointer",
                 fontWeight: selectedCourse === c.courseName ? 600 : 400,
               }}
@@ -136,7 +136,7 @@ export default function LearnPage() {
                   fontSize: "0.7rem",
                   fontWeight: 700,
                   padding: "0.1rem 0.35rem",
-                  borderRadius: 8,
+                  borderRadius: "var(--radius-lg)",
                 }}>
                   {c.dueCardCount}
                 </span>
@@ -187,7 +187,7 @@ export default function LearnPage() {
             </div>
           )}
           {recs.plan_nudge && recs.plan_nudge.items.length > 0 && (
-            <div style={{ marginBottom: "0.6rem", padding: "0.5rem 0.75rem", background: "var(--color-bg-darkest)", borderRadius: 4, border: "1px solid var(--color-border)" }}>
+            <div style={{ marginBottom: "0.6rem", padding: "0.5rem 0.75rem", background: "var(--color-bg-darkest)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)" }}>
               {recs.plan_nudge.items.map((item, i) => (
                 <div key={i} style={{ fontSize: "0.85rem", color: "var(--color-info)", marginBottom: i < recs.plan_nudge!.items.length - 1 ? "0.3rem" : 0 }}>
                   {item.message} ({new Date(item.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})
@@ -224,7 +224,7 @@ export default function LearnPage() {
 
       {/* Due cards alert */}
       {course.dueCardCount > 0 && (
-        <section style={recommendationStyle}>
+        <section style={{ ...recommendationStyle, background: "var(--color-bg-warning-tint)", borderLeftColor: "var(--color-warning)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
             <span style={{ color: "var(--color-warning)", fontSize: "1.1rem" }}>!</span>
             <span style={{ color: "var(--color-warning)", fontWeight: 600, fontSize: "0.9rem" }}>
@@ -284,7 +284,7 @@ export default function LearnPage() {
             <span style={{ color: "var(--color-success)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Chat</span>
           </Link>
           {course.dueCardCount === 0 && course.deckCount > 0 && (
-            <div style={{ textAlign: "center", padding: "0.75rem", color: "var(--color-success)", fontSize: "0.85rem", background: "var(--color-bg-done)", borderRadius: 6, border: "1px solid var(--color-border-done)" }}>
+            <div style={{ textAlign: "center", padding: "0.75rem", color: "var(--color-success)", fontSize: "0.85rem", background: "var(--color-bg-done)", borderRadius: "var(--radius)", border: "1px solid var(--color-border-done)" }}>
               All caught up! No cards due for review right now.
             </div>
           )}
@@ -359,8 +359,8 @@ function LearningStep({ step, title, description, done, href }: {
       gap: "0.75rem",
       padding: "0.75rem 1rem",
       background: done ? "var(--color-bg-done)" : "var(--color-bg-card)",
-      border: `1px solid ${done ? "#5a8a5a" : "#4a6a4a"}`,
-      borderRadius: 6,
+      border: `1px solid ${done ? "var(--color-border-done)" : "var(--color-border)"}`,
+      borderRadius: "var(--radius)",
       textDecoration: "none",
       cursor: "pointer",
     }}>
@@ -371,7 +371,7 @@ function LearningStep({ step, title, description, done, href }: {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: done ? "var(--color-success)" : "#4a6a4a",
+        background: done ? "var(--color-success)" : "var(--color-border)",
         color: done ? "var(--color-bg-darkest)" : "var(--color-text-muted)",
         fontSize: "0.8rem",
         fontWeight: 700,
@@ -410,7 +410,7 @@ const mainStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  fontSize: "2rem",
+  fontSize: "1.5rem",
   margin: "0 0 1.5rem",
   color: "var(--color-primary)",
   fontWeight: 700,
@@ -440,7 +440,7 @@ const miniStatStyle: React.CSSProperties = {
   alignItems: "center",
   padding: "0.75rem 0.5rem",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   backgroundColor: "var(--color-bg-card)",
 };
 
@@ -461,11 +461,13 @@ const miniStatLabelStyle: React.CSSProperties = {
 };
 
 const recommendationStyle: React.CSSProperties = {
-  background: "#3d4a2d",
-  border: "1px solid #5a6a3a",
-  borderRadius: 6,
-  padding: "0.75rem 1rem",
+  background: "var(--color-bg-selected)",
+  border: "1px solid var(--color-border)",
+  borderLeft: "3px solid var(--color-border)",
+  borderRadius: "var(--radius)",
+  padding: "1rem 1.25rem",
   marginBottom: "1.5rem",
+  boxShadow: "var(--shadow-card)",
 };
 
 const quickActionStyle: React.CSSProperties = {
@@ -475,8 +477,8 @@ const quickActionStyle: React.CSSProperties = {
   padding: "0.85rem 1rem",
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
-  borderLeft: "3px solid #4a6a4a",
-  borderRadius: 6,
+  borderLeft: "3px solid var(--color-border)",
+  borderRadius: "var(--radius)",
   textDecoration: "none",
   cursor: "pointer",
 };
@@ -484,7 +486,7 @@ const quickActionStyle: React.CSSProperties = {
 const emptyCardStyle: React.CSSProperties = {
   padding: "3rem 2rem",
   border: "1px dashed var(--color-border-done)",
-  borderRadius: 8,
+  borderRadius: "var(--radius-lg)",
   textAlign: "center",
   color: "var(--color-text-secondary)",
 };
@@ -495,7 +497,7 @@ const primaryBtnStyle: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   fontWeight: 700,
   fontFamily: "inherit",
   textDecoration: "none",
@@ -507,8 +509,8 @@ const secondaryBtnStyle: React.CSSProperties = {
   fontSize: "0.95rem",
   background: "transparent",
   color: "var(--color-primary)",
-  border: "1px solid #f0dc4e44",
-  borderRadius: 6,
+  border: "1px solid var(--color-primary)",
+  borderRadius: "var(--radius)",
   fontWeight: 600,
   fontFamily: "inherit",
   textDecoration: "none",
@@ -518,8 +520,8 @@ const secondaryBtnStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: "32px",
   height: "32px",
-  border: "3px solid #4a6a4a",
-  borderTop: "3px solid #f0dc4e",
+  border: "3px solid var(--color-border)",
+  borderTop: "3px solid var(--color-primary)",
   borderRadius: "50%",
   margin: "0 auto",
   animation: "dash-spin 0.8s linear infinite",

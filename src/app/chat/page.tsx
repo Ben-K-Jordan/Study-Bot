@@ -301,7 +301,7 @@ export default function ChatPage() {
                 background: "var(--color-bg-card)",
                 color: "var(--color-text-muted)",
                 border: "1px solid var(--color-border-subtle)",
-                borderRadius: 4,
+                borderRadius: "var(--radius-sm)",
                 padding: "0.35rem 0.75rem",
                 cursor: loadingMore ? "wait" : "pointer",
                 opacity: loadingMore ? 0.6 : 1,
@@ -326,7 +326,7 @@ export default function ChatPage() {
         )}
 
         {messages.map((msg) => (
-          <ErrorBoundary key={msg.id} fallback={<div style={{ padding: "0.5rem", color: "#888" }}>Failed to render message.</div>}>
+          <ErrorBoundary key={msg.id} fallback={<div style={{ padding: "0.5rem", color: "var(--color-text-muted)" }}>Failed to render message.</div>}>
           <div style={{ marginBottom: "1rem" }} role="article">
             {/* Message bubble */}
             <div
@@ -428,7 +428,7 @@ export default function ChatPage() {
                   background: "var(--color-bg)",
                   color: "var(--color-warning)",
                   border: "1px solid var(--color-border-subtle)",
-                  borderRadius: 4,
+                  borderRadius: "var(--radius-sm)",
                   cursor: "pointer",
                 }}
               >
@@ -562,17 +562,17 @@ const emptyState: React.CSSProperties = {
 };
 
 const userBubble: React.CSSProperties = {
-  background: "#3d4d3d",
+  background: "var(--color-bg-selected)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   padding: "0.75rem 1rem",
   marginLeft: "min(2rem, 10%)",
 };
 
 const assistantBubble: React.CSSProperties = {
   background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius)",
   padding: "0.75rem 1rem",
   marginRight: "min(2rem, 10%)",
 };
@@ -588,7 +588,7 @@ const citationButton: React.CSSProperties = {
   background: "var(--color-bg)",
   color: "var(--color-text-muted)",
   border: "1px solid var(--color-border-subtle)",
-  borderRadius: 4,
+  borderRadius: "var(--radius-sm)",
   cursor: "pointer",
   textAlign: "left",
 };
@@ -628,7 +628,7 @@ const citationExpanded: React.CSSProperties = {
   background: "var(--color-bg)",
   border: "1px solid var(--color-border-subtle)",
   borderTop: "none",
-  borderRadius: "0 0 4px 4px",
+  borderRadius: "0 0 var(--radius-sm) var(--radius-sm)",
   padding: "0.5rem 0.6rem",
   color: "var(--color-text-secondary)",
 };
@@ -649,10 +649,10 @@ const inputStyle: React.CSSProperties = {
   padding: "0.6rem 0.75rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "var(--color-bg-card)",
+  background: "var(--color-bg-input)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   resize: "none",
 };
 
@@ -664,7 +664,7 @@ const sendButton: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   cursor: "pointer",
   alignSelf: "flex-end",
 };
@@ -675,7 +675,7 @@ const clearButton: React.CSSProperties = {
   color: "var(--color-text-dim)",
   background: "none",
   border: "1px solid var(--color-border-subtle)",
-  borderRadius: 4,
+  borderRadius: "var(--radius-sm)",
   padding: "0.25rem 0.6rem",
   cursor: "pointer",
 };
@@ -683,7 +683,7 @@ const clearButton: React.CSSProperties = {
 const kbdStyle: React.CSSProperties = {
   display: "inline-block",
   fontSize: "0.65rem",
-  fontFamily: "monospace",
+  fontFamily: "var(--font-mono)",
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
   borderRadius: 3,

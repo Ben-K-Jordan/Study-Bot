@@ -92,7 +92,7 @@ export function NavBar() {
   const brandStyle: React.CSSProperties = {
     color: "var(--color-primary)",
     fontSize: "1.4rem",
-    fontWeight: "bold",
+    fontWeight: 600,
     textDecoration: "none",
     fontFamily: "var(--font-display)",
     letterSpacing: "0.02em",
@@ -142,8 +142,8 @@ export function NavBar() {
             textDecoration: "none",
             fontFamily: "var(--font-body)",
             fontSize: "1rem",
-            fontWeight: active ? "bold" : "normal",
-            borderBottom: active ? "2px solid #f0dc4e" : "2px solid transparent",
+            fontWeight: active ? 600 : 400,
+            borderBottom: active ? "2px solid var(--color-primary)" : "2px solid transparent",
             transition: "color 0.15s, border-color 0.15s",
             whiteSpace: "nowrap",
           };

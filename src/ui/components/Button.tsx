@@ -56,7 +56,8 @@ export function Button({
 }: ButtonProps) {
   const baseStyle: React.CSSProperties = {
     fontFamily: "var(--font-body)",
-    fontWeight: "bold",
+    fontWeight: 600,
+    borderRadius: "var(--radius-sm)",
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.6 : 1,
     transition: "opacity 0.15s",

@@ -503,13 +503,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           alignItems: "center",
           marginBottom: "0.5rem",
           fontSize: "0.72rem",
-          color: "#8a8070",
+          color: "var(--color-text-muted)",
         }}
       >
         <span>
           {session.course_name} · {session.mode_label}
-          {isExamPhase && <span style={{ color: "#c4a0ff" }}> · EXAM — feedback after all answers</span>}
-          {isReviewPhase && <span style={{ color: "#7ec8e3" }}> · REVIEW — score your answers</span>}
+          {isExamPhase && <span style={{ color: "var(--color-review)" }}> · EXAM — feedback after all answers</span>}
+          {isReviewPhase && <span style={{ color: "var(--color-info)" }}> · REVIEW — score your answers</span>}
         </span>
         <span>
           {run.metrics.correct_count}✓ {run.metrics.partial_count}~ {run.metrics.incorrect_count}✗
@@ -520,7 +520,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       <div
         style={{
           height: 3,
-          background: "#3a523a",
+          background: "var(--color-border-subtle)",
           borderRadius: 2,
           marginBottom: "1.25rem",
           overflow: "hidden",
@@ -530,7 +530,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           style={{
             height: "100%",
             width: `${progressPct}%`,
-            background: isReviewPhase ? "#5aa0c0" : "#7ec8e3",
+            background: "var(--color-info)",
             transition: "width 0.3s ease",
           }}
         />
@@ -539,9 +539,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {/* Prompt — the question is the biggest thing on screen */}
       <div
         style={{
-          background: "#334d33",
-          border: "1px solid #4a6a4a",
-          borderRadius: 6,
+          background: "var(--color-bg-card)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius)",
+          boxShadow: "var(--shadow-card)",
           padding: "1.25rem",
           marginBottom: "1.25rem",
         }}
@@ -549,7 +550,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         <div
           style={{
             fontSize: "0.68rem",
-            color: "#7ec8e3",
+            color: "var(--color-info)",
             marginBottom: "0.5rem",
             letterSpacing: "0.08em",
           }}
@@ -557,7 +558,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {progressLabel}
         </div>
         {isPretest && (
-          <div style={{ fontSize: "0.75rem", color: "#e8a040", marginBottom: "0.5rem" }}>
+          <div style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginBottom: "0.5rem" }}>
             DIAGNOSTIC — answer from what you already know. Being wrong here is
             expected and useful: it primes you to learn this next.
           </div>
@@ -571,8 +572,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {isReviewPhase && savedAnswer && (
         <div
           style={{
-            background: "#334d33",
-            borderRadius: 6,
+            background: "var(--color-bg-card)",
+            borderRadius: "var(--radius)",
             padding: "1rem",
             marginBottom: "1rem",
             fontSize: "0.85rem",
@@ -590,7 +591,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {/* Optional 1-tap pre-answer confidence (hypercorrection input).
               Never fabricated: nothing is sent unless the student rates it. */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.6rem" }}>
-            <span style={{ fontSize: "0.72rem", color: "#8a8070" }}>How sure are you?</span>
+            <span style={{ fontSize: "0.72rem", color: "var(--color-text-muted)" }}>How sure are you?</span>
             {([["Guessing", 1, "G"], ["Unsure", 3, "U"], ["Sure", 5, "S"]] as const).map(([lbl, val, key]) => (
               <button
                 key={val}
@@ -599,10 +600,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   padding: "0.2rem 0.55rem",
                   fontSize: "0.72rem",
                   fontFamily: "inherit",
-                  background: mcqConfidence === val ? "#3d5a80" : "transparent",
-                  color: mcqConfidence === val ? "#7ec8e3" : "#8a8070",
-                  border: `1px solid ${mcqConfidence === val ? "#7ec8e3" : "#4a6a4a"}`,
-                  borderRadius: 4,
+                  background: mcqConfidence === val ? "var(--color-bg-selected)" : "transparent",
+                  color: mcqConfidence === val ? "var(--color-info)" : "var(--color-text-muted)",
+                  border: `1px solid ${mcqConfidence === val ? "var(--color-info)" : "var(--color-border)"}`,
+                  borderRadius: "var(--radius-sm)",
                   cursor: "pointer",
                 }}
               >
@@ -624,10 +625,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     alignItems: "flex-start",
                     gap: "0.75rem",
                     padding: "0.85rem 1rem",
-                    background: isSelected ? "#3d5a80" : "#2a2a2a",
-                    border: `2px solid ${isSelected ? "#7ec8e3" : "#444"}`,
-                    borderRadius: 8,
-                    color: "#e0d6c8",
+                    background: isSelected ? "var(--color-bg-selected)" : "var(--color-bg-card)",
+                    border: `2px solid ${isSelected ? "var(--color-primary)" : "var(--color-border)"}`,
+                    borderRadius: "var(--radius-lg)",
+                    color: "var(--color-text)",
                     fontSize: "0.9rem",
                     lineHeight: 1.5,
                     cursor: submitting ? "wait" : "pointer",
@@ -639,17 +640,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 >
                   <span style={{
                     fontWeight: 700,
-                    color: "#7ec8e3",
+                    color: "var(--color-info)",
                     minWidth: "1.5rem",
                     fontSize: "0.95rem",
                   }}>{label}.</span>
                   <span style={{ flex: 1 }}>{choice}</span>
-                  <span style={{ fontSize: "0.7rem", color: "#5a6a5a", alignSelf: "center" }}>{idx + 1}</span>
+                  <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", alignSelf: "center" }}>{idx + 1}</span>
                 </button>
               );
             })}
           </div>
-          <p style={{ margin: "0.5rem 0 0", fontSize: "0.68rem", color: "#5a6a5a" }}>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.68rem", color: "var(--color-text-dim)" }}>
             Keys 1–4 or A–D to answer
           </p>
         </div>
@@ -675,15 +676,15 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {answer.trim() && (
             <div
               style={{
-                background: "#334d33",
-                border: "1px solid #4a6a4a",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
                 padding: "0.75rem 1rem",
                 marginBottom: "0.75rem",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                <span style={{ fontSize: "0.8rem", color: "#c8bca8" }}>How confident are you?</span>
+                <span style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>How confident are you?</span>
                 <span style={{ fontSize: "0.8rem", fontWeight: 600, color: confidenceColors[confidence - 1] }}>
                   {confidenceLabels[confidence - 1]}
                 </span>
@@ -698,10 +699,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                       padding: "0.4rem",
                       fontSize: "0.8rem",
                       fontWeight: confidence === level ? 700 : 400,
-                      background: confidence === level ? confidenceColors[level - 1] + "33" : "#334d33",
-                      color: confidence === level ? confidenceColors[level - 1] : "#7a7060",
-                      border: `1px solid ${confidence === level ? confidenceColors[level - 1] : "#4a6a4a"}`,
-                      borderRadius: 4,
+                      background: confidence === level ? confidenceTints[level - 1] : "var(--color-bg-card)",
+                      color: confidence === level ? confidenceColors[level - 1] : "var(--color-text-faint)",
+                      border: `1px solid ${confidence === level ? confidenceColors[level - 1] : "var(--color-border)"}`,
+                      borderRadius: "var(--radius-sm)",
                       cursor: "pointer",
                       fontFamily: "inherit",
                     }}
@@ -714,7 +715,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "0.7rem", color: "#7a7060" }}>Ctrl+Enter to submit</span>
+            <span style={{ fontSize: "0.7rem", color: "var(--color-text-faint)" }}>Ctrl+Enter to submit</span>
             <button
               onClick={handleAnswerSubmit}
               disabled={!answer.trim() || submitting}
@@ -737,8 +738,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {!isReviewPhase && (
             <div
               style={{
-                background: "#334d33",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
                 fontSize: "0.85rem",
@@ -754,29 +755,29 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               not a feeling (calibration). Stacked directly under the user's
               answer — spatial contiguity. */}
           {!isMcq && !isExamPhase && revealLoading && (
-            <p style={{ fontSize: "0.75rem", color: "#8a8070", fontStyle: "italic", marginBottom: "0.75rem" }}>
+            <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontStyle: "italic", marginBottom: "0.75rem" }}>
               Loading model answer...
             </p>
           )}
           {!isMcq && reveal?.model_answer && (
             <div
               style={{
-                background: "#2d4a3d",
-                border: "1px solid #7ec8e3",
-                borderRadius: 6,
+                background: "var(--color-bg-info-tint)",
+                border: "1px solid var(--color-info)",
+                borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
               }}
               data-testid="model-answer"
             >
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", fontWeight: 600, color: "#7ec8e3", letterSpacing: "0.05em" }}>
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--color-info)", letterSpacing: "0.05em" }}>
                 MODEL ANSWER — compare before you score
               </p>
               <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
                 {reveal.model_answer}
               </p>
               {reveal.key_points && reveal.key_points.length > 0 && (
-                <ul style={{ margin: "0.6rem 0 0", paddingLeft: "1.1rem", fontSize: "0.82rem", lineHeight: 1.6, color: "#c8d8c8" }}>
+                <ul style={{ margin: "0.6rem 0 0", paddingLeft: "1.1rem", fontSize: "0.82rem", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
                   {reveal.key_points.map((kp, i) => (
                     <li key={i}>{kp}</li>
                   ))}
@@ -801,23 +802,23 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                         alignItems: "flex-start",
                         gap: "0.75rem",
                         padding: "0.85rem 1rem",
-                        background: isCorrectChoice ? "#2d4a2d" : isPicked ? "#4a3030" : "#2a2a2a",
-                        border: `2px solid ${isCorrectChoice ? "#88cc88" : isPicked ? "#e88888" : "#444"}`,
-                        borderRadius: 8,
-                        color: "#e0d6c8",
+                        background: isCorrectChoice ? "var(--color-bg-done)" : isPicked ? "var(--color-bg-error-tint)" : "var(--color-bg-card)",
+                        border: `2px solid ${isCorrectChoice ? "var(--color-success)" : isPicked ? "var(--color-error)" : "var(--color-border)"}`,
+                        borderRadius: "var(--radius-lg)",
+                        color: "var(--color-text)",
                         fontSize: "0.9rem",
                         lineHeight: 1.5,
                       }}
                     >
-                      <span style={{ fontWeight: 700, color: isCorrectChoice ? "#88cc88" : "#7ec8e3", minWidth: "1.5rem", fontSize: "0.95rem" }}>{label}.</span>
+                      <span style={{ fontWeight: 700, color: isCorrectChoice ? "var(--color-success)" : "var(--color-info)", minWidth: "1.5rem", fontSize: "0.95rem" }}>{label}.</span>
                       <span style={{ flex: 1 }}>{choice}</span>
-                      {isCorrectChoice && <span style={{ color: "#88cc88", fontWeight: 700 }}>✓</span>}
-                      {isPicked && !isCorrectChoice && <span style={{ color: "#e88888", fontWeight: 700 }}>your pick</span>}
+                      {isCorrectChoice && <span style={{ color: "var(--color-success)", fontWeight: 700 }}>✓</span>}
+                      {isPicked && !isCorrectChoice && <span style={{ color: "var(--color-error)", fontWeight: 700 }}>your pick</span>}
                     </div>
                   );
                 })}
               </div>
-              <p style={{ fontSize: "0.85rem", color: reviewMcqCorrect ? "#88cc88" : "#e88888", marginBottom: "0.75rem", fontWeight: 600 }}>
+              <p style={{ fontSize: "0.85rem", color: reviewMcqCorrect ? "var(--color-success)" : "var(--color-error)", marginBottom: "0.75rem", fontWeight: 600 }}>
                 {reviewMcqCorrect ? "✓ You picked the correct answer." : "✗ You picked a different answer."}
               </p>
               <button
@@ -830,7 +831,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           ) : (
             <div>
-              <p style={{ fontSize: "0.85rem", color: "#c8bca8", marginBottom: "0.75rem" }}>
+              <p style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)", marginBottom: "0.75rem" }}>
                 {isPretest
                   ? "How close were you? (Diagnostic only — this doesn't count against you.)"
                   : reveal?.model_answer
@@ -838,13 +839,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     : "How did you do? Be honest."}
               </p>
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button onClick={() => handleScore("CORRECT")} disabled={submitting} style={scoreBtn("#88cc88", submitting)}>
+                <button onClick={() => handleScore("CORRECT")} disabled={submitting} style={scoreBtn("var(--color-success)", submitting)}>
                   ✓ Correct <span style={{ opacity: 0.5, fontWeight: 400 }}>1</span>
                 </button>
-                <button onClick={() => handleScore("PARTIAL")} disabled={submitting} style={scoreBtn("#e8a040", submitting)}>
+                <button onClick={() => handleScore("PARTIAL")} disabled={submitting} style={scoreBtn("var(--color-warning)", submitting)}>
                   ~ Partial <span style={{ opacity: 0.5, fontWeight: 400 }}>2</span>
                 </button>
-                <button onClick={() => handleScore("INCORRECT")} disabled={submitting} style={scoreBtn("#e88888", submitting)}>
+                <button onClick={() => handleScore("INCORRECT")} disabled={submitting} style={scoreBtn("var(--color-error)", submitting)}>
                   ✗ Incorrect <span style={{ opacity: 0.5, fontWeight: 400 }}>3</span>
                 </button>
               </div>
@@ -858,9 +859,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         <div>
           <div
             style={{
-              background: score === "INCORRECT" ? "#4a3030" : "#4a4030",
-              border: `1px solid ${score === "INCORRECT" ? "#e88888" : "#e8a040"}`,
-              borderRadius: 6,
+              background: score === "INCORRECT" ? "var(--color-bg-error-tint)" : "var(--color-bg-warning-tint)",
+              border: `1px solid ${score === "INCORRECT" ? "var(--color-error)" : "var(--color-warning)"}`,
+              borderRadius: "var(--radius)",
               padding: "1rem",
               marginBottom: "1rem",
             }}
@@ -883,7 +884,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </select>
 
             <label style={fieldLabel}>
-              Correction rule <span style={{ color: "#e88888" }}>*</span>
+              Correction rule <span style={{ color: "var(--color-error)" }}>*</span>
             </label>
             <textarea
               value={correctionRule}
@@ -925,18 +926,18 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {lastScore === "INCORRECT" && (mcqResult ? (mcqConfidence ?? 0) >= 4 : confidence >= 4) && (
             <div
               style={{
-                background: "#4a3050",
-                border: "1px solid #c4a0ff",
-                borderRadius: 6,
+                background: "var(--color-bg-review-tint)",
+                border: "1px solid var(--color-review)",
+                borderRadius: "var(--radius)",
                 padding: "0.75rem 1rem",
                 marginBottom: "1rem",
               }}
               data-testid="hypercorrection-badge"
             >
-              <p style={{ margin: 0, fontSize: "0.82rem", color: "#c4a0ff", fontWeight: 600 }}>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--color-review)", fontWeight: 600 }}>
                 High-confidence miss
               </p>
-              <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#d8c8e8" }}>
+              <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "var(--color-text-secondary)" }}>
                 You were sure about this one. Read the correction closely —
                 confidently-held errors, once corrected, are the ones that stick best.
                 This will come back for review.
@@ -948,17 +949,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {isPretest && (
             <div
               style={{
-                background: "#4a4030",
-                border: "1px solid #e8a040",
-                borderRadius: 6,
+                background: "var(--color-bg-warning-tint)",
+                border: "1px solid var(--color-warning)",
+                borderRadius: "var(--radius)",
                 padding: "0.75rem 1rem",
                 marginBottom: "1rem",
               }}
             >
-              <p style={{ margin: 0, fontSize: "0.82rem", color: "#e8a040", fontWeight: 600 }}>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--color-warning)", fontWeight: 600 }}>
                 Diagnostic complete
               </p>
-              <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#e8dcc8" }}>
+              <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "var(--color-text)" }}>
                 You haven&apos;t studied this yet — attempting it first primes your
                 brain to encode the real material better. It&apos;s coming up in this course.
               </p>
@@ -969,15 +970,15 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {mcqResult && (
             <div
               style={{
-                background: mcqResult.is_correct ? "#2d4a2d" : "#4a3030",
-                border: `1px solid ${mcqResult.is_correct ? "#88cc88" : "#e88888"}`,
-                borderRadius: 6,
+                background: mcqResult.is_correct ? "var(--color-bg-done)" : "var(--color-bg-error-tint)",
+                border: `1px solid ${mcqResult.is_correct ? "var(--color-success)" : "var(--color-error)"}`,
+                borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
               }}
               data-testid="mcq-result"
             >
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", fontWeight: 600, color: mcqResult.is_correct ? "#88cc88" : "#e88888" }}>
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", fontWeight: 600, color: mcqResult.is_correct ? "var(--color-success)" : "var(--color-error)" }}>
                 {mcqResult.is_correct
                   ? `✓ Correct — ${String.fromCharCode(65 + mcqResult.correct_index)}`
                   : `✗ Incorrect — the answer is ${String.fromCharCode(65 + mcqResult.correct_index)}`}
@@ -986,7 +987,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 <strong>{mcqResult.correct_choice}</strong>
               </p>
               {!mcqResult.is_correct && mcqResult.rationale && (
-                <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#c8bca8" }}>
+                <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "var(--color-text-secondary)" }}>
                   Why your pick was tempting: {mcqResult.rationale}
                 </p>
               )}
@@ -997,14 +998,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {lastScore === "CORRECT" && (fb.reinforcement || fb.deeper_insight || fb.concept_connection || fb.socratic_followup) && (
             <div
               style={{
-                background: "#334d33",
-                border: "1px solid #88cc88",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-success)",
+                borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
               }}
             >
-              <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#88cc88" }}>
+              <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "var(--color-success)" }}>
                 Nice work!
               </p>
               {fb.reinforcement && (
@@ -1014,7 +1015,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               )}
               {fb.deeper_insight && (
                 <div style={insightBox}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#7ec8e3", marginBottom: "0.3rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-info)", marginBottom: "0.3rem" }}>
                     Deeper Insight
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
@@ -1023,8 +1024,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </div>
               )}
               {fb.concept_connection && (
-                <div style={{ ...insightBox, borderColor: "#c4a0ff" }}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#c4a0ff", marginBottom: "0.3rem" }}>
+                <div style={{ ...insightBox, borderColor: "var(--color-review)" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-review)", marginBottom: "0.3rem" }}>
                     Connection
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
@@ -1033,8 +1034,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </div>
               )}
               {fb.socratic_followup && (
-                <div style={{ ...insightBox, borderColor: "#f0dc4e" }}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#f0dc4e", marginBottom: "0.3rem" }}>
+                <div style={{ ...insightBox, borderColor: "var(--color-primary)" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-primary)", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
                   <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
@@ -1049,14 +1050,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {lastScore === "CORRECT" && !fb.reinforcement && !fb.deeper_insight && !fb.concept_connection && !fb.socratic_followup && (
             <div
               style={{
-                background: "#334d33",
-                border: "1px solid #88cc88",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-success)",
+                borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
               }}
             >
-              <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600, color: "#88cc88" }}>
+              <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600, color: "var(--color-success)" }}>
                 {feedbackLoading ? "Generating insight..." : "Correct!"}
               </p>
             </div>
@@ -1066,14 +1067,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {lastScore && lastScore !== "CORRECT" && (
             <div
               style={{
-                background: "#334d33",
-                border: "1px solid #88cc88",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-success)",
+                borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
               }}
             >
-              <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "#88cc88" }}>
+              <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", fontWeight: 600, color: "var(--color-success)" }}>
                 REVIEW (from your materials)
               </p>
 
@@ -1081,14 +1082,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               {fb.explanation && (
                 <div
                   style={{
-                    background: "#334d33",
-                    border: "1px solid #7ec8e3",
-                    borderRadius: 4,
+                    background: "var(--color-bg-card)",
+                    border: "1px solid var(--color-info)",
+                    borderRadius: "var(--radius-sm)",
                     padding: "0.75rem",
                     marginBottom: "0.75rem",
                   }}
                 >
-                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#7ec8e3" }}>
+                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "var(--color-info)" }}>
                     Professor&apos;s Explanation
                   </p>
                   <div style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6 }}>
@@ -1101,13 +1102,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   {fb.key_takeaway && (
                     <div
                       style={{
-                        background: "#2d422d",
-                        borderRadius: 4,
+                        background: "var(--color-bg-input)",
+                        borderRadius: "var(--radius-sm)",
                         padding: "0.5rem 0.75rem",
                         marginTop: "0.5rem",
                       }}
                     >
-                      <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#f0dc4e" }}>
+                      <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-primary)" }}>
                         Key Takeaway: {fb.key_takeaway}
                       </p>
                     </div>
@@ -1116,7 +1117,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               )}
 
               {feedbackLoading && !fb.explanation && (
-                <p style={{ fontSize: "0.8rem", color: "#a89a82", fontStyle: "italic" }} data-testid="feedback-loading">
+                <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", fontStyle: "italic" }} data-testid="feedback-loading">
                   Loading feedback...
                 </p>
               )}
@@ -1129,9 +1130,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     key={excerpt.chunk_id}
                     ref={(el) => { if (el) excerptRefs.current.set(i, el); else excerptRefs.current.delete(i); }}
                     style={{
-                      background: isHighlighted ? "#3d5d3d" : "#334d33",
-                      border: isHighlighted ? "1px solid #7ec8e3" : "1px solid #4a6a4a",
-                      borderRadius: 4,
+                      background: isHighlighted ? "var(--color-bg-selected)" : "var(--color-bg-card)",
+                      border: isHighlighted ? "1px solid var(--color-info)" : "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
                       padding: "0.75rem",
                       marginBottom: i < feedbackExcerpts.length - 1 ? "0.5rem" : 0,
                       transition: "border-color 0.2s, background 0.2s",
@@ -1139,7 +1140,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     }}
                     onClick={() => setHighlightedCitation(isHighlighted ? null : i)}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.7rem", color: "#a89a82", marginBottom: "0.4rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.7rem", color: "var(--color-text-muted)", marginBottom: "0.4rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                         <span style={citationNumberBadge}>{i + 1}</span>
                         <span data-testid="excerpt-doc-title">{excerpt.doc_title}</span>
@@ -1150,7 +1151,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                       style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
                       dangerouslySetInnerHTML={{
                         __html: escapeHtml(excerpt.snippet)
-                          .replace(/&lt;&lt;(.*?)&gt;&gt;/g, '<mark style="background:#7ec8e333;color:#7ec8e3">$1</mark>'),
+                          .replace(/&lt;&lt;(.*?)&gt;&gt;/g, '<mark style="background:rgba(110,168,254,0.22);color:var(--color-primary)">$1</mark>'),
                       }}
                     />
                   </div>
@@ -1158,15 +1159,15 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               })}
 
               {!feedbackLoading && feedbackExcerpts.length === 0 && !fb.explanation && (
-                <p style={{ fontSize: "0.8rem", color: "#a89a82", fontStyle: "italic" }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", fontStyle: "italic" }}>
                   No relevant excerpts found in your materials.
                 </p>
               )}
 
               {/* Concept connection */}
               {fb.concept_connection && (
-                <div style={{ ...insightBox, borderColor: "#c4a0ff", marginTop: "0.75rem" }}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#c4a0ff", marginBottom: "0.3rem" }}>
+                <div style={{ ...insightBox, borderColor: "var(--color-review)", marginTop: "0.75rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-review)", marginBottom: "0.3rem" }}>
                     Connection
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
@@ -1177,8 +1178,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Mnemonic / memory aid */}
               {fb.mnemonic && (
-                <div style={{ ...insightBox, borderColor: "#88cc88", marginTop: "0.5rem" }}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#88cc88", marginBottom: "0.3rem" }}>
+                <div style={{ ...insightBox, borderColor: "var(--color-success)", marginTop: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-success)", marginBottom: "0.3rem" }}>
                     Memory Aid
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
@@ -1189,8 +1190,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Mistake pattern advice */}
               {fb.pattern_advice && (
-                <div style={{ ...insightBox, borderColor: "#e8a040", marginTop: "0.5rem" }}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#e8a040", marginBottom: "0.3rem" }}>
+                <div style={{ ...insightBox, borderColor: "var(--color-warning)", marginTop: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-warning)", marginBottom: "0.3rem" }}>
                     Pattern Noticed
                   </p>
                   <p style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}>
@@ -1201,8 +1202,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Socratic follow-up */}
               {fb.socratic_followup && (
-                <div style={{ ...insightBox, borderColor: "#f0dc4e", marginTop: "0.5rem" }}>
-                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#f0dc4e", marginBottom: "0.3rem" }}>
+                <div style={{ ...insightBox, borderColor: "var(--color-primary)", marginTop: "0.5rem" }}>
+                  <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-primary)", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
                   <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
@@ -1220,10 +1221,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                       padding: "0.5rem 0.6rem",
                       fontSize: "0.82rem",
                       fontFamily: "inherit",
-                      background: "#2a3a2a",
-                      color: "#e8dcc8",
-                      border: "1px solid #4a6a4a",
-                      borderRadius: 4,
+                      background: "var(--color-bg-input)",
+                      color: "var(--color-text)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
                       boxSizing: "border-box",
                     }}
                   />
@@ -1234,14 +1235,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               {(correctionRule || variantQuestion) && (
                 <div
                   style={{
-                    background: "#4a3030",
-                    border: "1px solid #e8888855",
-                    borderRadius: 4,
+                    background: "var(--color-bg-error-tint)",
+                    border: "1px solid var(--color-error)",
+                    borderRadius: "var(--radius-sm)",
                     padding: "0.75rem",
                     marginTop: "0.75rem",
                   }}
                 >
-                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "#e88888" }}>
+                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", fontWeight: 600, color: "var(--color-error)" }}>
                     Repair Prompt
                   </p>
                   {correctionRule && (
@@ -1254,7 +1255,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                       <strong>Try this:</strong> {variantQuestion}
                     </p>
                   )}
-                  <p style={{ margin: "0.5rem 0 0", fontSize: "0.7rem", color: "#a89a82", fontStyle: "italic" }}>
+                  <p style={{ margin: "0.5rem 0 0", fontSize: "0.7rem", color: "var(--color-text-muted)", fontStyle: "italic" }}>
                     Say the correct answer aloud once before moving on.
                   </p>
                 </div>
@@ -1268,14 +1269,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {lastScore && (
             <div
               style={{
-                background: "#334d33",
-                border: "1px solid #4a6a4a",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
                 padding: "0.75rem 1rem",
                 marginBottom: "0.75rem",
               }}
             >
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "#e8dcc8" }}>
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "var(--color-text)" }}>
                 Now explain this in your own words (optional):
               </p>
               <textarea
@@ -1292,14 +1293,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {lastScore === "CORRECT" && (
             <div
               style={{
-                background: "#334d33",
-                border: "1px solid #4a6a4a",
-                borderRadius: 6,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
                 padding: "0.75rem 1rem",
                 marginBottom: "0.75rem",
               }}
             >
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "#e8dcc8" }}>
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "var(--color-text)" }}>
                 Create your own example of this concept (optional):
               </p>
               <textarea
@@ -1335,14 +1336,16 @@ function escapeHtml(str: string): string {
 // --- Constants ---
 
 const confidenceLabels = ["Guessing", "Unsure", "Somewhat", "Confident", "Very Sure"];
-const confidenceColors = ["#e88888", "#e8a040", "#d8c840", "#88cc88", "#6aaa6a"];
+const confidenceColors = ["var(--color-error)", "var(--color-warning)", "var(--color-primary)", "var(--color-success)", "var(--color-success)"];
+// Tinted backgrounds paired with confidenceColors (replaces old hex+alpha concat)
+const confidenceTints = ["var(--color-bg-error-tint)", "var(--color-bg-warning-tint)", "var(--color-bg-selected)", "var(--color-bg-success-tint)", "var(--color-bg-success-tint)"];
 
 // --- Styles ---
 
 const insightBox: React.CSSProperties = {
-  background: "#334d33",
-  border: "1px solid #4a6a4a",
-  borderRadius: 4,
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius-sm)",
   padding: "0.75rem",
   marginTop: "0.5rem",
 };
@@ -1353,10 +1356,10 @@ const primaryBtn: React.CSSProperties = {
   fontSize: "0.9rem",
   fontFamily: "inherit",
   fontWeight: 600,
-  background: "#7ec8e3",
-  color: "#1f2e1f",
+  background: "var(--color-info)",
+  color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
 };
 
@@ -1369,7 +1372,7 @@ const scoreBtn = (color: string, disabled = false): React.CSSProperties => ({
   background: "transparent",
   color,
   border: `2px solid ${color}`,
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: disabled ? "wait" : "pointer",
   opacity: disabled ? 0.5 : 1,
 });
@@ -1379,10 +1382,10 @@ const textareaStyle: React.CSSProperties = {
   padding: "0.75rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "#334d33",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
-  borderRadius: 6,
+  background: "var(--color-bg-card)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius)",
   resize: "vertical",
   marginBottom: "0.5rem",
   boxSizing: "border-box",
@@ -1393,10 +1396,10 @@ const selectStyle: React.CSSProperties = {
   padding: "0.5rem",
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  background: "#334d33",
-  color: "#e8dcc8",
-  border: "1px solid #4a6a4a",
-  borderRadius: 6,
+  background: "var(--color-bg-card)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius)",
   marginBottom: "0.75rem",
 };
 
@@ -1407,8 +1410,8 @@ const citationNumberBadge: React.CSSProperties = {
   width: 18,
   height: 18,
   borderRadius: "50%",
-  background: "#7ec8e3",
-  color: "#1f2e1f",
+  background: "var(--color-info)",
+  color: "var(--color-bg-darkest)",
   fontSize: "0.65rem",
   fontWeight: 700,
   flexShrink: 0,
@@ -1421,8 +1424,8 @@ const inlineCitationStyle: React.CSSProperties = {
   width: 16,
   height: 16,
   borderRadius: "50%",
-  background: "#7ec8e3",
-  color: "#1f2e1f",
+  background: "var(--color-info)",
+  color: "var(--color-bg-darkest)",
   fontSize: "0.6rem",
   fontWeight: 700,
   marginLeft: 2,
@@ -1472,6 +1475,6 @@ function renderExplanationWithCitations(
 const fieldLabel: React.CSSProperties = {
   display: "block",
   fontSize: "0.75rem",
-  color: "#a89a82",
+  color: "var(--color-text-muted)",
   marginBottom: "0.25rem",
 };
