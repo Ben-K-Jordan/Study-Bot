@@ -52,10 +52,17 @@ type ReviewRating = "AGAIN" | "HARD" | "GOOD" | "EASY";
 // --- Status helpers ---
 
 const STATUS_COLORS: Record<string, string> = {
-  new: "#7ec8e3",
-  learning: "#e8a040",
-  review: "#c4a0ff",
-  mastered: "#88cc88",
+  new: "var(--color-info)",
+  learning: "var(--color-warning)",
+  review: "var(--color-review)",
+  mastered: "var(--color-success)",
+};
+
+const STATUS_TINTS: Record<string, string> = {
+  new: "var(--color-bg-info-tint)",
+  learning: "var(--color-bg-warning-tint)",
+  review: "var(--color-bg-review-tint)",
+  mastered: "var(--color-bg-success-tint)",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -66,10 +73,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const RATING_COLORS: Record<ReviewRating, string> = {
-  AGAIN: "#e88888",
-  HARD: "#e8a040",
-  GOOD: "#88cc88",
-  EASY: "#7ec8e3",
+  AGAIN: "var(--color-error)",
+  HARD: "var(--color-warning)",
+  GOOD: "var(--color-success)",
+  EASY: "var(--color-info)",
 };
 
 // --- Component ---
@@ -347,7 +354,7 @@ export default function FlashcardsPage() {
               Back to Decks
             </button>
             {lastReview && (
-              <button onClick={handleUndo} style={{ ...backBtn, color: "var(--color-warning)", borderColor: "#e8a04044" }}>
+              <button onClick={handleUndo} style={{ ...backBtn, color: "var(--color-warning)", borderColor: "var(--color-warning)" }}>
                 Undo
               </button>
             )}
@@ -369,7 +376,7 @@ export default function FlashcardsPage() {
           {(["new", "learning", "review", "mastered"] as const).map((s) => {
             const count = studyData.stats[`${s}Count` as keyof typeof studyData.stats];
             return (
-              <span key={s} style={{ fontSize: "0.7rem", color: STATUS_COLORS[s], background: `${STATUS_COLORS[s]}22`, padding: "0.15rem 0.5rem", borderRadius: 3 }}>
+              <span key={s} style={{ fontSize: "0.7rem", color: STATUS_COLORS[s], background: STATUS_TINTS[s], padding: "0.15rem 0.5rem", borderRadius: 3 }}>
                 {STATUS_LABELS[s]}: {count}
               </span>
             );
@@ -410,7 +417,7 @@ export default function FlashcardsPage() {
             onClick={handleFlip}
             style={{
               ...cardStyle,
-              background: flipped ? "#2d4a3d" : "var(--color-bg-card)",
+              background: flipped ? "var(--color-bg-info-tint)" : "var(--color-bg-card)",
               borderColor: flipped ? "var(--color-info)" : "var(--color-border)",
               cursor: "pointer",
             }}
@@ -419,7 +426,7 @@ export default function FlashcardsPage() {
               <span style={{ fontSize: "0.65rem", color: flipped ? "var(--color-info)" : "var(--color-text-muted)", letterSpacing: "0.08em" }}>
                 {flipped ? "ANSWER" : "QUESTION"}
               </span>
-              <span style={{ fontSize: "0.6rem", color: STATUS_COLORS[card.status], background: `${STATUS_COLORS[card.status]}22`, padding: "0.1rem 0.4rem", borderRadius: 3 }}>
+              <span style={{ fontSize: "0.6rem", color: STATUS_COLORS[card.status], background: STATUS_TINTS[card.status], padding: "0.1rem 0.4rem", borderRadius: 3 }}>
                 {STATUS_LABELS[card.status]}
                 {card.intervalDays > 0 && ` · ${card.intervalDays}d`}
               </span>
@@ -474,7 +481,7 @@ export default function FlashcardsPage() {
 
         {/* End of deck summary */}
         {sessionComplete && (
-          <div style={{ textAlign: "center", marginTop: "1.5rem", padding: "1.25rem", background: "var(--color-bg-card)", borderRadius: 8, border: "1px solid var(--color-border)" }}>
+          <div style={{ textAlign: "center", marginTop: "1.5rem", padding: "1.25rem", background: "var(--color-bg-card)", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-card)" }}>
             <p style={{ fontSize: "1.2rem", color: "var(--color-primary)", margin: "0 0 0.5rem", fontFamily: "var(--font-display)" }}>
               Session Complete!
             </p>
@@ -551,14 +558,14 @@ export default function FlashcardsPage() {
           {error && <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
         </div>
       ) : (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: 8 }}>
-          <p style={{ color: "#b0a090", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
+          <p style={{ color: "var(--color-text-muted)", fontSize: "1rem", margin: "0 0 0.5rem" }}>
             No course documents yet
           </p>
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Upload your lecture notes, textbooks, or slides to get started with flashcards.
           </p>
-          <Link href="/plan" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: 6, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+          <Link href="/plan" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
             Create a Study Plan
           </Link>
         </div>
@@ -571,8 +578,8 @@ export default function FlashcardsPage() {
         </p>
       )}
       {!loadingDecks && courses.length > 0 && decks.length === 0 && (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: 8 }}>
-          <p style={{ color: "#b0a090", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
+          <p style={{ color: "var(--color-text-muted)", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
             No flashcard decks yet for this course
           </p>
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.8rem", margin: "0 0 1rem" }}>
@@ -582,7 +589,7 @@ export default function FlashcardsPage() {
       )}
       {decks.length > 0 && (
         <div>
-          <h2 style={sectionTitleStyle}>YOUR DECKS</h2>
+          <h2 style={{ ...sectionTitleStyle, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR DECKS</h2>
           {decks.map((deck) => (
             <div key={deck.id} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
               <button
@@ -636,7 +643,7 @@ const deckCard: React.CSSProperties = {
   background: "var(--color-bg-card)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
   textAlign: "left",
 };
@@ -645,7 +652,8 @@ const deckCard: React.CSSProperties = {
 const cardStyle: React.CSSProperties = {
   minHeight: 200,
   padding: "1.5rem",
-  borderRadius: 8,
+  borderRadius: "var(--radius-lg)",
+  boxShadow: "var(--shadow-card)",
   border: "2px solid var(--color-border)",
   display: "flex",
   flexDirection: "column",
@@ -680,7 +688,7 @@ const ratingBtn: React.CSSProperties = {
   fontWeight: 600,
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
 };
 
@@ -690,14 +698,14 @@ const backBtn: React.CSSProperties = {
   color: "var(--color-text-dim)",
   background: "none",
   border: "1px solid var(--color-border-subtle)",
-  borderRadius: 4,
+  borderRadius: "var(--radius-sm)",
   padding: "0.3rem 0.6rem",
   cursor: "pointer",
 };
 
 const tagStyle: React.CSSProperties = {
   fontSize: "0.6rem",
-  background: "#7ec8e322",
+  background: "var(--color-bg-info-tint)",
   color: "var(--color-info)",
   padding: "0.1rem 0.4rem",
   borderRadius: 3,
@@ -707,7 +715,7 @@ const tagStyle: React.CSSProperties = {
 const kbdStyle: React.CSSProperties = {
   display: "inline-block",
   fontSize: "0.6rem",
-  fontFamily: "monospace",
+  fontFamily: "var(--font-mono)",
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
   borderRadius: 3,

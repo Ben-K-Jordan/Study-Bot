@@ -1356,7 +1356,8 @@ const primaryBtn: React.CSSProperties = {
   fontSize: "0.9rem",
   fontFamily: "inherit",
   fontWeight: 600,
-  background: "var(--color-info)",
+  // Primary actions use the accent everywhere (preflight/end-screen parity)
+  background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
   borderRadius: "var(--radius)",
