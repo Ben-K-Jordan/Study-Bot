@@ -247,8 +247,8 @@ export default function GuidesPage() {
         </p>
       )}
       {!loadingGuides && courses.length > 0 && guides.length === 0 && (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: 8 }}>
-          <p style={{ color: "#b0a090", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
+          <p style={{ color: "var(--color-text-muted)", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
             No guides generated yet for this course
           </p>
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.8rem", margin: 0 }}>
@@ -258,7 +258,7 @@ export default function GuidesPage() {
       )}
       {guides.length > 0 && (
         <div>
-          <h2 style={sectionTitleStyle}>YOUR GUIDES</h2>
+          <h2 style={{ ...sectionTitleStyle, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR GUIDES</h2>
           {guides.map((guide) => (
             <div key={guide.id} style={{ marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", gap: "0.35rem" }}>
@@ -326,7 +326,7 @@ export default function GuidesPage() {
                         color: "var(--color-info)",
                         background: "var(--color-bg)",
                         border: "1px solid var(--color-border-subtle)",
-                        borderRadius: 4,
+                        borderRadius: "var(--radius-sm)",
                         padding: "0.35rem 0.75rem",
                         cursor: "pointer",
                       }}
@@ -403,7 +403,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
               </h3>
               {s.content && (
                 <div
-                  style={{ fontSize: "0.8rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "monospace" }}
+                  style={{ fontSize: "0.8rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}
                 >
                   {s.content}
                 </div>
@@ -434,7 +434,7 @@ const typeButton: React.CSSProperties = {
   padding: "0.6rem 0.75rem",
   fontFamily: "inherit",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
   textAlign: "left",
 };
@@ -449,7 +449,7 @@ const guideHeader: React.CSSProperties = {
   background: "var(--color-bg-card)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius)",
   cursor: "pointer",
 };
 
@@ -458,7 +458,7 @@ const guideTypeTag: React.CSSProperties = {
   fontSize: "0.65rem",
   fontWeight: 600,
   color: "var(--color-info)",
-  background: "#7ec8e322",
+  background: "var(--color-bg-info-tint)",
   padding: "0.1rem 0.4rem",
   borderRadius: 3,
   marginRight: "0.5rem",
@@ -469,15 +469,16 @@ const guideContent: React.CSSProperties = {
   background: "var(--color-bg)",
   border: "1px solid var(--color-border)",
   borderTop: "none",
-  borderRadius: "0 0 6px 6px",
-  padding: "1rem",
+  borderRadius: "0 0 var(--radius) var(--radius)",
+  padding: "1rem 1.25rem",
+  boxShadow: "var(--shadow-card)",
 };
 
 
 const conceptCard: React.CSSProperties = {
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
-  borderRadius: 4,
-  padding: "0.75rem",
+  borderRadius: "var(--radius-sm)",
+  padding: "0.75rem 1rem",
   marginBottom: "0.5rem",
 };

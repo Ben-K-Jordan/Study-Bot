@@ -1,187 +1,133 @@
 # Study-Bot
 
-A research-backed studying platform. You upload your course materials, and
-Study-Bot turns them into retrieval-based study sessions, spaced review
-schedules, and a week-by-week plan built backwards from your exam date. Every
-mechanic in the app — questions before notes, immediate elaborated feedback,
-confidence ratings, mixed-up practice decks, errors that only resolve after
-repeated correct recalls on different days — traces to a specific finding in
-the learning-science literature. The what and the why, with citations, effect
-sizes, and the boundary conditions where each technique is deliberately *not*
-applied, is documented in **[docs/LEARNING_SCIENCE.md](docs/LEARNING_SCIENCE.md)**.
+A studying platform built on the cognitive science of learning — retrieval practice, spaced repetition, and tight feedback loops. You upload your course materials; Study-Bot turns them into question decks, review schedules, and a week-by-week plan built backwards from your exam date.
 
-Stack: Next.js 14 (App Router) + TypeScript, PostgreSQL + Prisma, Zod,
-NextAuth, Vitest + Playwright.
+## Why it works
+
+Every mechanic traces to a specific finding in the learning-science literature — including the boundary conditions where a technique is deliberately *not* applied. The short version:
+
+- **Retrieval beats rereading.** Practice testing outperforms restudying by ~50% at a week's delay, so every session is a question deck, never a page of notes (Roediger & Karpicke 2006).
+- **Spacing is scheduled for you.** An SM-2 scheduler spaces each objective at ~10–20% of the time remaining before your exam, compressing to daily review in the final days — because inside ~24 hours, cramming genuinely wins (Cepeda et al. 2008).
+- **Interleaving forces choice.** Mixed practice roughly doubled delayed test scores versus blocked practice; it feels harder, and that's the mechanism (Rohrer & Taylor 2007).
+- **Feedback explains, immediately.** Elaborated feedback produces ~10x the effect of bare right/wrong marking, and in applied settings immediate beats delayed (Van der Kleij et al. 2015; Kulik & Kulik 1988).
+- **Confident errors get hunted.** You rate confidence before seeing the answer; confident misses get the strongest correction and top repair priority — and stay open until two correct recalls on different days, because one correction doesn't stick (Butterfield & Metcalfe 2001; Rawson & Dunlosky 2011).
+- **Novices start from worked examples.** Procedural topics open with a fully worked solution, then fade it step by step within the session to avoid the expertise-reversal trap (Sweller & Cooper 1985; Renkl 2002).
+
+The full treatment — effect sizes, primary citations, and the failure modes each feature is designed around — is in **[docs/LEARNING_SCIENCE.md](docs/LEARNING_SCIENCE.md)**.
+
+## Quick start
+
+```bash
+git clone <repo> && cd Study-Bot
+npm install
+npm run setup     # creates .env with generated secrets, starts Postgres via Docker, runs migrations
+npm run dev       # → http://localhost:3000
+```
+
+That's it — the defaults need no API keys or external accounts: `AI_PROVIDER=mock` serves deterministic question templates, `EMAIL_PROVIDER=console` logs email to stdout, and `GOOGLE_PROVIDER=fake` stubs calendar sync. To get real AI-generated questions and feedback, set `AI_PROVIDER=openai` and `OPENAI_API_KEY` in `.env`.
+
+Notes:
+
+- `npm run setup` is idempotent — it never overwrites an existing `.env` or a secret you've set yourself.
+- No Docker? Setup says so and keeps going: point `DATABASE_URL` in `.env` at your own PostgreSQL and run `npx prisma migrate deploy`.
+- The Docker database (`pgvector/pgvector:pg16`) listens on host port **5433** to avoid clashing with a local Postgres on 5432. Manage it with `npm run db:up` / `db:down` / `db:logs`.
+- Optional: `npm run worker` starts the background job worker (document embedding).
+- Full-stack Docker alternative: `docker compose up` builds and runs app + db together (it reads `NEXTAUTH_SECRET` from `.env`, so run `npm run setup` first).
 
 ## Study modes
 
-| Mode | What happens | Why |
-|------|--------------|-----|
-| `RETRIEVAL` | A deck of free-recall and MCQ questions generated from your materials (or deterministic templates without them), scored immediately with elaborated feedback. | Testing effect: retrieval beats restudy by ~50% at a week's delay (Roediger & Karpicke 2006). |
-| `INTERLEAVED_PRACTICE` | The same retrieval loop, but prompts are round-robin mixed across objectives — never more than 2 consecutive from one objective. AI-generated decks are re-interleaved before the run starts. | Interleaving forces strategy *choice*, not just execution (Rohrer & Taylor 2007). It feels harder; that's the mechanism. |
-| `EXAM_SIM` | Two phases: answer every question with no feedback, then a forced review phase where you score each answer. | Simulates test conditions and exercises self-monitoring. The only place feedback is delayed — and the review is mandatory so no MCQ ends without answer confirmation. |
-| `ERROR_REPAIR` | A deck built from your unresolved error logs. Repair prompts test the correction without revealing it; confident misses are prioritized. An error resolves only after 2 correct retrievals on different days. | Hypercorrection + successive relearning: confidently-held errors are the most correctable — and the most likely to resurface without spaced re-testing (Butterfield & Metcalfe 2001; Rawson & Dunlosky 2011). |
-| `WORKED_EXAMPLES` (new) | For procedural topics: a fully worked example (each step states the action *and* the licensing principle), then completion problems with the last step missing, then the last two, then a full near-transfer problem with a model answer. | Worked-example effect with backward fading (Sweller & Cooper 1985; Renkl 2002) — the right on-ramp for novices, faded off within the session to avoid expertise reversal. |
+| Mode | What it does | Use it when |
+|------|--------------|-------------|
+| `RETRIEVAL` | Free-recall + MCQ deck generated from your materials, scored immediately with elaborated feedback. | The default — most sessions, most of the time. |
+| `INTERLEAVED_PRACTICE` | The same loop with prompts round-robin mixed across objectives (never more than 2 in a row from one). | Topics are similar enough to confuse — telling them apart is the skill. |
+| `EXAM_SIM` | Answer everything with zero feedback, then a mandatory review phase where you score each answer. | The final stretch — rehearse test conditions and self-monitoring. |
+| `ERROR_REPAIR` | A deck built from your unresolved errors, confident misses first; each resolves only after 2 correct recalls on different days. | Your error queue is non-empty — i.e., after any honest session. |
+| `WORKED_EXAMPLES` | Fully worked example → completion problems with the last step, then last two, missing → full transfer problem. | First exposure to procedural or quantitative material. |
 
-Every runnable session shares the same spine: optional pretest diagnostics for
-never-studied objectives (quarantined from grading — wrong answers there are
-the point), warm-up prompts for objectives that are due for review, timed
-work/break cycles (`25_5`, `50_10`, `90_15`, ...), variant questions injected
-after misses, and full resumability — progress persists after every attempt,
-so a refresh or crash loses nothing.
+Every mode shares the same spine: pretest diagnostics for never-studied objectives (quarantined from grading), warm-ups for objectives due for review, timed work/break cycles, variant questions injected after misses, and full resumability — a refresh or crash loses nothing.
 
 ## The feedback loop
 
-- **Commit before reveal.** No answer, hint, or excerpt is shown before you
-  submit an attempt. The no-leakage guardrail is enforced server-side and
-  covered by an E2E test.
-- **Model answers.** Generated prompts carry a model answer and key points,
-  revealed once you've answered and *before* you self-score — you grade
-  against a standard, not a feeling (never during the exam phase of
-  `EXAM_SIM`). MCQ is graded by the server against the stored key.
-- **Immediate elaborated feedback.** Misses get cited excerpts from your own
-  uploaded materials, an explanation of the specific gap, a key takeaway, a
-  mnemonic when warranted, and per-distractor rationales for MCQ. Feedback is
-  persisted per attempt, so it survives refresh. Correct answers get brief
-  reinforcement instead of the full apparatus.
-- **Hypercorrection.** You rate confidence (1-5) before seeing the answer.
-  Confident misses get the most emphatic correction, top priority in repair
-  decks, and an SM-2 penalty so the objective resurfaces sooner. The
-  end-of-session calibration dashboard shows your confidence-vs-accuracy gap.
-- **Active correction.** A miss requires a correction rule in your own words,
-  spawns a variant question later in the same session, and enters the
-  cross-day repair pipeline. Optional self-explanation, generate-your-own
-  example, and an answerable Socratic follow-up close the loop generatively.
+The core interaction, on every question:
 
-## Spaced repetition and flashcards
-
-Two SM-2-based schedulers:
-
-- **Objective mastery** — per-objective ease/interval/repetitions updated from
-  each run's accuracy, with confidence-weighted quality. Exam-aware: intervals
-  compress as the exam approaches (daily review inside 3 days; ~20% of
-  remaining days when further out, per Cepeda et al. 2008). Due objectives
-  resurface automatically as warm-ups in your next run.
-- **Flashcards** — decks you create, plus cards auto-generated from your
-  errors (question on the front, correction-first on the back). Standard
-  Again/Hard/Good/Easy grading with the same exam-aware compression; failed
-  cards return in 10 minutes within the same sitting.
-
-Sessions end with follow-up recommendations derived from the SM-2 due dates
-of the objectives you just studied (falling back to accuracy brackets —
-<70%: return in 1 and 2 days; 70-85%: 2 and 4; >85%: 3 and 6).
-
-## Planning and calendar
-
-The week planner (`/plan`) takes your exam date, objectives (or uploaded
-documents), daily availability, and a break protocol, and schedules sessions
-backwards from the exam — diagnostics and retrieval packs early, interleaved
-mixes in the middle, exam sim + error repair near the end. Plans export as:
-
-- **ICS download / webcal feed** — import into any calendar app.
-- **Google Calendar sync** — one-way, idempotent publish with hash-based
-  change detection, republish, and unpublish. OAuth tokens are encrypted at
-  rest (AES-256-GCM). Connect at `/settings/calendar`.
-
-## Course content and search
-
-Upload PDFs and notes into three namespaces: the Course Knowledge Base (feeds
-question generation and post-answer feedback), the Practice Bank (import your
-own MCQ/short-answer/coding questions), and the Study Science KB (the research
-library backing the app's own policies — seed it with `npm run
-db:seed-research`). Upload and processing are separate, resumable steps;
-processed chunks are searched with PostgreSQL full-text search (no external
-services), with optional embedding-based hybrid search behind
-`HYBRID_SEARCH_ENABLED` (embedding jobs run on the background worker). All
-generated questions and feedback cite the exact chunks they came from.
-
-## Getting started
-
-Prerequisites: Node 20.19+ (see `.nvmrc`), PostgreSQL.
-
-```bash
-npm install
-cp .env.example .env   # then set DATABASE_URL (and NEXTAUTH_SECRET)
-npx prisma generate
-npx prisma migrate dev
-npm run dev            # http://localhost:3000
+```mermaid
+flowchart LR
+    Q[Question] --> A["Commit answer<br/>+ confidence 1–5"]
+    A --> G["Grade<br/>MCQ: server-graded<br/>free recall: scored against<br/>a revealed model answer"]
+    G -->|correct| N[Brief reinforcement,<br/>next question]
+    G -->|miss| F["Elaborated feedback:<br/>cited excerpts from YOUR<br/>materials + gap explanation"]
+    F --> R[Correction rule<br/>in your own words]
+    R --> V[Variant question<br/>later this session]
+    V --> P["Repair pipeline: resolved after<br/>2 correct recalls on different days"]
+    P -.-> Q
 ```
 
-The app runs with no external services by default: `AI_PROVIDER=mock` uses
-deterministic prompt templates, `GOOGLE_PROVIDER=fake` stubs calendar sync,
-and `EMAIL_PROVIDER=console` logs email to stdout.
+Nothing is revealed before you commit — no hints, excerpts, or answers (enforced server-side, covered by an E2E test). Misses get cited excerpts from your own uploaded materials, an explanation of your specific gap, per-distractor rationales for MCQ, and optional self-explanation prompts. Confident misses get the most emphatic correction and the fastest resurfacing. The whole loop runs keyboard-first: answer, submit, rate, and advance without touching the mouse.
 
-### Environment variables
+## Feature map
 
-`.env.example` documents all of them; the ones that matter most:
+- **Content upload + search** — PDFs and notes, chunked and searched with Postgres full-text search (optional embedding-based hybrid search behind `HYBRID_SEARCH_ENABLED`). Every generated question and feedback cites its exact source chunks.
+- **Flashcards** — decks you create, plus cards auto-generated from your errors; SM-2 scheduled with the same exam-aware compression.
+- **Study planner** — `/plan` schedules sessions backwards from your exam date around your availability, with Google Calendar sync and ICS/webcal export.
+- **Gamification** — XP, achievements, and streaks, awarded only at session boundaries so they never intrude on the answer loop.
+- **Calibration dashboard** — your confidence vs. your accuracy, per session and over time.
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string. |
-| `NEXTAUTH_SECRET` / `NEXTAUTH_URL` | Yes (prod) | NextAuth session signing + canonical URL. Generate the secret with `openssl rand -base64 32`. |
-| `BASE_URL`, `NEXT_PUBLIC_APP_URL` | Yes (prod) | App base URL used in links, ICS, and OAuth callbacks. Defaults to `http://localhost:3000`. |
-| `AI_PROVIDER` | No | `mock` (default) or `openai`. Question generation, feedback, worked examples, plan generation, and study guides use the AI gateway; the mock provider keeps everything runnable offline. |
-| `OPENAI_API_KEY` | When `AI_PROVIDER=openai` | Provider credential. |
-| `AI_MODEL_ANSWER`, `AI_MODEL_EMBED` | No | Model IDs for generation and embeddings (defaults: `gpt-4o-mini`, `text-embedding-3-small`). |
-| `AI_DAILY_COST_CAP_USD`, `AI_MONTHLY_COST_CAP_USD`, `AI_DISABLED` | No | Per-user spend caps and an emergency kill switch. |
-| `TOKEN_ENC_KEY` | For Google sync (required in prod) | 32-byte key (64 hex or 44 base64 chars) for AES-256-GCM encryption of OAuth tokens. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_PROVIDER` | For Google sync | OAuth credentials; `GOOGLE_PROVIDER=fake` for test/CI, `real` for production. |
-| `CRON_SECRET`, `ADMIN_USER_IDS` | No | Shared secret for internal/cron endpoints; comma-separated user IDs allowed into `/admin`. |
-| `EMAIL_PROVIDER`, `SMTP_*`, `VAPID_*` | No | Email reminders (console or SMTP) and web-push notifications. |
-| `HYBRID_SEARCH_ENABLED` | No | Enables embedding-augmented search (requires the worker and an embedding-capable provider). |
-| `JOB_WORKER_CONCURRENCY`, `JOB_POLL_INTERVAL_MS` | No | Background worker tuning. |
-| `ALLOW_TEST_AUTH` | Never in prod | Trusts the `X-User-Id` header as identity for testing. Auth is NextAuth; the header fallback only works outside production or with this flag explicitly set. |
+## Configuration
 
-### Scripts
+`npm run setup` produces a working `.env`. The variables that matter most:
+
+| Variable | One line |
+|----------|----------|
+| `DATABASE_URL` | Postgres connection string; the default targets the Docker db on port 5433. |
+| `NEXTAUTH_SECRET` | Session signing key — generated by setup. |
+| `AI_PROVIDER` | `mock` (default, fully offline) or `openai`. |
+| `OPENAI_API_KEY` | Required when `AI_PROVIDER=openai`. |
+| `AI_MODEL_ANSWER` | Generation model (default `gpt-4o-mini`). |
+| `AI_DAILY_COST_CAP_USD` / `AI_MONTHLY_COST_CAP_USD` | Per-user spend caps (defaults $1 / $10); `AI_DISABLED=true` is the kill switch. |
+| `TOKEN_ENC_KEY` | 32-byte key for AES-256-GCM encryption of Google OAuth tokens — generated by setup, required in production. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_PROVIDER` | Calendar OAuth; `GOOGLE_PROVIDER=fake` (default) stubs sync, `real` for production. |
+| `EMAIL_PROVIDER` | `console` (default, logs to stdout) or `smtp`. |
+| `LOG_LEVEL` | `debug` \| `info` \| `warn` \| `error`. |
+
+The rest are documented inline in [.env.example](.env.example).
+
+> **Warning:** `ALLOW_TEST_AUTH` makes the app trust the `X-User-Id` header as the authenticated identity. It exists only for automated tests and must never be set in production.
+
+## Development
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` / `npm run build` / `npm start` | Next.js dev server / production build / serve. |
+| `npm run dev` / `build` / `start` | Next.js dev server / production build / serve. |
 | `npm test` | All Vitest tests. |
-| `npm run test:unit` | Unit tests only — no database needed. |
-| `npm run test:integration` | Integration tests — needs PostgreSQL (`DATABASE_URL`). |
-| `npm run test:e2e` | Playwright E2E — needs PostgreSQL + browsers (`npx playwright install --with-deps chromium` first time). |
+| `npm run test:unit` | Unit tests — no database needed. |
+| `npm run test:integration` | Integration tests — needs Postgres. |
+| `npm run test:e2e` | Playwright E2E — needs Postgres, plus `npx playwright install --with-deps chromium` once. |
 | `npm run worker` | Background job worker (embedding batches; polls `job_queue` with `SKIP LOCKED`). |
+| `npm run db:up` / `db:down` / `db:logs` | Start / stop / tail the Docker Postgres. |
 | `npm run db:migrate` / `db:push` / `db:generate` | Prisma migrations / schema push / client generation. |
 | `npm run db:seed-research` | Seed the Study Science KB with the research library. |
 | `npm run lint` | ESLint. |
-| `npm run assets:build` / `assets:check` | Optimize design assets and enforce size budgets (auto-runs before build). |
 
-### Running tests
+Integration and E2E tests read `DATABASE_URL` — point it at a dedicated test database rather than your dev one (CI uses `studybot_test` and `studybot_e2e`).
 
-```bash
-npm run test:unit
-
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/studybot_test" npm run test:integration
-
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/studybot_e2e" npm run test:e2e
-```
-
-CI (`.github/workflows/quality-gate.yml`) runs typecheck, unit, integration
-(with a PostgreSQL service container), and headless E2E.
-
-## Project layout
+Project layout:
 
 ```
-src/app/         Routes: home, /plan, /s/:sessionId (session runner),
-                 /flashcards, /guides, /learn, /settings, /api/*
-src/services/    Domain logic: run, feedback, plan, content, publish,
-                 spaced-repetition, flashcards, reflow, ...
-src/lib/         Core libraries: prompts, mastery (SM-2), spacing,
-                 validation, ai/ (gateway + prompt registry), jobs, calendar
-prisma/          Schema + migrations
-scripts/         worker, seeders, asset pipeline
-docs/            LEARNING_SCIENCE.md — the research foundation
+src/app/        Routes: home, /plan, /s/:sessionId (session runner), /flashcards,
+                /guides, /learn, /settings, /api/*
+src/services/   Domain logic: run, feedback, plan, content, publish,
+                spaced-repetition, flashcards, ...
+src/lib/        Prompts, SM-2 mastery, spacing, validation, ai/ (gateway +
+                prompt registry), jobs, calendar
+prisma/         Schema + migrations
+e2e/            Playwright specs
+docs/           LEARNING_SCIENCE.md — the research foundation
 ```
 
-## Further reading
+## Architecture notes
 
-If you want to know *why* the app behaves the way it does — why it won't show
-you the answer before you commit, why interleaved sessions feel worse than
-blocked ones, why an error you fixed yesterday comes back tomorrow — read
-[docs/LEARNING_SCIENCE.md](docs/LEARNING_SCIENCE.md). It covers each principle
-with primary citations, the concrete feature that implements it, and the
-boundary conditions where the app intentionally does the opposite (immediate
-feedback everywhere except exam simulation, spacing abandoned for compression
-in the final days before an exam, worked examples faded out to avoid the
-expertise-reversal effect).
+- **Next.js 14 (App Router) + TypeScript**, with Zod validation at every API boundary.
+- **Prisma on PostgreSQL.** The bundled image is `pgvector/pgvector:pg16` — plain Postgres 16 plus the pgvector extension, used by the optional hybrid-search path.
+- **Background jobs** run through a Postgres-backed `job_queue` polled with `SKIP LOCKED` by `npm run worker` — no Redis or external broker.
+- **AI gateway** — one choke point for all model calls, with response caching, per-user daily/monthly cost caps, request timeouts, a circuit breaker, and an emergency kill switch. Providers are pluggable (`openai`, `mock`).
+- **Mock providers everywhere** (AI, Google Calendar, email) keep the entire app runnable offline and in CI, with no credentials.
