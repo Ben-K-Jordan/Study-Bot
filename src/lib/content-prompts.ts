@@ -40,6 +40,8 @@ interface GeneratedPrompt {
   choices?: string[] | null;
   correct_index?: number | null;
   distractor_rationales?: string[] | null;
+  model_answer?: string | null;
+  key_points?: string[] | null;
 }
 
 /**
@@ -205,6 +207,16 @@ export async function generateContentAwarePrompts(
         Array.isArray(g.distractor_rationales) &&
         g.distractor_rationales.length === (g.choices as string[]).length;
 
+      // Model answer + key points: the self-scoring standard (revealed only
+      // after the student commits an answer; redacted from client payloads).
+      const answerMeta: Prompt["meta"] = {};
+      if (typeof g.model_answer === "string" && g.model_answer.trim()) {
+        answerMeta.model_answer = g.model_answer.trim();
+      }
+      if (Array.isArray(g.key_points) && g.key_points.length > 0) {
+        answerMeta.key_points = g.key_points.filter((k): k is string => typeof k === "string").slice(0, 4);
+      }
+
       const base: Prompt = {
         id: `p_${i}`,
         objective_id: g.objective_id,
@@ -214,9 +226,13 @@ export async function generateContentAwarePrompts(
         ...(isMcq ? {
           choices: g.choices as string[],
           correctIndex: g.correct_index as number,
-          meta: rationalesValid ? { distractorRationales: g.distractor_rationales as string[] } : undefined,
         } : {}),
+        meta: {
+          ...answerMeta,
+          ...(isMcq && rationalesValid ? { distractorRationales: g.distractor_rationales as string[] } : {}),
+        },
       };
+      if (base.meta && Object.keys(base.meta).length === 0) base.meta = undefined;
 
       // Shuffle MCQ choices so correct answer position varies per prompt
       return isMcq ? shuffleMcqChoices(base, runSeed) : base;

@@ -5,6 +5,7 @@
  * Algorithm inspired by SuperMemo SM-2 with simplified quality mapping.
  */
 import { prisma } from "./db";
+import { compressIntervalForExam } from "./spacing";
 
 // ---------------------------------------------------------------------------
 // SM-2 core algorithm
@@ -108,26 +109,8 @@ export function sm2Next(
     easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)),
   );
 
-  // Exam-aware interval compression
-  if (examDate) {
-    const daysUntilExam = Math.max(1, Math.floor((examDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-
-    if (daysUntilExam <= 3) {
-      // Exam in 1-3 days: review everything daily
-      intervalDays = 1;
-    } else if (daysUntilExam <= 7) {
-      // Exam in 4-7 days: cap at 2 days
-      intervalDays = Math.min(intervalDays, 2);
-    } else if (daysUntilExam <= 14) {
-      // Exam in 1-2 weeks: cap at 3 days
-      intervalDays = Math.min(intervalDays, 3);
-    } else {
-      // More than 2 weeks: cap so next review is before exam
-      // Use ~20% of remaining time as max interval (Cepeda optimal gap ratio)
-      const maxInterval = Math.max(1, Math.floor(daysUntilExam * 0.2));
-      intervalDays = Math.min(intervalDays, maxInterval);
-    }
-  }
+  // Exam-aware interval compression (shared policy in @/lib/spacing)
+  intervalDays = compressIntervalForExam(intervalDays, examDate, now);
 
   const nextDueAt = new Date(now);
   nextDueAt.setDate(nextDueAt.getDate() + intervalDays);

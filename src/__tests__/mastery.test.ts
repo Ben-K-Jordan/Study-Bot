@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { accuracyToQuality, confidenceAdjustedQuality, sm2Next, type SM2State } from "@/lib/mastery";
+import { compressIntervalForExam } from "@/lib/spacing";
 
 describe("accuracyToQuality", () => {
   it("maps high accuracy to quality 5", () => {
@@ -130,5 +131,74 @@ describe("sm2Next", () => {
     expect(result.repetitions).toBe(0);
     expect(result.intervalDays).toBe(1);
     expect(result.easeFactor).toBeLessThan(2.5);
+  });
+});
+
+describe("sm2Next exam-aware compression", () => {
+  // Expected intervals below were computed from the original inline
+  // compression in sm2Next (before extraction to compressIntervalForExam);
+  // they prove the refactor is behavior-identical.
+  const now = new Date("2025-01-15T12:00:00Z");
+  const daysFromNow = (d: number) => new Date(now.getTime() + d * 24 * 60 * 60 * 1000);
+
+  // With quality 4, this state yields round(6 * 2.5) = 15 days uncompressed.
+  const advanced: SM2State = { easeFactor: 2.5, intervalDays: 6, repetitions: 2 };
+
+  it("leaves the interval uncompressed with no exam date", () => {
+    expect(sm2Next(advanced, 4, now).intervalDays).toBe(15);
+  });
+
+  it("reviews daily when the exam is within 3 days", () => {
+    const result = sm2Next(advanced, 4, now, daysFromNow(2));
+    expect(result.intervalDays).toBe(1);
+    expect(result.nextDueAt).toEqual(new Date("2025-01-16T12:00:00Z"));
+  });
+
+  it("caps at 2 days for an exam 4-7 days out", () => {
+    expect(sm2Next(advanced, 4, now, daysFromNow(5)).intervalDays).toBe(2);
+  });
+
+  it("caps at 3 days for an exam 8-14 days out", () => {
+    expect(sm2Next(advanced, 4, now, daysFromNow(10)).intervalDays).toBe(3);
+  });
+
+  it("caps at ~20% of remaining days for exams beyond 2 weeks", () => {
+    expect(sm2Next(advanced, 4, now, daysFromNow(30)).intervalDays).toBe(6); // floor(30*0.2)
+    // Far exam: cap (24) exceeds the interval, so it stays 15
+    expect(sm2Next(advanced, 4, now, daysFromNow(120)).intervalDays).toBe(15);
+  });
+
+  it("never lengthens an interval shorter than the cap", () => {
+    const fresh: SM2State = { easeFactor: 2.5, intervalDays: 0, repetitions: 0 };
+    // First correct answer → 1 day, exam in 30 days caps at 6 → stays 1
+    expect(sm2Next(fresh, 4, now, daysFromNow(30)).intervalDays).toBe(1);
+  });
+
+  it("does not change ease factor or repetitions", () => {
+    const withExam = sm2Next(advanced, 4, now, daysFromNow(2));
+    const without = sm2Next(advanced, 4, now);
+    expect(withExam.easeFactor).toBe(without.easeFactor);
+    expect(withExam.repetitions).toBe(without.repetitions);
+  });
+
+  it("still resets on failure, with the reset interval compressed no further", () => {
+    const result = sm2Next(advanced, 2, now, daysFromNow(2));
+    expect(result.repetitions).toBe(0);
+    expect(result.intervalDays).toBe(1);
+  });
+
+  it("equals compressIntervalForExam applied to the uncompressed interval", () => {
+    // Cross-check the extracted function against sm2Next across all branches
+    // (past exam, 1-3, 4-7, 8-14, >14 days) and pass/fail qualities.
+    for (const d of [-2, 0, 1, 2, 3, 4, 5, 7, 8, 10, 14, 15, 21, 30, 60, 120]) {
+      const exam = daysFromNow(d);
+      for (const q of [0, 2, 3, 4, 5]) {
+        const withExam = sm2Next(advanced, q, now, exam);
+        const base = sm2Next(advanced, q, now);
+        expect(withExam.intervalDays).toBe(compressIntervalForExam(base.intervalDays, exam, now));
+        expect(withExam.easeFactor).toBe(base.easeFactor);
+        expect(withExam.repetitions).toBe(base.repetitions);
+      }
+    }
   });
 });

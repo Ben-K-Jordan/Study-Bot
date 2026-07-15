@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { RunData, SessionData, FeedbackExcerpt, FeedbackResult, AttemptSubmitResult, McqResult } from "../session-runner";
-import { fetchFeedback, patchAttemptMeta } from "../session-runner";
+import type { RunData, SessionData, FeedbackExcerpt, FeedbackResult, AttemptSubmitResult, McqResult, AnswerReveal } from "../session-runner";
+import { pollFeedback, patchAttemptMeta, fetchReveal } from "../session-runner";
 
 const ERROR_TYPES = [
   { value: "MISCONCEPTION", label: "Misconception" },
@@ -45,8 +45,16 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [confidence, setConfidence] = useState<number>(3);
   const [selfExplanation, setSelfExplanation] = useState("");
   const [generatedExample, setGeneratedExample] = useState("");
+  const [socraticAnswer, setSocraticAnswer] = useState("");
   const [highlightedCitation, setHighlightedCitation] = useState<number | null>(null);
   const [mcqResult, setMcqResult] = useState<McqResult | null>(null);
+  // Pre-answer confidence for MCQ (hypercorrection: Butterfield & Metcalfe).
+  // Optional 1-tap: Guessing=1 / Unsure=3 / Sure=5. Never fabricated.
+  const [mcqConfidence, setMcqConfidence] = useState<number | null>(null);
+  // Model answer / key points revealed after committing an answer — the
+  // standard the student self-scores against.
+  const [reveal, setReveal] = useState<AnswerReveal | null>(null);
+  const [revealLoading, setRevealLoading] = useState(false);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const excerptRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -77,7 +85,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     ? run.attempts.find((a) => a.prompt_index === currentIndex)?.user_answer ?? ""
     : "";
 
-  // Phase 1: Deferred feedback — fetch after scoring (all scores, including CORRECT)
+  // Pretest items are diagnostic (Richland 2009): being wrong is expected
+  // and useful — no error logging, separate metrics, gentler framing.
+  const isPretest = currentPrompt?.meta?.pack === "PRE_TEST";
+  // Repair prompts already carry their correction rule server-side.
+  const isRepair =
+    currentPrompt?.source_type === "VARIANT_REPAIR" ||
+    currentPrompt?.source_type === "ERROR_LOG";
+  const isMcq = currentPrompt?.format === "MCQ" && Array.isArray(currentPrompt.choices);
+
+  // Deferred feedback — generation starts server-side the moment the attempt
+  // lands; poll until it's ready (PENDING means another worker owns it).
   useEffect(() => {
     const shouldFetch =
       run.last_attempt_id &&
@@ -91,9 +109,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
     let mounted = true;
     setFeedbackLoading(true);
-    fetchFeedback(run.last_attempt_id!)
-      .then((result: FeedbackResult) => {
-        if (!mounted) return;
+    pollFeedback(run.last_attempt_id!, () => !mounted)
+      .then((result: FeedbackResult | null) => {
+        if (!mounted || !result) return;
         if (result.status === "OK") {
           if (result.excerpts.length > 0) setFeedbackExcerpts(result.excerpts);
           setFb(result);
@@ -105,6 +123,23 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       .finally(() => { if (mounted) setFeedbackLoading(false); });
     return () => { mounted = false; };
   }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, fb.explanation, fb.reinforcement]);
+
+  // Answer standard reveal: once the student commits an answer (scoring
+  // phase), fetch the model answer + key points so self-scoring happens
+  // against an explicit standard, not a feeling. Not for MCQ (server grades)
+  // and never during the EXAM phase (delayed feedback is the point there).
+  useEffect(() => {
+    if (uiPhase !== "scoring" || isExamPhase || isMcq) return;
+    if (reveal !== null || revealLoading) return;
+    let mounted = true;
+    setRevealLoading(true);
+    fetchReveal(run.run_id, currentIndex)
+      .then((r) => { if (mounted) setReveal(r); })
+      .catch(() => { if (mounted) setReveal({ model_answer: null, key_points: null }); })
+      .finally(() => { if (mounted) setRevealLoading(false); });
+    return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiPhase, isExamPhase, currentIndex, run.run_id]);
 
   const resetForPrompt = (key: string) => {
     uiPromptKeyRef.current = key;
@@ -123,6 +158,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setConfidence(3);
     setSelfExplanation("");
     setGeneratedExample("");
+    setSocraticAnswer("");
+    setMcqConfidence(null);
+    setReveal(null);
+    setRevealLoading(false);
     setHighlightedCitation(null);
     excerptRefs.current.clear();
     startTimeRef.current = Date.now();
@@ -166,7 +205,18 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     try { sessionStorage.removeItem(draftKey); } catch { /* noop */ }
   };
 
+  // Keyboard-first loop (deliberate practice = maximum feedback cycles per
+  // hour): a stable document listener delegates to the latest handler via a
+  // ref, so hooks stay above the early return.
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    document.addEventListener("keydown", listener);
+    return () => document.removeEventListener("keydown", listener);
+  }, []);
+
   if (!currentPrompt) {
+    keyHandlerRef.current = () => {};
     // All prompts completed for this phase
     if (isExamPhase) {
       return (
@@ -213,8 +263,6 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     }
   };
 
-  const isMcq = currentPrompt?.format === "MCQ" && Array.isArray(currentPrompt.choices);
-
   const handleMcqSelect = async (choiceIndex: number) => {
     if (submitting) return;
     setSelectedChoice(choiceIndex);
@@ -235,6 +283,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           user_answer: userAnswer,
           time_to_answer_seconds: elapsed,
           mcq_choice_index: choiceIndex,
+          // Only sent when the student actually rated it (never fabricated)
+          ...(mcqConfidence != null ? { confidence_rating: mcqConfidence } : {}),
         });
         return;
       }
@@ -246,8 +296,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         user_answer: userAnswer,
         time_to_answer_seconds: elapsed,
         mcq_choice_index: choiceIndex,
-        // No confidence_rating: the picker isn't shown for MCQ, and a
-        // fabricated default would corrupt the calibration dashboard.
+        // Hypercorrection input — only sent when the student actually rated
+        // their confidence (a fabricated default would corrupt calibration).
+        ...(mcqConfidence != null ? { confidence_rating: mcqConfidence } : {}),
       });
       if (!res) return; // break intercepted the submit — nothing recorded
 
@@ -267,7 +318,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const handleScore = (s: string) => {
     if (submitting) return;
     setScore(s);
-    if (s === "CORRECT") {
+    // Pretest misses aren't errors (nothing studied yet) and repair prompts
+    // already know their correction — neither collects an error log.
+    if (s === "CORRECT" || isPretest || isRepair) {
       if (isReviewPhase) {
         doReviewScore(s);
       } else {
@@ -291,11 +344,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       time_to_answer_seconds: elapsed,
       confidence_rating: confidence,
     };
+    if (isPretest) attempt.is_pretest = true;
+    if (isRepair) attempt.is_repair = true;
 
     if (selfExplanation.trim()) attempt.self_explanation = selfExplanation.trim();
     if (generatedExample.trim()) attempt.generated_example = generatedExample.trim();
 
-    if (s !== "CORRECT" && correctionRule.trim()) {
+    if (s !== "CORRECT" && !isPretest && !isRepair && correctionRule.trim()) {
       attempt.error_log = {
         error_type: errorType,
         correction_rule: correctionRule.trim(),
@@ -385,81 +440,89 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     // Persist review-panel metacognition against the attempt it belongs to.
     // Never POST a new attempt here — the run has already advanced, and a
     // fake attempt would silently answer the NEXT (unseen) prompt.
-    if ((selfExplanation.trim() || generatedExample.trim()) && run.last_attempt_id) {
+    if ((selfExplanation.trim() || generatedExample.trim() || socraticAnswer.trim()) && run.last_attempt_id) {
       patchAttemptMeta(run.last_attempt_id, {
         self_explanation: selfExplanation.trim() || undefined,
         generated_example: generatedExample.trim() || undefined,
+        socratic_answer: socraticAnswer.trim() || undefined,
       }).catch(() => { /* non-fatal — reflection is best-effort */ });
     }
     resetForPrompt(promptKey);
   };
 
+  // Latest-render keyboard handler (the stable listener delegates here).
+  // Number/letter keys never fire while typing in an input.
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName;
+    const isTyping =
+      tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || !!target?.isContentEditable;
+    if (isTyping || e.metaKey || e.ctrlKey || e.altKey || submitting) return;
+
+    if (uiPhase === "answering" && isMcq && currentPrompt.choices) {
+      let idx = -1;
+      if (/^[1-4]$/.test(e.key)) idx = parseInt(e.key, 10) - 1;
+      else if (/^[a-dA-D]$/.test(e.key)) idx = e.key.toLowerCase().charCodeAt(0) - 97;
+      if (idx >= 0 && idx < currentPrompt.choices.length) {
+        e.preventDefault();
+        handleMcqSelect(idx);
+        return;
+      }
+      if (e.key === "g" || e.key === "G") { setMcqConfidence(1); return; }
+      if (e.key === "u" || e.key === "U") { setMcqConfidence(3); return; }
+      if (e.key === "s" || e.key === "S") { setMcqConfidence(5); return; }
+      return;
+    }
+
+    if (uiPhase === "scoring") {
+      if (reviewMcqScorable) {
+        if (e.key === "Enter") { e.preventDefault(); confirmReviewMcqScore(); }
+        return;
+      }
+      if (e.key === "1") { e.preventDefault(); handleScore("CORRECT"); return; }
+      if (e.key === "2") { e.preventDefault(); handleScore("PARTIAL"); return; }
+      if (e.key === "3") { e.preventDefault(); handleScore("INCORRECT"); return; }
+      return;
+    }
+
+    if (uiPhase === "review" && e.key === "Enter") {
+      e.preventDefault();
+      goNext();
+    }
+  };
+
   return (
     <div>
-      {/* Header bar */}
+      {/* Single quiet status line — everything the student doesn't need to
+          think about lives here in low contrast (Sweller: extraneous UI load
+          competes with learning). */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: "0.5rem",
-          fontSize: "0.75rem",
-          color: "#a89a82",
+          fontSize: "0.72rem",
+          color: "#8a8070",
         }}
       >
         <span>
-          {session.course_name} | {session.mode_label}
+          {session.course_name} · {session.mode_label}
+          {isExamPhase && <span style={{ color: "#c4a0ff" }}> · EXAM — feedback after all answers</span>}
+          {isReviewPhase && <span style={{ color: "#7ec8e3" }}> · REVIEW — score your answers</span>}
         </span>
         <span>
           {run.metrics.correct_count}✓ {run.metrics.partial_count}~ {run.metrics.incorrect_count}✗
         </span>
       </div>
 
-      {/* EXAM MODE banner */}
-      {isExamPhase && (
-        <div
-          style={{
-            background: "#3d3050",
-            border: "1px solid #9a70d0",
-            borderRadius: 4,
-            padding: "0.4rem 0.75rem",
-            marginBottom: "0.75rem",
-            fontSize: "0.7rem",
-            color: "#c4a0ff",
-            textAlign: "center",
-            letterSpacing: "0.05em",
-          }}
-        >
-          EXAM MODE — feedback after all answers
-        </div>
-      )}
-
-      {/* REVIEW MODE banner */}
-      {isReviewPhase && (
-        <div
-          style={{
-            background: "#2d4a3d",
-            border: "1px solid #5aa0c0",
-            borderRadius: 4,
-            padding: "0.4rem 0.75rem",
-            marginBottom: "0.75rem",
-            fontSize: "0.7rem",
-            color: "#7ec8e3",
-            textAlign: "center",
-            letterSpacing: "0.05em",
-          }}
-        >
-          REVIEW PHASE — score your answers
-        </div>
-      )}
-
       {/* Progress bar */}
       <div
         style={{
-          height: 4,
-          background: "#4a6a4a",
+          height: 3,
+          background: "#3a523a",
           borderRadius: 2,
-          marginBottom: "1.5rem",
+          marginBottom: "1.25rem",
           overflow: "hidden",
         }}
       >
@@ -473,7 +536,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         />
       </div>
 
-      {/* Prompt */}
+      {/* Prompt — the question is the biggest thing on screen */}
       <div
         style={{
           background: "#334d33",
@@ -485,7 +548,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       >
         <div
           style={{
-            fontSize: "0.7rem",
+            fontSize: "0.68rem",
             color: "#7ec8e3",
             marginBottom: "0.5rem",
             letterSpacing: "0.08em",
@@ -493,7 +556,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         >
           {progressLabel}
         </div>
-        <p style={{ margin: 0, fontSize: "1rem", lineHeight: 1.5 }}>
+        {isPretest && (
+          <div style={{ fontSize: "0.75rem", color: "#e8a040", marginBottom: "0.5rem" }}>
+            DIAGNOSTIC — answer from what you already know. Being wrong here is
+            expected and useful: it primes you to learn this next.
+          </div>
+        )}
+        <p style={{ margin: 0, fontSize: "1.1rem", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
           {currentPrompt.text}
         </p>
       </div>
@@ -517,43 +586,72 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
       {/* MCQ answering phase */}
       {uiPhase === "answering" && !isReviewPhase && isMcq && currentPrompt.choices && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
-          {currentPrompt.choices.map((choice: string, idx: number) => {
-            const label = String.fromCharCode(65 + idx);
-            const isSelected = selectedChoice === idx;
-            return (
+        <div style={{ marginBottom: "1rem" }}>
+          {/* Optional 1-tap pre-answer confidence (hypercorrection input).
+              Never fabricated: nothing is sent unless the student rates it. */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.6rem" }}>
+            <span style={{ fontSize: "0.72rem", color: "#8a8070" }}>How sure are you?</span>
+            {([["Guessing", 1, "G"], ["Unsure", 3, "U"], ["Sure", 5, "S"]] as const).map(([lbl, val, key]) => (
               <button
-                key={idx}
-                onClick={() => handleMcqSelect(idx)}
-                disabled={submitting}
+                key={val}
+                onClick={() => setMcqConfidence(mcqConfidence === val ? null : val)}
                 style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "0.75rem",
-                  padding: "0.85rem 1rem",
-                  background: isSelected ? "#3d5a80" : "#2a2a2a",
-                  border: `2px solid ${isSelected ? "#7ec8e3" : "#444"}`,
-                  borderRadius: 8,
-                  color: "#e0d6c8",
-                  fontSize: "0.9rem",
-                  lineHeight: 1.5,
-                  cursor: submitting ? "wait" : "pointer",
-                  textAlign: "left",
+                  padding: "0.2rem 0.55rem",
+                  fontSize: "0.72rem",
                   fontFamily: "inherit",
-                  opacity: submitting ? 0.6 : 1,
-                  transition: "border-color 0.15s, background 0.15s",
+                  background: mcqConfidence === val ? "#3d5a80" : "transparent",
+                  color: mcqConfidence === val ? "#7ec8e3" : "#8a8070",
+                  border: `1px solid ${mcqConfidence === val ? "#7ec8e3" : "#4a6a4a"}`,
+                  borderRadius: 4,
+                  cursor: "pointer",
                 }}
               >
-                <span style={{
-                  fontWeight: 700,
-                  color: "#7ec8e3",
-                  minWidth: "1.5rem",
-                  fontSize: "0.95rem",
-                }}>{label}.</span>
-                <span>{choice}</span>
+                {lbl} <span style={{ opacity: 0.6 }}>{key}</span>
               </button>
-            );
-          })}
+            ))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {currentPrompt.choices.map((choice: string, idx: number) => {
+              const label = String.fromCharCode(65 + idx);
+              const isSelected = selectedChoice === idx;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => handleMcqSelect(idx)}
+                  disabled={submitting}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.75rem",
+                    padding: "0.85rem 1rem",
+                    background: isSelected ? "#3d5a80" : "#2a2a2a",
+                    border: `2px solid ${isSelected ? "#7ec8e3" : "#444"}`,
+                    borderRadius: 8,
+                    color: "#e0d6c8",
+                    fontSize: "0.9rem",
+                    lineHeight: 1.5,
+                    cursor: submitting ? "wait" : "pointer",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                    opacity: submitting ? 0.6 : 1,
+                    transition: "border-color 0.15s, background 0.15s",
+                  }}
+                >
+                  <span style={{
+                    fontWeight: 700,
+                    color: "#7ec8e3",
+                    minWidth: "1.5rem",
+                    fontSize: "0.95rem",
+                  }}>{label}.</span>
+                  <span style={{ flex: 1 }}>{choice}</span>
+                  <span style={{ fontSize: "0.7rem", color: "#5a6a5a", alignSelf: "center" }}>{idx + 1}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.68rem", color: "#5a6a5a" }}>
+            Keys 1–4 or A–D to answer
+          </p>
         </div>
       )}
 
@@ -652,6 +750,41 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           )}
 
+          {/* Answer standard: self-scoring against an explicit model answer,
+              not a feeling (calibration). Stacked directly under the user's
+              answer — spatial contiguity. */}
+          {!isMcq && !isExamPhase && revealLoading && (
+            <p style={{ fontSize: "0.75rem", color: "#8a8070", fontStyle: "italic", marginBottom: "0.75rem" }}>
+              Loading model answer...
+            </p>
+          )}
+          {!isMcq && reveal?.model_answer && (
+            <div
+              style={{
+                background: "#2d4a3d",
+                border: "1px solid #7ec8e3",
+                borderRadius: 6,
+                padding: "1rem",
+                marginBottom: "1rem",
+              }}
+              data-testid="model-answer"
+            >
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", fontWeight: 600, color: "#7ec8e3", letterSpacing: "0.05em" }}>
+                MODEL ANSWER — compare before you score
+              </p>
+              <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                {reveal.model_answer}
+              </p>
+              {reveal.key_points && reveal.key_points.length > 0 && (
+                <ul style={{ margin: "0.6rem 0 0", paddingLeft: "1.1rem", fontSize: "0.82rem", lineHeight: 1.6, color: "#c8d8c8" }}>
+                  {reveal.key_points.map((kp, i) => (
+                    <li key={i}>{kp}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {reviewMcqScorable ? (
             <div>
               {/* Objective MCQ review: show the key, derive the score */}
@@ -698,17 +831,21 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           ) : (
             <div>
               <p style={{ fontSize: "0.85rem", color: "#c8bca8", marginBottom: "0.75rem" }}>
-                How did you do? Be honest.
+                {isPretest
+                  ? "How close were you? (Diagnostic only — this doesn't count against you.)"
+                  : reveal?.model_answer
+                    ? "Score yourself against the model answer."
+                    : "How did you do? Be honest."}
               </p>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button onClick={() => handleScore("CORRECT")} disabled={submitting} style={scoreBtn("#88cc88", submitting)}>
-                  ✓ Correct
+                  ✓ Correct <span style={{ opacity: 0.5, fontWeight: 400 }}>1</span>
                 </button>
                 <button onClick={() => handleScore("PARTIAL")} disabled={submitting} style={scoreBtn("#e8a040", submitting)}>
-                  ~ Partial
+                  ~ Partial <span style={{ opacity: 0.5, fontWeight: 400 }}>2</span>
                 </button>
                 <button onClick={() => handleScore("INCORRECT")} disabled={submitting} style={scoreBtn("#e88888", submitting)}>
-                  ✗ Incorrect
+                  ✗ Incorrect <span style={{ opacity: 0.5, fontWeight: 400 }}>3</span>
                 </button>
               </div>
             </div>
@@ -782,6 +919,52 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {/* Review & Repair panel — shown AFTER scoring with deferred feedback */}
       {uiPhase === "review" && (
         <div data-testid="review-panel">
+          {/* Hypercorrection callout (Butterfield & Metcalfe 2001): a
+              high-confidence miss is the single most correctable moment —
+              direct full attention to the correction. */}
+          {lastScore === "INCORRECT" && (mcqResult ? (mcqConfidence ?? 0) >= 4 : confidence >= 4) && (
+            <div
+              style={{
+                background: "#4a3050",
+                border: "1px solid #c4a0ff",
+                borderRadius: 6,
+                padding: "0.75rem 1rem",
+                marginBottom: "1rem",
+              }}
+              data-testid="hypercorrection-badge"
+            >
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "#c4a0ff", fontWeight: 600 }}>
+                High-confidence miss
+              </p>
+              <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#d8c8e8" }}>
+                You were sure about this one. Read the correction closely —
+                confidently-held errors, once corrected, are the ones that stick best.
+                This will come back for review.
+              </p>
+            </div>
+          )}
+
+          {/* Pretest framing: a wrong diagnostic answer is priming, not failure */}
+          {isPretest && (
+            <div
+              style={{
+                background: "#4a4030",
+                border: "1px solid #e8a040",
+                borderRadius: 6,
+                padding: "0.75rem 1rem",
+                marginBottom: "1rem",
+              }}
+            >
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "#e8a040", fontWeight: 600 }}>
+                Diagnostic complete
+              </p>
+              <p style={{ margin: "0.3rem 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#e8dcc8" }}>
+                You haven&apos;t studied this yet — attempting it first primes your
+                brain to encode the real material better. It&apos;s coming up in this course.
+              </p>
+            </div>
+          )}
+
           {/* Server-graded MCQ outcome: correct answer + why the pick was tempting */}
           {mcqResult && (
             <div
@@ -1022,9 +1205,28 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#f0dc4e", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
-                  <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
+                  <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", lineHeight: 1.5, fontStyle: "italic" }}>
                     {fb.socratic_followup}
                   </p>
+                  {/* Close the loop: an unanswered Socratic question is decoration.
+                      Saved with the attempt on Next Prompt. */}
+                  <input
+                    type="text"
+                    value={socraticAnswer}
+                    onChange={(e) => setSocraticAnswer(e.target.value)}
+                    placeholder="Your one-line answer (optional)..."
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 0.6rem",
+                      fontSize: "0.82rem",
+                      fontFamily: "inherit",
+                      background: "#2a3a2a",
+                      color: "#e8dcc8",
+                      border: "1px solid #4a6a4a",
+                      borderRadius: 4,
+                      boxSizing: "border-box",
+                    }}
+                  />
                 </div>
               )}
 
@@ -1060,8 +1262,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           )}
 
-          {/* Self-explanation prompt (all scores, after feedback loads) */}
-          {!feedbackLoading && (fb.explanation || fb.reinforcement || lastScore) && (
+          {/* Self-explanation prompt (all scores) — available WHILE feedback
+              generates: writing the reflection converts wait time into
+              germane processing instead of dead time. */}
+          {lastScore && (
             <div
               style={{
                 background: "#334d33",
@@ -1085,7 +1289,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           {/* Generation effect: create your own example (for correct answers) */}
-          {lastScore === "CORRECT" && !feedbackLoading && (
+          {lastScore === "CORRECT" && (
             <div
               style={{
                 background: "#334d33",
@@ -1109,7 +1313,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           <button onClick={goNext} style={primaryBtn}>
-            Next Prompt
+            Next Prompt <span style={{ opacity: 0.55, fontWeight: 400 }}>↵</span>
           </button>
         </div>
       )}

@@ -5,10 +5,14 @@ import {
   generateInterleavedPrompts,
   generateExamSimPrompts,
   generateErrorRepairPrompts,
+  interleaveByObjective,
   type Prompt,
   type ErrorLogForRepair,
 } from "@/lib/prompts";
 import { generateContentAwarePrompts } from "@/lib/content-prompts";
+import { generateWorkedExampleDeck } from "@/lib/worked-examples";
+import { generateFeedbackEager } from "@/services/feedback";
+import { followupsFromDueDates } from "@/lib/spacing";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
@@ -56,6 +60,10 @@ export interface RunMetrics {
   incorrect_count: number;
   accuracy: number;
   time_spent_seconds: number;
+  // Pretest items are diagnostic (Richland 2009) — tracked separately so
+  // expected pre-study errors never contaminate accuracy or mastery.
+  pretest_count?: number;
+  pretest_correct?: number;
   recommended_followups?: { label: string; days_from_now: number; date: string }[];
 }
 
@@ -70,6 +78,8 @@ export interface PromptView {
   correctIndex?: number;
   meta?: {
     distractorRationales?: string[];
+    /** Deck-pack marker (PRE_TEST, WORKED_EXAMPLE, WE_*) — drives UI framing. */
+    pack?: string;
     [key: string]: unknown;
   };
 }
@@ -141,6 +151,10 @@ function toPromptView(prompt: Prompt, index: number, includeAnswer = false): Pro
   if (prompt.meta?.original_prompt_text) {
     view.meta = { ...(view.meta ?? {}), original_prompt_text: prompt.meta.original_prompt_text };
   }
+  // Pack marker (PRE_TEST etc.) drives client framing; not sensitive.
+  if (prompt.meta?.pack) {
+    view.meta = { ...(view.meta ?? {}), pack: prompt.meta.pack };
+  }
   return view;
 }
 
@@ -157,6 +171,8 @@ function redactPrompts(prompts: Prompt[]): Prompt[] {
       const {
         distractorRationales: _dr,
         expected_correction_rule: _ecr,
+        model_answer: _ma,
+        key_points: _kp,
         ...metaRest
       } = meta;
       meta = Object.keys(metaRest).length > 0 ? metaRest : undefined;
@@ -186,6 +202,37 @@ async function runPostCompletionEffects(
     if (!s) return;
 
     await updateObjectiveMastery(userId, runId, s.courseName);
+
+    // Replace the fixed-offset follow-up ladder with the actual SM-2 due
+    // dates just computed (Cepeda 2008: the review gap should come from the
+    // scheduler, not a static table). Falls back to the fixed ladder when no
+    // mastery rows exist.
+    try {
+      const dueRows = await prisma.objectiveMastery.findMany({
+        where: { userId, courseName: s.courseName, nextDueAt: { not: null } },
+        orderBy: { nextDueAt: "asc" },
+        take: 3,
+        select: { nextDueAt: true },
+      });
+      const followups = followupsFromDueDates(
+        dueRows.map((r) => r.nextDueAt!).filter(Boolean),
+      );
+      if (followups.length > 0) {
+        const runRow = await prisma.sessionRun.findUnique({
+          where: { runId },
+          select: { metrics: true },
+        });
+        if (runRow) {
+          const m = runRow.metrics as unknown as RunMetrics;
+          await prisma.sessionRun.update({
+            where: { runId },
+            data: { metrics: { ...m, recommended_followups: followups } as object },
+          });
+        }
+      }
+    } catch (fuErr) {
+      logger.warn("followups.mastery_derived_failed", { user_id: userId, run_id: runId, error: String(fuErr) });
+    }
 
     // Auto-generate flashcards from errors (Roediger & Butler 2011)
     try {
@@ -313,7 +360,12 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       });
 
       if (contentPrompts) {
-        prompts = contentPrompts;
+        // AI decks arrive grouped by objective — re-interleave so mixed
+        // practice actually mixes (Rohrer & Taylor 2007). Skip for EXAM_SIM
+        // (fixed exam order) and RETRIEVAL (single-topic focus is fine).
+        prompts = mode === "INTERLEAVED_PRACTICE"
+          ? interleaveByObjective(contentPrompts, session.sessionId)
+          : contentPrompts;
         logger.info("run.content_aware_prompts", {
           user_id: userId,
           session_id: sessionId,
@@ -331,15 +383,50 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       break;
     }
 
+    case "WORKED_EXAMPLES": {
+      // Worked-example effect with backward fading (Sweller & Cooper 1985;
+      // Renkl 2002): study a full example, then completion problems with
+      // progressively more steps removed, then a full near-transfer problem.
+      const weDeck = await generateWorkedExampleDeck({
+        userId,
+        courseName: session.courseName,
+        examName: session.examName || undefined,
+        topicScope: session.topicScope,
+        objectives: objectives || [{ id: "topic_0", title: session.topicScope }],
+        promptCount,
+        gatewayCtx,
+      });
+
+      if (weDeck) {
+        prompts = weDeck;
+        logger.info("run.worked_examples_deck", {
+          user_id: userId,
+          session_id: sessionId,
+          count: prompts.length,
+        });
+      } else {
+        // No content or no AI — fall back to retrieval practice so the
+        // session still runs rather than dead-ending.
+        prompts = generateRetrievalPrompts(sessionParams);
+        logger.info("run.worked_examples_fallback", { user_id: userId, session_id: sessionId });
+      }
+      break;
+    }
+
     case "ERROR_REPAIR": {
       const count = promptCount;
-      // Fetch unresolved error logs for this user, newest first
+      // Fetch unresolved error logs — high-confidence errors first
+      // (hypercorrection: Butterfield & Metcalfe 2001 — confident misses,
+      // once corrected, are remembered best), then newest.
       const errorLogs = await prisma.sessionErrorLog.findMany({
         where: {
           run: { userId },
           resolvedAt: null,
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: [
+          { confidenceRating: { sort: "desc", nulls: "last" } },
+          { createdAt: "desc" },
+        ],
         take: count,
         include: {
           run: {
@@ -551,6 +638,9 @@ async function getPromptAt(
     if (typeof meta?.original_prompt_text === "string") {
       view.meta = { ...(view.meta ?? {}), original_prompt_text: meta.original_prompt_text };
     }
+    if (typeof meta?.pack === "string") {
+      view.meta = { ...(view.meta ?? {}), pack: meta.pack };
+    }
     return view;
   }
   // Fallback to JSONB for runs created before migration
@@ -621,10 +711,14 @@ async function adaptPromptDifficulty(
     targetMin = 1; targetMax = 2;
   }
 
-  // Get current prompt and remaining prompts
-  const [currentPrompt, remainingPrompts] = await Promise.all([
+  // Get current prompt, previous prompt (for interleaving adjacency), and
+  // remaining prompts
+  const [currentPrompt, previousPrompt, remainingPrompts] = await Promise.all([
     prisma.sessionRunPrompt.findUnique({
       where: { runId_promptIndex: { runId, promptIndex: currentIndex } },
+    }),
+    prisma.sessionRunPrompt.findUnique({
+      where: { runId_promptIndex: { runId, promptIndex: currentIndex - 1 } },
     }),
     prisma.sessionRunPrompt.findMany({
       where: {
@@ -642,10 +736,15 @@ async function adaptPromptDifficulty(
     return null;
   }
 
-  // Find a better-fit prompt among remaining prompts
-  const betterFit = remainingPrompts.find(
+  // Find better-fit prompts among remaining prompts; prefer one whose
+  // objective differs from the previous prompt so a difficulty swap never
+  // silently un-interleaves the deck (Rohrer & Taylor 2007).
+  const candidates = remainingPrompts.filter(
     (p) => p.difficulty >= targetMin && p.difficulty <= targetMax
   );
+  const betterFit =
+    candidates.find((p) => p.objectiveId !== previousPrompt?.objectiveId) ??
+    candidates[0];
 
   if (!betterFit) return null;
 
@@ -885,6 +984,15 @@ async function handleImmediateScoring(
   const finalScoreValue = effectiveScore;
   const finalErrorLog = effectiveErrorLog;
 
+  // Server-stored prompt meta is authoritative (never trust client flags):
+  // pretest items are diagnostic — quarantined from accuracy, error logs,
+  // variant injection, and mastery (Richland et al. 2009: pretesting helps
+  // even when answers are wrong, so wrong answers must not be punished).
+  const isPretest = prompt.meta?.pack === "PRE_TEST";
+  // Repair prompts (variants, cross-session repairs, ERROR_REPAIR decks)
+  // link back to a source error log and never mint a NEW error log.
+  const sourceErrorLogId = prompt.meta?.source_error_log_id;
+
   let attemptId: string;
   try {
     const txResult = await prisma.$transaction(async (tx) => {
@@ -910,17 +1018,27 @@ async function handleImmediateScoring(
       const promptCount = fresh.promptCount || (fresh.prompts as unknown as Prompt[]).length;
       const metrics = fresh.metrics as unknown as RunMetrics;
       const freshBreak = fresh.breakState as unknown as BreakState;
-      const newMetrics: RunMetrics = {
-        attempts_count: metrics.attempts_count + 1,
-        correct_count: metrics.correct_count + (finalScoreValue === "CORRECT" ? 1 : 0),
-        partial_count: metrics.partial_count + (finalScoreValue === "PARTIAL" ? 1 : 0),
-        incorrect_count: metrics.incorrect_count + (finalScoreValue === "INCORRECT" ? 1 : 0),
-        accuracy: 0,
-        time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
-      };
-      newMetrics.accuracy = newMetrics.attempts_count > 0
-        ? newMetrics.correct_count / newMetrics.attempts_count
-        : 0;
+      const newMetrics: RunMetrics = isPretest
+        ? {
+            ...metrics,
+            time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
+            pretest_count: (metrics.pretest_count ?? 0) + 1,
+            pretest_correct: (metrics.pretest_correct ?? 0) + (finalScoreValue === "CORRECT" ? 1 : 0),
+          }
+        : {
+            ...metrics,
+            attempts_count: metrics.attempts_count + 1,
+            correct_count: metrics.correct_count + (finalScoreValue === "CORRECT" ? 1 : 0),
+            partial_count: metrics.partial_count + (finalScoreValue === "PARTIAL" ? 1 : 0),
+            incorrect_count: metrics.incorrect_count + (finalScoreValue === "INCORRECT" ? 1 : 0),
+            accuracy: 0,
+            time_spent_seconds: metrics.time_spent_seconds + (input.time_to_answer_seconds ?? 0),
+          };
+      if (!isPretest) {
+        newMetrics.accuracy = newMetrics.attempts_count > 0
+          ? newMetrics.correct_count / newMetrics.attempts_count
+          : 0;
+      }
 
       const newIndex = fresh.currentIndex + 1;
       const isLastPrompt = newIndex >= promptCount;
@@ -941,10 +1059,15 @@ async function handleImmediateScoring(
         },
       });
 
+      // Error logs: only for genuine (non-pretest) errors on prompts that
+      // aren't already repairing an existing error. Confidence is stored for
+      // hypercorrection prioritization (Butterfield & Metcalfe 2001).
       let errorLogId: string | undefined;
       if (
         (finalScoreValue === "PARTIAL" || finalScoreValue === "INCORRECT") &&
-        finalErrorLog
+        finalErrorLog &&
+        !isPretest &&
+        !sourceErrorLogId
       ) {
         const errorLog = await tx.sessionErrorLog.create({
           data: {
@@ -954,20 +1077,48 @@ async function handleImmediateScoring(
             errorType: finalErrorLog.error_type,
             correctionRule: finalErrorLog.correction_rule,
             variantQuestion: finalErrorLog.variant_question ?? null,
+            confidenceRating: input.confidence_rating ?? null,
           },
         });
         errorLogId = errorLog.id;
       }
 
-      // Resolve linked error log on CORRECT (ERROR_REPAIR mode, cross-session repairs, and variant questions)
-      if (finalScoreValue === "CORRECT" && prompt.meta?.source_error_log_id) {
-        await tx.sessionErrorLog.update({
-          where: { id: prompt.meta.source_error_log_id },
-          data: {
-            resolvedAt: new Date(),
-            resolvedByRunId: run.runId,
-          },
-        });
+      // Criterion-based successive relearning (Rawson & Dunlosky 2011):
+      // a linked error log resolves only after TWO correct retrievals on
+      // DIFFERENT days — one lucky in-session hit is not mastery. A wrong
+      // answer on a repair prompt resets the streak.
+      if (sourceErrorLogId && !isPretest) {
+        if (finalScoreValue === "CORRECT") {
+          const srcLog = await tx.sessionErrorLog.findUnique({
+            where: { id: sourceErrorLogId },
+          });
+          if (srcLog && !srcLog.resolvedAt) {
+            const now = new Date();
+            const today = now.toISOString().slice(0, 10);
+            const lastDay = srcLog.lastCorrectAt
+              ? srcLog.lastCorrectAt.toISOString().slice(0, 10)
+              : null;
+            // At most one streak increment per calendar day (UTC)
+            if (lastDay !== today) {
+              const newStreak = srcLog.correctStreak + 1;
+              await tx.sessionErrorLog.update({
+                where: { id: srcLog.id },
+                data: {
+                  correctStreak: newStreak,
+                  lastCorrectAt: now,
+                  ...(newStreak >= 2
+                    ? { resolvedAt: now, resolvedByRunId: run.runId }
+                    : {}),
+                },
+              });
+            }
+          }
+        } else {
+          await tx.sessionErrorLog.updateMany({
+            where: { id: sourceErrorLogId, resolvedAt: null },
+            data: { correctStreak: 0 },
+          });
+        }
       }
 
       // ---- In-session error repair: inject variant question ----
@@ -975,11 +1126,18 @@ async function handleImmediateScoring(
       // end of the deck. This provides natural spacing (1-3 intervening items)
       // before the retry, which research shows enhances the retrieval effect
       // (Kornell & Bjork 2008).
+      // In-session repair loop: a wrong answer injects a spaced retry variant
+      // at the end of the deck (Kornell & Bjork 2008). A wrong answer ON a
+      // repair prompt re-injects for the SAME source error (criterion loop) —
+      // the session doesn't end until each miss gets a correct retrieval or
+      // the cap is hit. Pretest misses never inject (they aren't errors yet).
       let variantInjected = false;
       let finalPromptCount = promptCount;
+      const repairSourceId = sourceErrorLogId ?? errorLogId;
       if (
         (finalScoreValue === "PARTIAL" || finalScoreValue === "INCORRECT") &&
-        finalErrorLog &&
+        (finalErrorLog || sourceErrorLogId) &&
+        !isPretest &&
         run.mode !== "ERROR_REPAIR" // ERROR_REPAIR already has targeted repair prompts
       ) {
         // Count existing variants in this session to cap injection
@@ -996,10 +1154,10 @@ async function handleImmediateScoring(
           const variantPrompt = generateVariantQuestion(
             promptCount, // append at end of current deck
             variantSourceText,
-            finalErrorLog.error_type,
-            finalErrorLog.correction_rule,
+            finalErrorLog?.error_type ?? "MISCONCEPTION",
+            finalErrorLog?.correction_rule ?? prompt.meta?.expected_correction_rule ?? "",
             prompt.objective_id,
-            errorLogId,
+            repairSourceId,
           );
 
           await tx.sessionRunPrompt.create({
@@ -1010,7 +1168,7 @@ async function handleImmediateScoring(
               text: variantPrompt.text,
               difficulty: variantPrompt.difficulty,
               sourceType: "VARIANT_REPAIR",
-              sourceRefId: errorLogId ?? null,
+              sourceRefId: repairSourceId ?? null,
               meta: variantPrompt.meta ? (variantPrompt.meta as object) : undefined,
             },
           });
@@ -1044,6 +1202,12 @@ async function handleImmediateScoring(
     });
     attemptId = txResult.attemptId;
     const { newMetrics, newIndex, promptCount, isLastPrompt, updatedBreakState, variantInjected } = txResult;
+
+    // Eager feedback (Kulik & Kulik 1988 — immediate feedback default):
+    // start generating elaborated feedback the moment the attempt lands so
+    // the review panel barely waits. Fire-and-forget; the GET endpoint is
+    // the fallback and the claim in generateFeedbackEager prevents doubles.
+    void generateFeedbackEager(userId, attemptId).catch(() => {});
 
     const dbTxMs = Date.now() - txStart;
     const feedbackStatus = (finalScoreValue === "PARTIAL" || finalScoreValue === "INCORRECT")
@@ -1266,7 +1430,8 @@ async function handleExamScore(
         },
       });
 
-      // Insert error log if needed
+      // Insert error log if needed — carrying the exam-time confidence for
+      // hypercorrection prioritization (Butterfield & Metcalfe 2001).
       if ((selfScore === "PARTIAL" || selfScore === "INCORRECT") && errorLog) {
         await tx.sessionErrorLog.create({
           data: {
@@ -1276,6 +1441,7 @@ async function handleExamScore(
             errorType: errorLog.error_type,
             correctionRule: errorLog.correction_rule,
             variantQuestion: errorLog.variant_question ?? null,
+            confidenceRating: existing.confidenceRating ?? null,
           },
         });
       }
@@ -1300,6 +1466,9 @@ async function handleExamScore(
     });
 
     const { attemptId, newMetrics, newIndex, promptCount, newScoredCount, isLastScore, answeredCount } = txResult;
+
+    // Eager feedback: start generation as soon as the score lands.
+    void generateFeedbackEager(userId, attemptId).catch(() => {});
 
     const dbTxMs = Date.now() - txStart;
     const feedbackStatus = (selfScore === "PARTIAL" || selfScore === "INCORRECT")
@@ -1430,6 +1599,7 @@ async function generateCrossSessionRepairs(
 ): Promise<Prompt[]> {
   try {
     // Find unresolved errors from this course's sessions, newest first
+    // High-confidence errors first (hypercorrection), then newest.
     const unresolvedErrors = await prisma.sessionErrorLog.findMany({
       where: {
         userId,
@@ -1438,7 +1608,10 @@ async function generateCrossSessionRepairs(
           session: { courseName },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [
+        { confidenceRating: { sort: "desc", nulls: "last" } },
+        { createdAt: "desc" },
+      ],
       take: 4, // fetch more than needed to filter
       select: {
         id: true,
@@ -1575,7 +1748,7 @@ async function updateObjectiveMastery(userId: string, runId: string, courseName:
       }),
       prisma.sessionRunPrompt.findMany({
         where: { runId },
-        select: { promptIndex: true, objectiveId: true },
+        select: { promptIndex: true, objectiveId: true, meta: true },
       }),
       // Find nearest exam date for exam-aware spacing
       prisma.studyPlan.findFirst({
@@ -1587,12 +1760,16 @@ async function updateObjectiveMastery(userId: string, runId: string, courseName:
 
     const examDate = plan?.examDate ?? undefined;
 
-    // Build objective -> scores map (with confidence data)
+    // Build objective -> scores map (with confidence data).
+    // Pretest attempts are diagnostic — expected pre-study errors must not
+    // depress mastery (Richland et al. 2009).
     const objectiveScores = new Map<string, { correct: number; total: number; confidenceSum: number; confidenceCount: number }>();
     for (const attempt of attempts) {
       const promptRow = promptRows.find((p) => p.promptIndex === attempt.promptIndex);
       const objId = promptRow?.objectiveId;
       if (!objId) continue;
+      const rowMeta = promptRow?.meta as { pack?: string } | null;
+      if (rowMeta?.pack === "PRE_TEST") continue;
 
       const entry = objectiveScores.get(objId) || { correct: 0, total: 0, confidenceSum: 0, confidenceCount: 0 };
       entry.total++;
@@ -1706,6 +1883,62 @@ export async function completeRun(userId: string, runId: string) {
   };
 }
 
+// ---- Answer standard reveal ----
+
+/**
+ * Reveal the model answer / key points for the CURRENT prompt so the student
+ * can self-score against an explicit standard instead of a feeling
+ * (calibration: self-assessment without a reference answer is unreliable).
+ *
+ * Withheld during the EXAM phase of EXAM_SIM (delayed feedback is the point
+ * of an exam simulation). For repair prompts the expected correction rule
+ * serves as the standard.
+ */
+export async function getAnswerReveal(userId: string, runId: string, index: number) {
+  const run = await prisma.sessionRun.findUnique({
+    where: { runId },
+    select: { userId: true, currentIndex: true, phase: true, status: true, promptCount: true },
+  });
+  if (!run) return { error: "not_found" as const };
+  if (run.userId !== userId) return { error: "forbidden" as const };
+  if (run.phase === "EXAM") {
+    return { error: "wrong_phase" as const, message: "Answers are revealed after the exam phase" };
+  }
+  if (index !== run.currentIndex) {
+    return { error: "wrong_index" as const, expected: run.currentIndex };
+  }
+
+  const row = await prisma.sessionRunPrompt.findUnique({
+    where: { runId_promptIndex: { runId, promptIndex: index } },
+  });
+  const meta = (row?.meta ?? null) as {
+    format?: string;
+    model_answer?: string;
+    key_points?: string[];
+    expected_correction_rule?: string;
+  } | null;
+
+  // Never reveal for an UNANSWERED MCQ — the model answer names the correct
+  // choice, which would defeat server-side grading. MCQ correctness arrives
+  // in the attempt response instead.
+  if (meta?.format === "MCQ") {
+    const answered = await prisma.sessionAttempt.findUnique({
+      where: { runId_promptIndex: { runId, promptIndex: index } },
+      select: { id: true },
+    });
+    if (!answered) {
+      return { data: { model_answer: null, key_points: null } };
+    }
+  }
+
+  return {
+    data: {
+      model_answer: meta?.model_answer ?? meta?.expected_correction_rule ?? null,
+      key_points: Array.isArray(meta?.key_points) ? meta.key_points : null,
+    },
+  };
+}
+
 // ---- Post-review metacognition update ----
 
 /**
@@ -1717,7 +1950,7 @@ export async function completeRun(userId: string, runId: string) {
 export async function updateAttemptMeta(
   userId: string,
   attemptId: string,
-  input: { self_explanation?: string; generated_example?: string },
+  input: { self_explanation?: string; generated_example?: string; socratic_answer?: string },
 ) {
   const attempt = await prisma.sessionAttempt.findUnique({
     where: { id: attemptId },
@@ -1731,6 +1964,7 @@ export async function updateAttemptMeta(
     data: {
       selfExplanation: input.self_explanation ?? undefined,
       generatedExample: input.generated_example ?? undefined,
+      socraticAnswer: input.socratic_answer ?? undefined,
     },
   });
 

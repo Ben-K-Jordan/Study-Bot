@@ -7,6 +7,7 @@
 
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { compressIntervalForExam } from "@/lib/spacing";
 
 // Rating scale matches SM-2: 0=Again, 3=Hard, 4=Good, 5=Easy
 const RATING_MAP: Record<string, number> = {
@@ -28,12 +29,18 @@ interface SM2Result {
 /**
  * Core SM-2 algorithm.
  * Given current card state and a quality rating, compute new scheduling.
+ *
+ * When `examDate` is provided, the computed interval is capped with the
+ * shared exam-aware compression policy (Cepeda et al. 2008) so reviews
+ * complete before the exam. Omitting it (or passing null) preserves the
+ * original exam-unaware behavior.
  */
 export function computeSM2(
   currentEase: number,
   currentInterval: number,
   currentReps: number,
   rating: ReviewRating,
+  examDate?: Date | null,
 ): SM2Result {
   const q = RATING_MAP[rating];
   let ef = currentEase;
@@ -59,6 +66,13 @@ export function computeSM2(
       interval = Math.round(currentInterval * ef);
       reps = currentReps + 1;
     }
+  }
+
+  // Exam-aware compression: cap day-scale intervals so reviews finish before
+  // the exam. Learning-phase cards (interval 0, due again in 10 minutes) are
+  // left alone — compression only applies to intervals measured in days.
+  if (interval > 0) {
+    interval = compressIntervalForExam(interval, examDate);
   }
 
   const nextDue = new Date();
