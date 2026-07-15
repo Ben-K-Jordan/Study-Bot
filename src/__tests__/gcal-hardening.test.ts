@@ -22,7 +22,7 @@ describe("token encryption", () => {
     const origEnv = { ...process.env };
     delete process.env.TOKEN_ENC_KEY;
     delete process.env.GOOGLE_TOKEN_ENC_KEY;
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
 
     // Dynamic import to get fresh module
     vi.resetModules();
@@ -30,6 +30,7 @@ describe("token encryption", () => {
       const { encrypt } = await import("@/lib/crypto");
       expect(() => encrypt("test")).toThrow("TOKEN_ENC_KEY");
     } finally {
+      vi.unstubAllEnvs();
       Object.assign(process.env, origEnv);
       vi.resetModules();
     }

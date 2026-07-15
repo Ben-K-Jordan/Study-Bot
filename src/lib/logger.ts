@@ -14,7 +14,11 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 };
 
 function getMinLevel(): LogLevel {
-  if (process.env.LOG_LEVEL) return process.env.LOG_LEVEL as LogLevel;
+  if (process.env.LOG_LEVEL) {
+    const normalized = process.env.LOG_LEVEL.toLowerCase();
+    if (normalized in LEVEL_ORDER) return normalized as LogLevel;
+    return "info";
+  }
   if (process.env.NODE_ENV === "test") return "error";
   return "info";
 }

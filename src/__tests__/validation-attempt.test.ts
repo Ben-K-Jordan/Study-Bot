@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { submitAttemptSchema } from "@/lib/validation";
+import { submitAttemptSchema, updateAttemptMetaSchema } from "@/lib/validation";
 
 describe("submitAttemptSchema", () => {
   it("accepts a valid CORRECT attempt without error_log", () => {
@@ -119,5 +119,68 @@ describe("submitAttemptSchema", () => {
       },
     });
     expect(result.success).toBe(false);
+  });
+
+  // MCQ attempts: the server grades the choice and builds the error log,
+  // so neither self_score nor error_log is required from the client.
+  describe("MCQ attempts", () => {
+    it("accepts an MCQ attempt with only mcq_choice_index (no self_score, no error_log)", () => {
+      const result = submitAttemptSchema.safeParse({
+        prompt_index: 3,
+        user_answer: "[B] Osmosis",
+        mcq_choice_index: 1,
+        time_to_answer_seconds: 12,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects an attempt with neither self_score nor mcq_choice_index", () => {
+      const result = submitAttemptSchema.safeParse({
+        prompt_index: 0,
+        user_answer: "Answer",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects mcq_choice_index outside 0-3", () => {
+      expect(
+        submitAttemptSchema.safeParse({
+          prompt_index: 0,
+          user_answer: "[E] Nope",
+          mcq_choice_index: 4,
+        }).success
+      ).toBe(false);
+      expect(
+        submitAttemptSchema.safeParse({
+          prompt_index: 0,
+          user_answer: "[?] Nope",
+          mcq_choice_index: -1,
+        }).success
+      ).toBe(false);
+    });
+  });
+});
+
+describe("updateAttemptMetaSchema", () => {
+  it("accepts a self_explanation-only update", () => {
+    expect(
+      updateAttemptMetaSchema.safeParse({ self_explanation: "Because X implies Y" }).success
+    ).toBe(true);
+  });
+
+  it("accepts a generated_example-only update", () => {
+    expect(
+      updateAttemptMetaSchema.safeParse({ generated_example: "A new scenario..." }).success
+    ).toBe(true);
+  });
+
+  it("rejects an empty update", () => {
+    expect(updateAttemptMetaSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects oversized fields", () => {
+    expect(
+      updateAttemptMetaSchema.safeParse({ self_explanation: "x".repeat(2001) }).success
+    ).toBe(false);
   });
 });

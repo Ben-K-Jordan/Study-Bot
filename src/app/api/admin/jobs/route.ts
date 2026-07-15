@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   }
 
   const statusFilter = request.nextUrl.searchParams.get("status");
-  const limit = Math.max(1, Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "20", 10), 100));
+  const limitRaw = parseInt(request.nextUrl.searchParams.get("limit") || "20", 10);
+  const limit = Math.max(1, Math.min(Number.isNaN(limitRaw) ? 20 : limitRaw, 100));
 
   const where = statusFilter ? { status: statusFilter } : {};
 

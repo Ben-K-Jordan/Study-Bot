@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
   if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const filterUserId = userId;
-  const days = parseInt(request.nextUrl.searchParams.get("days") || "7", 10);
+  const daysRaw = parseInt(request.nextUrl.searchParams.get("days") || "7", 10);
+  const days = Math.max(1, Math.min(Number.isNaN(daysRaw) ? 7 : daysRaw, 365));
   const since = new Date();
   since.setDate(since.getDate() - days);
 

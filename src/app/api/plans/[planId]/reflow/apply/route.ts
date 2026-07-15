@@ -85,6 +85,12 @@ export async function POST(
   };
 
   const now = body.from_time ? new Date(body.from_time) : new Date();
+  if (isNaN(now.getTime())) {
+    return NextResponse.json(
+      { error: "from_time must be a valid date string" },
+      { status: 400 },
+    );
+  }
 
   // Optionally fetch Google Calendar busy blocks
   let busyIntervals: TimeInterval[] = [];

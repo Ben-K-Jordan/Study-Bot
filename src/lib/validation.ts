@@ -80,12 +80,16 @@ const errorLogSchema = z.object({
 /**
  * Legacy attempt schema: immediate scoring (RETRIEVAL / INTERLEAVED / ERROR_REPAIR).
  * Backward compatible with existing clients.
+ *
+ * MCQ attempts send mcq_choice_index instead of self_score — the server grades
+ * the choice against the stored correct answer and builds the error log itself.
  */
 export const submitAttemptSchema = z
   .object({
     prompt_index: z.number().int().min(0),
     user_answer: z.string().min(1, "Answer is required"),
-    self_score: z.enum(SELF_SCORES),
+    self_score: z.enum(SELF_SCORES).optional(),
+    mcq_choice_index: z.number().int().min(0).max(3).optional(),
     time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
     confidence_rating: z.number().int().min(1).max(5).optional(),
     self_explanation: z.string().max(2000).optional(),
@@ -93,8 +97,14 @@ export const submitAttemptSchema = z
     error_log: errorLogSchema.optional(),
   })
   .refine(
+    (data) => data.self_score != null || data.mcq_choice_index != null,
+    { message: "self_score is required (or mcq_choice_index for MCQ prompts)" }
+  )
+  .refine(
     (data) => {
-      if (data.self_score === "CORRECT") return true;
+      // Server-graded MCQ attempts build their own error log
+      if (data.mcq_choice_index != null) return true;
+      if (data.self_score !== "PARTIAL" && data.self_score !== "INCORRECT") return true;
       return data.error_log != null;
     },
     { message: "error_log is required when self_score is PARTIAL or INCORRECT" }
@@ -109,6 +119,7 @@ export const examAnswerSchema = z.object({
   prompt_index: z.number().int().min(0),
   kind: z.literal("ANSWER"),
   user_answer: z.string().min(1, "Answer is required"),
+  mcq_choice_index: z.number().int().min(0).max(3).optional(),
   time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
   confidence_rating: z.number().int().min(1).max(5).optional(),
 });
@@ -136,6 +147,22 @@ export const examScoreSchema = z
   );
 
 export type ExamScoreInput = z.infer<typeof examScoreSchema>;
+
+/**
+ * Post-review metacognition update: attach a self-explanation or generated
+ * example to an attempt that was already submitted (review panel inputs).
+ */
+export const updateAttemptMetaSchema = z
+  .object({
+    self_explanation: z.string().max(2000).optional(),
+    generated_example: z.string().max(2000).optional(),
+  })
+  .refine(
+    (data) => data.self_explanation != null || data.generated_example != null,
+    { message: "Provide self_explanation or generated_example" }
+  );
+
+export type UpdateAttemptMetaInput = z.infer<typeof updateAttemptMetaSchema>;
 
 /**
  * Unified attempt schema: accepts legacy (no kind) or new (kind=ANSWER|SCORE).

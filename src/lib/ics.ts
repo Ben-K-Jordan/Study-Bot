@@ -31,6 +31,7 @@ function formatDateUTC(d: Date): string {
 
 function escapeText(text: string): string {
   return text
+    .replace(/\r\n?/g, "\n")
     .replace(/\\/g, "\\\\")
     .replace(/;/g, "\\;")
     .replace(/,/g, "\\,")

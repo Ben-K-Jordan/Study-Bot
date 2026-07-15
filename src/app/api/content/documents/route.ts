@@ -29,9 +29,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
 
-  const file = formData.get("file") as File | null;
-  if (!file) {
-    return NextResponse.json({ error: "file is required" }, { status: 400 });
+  const file = formData.get("file");
+  if (!file || !(file instanceof File)) {
+    return NextResponse.json({ error: "file must be an uploaded file" }, { status: 400 });
   }
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB

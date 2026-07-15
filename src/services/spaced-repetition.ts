@@ -257,12 +257,14 @@ export async function isDeckPerfect(userId: string, deckId: string): Promise<boo
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const deck = await prisma.flashcardDeck.findUnique({
-    where: { id: deckId },
+  const deck = await prisma.flashcardDeck.findFirst({
+    where: { id: deckId, userId },
     select: { cards: { select: { id: true } } },
   });
 
-  if (!deck) return false;
+  // Unknown deck, another user's deck, or an empty deck is never "perfect"
+  // (an empty deck would otherwise be vacuously perfect via [].every()).
+  if (!deck || deck.cards.length === 0) return false;
 
   // Get today's reviews for all cards in this deck
   const reviews = await prisma.cardReview.findMany({

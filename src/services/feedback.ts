@@ -10,7 +10,7 @@ import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 
 export interface FeedbackResponse {
-  status: "OK" | "UNAVAILABLE";
+  status: "OK" | "UNAVAILABLE" | "NOT_FOUND";
   excerpts: FeedbackExcerpt[];
   // AI explanation (PARTIAL/INCORRECT)
   explanation?: string;
@@ -39,6 +39,7 @@ export interface FeedbackResponse {
  * 5. For CORRECT: AI reinforcement + concept connections.
  * 6. For all: Socratic follow-up question.
  * 7. On failure, return { status: "UNAVAILABLE" } — never throw.
+ * 8. For missing attempts or attempts owned by another user, return { status: "NOT_FOUND" }.
  */
 export async function generateFeedback(
   userId: string,
@@ -69,8 +70,8 @@ export async function generateFeedback(
       },
     });
 
-    if (!attempt) return { status: "UNAVAILABLE", excerpts: [] };
-    if (attempt.run.userId !== userId) return { status: "UNAVAILABLE", excerpts: [] };
+    if (!attempt) return { status: "NOT_FOUND", excerpts: [] };
+    if (attempt.run.userId !== userId) return { status: "NOT_FOUND", excerpts: [] };
 
     // Idempotent: if citations already exist, return them
     if (attempt.citations.length > 0) {
@@ -473,10 +474,13 @@ async function tryObjectiveAnchors(
   objectiveId: string
 ): Promise<SearchResult[]> {
   try {
+    // Anchor rows may be keyed by the exact examName or by "" (the build
+    // API treats exam_name as optional). Fetch both keys and prefer exact
+    // matches so legacy ""-keyed rows still serve the fast path.
     const anchors = await prisma.objectiveAnchor.findMany({
-      where: { userId, courseName, examName, objectiveId },
+      where: { userId, courseName, examName: { in: [examName, ""] }, objectiveId },
       orderBy: { rank: "asc" },
-      take: 5,
+      take: 10, // up to 5 per examName key
       include: {
         chunk: {
           include: { document: { select: { id: true, title: true } } },
@@ -486,7 +490,10 @@ async function tryObjectiveAnchors(
 
     if (anchors.length === 0) return [];
 
-    return anchors.map((a) => ({
+    const exactMatches = anchors.filter((a) => a.examName === examName);
+    const selected = (exactMatches.length > 0 ? exactMatches : anchors).slice(0, 5);
+
+    return selected.map((a) => ({
       chunk_id: a.chunkId,
       doc_id: a.chunk.document.id,
       doc_title: a.chunk.document.title,

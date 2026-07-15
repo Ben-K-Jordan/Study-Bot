@@ -7,8 +7,8 @@
 import { AiTask } from "./types";
 
 /**
- * Fence user-provided text to prevent prompt injection.
- * Strips ALL XML/HTML-like tags from user input, then wraps in delimiters.
+ * Fence untrusted text (student input, uploaded document content) to prevent prompt injection.
+ * Strips ALL XML/HTML-like tags from the input, then wraps in delimiters.
  * This prevents injection of closing tags, system tags, or role tags.
  */
 function fence(label: string, text: string): string {
@@ -127,7 +127,7 @@ const maxWordsByVerbosity = { SHORT: 80, MEDIUM: 200, LONG: 500 };
 export const PROMPTS: Record<string, PromptTemplate> = {
   [AiTask.ANSWER_WITH_CITATIONS]: {
     task: AiTask.ANSWER_WITH_CITATIONS,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are a study assistant. Task: ANSWER_WITH_CITATIONS.
 Given a student's question and supporting course material excerpts, provide a clear, accurate answer.
 Rules:
@@ -139,7 +139,7 @@ Rules:
       const { question, chunks, verbosity } = input as AnswerInput;
       const maxWords = maxWordsByVerbosity[verbosity] || 200;
       const context = chunks
-        .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 800)}`)
+        .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 800))}`)
         .join("\n\n");
       return `${fence("student_question", question)}\n\nMax words: ${maxWords}\nVerbosity: ${verbosity}\n\nSupporting materials:\n${context}`;
     },
@@ -171,7 +171,7 @@ Output valid JSON: { "error_type": string, "confidence": number }`,
 
   [AiTask.GENERATE_STUDY_PLAN]: {
     task: AiTask.GENERATE_STUDY_PLAN,
-    version: "v3",
+    version: "v4",
     systemPrompt: `You are an expert study planner grounded in learning science research. Task: GENERATE_STUDY_PLAN.
 
 Design an optimal study schedule using ONLY these session modes:
@@ -233,7 +233,7 @@ Output valid JSON:
 
       let contentStr = "";
       if (contentContext) {
-        contentStr = `\nUploaded course material context:\n${contentContext}\nUse this context to inform topic difficulty and time allocation.\n`;
+        contentStr = `\nUploaded course material context:\n${fence("course_material", contentContext)}\nUse this context to inform topic difficulty and time allocation.\n`;
       }
 
       return `Objectives (${objectives.length} total):\n${objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
@@ -251,7 +251,7 @@ Design the optimal study schedule.`;
 
   [AiTask.GENERATE_PROMPTS]: {
     task: AiTask.GENERATE_PROMPTS,
-    version: "v3",
+    version: "v4",
     systemPrompt: `You are an expert professor creating study questions directly from course materials. Task: GENERATE_PROMPTS.
 
 You generate questions grounded in learning science research on retrieval practice and the testing effect. Your questions are designed to maximize long-term retention, not just assess knowledge.
@@ -339,7 +339,7 @@ For MCQ: choices must have exactly 4 strings, correct_index must be 0-3, distrac
         .join("\n");
 
       const contentStr = contentChunks
-        .map((c, i) => `[${i + 1}] ${c.doc_title}${c.page_number ? ` (p.${c.page_number})` : ""}\n${c.text.slice(0, 600)}`)
+        .map((c, i) => `[${i + 1}] ${c.doc_title}${c.page_number ? ` (p.${c.page_number})` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 600))}`)
         .join("\n\n");
 
       let header = `Course: ${courseName}`;
@@ -372,7 +372,7 @@ Generate ${promptCount} study questions that test mastery of this specific cours
 
   [AiTask.GENERATE_FEEDBACK]: {
     task: AiTask.GENERATE_FEEDBACK,
-    version: "v2",
+    version: "v3",
     systemPrompt: `You are an expert professor helping a student understand where they went wrong. Task: GENERATE_FEEDBACK.
 
 Given a student's question, their incorrect/partial answer, the error classification, and relevant course material excerpts, generate a clear, supportive explanation.
@@ -405,7 +405,7 @@ Output valid JSON:
     buildUserPrompt: (input: unknown) => {
       const { question, userAnswer, selfScore, errorType, correctionRule, mistakePatterns, chunks } = input as GenerateFeedbackInput;
       const context = chunks
-        .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 600)}`)
+        .map((c, i) => `[${i + 1}] (chunk_id: ${c.chunk_id}) ${c.title}${c.page ? ` p.${c.page}` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 600))}`)
         .join("\n\n");
       let prompt = `Question: ${question}\n${fence("student_answer", userAnswer)}\nScore: ${selfScore}`;
       if (errorType) prompt += `\nError type: ${errorType}`;
@@ -420,7 +420,7 @@ Output valid JSON:
 
   [AiTask.REINFORCE_CORRECT]: {
     task: AiTask.REINFORCE_CORRECT,
-    version: "v2",
+    version: "v3",
     systemPrompt: `You are an expert professor reinforcing a student's correct understanding. Task: REINFORCE_CORRECT.
 
 The student answered a question correctly. Generate a brief reinforcement that:
@@ -443,7 +443,7 @@ Output valid JSON:
     buildUserPrompt: (input: unknown) => {
       const { question, userAnswer, chunks } = input as ReinforceCorrectInput;
       const context = chunks.length > 0
-        ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
+        ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 400))}`).join("\n\n")
         : "(No course material available)";
       return `Question: ${question}\n${fence("student_answer", userAnswer)}\n\nCourse material context:\n${context}\n\nReinforce their understanding with a brief insight and connect to related concepts.`;
     },
@@ -451,7 +451,7 @@ Output valid JSON:
 
   [AiTask.SOCRATIC_FOLLOWUP]: {
     task: AiTask.SOCRATIC_FOLLOWUP,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert professor using the Socratic method. Task: SOCRATIC_FOLLOWUP.
 
 After a student answers a question (correctly or incorrectly), generate a brief probing follow-up question that deepens their understanding. This is what great professors do — they don't just move on, they push you to think harder.
@@ -480,7 +480,7 @@ Output valid JSON:
     buildUserPrompt: (input: unknown) => {
       const { question, userAnswer, selfScore, explanation, chunks } = input as SocraticFollowupInput;
       const context = chunks.length > 0
-        ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${c.text.slice(0, 400)}`).join("\n\n")
+        ? chunks.map((c, i) => `[${i + 1}] ${c.title}${c.page ? ` p.${c.page}` : ""}\n${fence(`course_material_${i + 1}`, c.text.slice(0, 400))}`).join("\n\n")
         : "(No course material available)";
       let prompt = `Question: ${question}\n${fence("student_answer", userAnswer)}\nScore: ${selfScore}`;
       if (explanation) prompt += `\nExplanation given: ${fence("student_explanation", explanation)}`;
@@ -491,7 +491,7 @@ Output valid JSON:
 
   [AiTask.EXTRACT_OBJECTIVES]: {
     task: AiTask.EXTRACT_OBJECTIVES,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert curriculum analyst. Task: EXTRACT_OBJECTIVES.
 Given excerpts from uploaded course materials, extract key learning objectives that a student should master.
 
@@ -516,7 +516,7 @@ Output valid JSON:
     buildUserPrompt: (input: unknown) => {
       const { chunkTexts, courseName, examName } = input as ExtractObjectivesInput;
       const contextStr = chunkTexts
-        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .map((text, i) => `[Excerpt ${i + 1}]\n${fence(`course_material_${i + 1}`, text.slice(0, 600))}`)
         .join("\n\n");
 
       let header = `Course: ${courseName}`;
@@ -534,7 +534,7 @@ Extract key learning objectives from this content.`;
 
   [AiTask.SUMMARIZE_DOCUMENT]: {
     task: AiTask.SUMMARIZE_DOCUMENT,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are a study assistant. Task: SUMMARIZE_DOCUMENT.
 Given excerpts from an uploaded document, generate:
 1. A concise summary (3-5 sentences) covering the main topics and key takeaways.
@@ -553,7 +553,7 @@ Output valid JSON:
       if (courseName) header += `\nCourse: ${courseName}`;
       if (examName) header += `\nExam: ${examName}`;
       const context = chunkTexts
-        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .map((text, i) => `[Excerpt ${i + 1}]\n${fence(`course_material_${i + 1}`, text.slice(0, 600))}`)
         .join("\n\n");
       return `${header}\n\nDocument excerpts:\n${context}\n\nGenerate a summary and 3 study questions.`;
     },
@@ -561,7 +561,7 @@ Output valid JSON:
 
   [AiTask.GENERATE_STUDY_GUIDE]: {
     task: AiTask.GENERATE_STUDY_GUIDE,
-    version: "v1",
+    version: "v2",
     systemPrompt: `You are an expert professor creating study guides from course materials. Task: GENERATE_STUDY_GUIDE.
 
 You will be given a guide type and course material excerpts. Generate the requested guide type:
@@ -608,7 +608,7 @@ For CHEAT_SHEET:
       header += `\nGuide type: ${guideType}`;
 
       const context = chunkTexts
-        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .map((text, i) => `[Excerpt ${i + 1}]\n${fence(`course_material_${i + 1}`, text.slice(0, 600))}`)
         .join("\n\n");
 
       let objStr = "";
@@ -622,7 +622,7 @@ For CHEAT_SHEET:
 
   [AiTask.GENERATE_FLASHCARDS]: {
     task: AiTask.GENERATE_FLASHCARDS,
-    version: "v2",
+    version: "v3",
     systemPrompt: `You are an expert educator creating flashcards from course materials. Task: GENERATE_FLASHCARDS.
 
 Given excerpts from a document, generate 10-15 high-quality flashcards that cover the key concepts, definitions, formulas, and important facts.
@@ -657,7 +657,7 @@ Tags should be 1-3 short topic labels per card (e.g., ["definitions", "chapter 3
       if (courseName) header += `\nCourse: ${courseName}`;
       if (examName) header += `\nExam: ${examName}`;
       const context = chunkTexts
-        .map((text, i) => `[Excerpt ${i + 1}]\n${text.slice(0, 600)}`)
+        .map((text, i) => `[Excerpt ${i + 1}]\n${fence(`course_material_${i + 1}`, text.slice(0, 600))}`)
         .join("\n\n");
       let prompt = `${header}\n\nDocument excerpts:\n${context}`;
       if (masteryContext) {

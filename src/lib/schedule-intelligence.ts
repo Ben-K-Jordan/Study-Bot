@@ -437,8 +437,22 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
   examDate: Date,
   planStartDate: Date,
 ): T[] {
-  const examTime = examDate.getTime();
-  const planStartMs = planStartDate.getTime();
+  // Normalize the plan start to local midnight of day 0 so block-midday math
+  // is independent of the wall-clock time the plan was created. The production
+  // caller passes `new Date()`; without this, a plan created at/after noon
+  // pushes every block's assumed midday past exam midnight and silently drops
+  // the final pre-exam study day (and misclassifies the 24h/48h windows).
+  const start = new Date(planStartDate);
+  start.setHours(0, 0, 0, 0);
+  const planStartMs = start.getTime();
+
+  // Exam day boundary is the exam's local midnight, self-consistent with the
+  // midnight-normalized plan start above: any block on or after exam day is
+  // dropped regardless of the exam's time of day.
+  const examDayStart = new Date(examDate);
+  examDayStart.setHours(0, 0, 0, 0);
+  const examTime = examDayStart.getTime();
+
   const tapered: T[] = [];
   let hasSessionInFinal24h = false;
 

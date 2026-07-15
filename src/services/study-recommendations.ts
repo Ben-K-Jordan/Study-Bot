@@ -107,28 +107,29 @@ async function computeStudyStreak(userId: string): Promise<number> {
     }
   }
 
-  // Walk backward from today counting consecutive days
+  // Walk backward from today counting consecutive days, using the same UTC
+  // day keys as activeDays. Local-midnight arithmetic would start the walk on
+  // the wrong UTC day on servers with a non-zero UTC offset, dropping today's
+  // activity.
+  const DAY_MS = 86_400_000;
   const now = new Date();
   const todayKey = now.toISOString().slice(0, 10);
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const [year, month, day] = todayKey.split("-").map(Number);
+  let cursor = Date.UTC(year, month - 1, day);
+  const yesterdayKey = new Date(cursor - DAY_MS).toISOString().slice(0, 10);
 
   // Streak starts from today or yesterday
   if (!activeDays.has(todayKey) && !activeDays.has(yesterdayKey)) return 0;
 
-  let streak = 0;
-  const check = new Date(now);
-  check.setHours(0, 0, 0, 0);
-
   // If no activity today, start counting from yesterday
   if (!activeDays.has(todayKey)) {
-    check.setDate(check.getDate() - 1);
+    cursor -= DAY_MS;
   }
 
-  while (activeDays.has(check.toISOString().slice(0, 10))) {
+  let streak = 0;
+  while (activeDays.has(new Date(cursor).toISOString().slice(0, 10))) {
     streak++;
-    check.setDate(check.getDate() - 1);
+    cursor -= DAY_MS;
   }
 
   return streak;

@@ -214,6 +214,57 @@ describe("applyPreExamTaper", () => {
     expect(result[0].mode).toBe("EXAM_SIM");
     expect(result[0].plannedMinutes).toBe(60);
   });
+
+  it("keeps the day-before-exam block when the plan is created late in the day", () => {
+    const examDate = new Date(2026, 3, 10); // April 10
+    const eveningStart = new Date(2026, 3, 7, 20, 0); // April 7, 20:00 local
+    const blocks = [
+      { dayIndex: 0, mode: "RETRIEVAL", plannedMinutes: 60 },
+      { dayIndex: 2, mode: "EXAM_SIM", plannedMinutes: 60 }, // April 9, day before exam
+    ];
+    const result = applyPreExamTaper(blocks, examDate, eveningStart);
+    // Before normalizing plan start to local midnight, the day-before-exam
+    // block's assumed midday landed AFTER exam midnight and was deleted
+    expect(result).toHaveLength(2);
+    const dayBefore = result.find((b) => b.dayIndex === 2);
+    expect(dayBefore).toBeDefined();
+    expect(dayBefore!.mode).toBe("RETRIEVAL"); // final 24h → short retrieval
+    expect(dayBefore!.plannedMinutes).toBeLessThanOrEqual(25);
+  });
+
+  it("classifies taper windows identically for midnight and late-evening plan creation", () => {
+    const examDate = new Date(2026, 3, 10); // April 10
+    const midnightStart = new Date(2026, 3, 7); // April 7, 00:00
+    const eveningStart = new Date(2026, 3, 7, 20, 0); // April 7, 20:00
+    const blocks = [
+      { dayIndex: 0, mode: "EXAM_SIM", plannedMinutes: 60 },              // normal
+      { dayIndex: 1, mode: "INTERLEAVED_PRACTICE", plannedMinutes: 100 }, // 48h window
+      { dayIndex: 2, mode: "ERROR_REPAIR", plannedMinutes: 45 },          // 24h window
+      { dayIndex: 3, mode: "RETRIEVAL", plannedMinutes: 60 },             // exam day
+    ];
+    const fromMidnight = applyPreExamTaper(blocks, examDate, midnightStart);
+    const fromEvening = applyPreExamTaper(blocks, examDate, eveningStart);
+    expect(fromEvening).toEqual(fromMidnight);
+    // Sanity-check the midnight classification both plans must share
+    expect(fromMidnight).toHaveLength(3);
+    expect(fromMidnight[0].mode).toBe("EXAM_SIM"); // >48h out — untouched
+    expect(fromMidnight[1].mode).toBe("RETRIEVAL");
+    expect(fromMidnight[1].plannedMinutes).toBe(60); // 100 * 0.6
+    expect(fromMidnight[2].mode).toBe("RETRIEVAL");
+    expect(fromMidnight[2].plannedMinutes).toBe(25);
+  });
+
+  it("drops exam-day blocks regardless of the exam's time of day", () => {
+    const examDate = new Date(2026, 3, 10, 9, 0); // April 10, 09:00 exam
+    const blocks = [
+      { dayIndex: 2, mode: "ERROR_REPAIR", plannedMinutes: 45 }, // April 9
+      { dayIndex: 3, mode: "RETRIEVAL", plannedMinutes: 60 },    // April 10, exam day
+    ];
+    const result = applyPreExamTaper(blocks, examDate, planStart);
+    expect(result).toHaveLength(1);
+    expect(result[0].dayIndex).toBe(2);
+    expect(result[0].mode).toBe("RETRIEVAL");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -5,8 +5,13 @@
  * Supports chat completions (JSON mode) and embeddings.
  */
 import type { AiProvider, EmbedResult, CompleteJsonResult } from "../provider";
+import { logger } from "@/lib/logger";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
+
+// Timeout for OpenAI API requests — a stalled connection must fail (and trip
+// the gateway circuit breaker) rather than hang forever.
+const AI_REQUEST_TIMEOUT_MS = parseInt(process.env.AI_REQUEST_TIMEOUT_MS || "60000", 10);
 
 // Pricing in USD micros per 1K tokens (approximate, may vary by model)
 const PRICING: Record<string, { inputPer1k: number; outputPer1k: number }> = {
@@ -25,13 +30,32 @@ function getApiKey(): string {
   return key;
 }
 
+// Conservative fallback for models missing from PRICING: assume the most
+// expensive known pricing so unknown models still count against budget caps
+// instead of silently recording $0.
+const FALLBACK_PRICING = Object.values(PRICING).reduce((max, p) =>
+  p.inputPer1k + p.outputPer1k > max.inputPer1k + max.outputPer1k ? p : max,
+);
+
+const warnedUnknownModels = new Set<string>();
+
 function estimateCost(
   model: string,
   tokenIn: number,
   tokenOut: number,
 ): number {
-  const price = PRICING[model];
-  if (!price) return 0;
+  let price = PRICING[model];
+  if (!price) {
+    if (!warnedUnknownModels.has(model)) {
+      warnedUnknownModels.add(model);
+      logger.warn("openai.unknown_model_pricing", {
+        model,
+        fallback_input_per_1k: FALLBACK_PRICING.inputPer1k,
+        fallback_output_per_1k: FALLBACK_PRICING.outputPer1k,
+      });
+    }
+    price = FALLBACK_PRICING;
+  }
   return Math.ceil(
     (tokenIn / 1000) * price.inputPer1k +
       (tokenOut / 1000) * price.outputPer1k,
@@ -44,14 +68,30 @@ async function openaiRequest(
 ): Promise<unknown> {
   const apiKey = getApiKey();
 
-  const response = await fetch(`${OPENAI_BASE_URL}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${OPENAI_BASE_URL}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Surface timeouts/aborts as a clear error — the thrown error propagates
+    // to the gateway, which records the failure for its circuit breaker.
+    if (
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError")
+    ) {
+      throw new Error(
+        `OpenAI API request timed out after ${AI_REQUEST_TIMEOUT_MS}ms`,
+      );
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => "unknown");

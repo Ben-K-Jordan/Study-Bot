@@ -27,17 +27,20 @@ export async function handleEmbedChunkBatch(
 
   if (!chunkIds?.length) return;
 
-  // Fetch chunks that still need embedding
+  // Fetch chunks that still need embedding. The payload's chunkIds already
+  // scope the work, so pick up any non-DONE status: this lets job retries
+  // re-process FAILED chunks and recovers chunks left IN_PROGRESS by a dead
+  // worker instead of silently skipping them.
   const chunks = await prisma.contentChunk.findMany({
     where: {
       id: { in: chunkIds },
-      embeddingStatus: { in: ["PENDING", "NONE"] },
+      embeddingStatus: { not: "DONE" },
     },
     select: { id: true, text: true },
   });
 
   if (chunks.length === 0) {
-    logger.info("embed.skip", { reason: "no_pending_chunks", chunkIds });
+    logger.info("embed.skip", { reason: "all_chunks_embedded", chunkIds });
     return;
   }
 
@@ -74,9 +77,12 @@ export async function handleEmbedChunkBatch(
 
     logger.info("embed.done", { userId, chunkCount: chunks.length });
   } catch (err) {
-    // Mark chunks as failed so they can be retried
+    // Mark unfinished chunks as failed — job retries re-fetch them because the
+    // query above matches any non-DONE status. Chunks already embedded during
+    // this attempt keep their DONE status, and FAILED becomes terminal only
+    // once the job exhausts its retries.
     await prisma.contentChunk.updateMany({
-      where: { id: { in: fetchedIds } },
+      where: { id: { in: fetchedIds }, embeddingStatus: { not: "DONE" } },
       data: { embeddingStatus: "FAILED" },
     });
     throw err;

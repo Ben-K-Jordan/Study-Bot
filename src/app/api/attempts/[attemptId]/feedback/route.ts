@@ -16,6 +16,9 @@ export async function GET(
 
   try {
     const result = await generateFeedback(userId, attemptId);
+    if (result.status === "NOT_FOUND") {
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    }
     const payload = JSON.stringify(result);
     logger.info("feedback.response", {
       attempt_id: attemptId,
@@ -25,9 +28,6 @@ export async function GET(
     return NextResponse.json(result);
   } catch (err) {
     logger.error("generate_feedback_failed", { error: String(err) });
-    return NextResponse.json(
-      { status: "UNAVAILABLE", excerpts: [] },
-      { status: 200 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

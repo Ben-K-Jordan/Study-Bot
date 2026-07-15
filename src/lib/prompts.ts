@@ -198,6 +198,16 @@ export function shuffleMcqChoices(prompt: Prompt, runSeed: string): Prompt {
     return prompt;
   }
 
+  // An out-of-range correctIndex would become -1 after shuffling (indexOf
+  // miss), making the question unanswerable — refuse to shuffle instead.
+  if (
+    !Number.isInteger(prompt.correctIndex) ||
+    prompt.correctIndex < 0 ||
+    prompt.correctIndex >= prompt.choices.length
+  ) {
+    return prompt;
+  }
+
   // Build index array [0, 1, 2, 3] and shuffle it
   const indices = prompt.choices.map((_, i) => i);
   const seed = `${runSeed}:${prompt.id}`;
@@ -206,9 +216,10 @@ export function shuffleMcqChoices(prompt: Prompt, runSeed: string): Prompt {
   const shuffledChoices = indices.map((i) => prompt.choices![i]);
   const newCorrectIndex = indices.indexOf(prompt.correctIndex);
 
-  // Reorder distractor rationales to match new positions
+  // Reorder distractor rationales to match new positions — only when they
+  // align 1:1 with choices; a short array would misattribute rationales.
   let shuffledRationales: string[] | undefined;
-  if (prompt.meta?.distractorRationales) {
+  if (prompt.meta?.distractorRationales?.length === prompt.choices.length) {
     shuffledRationales = indices.map((i) => prompt.meta!.distractorRationales![i]);
   }
 
@@ -261,9 +272,15 @@ export function generateErrorRepairPrompts(
 
   return selected.map((log, i) => {
     const variant = log.variant_question?.trim();
+    // Without the original question in the text, every no-variant repair
+    // prompt renders as the same generic sentence and the student cannot
+    // tell which error is being repaired.
+    const original = log.prompt_text?.trim();
     const text = variant
       ? `From memory: state the correct rule and answer the variant: ${variant}`
-      : `From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`;
+      : original
+        ? `You previously missed: "${original}" — From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`
+        : `From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`;
 
     return {
       id: `p_${i}`,

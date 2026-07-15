@@ -130,11 +130,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 /** Extract a rate-limit key from a request (IP or forwarded-for) */
 export function getClientIp(request: NextRequest): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  // X-Forwarded-For: use the RIGHTMOST entry — it's the one appended by the
+  // nearest trusted proxy. Leftmost entries are client-supplied, so an attacker
+  // could prepend arbitrary values to rotate rate-limit buckets on every request.
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const entries = forwardedFor.split(",");
+    const rightmost = entries[entries.length - 1]?.trim();
+    if (rightmost) return rightmost;
+  }
+  return request.headers.get("x-real-ip") || "unknown";
 }
 
 /** Return a 429 response with Retry-After header */

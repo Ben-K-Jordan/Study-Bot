@@ -105,9 +105,15 @@ export async function setDailyXpGoal(userId: string, goal: number): Promise<void
 export async function consumeStreakFreeze(userId: string): Promise<{ success: boolean; freezesRemaining: number }> {
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // Atomic conditional update: only decrement if freezes > 0 and not already used today
+  // Atomic conditional update: only decrement if freezes > 0 and not already used today.
+  // streakFreezeUsedDate is NULL until the first use, and Prisma's scalar `not:`
+  // filter excludes NULL rows — so NULL must be matched explicitly.
   const result = await prisma.userGameState.updateMany({
-    where: { userId, streakFreezes: { gt: 0 }, streakFreezeUsedDate: { not: todayStr } },
+    where: {
+      userId,
+      streakFreezes: { gt: 0 },
+      OR: [{ streakFreezeUsedDate: null }, { streakFreezeUsedDate: { not: todayStr } }],
+    },
     data: {
       streakFreezes: { decrement: 1 },
       streakFreezeUsedDate: todayStr,
@@ -122,6 +128,18 @@ export async function consumeStreakFreeze(userId: string): Promise<{ success: bo
     });
     return { success: false, freezesRemaining: state?.streakFreezes ?? 0 };
   }
+
+  // Record the bridged day durably — streakFreezeUsedDate only holds the most
+  // recent use, so a second freeze would otherwise erase the day the first
+  // freeze bridged and retroactively collapse the streak.
+  await prisma.xpEvent.create({
+    data: {
+      userId,
+      action: "STREAK_FREEZE_USED",
+      xpAmount: 0,
+      sourceId: todayStr,
+    },
+  });
 
   const updated = await prisma.userGameState.findUnique({
     where: { userId },
@@ -149,7 +167,7 @@ export async function computeStreak(
   const [xpEvents, planItems] = await Promise.all([
     prisma.xpEvent.findMany({
       where: { userId, createdAt: { gte: ninetyDaysAgo } },
-      select: { createdAt: true },
+      select: { createdAt: true, action: true, sourceId: true },
     }),
     prisma.studyPlanItem.findMany({
       where: { plan: { userId }, status: "DONE", completedAt: { gte: ninetyDaysAgo } },
@@ -157,36 +175,48 @@ export async function computeStreak(
     }),
   ]);
 
-  // Dedupe into calendar dates
+  // Dedupe into calendar dates (UTC day keys)
   const activeDays = new Set<string>();
-  for (const e of xpEvents) activeDays.add(e.createdAt.toISOString().slice(0, 10));
+  for (const e of xpEvents) {
+    // Zero-XP bookkeeping events: a freeze award is not study activity, but a
+    // consumed freeze bridges the day it was used (sourceId = bridged date).
+    if (e.action === "STREAK_FREEZE_AWARD") continue;
+    if (e.action === "STREAK_FREEZE_USED") {
+      activeDays.add(e.sourceId ?? e.createdAt.toISOString().slice(0, 10));
+      continue;
+    }
+    activeDays.add(e.createdAt.toISOString().slice(0, 10));
+  }
   for (const item of planItems) {
     const d = item.completedAt || item.startTime;
     activeDays.add(d.toISOString().slice(0, 10));
   }
 
   const gameState = existingGameState ?? await prisma.userGameState.findUnique({ where: { userId } });
+  // Legacy single-date field — kept for rows that predate STREAK_FREEZE_USED events
   if (gameState?.streakFreezeUsedDate) {
     activeDays.add(gameState.streakFreezeUsedDate);
   }
 
   if (activeDays.size === 0) return 0;
 
+  // Walk backward day-by-day using the same UTC day keys as activeDays.
+  // Local-midnight arithmetic would start the walk on the wrong UTC day on
+  // servers with a non-zero UTC offset, dropping today's activity.
+  const DAY_MS = 86_400_000;
   const todayKey = now.toISOString().slice(0, 10);
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const [year, month, day] = todayKey.split("-").map(Number);
+  let cursor = Date.UTC(year, month - 1, day);
+  const yesterdayKey = new Date(cursor - DAY_MS).toISOString().slice(0, 10);
 
   if (!activeDays.has(todayKey) && !activeDays.has(yesterdayKey)) return 0;
 
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  if (!activeDays.has(todayKey)) d.setDate(d.getDate() - 1);
+  if (!activeDays.has(todayKey)) cursor -= DAY_MS;
 
   let streak = 0;
-  while (activeDays.has(d.toISOString().slice(0, 10))) {
+  while (activeDays.has(new Date(cursor).toISOString().slice(0, 10))) {
     streak++;
-    d.setDate(d.getDate() - 1);
+    cursor -= DAY_MS;
   }
 
   return streak;
@@ -204,6 +234,15 @@ async function maybeAwardStreakFreeze(
 ): Promise<number> {
   if (streak <= 0 || streak % 7 !== 0 || currentFreezes >= 3) return currentFreezes;
 
+  // Dedupe: getGameState runs this check on every call, so a milestone day
+  // would otherwise award once per page load. A zero-XP marker event records
+  // that this milestone already granted its freeze.
+  const existingAward = await prisma.xpEvent.findFirst({
+    where: { userId, action: "STREAK_FREEZE_AWARD", sourceId: String(streak) },
+    select: { id: true },
+  });
+  if (existingAward) return currentFreezes;
+
   // Atomic conditional update: only increment if still under cap
   const result = await prisma.userGameState.updateMany({
     where: { userId, streakFreezes: { lt: 3 } },
@@ -211,6 +250,16 @@ async function maybeAwardStreakFreeze(
   });
 
   if (result.count > 0) {
+    // Marker event (0 XP) so this milestone can't award again. Created directly
+    // rather than via awardXp, which skips zero-amount events.
+    await prisma.xpEvent.create({
+      data: {
+        userId,
+        action: "STREAK_FREEZE_AWARD",
+        xpAmount: 0,
+        sourceId: String(streak),
+      },
+    });
     logger.info("streak.freeze_earned", { user_id: userId, streak });
     return currentFreezes + 1;
   }

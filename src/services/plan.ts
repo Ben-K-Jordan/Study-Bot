@@ -113,7 +113,10 @@ export async function createPlan(userId: string, input: unknown) {
   // --- Schedule Intelligence: taper + dynamic duration ---
 
   // 1. Apply pre-exam taper (reduce volume in final 48h before exam)
-  const examDateObj = new Date(parsed.exam_date);
+  // Parse exam_date (YYYY-MM-DD) as LOCAL midnight — new Date(string) parses
+  // it as UTC midnight, which is the previous local day in behind-UTC timezones
+  const [examYear, examMonth, examDay] = parsed.exam_date.split("-").map(Number);
+  const examDateObj = new Date(examYear, examMonth - 1, examDay);
   let blocks = applyPreExamTaper(planResult.blocks, examDateObj, startDate);
 
   // 2. Apply dynamic session duration caps by cognitive load

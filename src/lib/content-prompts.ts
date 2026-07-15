@@ -177,7 +177,33 @@ export async function generateContentAwarePrompts(
 
     // Map to Prompt format with sequential IDs
     const mapped: Prompt[] = generated.map((g, i) => {
-      const isMcq = g.format === "MCQ" && Array.isArray(g.choices) && g.choices.length === 4 && g.correct_index != null;
+      // Guard against model output errors: correct_index must be a valid
+      // 0-based index into exactly 4 choices (a 1-based off-by-one would
+      // otherwise make the question unanswerable). Invalid MCQs demote to
+      // free recall rather than corrupting scoring.
+      const isMcq =
+        g.format === "MCQ" &&
+        Array.isArray(g.choices) &&
+        g.choices.length === 4 &&
+        Number.isInteger(g.correct_index) &&
+        (g.correct_index as number) >= 0 &&
+        (g.correct_index as number) < g.choices.length;
+
+      if (g.format === "MCQ" && !isMcq) {
+        logger.warn("content_prompts.invalid_mcq_demoted", {
+          user_id: userId,
+          prompt_index: i,
+          choices_length: Array.isArray(g.choices) ? g.choices.length : null,
+          correct_index: g.correct_index ?? null,
+        });
+      }
+
+      // Rationales must align 1:1 with choices; a short array would
+      // attribute the wrong misconception to a choice.
+      const rationalesValid =
+        isMcq &&
+        Array.isArray(g.distractor_rationales) &&
+        g.distractor_rationales.length === (g.choices as string[]).length;
 
       const base: Prompt = {
         id: `p_${i}`,
@@ -188,7 +214,7 @@ export async function generateContentAwarePrompts(
         ...(isMcq ? {
           choices: g.choices as string[],
           correctIndex: g.correct_index as number,
-          meta: g.distractor_rationales ? { distractorRationales: g.distractor_rationales as string[] } : undefined,
+          meta: rationalesValid ? { distractorRationales: g.distractor_rationales as string[] } : undefined,
         } : {}),
       };
 
