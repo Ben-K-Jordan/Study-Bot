@@ -28,7 +28,6 @@ export async function middleware(request: NextRequest) {
   // Allow static assets and Next.js internals
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/sw.js") ||
     pathname.startsWith("/favicon") ||
     pathname.includes(".")
   ) {
@@ -43,7 +42,7 @@ export async function middleware(request: NextRequest) {
   // Allow requests with X-User-Id header — ONLY in non-production or explicit test mode
   if (
     !token &&
-    (process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_AUTH === "true") &&
+    (process.env.ALLOW_TEST_AUTH === "true") &&
     request.headers.get("x-user-id")
   ) {
     if (

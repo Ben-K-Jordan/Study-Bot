@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { getOrCreateUserId } from "@/lib/client-utils";
+import { useState, useCallback, useEffect } from "react";
 import { PreflightScreen } from "./screens/preflight";
 import { RunnerScreen } from "./screens/runner";
 import { BreakScreen } from "./screens/break-screen";
@@ -184,7 +183,6 @@ async function apiPost(url: string, body?: unknown) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-User-Id": getOrCreateUserId(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -194,9 +192,7 @@ async function apiPost(url: string, body?: unknown) {
 }
 
 async function apiGet(url: string) {
-  const res = await fetch(url, {
-    headers: { "X-User-Id": getOrCreateUserId() },
-  });
+  const res = await fetch(url);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
@@ -246,7 +242,6 @@ export async function patchAttemptMeta(
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      "X-User-Id": getOrCreateUserId(),
     },
     body: JSON.stringify(meta),
   });
@@ -289,6 +284,37 @@ export function SessionRunner({ session }: Props) {
   const [run, setRun] = useState<RunData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Reload restore: landing on the end screen after a refresh loses the
+  // in-memory run, which blanked the calibration dashboard the student paid
+  // for with per-question confidence ratings. Refetch the completed run
+  // (attempts include confidence_rating) and hand it to EndScreen.
+  useEffect(() => {
+    if (screen !== "end" || run !== null || !session.last_completed_run) return;
+    let mounted = true;
+    apiGet(`/api/runs/${session.last_completed_run.run_id}`)
+      .then((full) => {
+        if (!mounted) return;
+        setRun((prev) =>
+          prev ?? ({
+            run_id: full.run_id,
+            status: full.status,
+            mode: full.mode,
+            phase: full.phase,
+            current_index: full.current_index,
+            prompt_count: full.prompt_count,
+            current_prompt: null,
+            prompts: full.prompts,
+            policies: full.policies,
+            metrics: full.metrics,
+            break_state: full.break_state,
+            attempts: full.attempts,
+          } as RunData),
+        );
+      })
+      .catch(() => { /* best effort — end screen still shows stored metrics */ });
+    return () => { mounted = false; };
+  }, [screen, run, session.last_completed_run]);
 
   const startRun = useCallback(async () => {
     setLoading(true);
