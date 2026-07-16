@@ -56,12 +56,57 @@ function clampDuration(desired: number, cap: number, windowMinutes: number): num
   return Math.max(15, Math.min(desired, max));
 }
 
-function toObjectiveEntries(strs: string[]): { id: string; title: string }[] {
-  return strs.map((s, i) => ({ id: `obj_${i}`, title: s }));
+/**
+ * Derive a stable objective id from its title. The same title always yields
+ * the same id, so an objective keeps one identity across every block it
+ * appears in (SM-2 mastery rows and feedback anchors are keyed by this id).
+ */
+export function slugifyObjectiveTitle(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60)
+    .replace(/_+$/g, "");
+  return slug || "objective";
+}
+
+/**
+ * Build a title -> id map for a whole plan's objectives. Ids are slugs of the
+ * titles; when two distinct titles collide on the same slug, later ones get
+ * a deterministic _2/_3/... suffix in first-seen order.
+ */
+export function buildObjectiveIdMap(titles: string[]): Map<string, string> {
+  const idByTitle = new Map<string, string>();
+  const used = new Set<string>();
+  for (const title of titles) {
+    if (idByTitle.has(title)) continue;
+    const base = slugifyObjectiveTitle(title);
+    let id = base;
+    let n = 2;
+    while (used.has(id)) {
+      id = `${base}_${n}`;
+      n += 1;
+    }
+    idByTitle.set(title, id);
+    used.add(id);
+  }
+  return idByTitle;
+}
+
+function toObjectiveEntries(
+  strs: string[],
+  idByTitle: Map<string, string>,
+): { id: string; title: string }[] {
+  return strs.map((s) => ({
+    id: idByTitle.get(s) ?? slugifyObjectiveTitle(s),
+    title: s,
+  }));
 }
 
 export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
   const { objectives, dailyCap, availability } = input;
+  const objectiveIds = buildObjectiveIdMap(objectives);
   const packs = splitIntoPacks(objectives);
   const blocks: PlanBlock[] = [];
 
@@ -203,7 +248,7 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
       dayIndex: item.dayIndex,
       mode: item.mode,
       topicScope: item.scope,
-      objectives: toObjectiveEntries(item.objs),
+      objectives: toObjectiveEntries(item.objs, objectiveIds),
       plannedMinutes: minutes,
       targetOutcome: {
         type: item.outcomeType,

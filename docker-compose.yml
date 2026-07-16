@@ -26,7 +26,6 @@ services:
       BASE_URL: ${BASE_URL:-http://localhost:3000}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env or environment}
-      CRON_SECRET: ${CRON_SECRET:-}
       ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
       GOOGLE_PROVIDER: ${GOOGLE_PROVIDER:-fake}
       AI_PROVIDER: ${AI_PROVIDER:-mock}

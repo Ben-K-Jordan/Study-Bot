@@ -24,7 +24,6 @@ export async function GET(request: NextRequest) {
       sessions,
       flashcardDecks,
       chatMessages,
-      notificationPreference,
       userGameState,
       aiCallLogs,
       contentDocuments,
@@ -64,10 +63,6 @@ export async function GET(request: NextRequest) {
       prisma.chatMessage.findMany({
         where: { userId },
         orderBy: { createdAt: "asc" },
-      }),
-
-      prisma.notificationPreference.findUnique({
-        where: { userId },
       }),
 
       prisma.userGameState.findUnique({
@@ -161,7 +156,6 @@ export async function GET(request: NextRequest) {
       planCalendarPublications,
       planItemExternalEvents,
       googleIntegration,
-      notificationPreference,
     };
 
     logger.info("account.export.success", { userId });

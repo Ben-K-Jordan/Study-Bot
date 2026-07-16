@@ -48,14 +48,9 @@ export async function POST(request: Request) {
           },
         });
 
-        await tx.notificationPreference.create({
-          data: { userId: u.id },
-        });
-
         await tx.userGameState.create({
           data: {
             userId: u.id,
-            displayName: name,
             onboardingComplete: false,
           },
         });
