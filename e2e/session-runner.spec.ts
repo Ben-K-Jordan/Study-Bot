@@ -38,6 +38,11 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
         [USER_ID, "E2E 101", key]
       );
     }
+    // Purge error logs from any previous attempt (retries keep the DB).
+    // Unresolved logs survive a single correct retrieval by design and would
+    // inject CROSS_SESSION_REPAIR prompts, shifting the exact "PROMPT k / N"
+    // labels these tests assert.
+    await pool.query(`DELETE FROM session_error_logs WHERE user_id = $1`, [USER_ID]);
   });
 
   test.afterAll(async () => {

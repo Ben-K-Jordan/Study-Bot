@@ -74,6 +74,8 @@ export interface RunMetrics {
   incorrect_count: number;
   accuracy: number;
   time_spent_seconds: number;
+  pretest_count?: number;
+  pretest_correct?: number;
   recommended_followups?: { label: string; days_from_now: number; date: string }[];
 }
 
@@ -140,8 +142,6 @@ export interface RunData {
   break_state: BreakState;
   // Attempts are available on resumed runs (from GET /api/runs/:runId)
   attempts?: { id: string; prompt_index: number; user_answer: string; self_score: string | null; confidence_rating?: number | null }[];
-  // Deferred feedback: set by UI after fetching from /api/attempts/:attemptId/feedback
-  feedback?: { excerpts: FeedbackExcerpt[] };
   // Last attempt info for deferred feedback
   last_attempt_id?: string;
   last_feedback_status?: "PENDING" | "NONE";
@@ -200,7 +200,7 @@ async function fetchPrompt(runId: string, index: number): Promise<PromptView> {
 }
 
 /** Fetch deferred feedback for an attempt */
-export async function fetchFeedback(attemptId: string): Promise<FeedbackResult> {
+async function fetchFeedback(attemptId: string): Promise<FeedbackResult> {
   return apiGet(`/api/attempts/${attemptId}/feedback`);
 }
 
@@ -372,7 +372,6 @@ export function SessionRunner({ session }: Props) {
           scored_count: data.scored_count ?? run.scored_count,
           last_attempt_id: data.attempt_id,
           last_feedback_status: data.feedback_status,
-          feedback: undefined, // Clear previous feedback
         };
 
         // When transitioning to REVIEW, fetch attempts for display
