@@ -380,12 +380,6 @@ input[type="number"] {
     font-size: 1rem;
   }
 
-  /* -- Leaderboard entries: more compact -- */
-  .leaderboard-entry {
-    padding: 0.4rem 0.6rem;
-    font-size: 0.8rem;
-  }
-
   /* -- Rating buttons in flashcards -- */
   div[style*="display: \"flex\""][style*="gap: \"0.4rem\""] {
     flex-wrap: wrap;

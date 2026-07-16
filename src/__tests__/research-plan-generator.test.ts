@@ -147,6 +147,22 @@ describe("generatePlanWithResearch", () => {
 
       expect(result.blocks[2].mode).toBe("INTERLEAVED_PRACTICE");
       expect(result.blocks[3].mode).toBe("EXAM_SIM");
+
+      // Objective ids are stable slugs of the titles: the same objective
+      // carries the same id in every block it appears in.
+      expect(result.blocks[0].objectives).toEqual([
+        { id: "algebra_basics", title: "Algebra basics" },
+        { id: "linear_equations", title: "Linear equations" },
+      ]);
+      const idsByTitle = new Map<string, string>();
+      for (const block of result.blocks) {
+        for (const o of block.objectives) {
+          const prior = idsByTitle.get(o.title);
+          expect(prior ?? o.id).toBe(o.id);
+          idsByTitle.set(o.title, o.id);
+        }
+      }
+      expect(idsByTitle.get("Word problems")).toBe("word_problems");
     });
 
     it("filters out blocks with invalid modes", async () => {

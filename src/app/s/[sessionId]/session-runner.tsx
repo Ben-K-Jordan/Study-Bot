@@ -96,33 +96,11 @@ export interface RunPolicies {
   allowEndBreakEarly: boolean;
 }
 
-export interface FeedbackExcerpt {
-  chunk_id: string;
-  doc_title: string;
-  page_number: number | null;
-  snippet: string;
-  rank: number;
-}
-
-export interface FeedbackResult {
-  status: string;
-  excerpts: FeedbackExcerpt[];
-  // AI explanation (wrong/partial)
-  explanation?: string;
-  key_takeaway?: string;
-  // Concept connections (all scores)
-  concept_connection?: string;
-  // Mnemonic (wrong/partial)
-  mnemonic?: string;
-  // Mistake pattern advice
-  pattern_advice?: string;
-  // Reinforcement (correct)
-  reinforcement?: string;
-  deeper_insight?: string;
-  // Socratic follow-up (all scores)
-  socratic_followup?: string;
-  socratic_purpose?: string;
-}
+// Deferred-feedback polling (and its types) live in a plain .ts sibling so
+// the terminal-state contract is unit-testable; re-exported here so screen
+// components keep a single import surface.
+export type { FeedbackExcerpt, FeedbackResult } from "./feedback-poll";
+export { pollFeedback } from "./feedback-poll";
 
 export interface RunData {
   run_id: string;
@@ -201,31 +179,6 @@ async function apiGet(url: string) {
 /** Fetch a single prompt by index */
 async function fetchPrompt(runId: string, index: number): Promise<PromptView> {
   return apiGet(`/api/runs/${runId}/prompt?index=${index}`);
-}
-
-/** Fetch deferred feedback for an attempt */
-async function fetchFeedback(attemptId: string): Promise<FeedbackResult> {
-  return apiGet(`/api/attempts/${attemptId}/feedback`);
-}
-
-/**
- * Poll feedback until generation completes. The server generates feedback
- * eagerly at submit time; PENDING means another worker owns generation, so
- * we poll instead of duplicating the AI calls.
- */
-export async function pollFeedback(
-  attemptId: string,
-  isCancelled: () => boolean,
-  maxAttempts = 25,
-  intervalMs = 1000
-): Promise<FeedbackResult | null> {
-  for (let i = 0; i < maxAttempts; i++) {
-    if (isCancelled()) return null;
-    const result = await fetchFeedback(attemptId);
-    if (result.status !== "PENDING") return result;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  return null;
 }
 
 /** Reveal the model answer / key points for the current prompt (post-commit). */

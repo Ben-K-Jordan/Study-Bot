@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 const NAV_LINKS = [
   { label: "Dashboard", href: "/" },
@@ -18,9 +19,30 @@ const NAV_HEIGHT = 52;
 
 export function NavBar() {
   const pathname = usePathname();
+  const { status } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  // null = config not loaded yet — badge stays hidden until we know for sure.
+  const [aiMock, setAiMock] = useState<boolean | null>(null);
   const navRef = useRef<HTMLElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
+
+  // Fetch non-secret runtime flags once authenticated (badge is for
+  // signed-in pages only).
+  useEffect(() => {
+    if (status !== "authenticated" || aiMock !== null) return;
+    let cancelled = false;
+    fetch("/api/config")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((config) => {
+        if (!cancelled && config) setAiMock(config.ai_mock === true);
+      })
+      .catch(() => {
+        // Non-critical — leave badge hidden.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [status, aiMock]);
 
   function isActive(href: string): boolean {
     if (href === "/") return pathname === "/";
@@ -99,6 +121,20 @@ export function NavBar() {
     flexShrink: 0,
   };
 
+  const mockBadgeStyle: React.CSSProperties = {
+    fontSize: "0.65rem",
+    fontWeight: 600,
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+    color: "var(--color-text-muted)",
+    background: "var(--color-bg-card)",
+    border: "1px solid var(--color-border-subtle)",
+    borderRadius: "999px",
+    padding: "0.15rem 0.5rem",
+    whiteSpace: "nowrap",
+    cursor: "help",
+  };
+
   const navListStyle: React.CSSProperties = {
     listStyle: "none",
     margin: 0,
@@ -115,9 +151,19 @@ export function NavBar() {
       role="navigation"
       aria-label="Main navigation"
     >
-      <Link href="/" style={brandStyle} onClick={handleLinkClick}>
-        Study Bot
-      </Link>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexShrink: 0 }}>
+        <Link href="/" style={brandStyle} onClick={handleLinkClick}>
+          Study Bot
+        </Link>
+        {status === "authenticated" && aiMock === true && (
+          <span
+            style={mockBadgeStyle}
+            title='Mock AI mode: no AI provider is configured, so AI content is canned. Set AI_PROVIDER="openai" and OPENAI_API_KEY in .env for real AI responses.'
+          >
+            Mock AI
+          </span>
+        )}
+      </div>
 
       <button
         ref={hamburgerRef}

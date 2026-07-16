@@ -545,6 +545,9 @@ export async function getPlan(userId: string, planId: string) {
           mode: session?.mode ?? "",
           topic_scope: session?.topicScope ?? "",
           planned_minutes: session?.plannedMinutes ?? 0,
+          // Per-session block objectives (additive) so the UI can show a short
+          // focus line instead of the whole plan's topic scope
+          objectives: (session?.objectives ?? []) as { id: string; title: string }[],
           calendar: cal ?? null,
           gcal_link: cal
             ? buildGoogleCalendarLink({

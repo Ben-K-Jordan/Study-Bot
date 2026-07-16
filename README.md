@@ -37,7 +37,7 @@ Then open http://localhost:3000. The defaults need no API keys or external accou
 
 To be blunt about the default: mock mode exists for tests. With `AI_PROVIDER` set to `mock`, sessions get template questions and canned feedback, which exercises the machinery but teaches you nothing. To actually study, set `AI_PROVIDER` to `openai` and add an `OPENAI_API_KEY` in `.env`.
 
-What `npm run setup` does: copies `.env.example` to `.env`, generates `NEXTAUTH_SECRET`, `TOKEN_ENC_KEY`, and `CRON_SECRET`, starts PostgreSQL through Docker, and applies all migrations. It is idempotent and never overwrites a value you set yourself.
+What `npm run setup` does: copies `.env.example` to `.env`, generates `NEXTAUTH_SECRET` and `TOKEN_ENC_KEY`, starts PostgreSQL through Docker, and applies all migrations. It is idempotent and never overwrites a value you set yourself.
 
 Notes:
 

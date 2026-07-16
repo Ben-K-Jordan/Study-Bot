@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { computeFollowups } from "@/lib/spacing";
 import type { RunData, RunMetrics, SessionData } from "../session-runner";
 
 interface Props {
@@ -7,6 +9,11 @@ interface Props {
   session: SessionData;
   onNewRun: () => void;
 }
+
+type ScheduleResult =
+  | { status: "scheduled" | "already_scheduled"; dates: string[] }
+  | { status: "no_plan" }
+  | { status: "error"; message: string };
 
 interface CalibrationPoint {
   prompt_index: number;
@@ -51,6 +58,65 @@ export function EndScreen({ run, session, onNewRun }: Props) {
     (session.last_completed_run?.metrics as RunMetrics | undefined) ??
     null;
 
+  // Follow-ups are ONE deterministic function of the run's results: the
+  // spaced-repetition ladder from accuracy, anchored at the run's end time.
+  // (The stored metrics carry two divergent server-computed lists — the fixed
+  // ladder at completion, later overwritten by mastery due dates — so a page
+  // refresh used to show different numbers. Recomputing here keeps the
+  // display stable across refreshes.)
+  const followupAnchor = useMemo(() => {
+    const last = session.last_completed_run;
+    if (last?.ended_at && (!run || run.run_id === last.run_id)) {
+      return new Date(last.ended_at);
+    }
+    // Fresh completion (no reload yet): the run ended moments ago.
+    return new Date();
+  }, [run, session.last_completed_run]);
+
+  const followups = useMemo(
+    () =>
+      metrics && metrics.attempts_count > 0
+        ? computeFollowups(metrics.accuracy, followupAnchor)
+        : [],
+    [metrics, followupAnchor],
+  );
+
+  const scheduleRunId = run?.run_id ?? session.last_completed_run?.run_id ?? null;
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleResult, setScheduleResult] = useState<ScheduleResult | null>(null);
+  const scheduleDone = scheduleResult != null && scheduleResult.status !== "error";
+
+  async function handleScheduleFollowups() {
+    if (!scheduleRunId || scheduling || scheduleDone) return;
+    setScheduling(true);
+    try {
+      const res = await fetch("/api/plans/followups", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ run_id: scheduleRunId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      if (data.status === "no_plan") {
+        setScheduleResult({ status: "no_plan" });
+      } else {
+        setScheduleResult({
+          status: data.status,
+          dates: (data.scheduled ?? []).map((s: { date: string }) => s.date),
+        });
+      }
+    } catch (e: unknown) {
+      setScheduleResult({
+        status: "error",
+        message: e instanceof Error ? e.message : "Failed to schedule follow-ups",
+      });
+    } finally {
+      setScheduling(false);
+    }
+  }
+
   if (!metrics || metrics.attempts_count === 0) {
     return (
       <div style={{ textAlign: "center", padding: "2rem 0" }}>
@@ -59,7 +125,7 @@ export function EndScreen({ run, session, onNewRun }: Props) {
           Start a session to see your results here.
         </p>
         <button onClick={onNewRun} style={primaryBtn}>
-          Start New Run
+          Practice this session again
         </button>
       </div>
     );
@@ -183,7 +249,7 @@ export function EndScreen({ run, session, onNewRun }: Props) {
       <CalibrationDashboard attempts={run?.attempts} />
 
       {/* Recommendations */}
-      {metrics.recommended_followups && metrics.recommended_followups.length > 0 && (
+      {followups.length > 0 && (
         <div
           style={{
             background: "var(--color-bg-card)",
@@ -195,20 +261,56 @@ export function EndScreen({ run, session, onNewRun }: Props) {
         >
           <h2 style={sectionTitle}>RECOMMENDED FOLLOW-UPS</h2>
           <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.95rem", lineHeight: 1.8 }}>
-            {metrics.recommended_followups.map((f, i) => (
+            {followups.map((f, i) => (
               <li key={i}>
-                {f.label} — <span style={{ color: "var(--color-info)" }}>{followupDisplayDate(f)}</span>
+                {f.label} — <span style={{ color: "var(--color-info)" }}>{f.date}</span>
               </li>
             ))}
           </ul>
           <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
             Based on spaced repetition research: lower accuracy → shorter intervals.
           </p>
+          {scheduleRunId && (
+            <button
+              onClick={handleScheduleFollowups}
+              disabled={scheduling || scheduleDone}
+              style={{
+                ...secondaryBtn,
+                marginTop: "0.75rem",
+                opacity: scheduling || scheduleDone ? 0.6 : 1,
+                cursor: scheduling || scheduleDone ? "default" : "pointer",
+              }}
+            >
+              {scheduling ? "Scheduling…" : "Schedule follow-ups"}
+            </button>
+          )}
+          {scheduleResult && (
+            <p
+              style={{
+                margin: "0.75rem 0 0",
+                fontSize: "0.9rem",
+                color:
+                  scheduleResult.status === "error"
+                    ? "var(--color-error)"
+                    : scheduleResult.status === "no_plan"
+                      ? "var(--color-warning)"
+                      : "var(--color-success)",
+              }}
+            >
+              {scheduleResult.status === "no_plan"
+                ? "No active plan — create a study plan to schedule follow-ups."
+                : scheduleResult.status === "error"
+                  ? scheduleResult.message
+                  : scheduleResult.dates.length > 0
+                    ? `Added to your plan: ${scheduleResult.dates.join(", ")}`
+                    : "Nothing to schedule — the recommended dates fall after your exam."}
+            </p>
+          )}
         </div>
       )}
 
       <button onClick={onNewRun} style={primaryBtn}>
-        Start New Run
+        Practice this session again
       </button>
     </div>
   );
@@ -259,16 +361,6 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   );
 }
 
-function followupDisplayDate(f: { days_from_now?: number; date: string }): string {
-  // Compute the date in the user's own timezone from the day offset so it
-  // matches the "in N days" label; fall back to the server-provided date.
-  if (f.days_from_now == null) return f.date;
-  const d = new Date(Date.now() + f.days_from_now * 86400000);
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${month}-${day}`;
-}
-
 function accuracyColor(accuracy: number): string {
   if (accuracy >= 0.85) return "var(--color-success)";
   if (accuracy >= 0.7) return "var(--color-warning)";
@@ -281,6 +373,19 @@ const sectionTitle: React.CSSProperties = {
   color: "var(--color-info)",
   margin: "0 0 0.5rem",
   fontFamily: "var(--font-display)",
+};
+
+const secondaryBtn: React.CSSProperties = {
+  width: "100%",
+  padding: "0.6rem 1.25rem",
+  fontSize: "0.95rem",
+  fontFamily: "var(--font-body)",
+  fontWeight: 600,
+  background: "transparent",
+  color: "var(--color-info)",
+  border: "1px solid var(--color-info)",
+  borderRadius: "var(--radius)",
+  cursor: "pointer",
 };
 
 const primaryBtn: React.CSSProperties = {

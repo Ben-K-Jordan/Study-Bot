@@ -440,8 +440,7 @@ function OnboardingFlow({
   onComplete: () => void;
   onSkip: () => void;
 }) {
-  // Focus the dialog once on mount. An inline ref callback would re-fire on
-  // every render and steal focus from the display-name input mid-typing.
+  // Focus the dialog once on mount.
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     dialogRef.current?.focus();

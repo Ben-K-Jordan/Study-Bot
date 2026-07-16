@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { generatePlan, PlanBlock } from "@/lib/plan-generator";
+import {
+  generatePlan,
+  PlanBlock,
+  slugifyObjectiveTitle,
+  buildObjectiveIdMap,
+} from "@/lib/plan-generator";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -208,6 +213,59 @@ describe("plan-generator: determinism", () => {
     for (let i = 1; i < runs.length; i++) {
       expect(runs[i]).toEqual(runs[0]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C2) Stable objective ids
+// ---------------------------------------------------------------------------
+
+describe("plan-generator: stable objective ids", () => {
+  it("slugifies titles: lowercase, non-alphanumeric runs to single underscore, trimmed", () => {
+    expect(slugifyObjectiveTitle("Photosynthesis: Light Reactions!")).toBe(
+      "photosynthesis_light_reactions",
+    );
+    expect(slugifyObjectiveTitle("  --Weird   spacing--  ")).toBe("weird_spacing");
+    expect(slugifyObjectiveTitle("Objective 1")).toBe("objective_1");
+  });
+
+  it("caps slugs at 60 chars without a trailing underscore", () => {
+    const long = "A ".repeat(80); // slugs to a_a_a_... far beyond 60
+    const slug = slugifyObjectiveTitle(long);
+    expect(slug.length).toBeLessThanOrEqual(60);
+    expect(slug.endsWith("_")).toBe(false);
+  });
+
+  it("falls back to a non-empty id for titles with no alphanumerics", () => {
+    expect(slugifyObjectiveTitle("!!!")).toBe("objective");
+  });
+
+  it("disambiguates colliding slugs deterministically in first-seen order", () => {
+    const map = buildObjectiveIdMap(["Loops!", "Loops?", "Loops."]);
+    expect(map.get("Loops!")).toBe("loops");
+    expect(map.get("Loops?")).toBe("loops_2");
+    expect(map.get("Loops.")).toBe("loops_3");
+  });
+
+  it("gives the same objective the same id in every block it appears in", () => {
+    // 10 objectives → packs split; interleaved and full-scope blocks would
+    // previously remint per-block obj_N ids that collided across blocks.
+    const blocks = generatePlan(defaultInput({ objectives: makeObjectives(10) }));
+    const idByTitle = new Map<string, string>();
+    const titleById = new Map<string, string>();
+    for (const b of blocks) {
+      for (const o of b.objectives) {
+        const priorId = idByTitle.get(o.title);
+        expect(priorId ?? o.id, `"${o.title}" changed id across blocks`).toBe(o.id);
+        idByTitle.set(o.title, o.id);
+        const priorTitle = titleById.get(o.id);
+        expect(priorTitle ?? o.title, `id "${o.id}" reused for a different title`).toBe(o.title);
+        titleById.set(o.id, o.title);
+      }
+    }
+    // Ids derive from titles, not positions
+    expect(idByTitle.get("Objective 1")).toBe("objective_1");
+    expect(idByTitle.get("Objective 10")).toBe("objective_10");
   });
 });
 
