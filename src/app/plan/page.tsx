@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { MODE_LABELS, getOrCreateUserId } from "@/lib/client-utils";
+import { MODE_LABELS } from "@/lib/client-utils";
 
 const DAY_LABELS = ["Day 0 (Today)", "Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
 
@@ -41,12 +41,13 @@ export default function PlanPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishDone, setPublishDone] = useState(false);
   const [deletingPlan, setDeletingPlan] = useState(false);
+  const [reflowLoading, setReflowLoading] = useState(false);
+  const [reflowPreview, setReflowPreview] = useState<{ moved: number; kept: number; dropped: number; total_items: number } | null>(null);
 
   useEffect(() => {
     async function checkGoogle() {
       try {
         const res = await fetch("/api/integrations/google/status", {
-          headers: { "X-User-Id": getOrCreateUserId() },
         });
         const data = await res.json();
         setGoogleConnected(data.connected ?? data.status === "CONNECTED");
@@ -78,7 +79,6 @@ export default function PlanPage() {
       try {
         const res = await fetch("/api/content/documents", {
           method: "POST",
-          headers: { "X-User-Id": getOrCreateUserId() },
           body: formData,
         });
         const data = await res.json();
@@ -91,7 +91,6 @@ export default function PlanPage() {
           if (data.status !== "PROCESSED") {
             fetch(`/api/content/documents/${docId}/process`, {
               method: "POST",
-              headers: { "X-User-Id": getOrCreateUserId() },
             })
               .then((r) => r.json())
               .then((d) => {
@@ -124,7 +123,7 @@ export default function PlanPage() {
     try {
       const res = await fetch(`/api/plans/${result.plan_id}/publish/google`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": getOrCreateUserId() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       if (!res.ok) {
@@ -162,7 +161,6 @@ export default function PlanPage() {
     let dailyCap = 180;
     try {
       const settingsRes = await fetch("/api/settings", {
-        headers: { "X-User-Id": getOrCreateUserId() },
       });
       if (settingsRes.ok) {
         const settings = await settingsRes.json();
@@ -189,7 +187,7 @@ export default function PlanPage() {
     try {
       const res = await fetch("/api/plans", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": getOrCreateUserId() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           course_name: courseName,
           exam_name: examName,
@@ -224,7 +222,6 @@ export default function PlanPage() {
     try {
       const res = await fetch(`/api/plans/${result.plan_id}`, {
         method: "DELETE",
-        headers: { "X-User-Id": getOrCreateUserId() },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -237,6 +234,54 @@ export default function PlanPage() {
       setError("Network error");
     } finally {
       setDeletingPlan(false);
+    }
+  };
+
+  // ---- Reflow: reschedule missed sessions (the recovery path a slipping
+  // exam week actually needs; ~900 lines of tested logic behind one button)
+  const previewReflow = async () => {
+    if (!result || reflowLoading) return;
+    setReflowLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plans/${result.plan_id}/reflow/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "missed_sessions" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to preview reschedule");
+      setReflowPreview(data.summary);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to preview reschedule");
+    } finally {
+      setReflowLoading(false);
+    }
+  };
+
+  const applyReflow = async () => {
+    if (!result || reflowLoading) return;
+    setReflowLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plans/${result.plan_id}/reflow/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "missed_sessions" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to apply reschedule");
+      // Refresh the plan so the new times render
+      const fresh = await fetch(`/api/plans/${result.plan_id}`);
+      const freshData = await fresh.json();
+      if (fresh.ok && freshData.items) {
+        setResult((prev) => (prev ? { ...prev, items: freshData.items } : prev));
+      }
+      setReflowPreview(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to apply reschedule");
+    } finally {
+      setReflowLoading(false);
     }
   };
 
@@ -379,6 +424,23 @@ export default function PlanPage() {
             <span style={{ color: "var(--color-success)", fontSize: "0.95rem", padding: "0.5rem" }}>Added to calendar</span>
           )}
           <a href={result.ics_download_url} style={btnStyle}>Download .ics</a>
+          {!reflowPreview ? (
+            <button onClick={previewReflow} disabled={reflowLoading} style={btnStyle}>
+              {reflowLoading ? "Checking..." : "Reschedule missed sessions"}
+            </button>
+          ) : (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem" }}>
+              <span style={{ color: "var(--color-text-secondary)" }}>
+                {reflowPreview.moved} moved · {reflowPreview.kept} kept · {reflowPreview.dropped} dropped
+              </span>
+              <button onClick={applyReflow} disabled={reflowLoading} style={btnStyle}>
+                {reflowLoading ? "Applying..." : "Apply"}
+              </button>
+              <button onClick={() => setReflowPreview(null)} disabled={reflowLoading} style={btnStyle}>
+                Cancel
+              </button>
+            </span>
+          )}
           <button onClick={() => { setResult(null); setPublishDone(false); }} style={btnStyle}>
             New Plan
           </button>

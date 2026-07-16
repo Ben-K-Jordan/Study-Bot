@@ -55,8 +55,10 @@ export const authOptions: NextAuthOptions = {
         );
         if (!user || !valid) return null;
 
-        // Reject unverified emails in production
-        if (process.env.NODE_ENV === "production" && !user.emailVerified) {
+        // Single-user app: verifying your own email to yourself protects
+        // nothing, and this gate once locked the owner out of a local
+        // production build. Opt in only when real SMTP can deliver links.
+        if (process.env.REQUIRE_EMAIL_VERIFICATION === "true" && !user.emailVerified) {
           return null;
         }
 

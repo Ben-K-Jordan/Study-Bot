@@ -25,6 +25,17 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const envPath = join(root, ".env");
 const examplePath = join(root, ".env.example");
 
+// ---------------------------------------------------------------------------
+// 0. Node version check (Next.js 15 + this script need Node 20.19+)
+// ---------------------------------------------------------------------------
+const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+if (nodeMajor < 20 || (nodeMajor === 20 && nodeMinor < 19)) {
+  console.error(
+    `Setup failed: Node ${process.versions.node} is too old — this project requires Node 20.19 or newer, so install a current Node LTS and re-run npm run setup.`,
+  );
+  process.exit(1);
+}
+
 // On Windows, docker/npx are .cmd shims and need a shell to resolve.
 const useShell = process.platform === "win32";
 
@@ -121,7 +132,8 @@ function parseEnv(text) {
   return result;
 }
 
-for (const [key, value] of Object.entries(parseEnv(envText))) {
+const parsedEnv = parseEnv(envText);
+for (const [key, value] of Object.entries(parsedEnv)) {
   if (process.env[key] === undefined) process.env[key] = value;
 }
 
@@ -237,6 +249,12 @@ if (!migrated || !generated) {
     log("    DATABASE_URL in .env), then: npx prisma migrate deploy");
   }
   if (!generated) log("  - npx prisma generate");
+}
+if (parsedEnv.AI_PROVIDER === "mock") {
+  log("");
+  log("Heads up: AI_PROVIDER is \"mock\" in .env. Mock mode exists for tests —");
+  log("sessions get template questions and canned feedback. For real studying,");
+  log("set AI_PROVIDER=openai and add an OPENAI_API_KEY in .env.");
 }
 log("");
 log("Next steps:");

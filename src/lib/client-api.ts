@@ -1,8 +1,12 @@
 /**
  * Shared client-side API helpers.
  * Must only be imported from "use client" components.
+ *
+ * Authentication rides on the NextAuth session cookie (sent automatically
+ * on same-origin fetches). No identity headers: the old X-User-Id header
+ * could silently split data across phantom identities when a session
+ * expired in dev.
  */
-import { getOrCreateUserId } from "./client-utils";
 
 export interface CourseOption {
   course_name: string;
@@ -13,7 +17,7 @@ export interface CourseOption {
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
-  return { "X-User-Id": getOrCreateUserId(), ...extra };
+  return { ...extra };
 }
 
 function withTimeout(timeoutMs: number = DEFAULT_TIMEOUT_MS): AbortSignal {

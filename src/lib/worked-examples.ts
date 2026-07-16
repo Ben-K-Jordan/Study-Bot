@@ -64,15 +64,25 @@ function isNonEmptyString(value: unknown): value is string {
 
 /**
  * A set is usable when it has a problem statement, at least 2 solution steps
- * (backward fading needs a penultimate step to remove), and a full problem.
+ * (backward fading needs a penultimate step to remove) each with a real
+ * action AND rationale (a step without a "why" defeats self-explanation),
+ * both completion problems, a full problem, and a model answer (the
+ * post-answer scoring standard for the FULL prompt).
  */
 function isValidSet(set: WorkedExampleSet | null | undefined): set is WorkedExampleSet {
   return (
     !!set &&
+    typeof set === "object" &&
     isNonEmptyString(set.problem) &&
     Array.isArray(set.steps) &&
     set.steps.length >= 2 &&
-    isNonEmptyString(set.full_problem)
+    set.steps.every(
+      (s) => !!s && isNonEmptyString(s.action) && isNonEmptyString(s.why),
+    ) &&
+    isNonEmptyString(set.completion_problem_1) &&
+    isNonEmptyString(set.completion_problem_2) &&
+    isNonEmptyString(set.full_problem) &&
+    isNonEmptyString(set.model_answer)
   );
 }
 
@@ -188,8 +198,8 @@ export async function generateWorkedExampleDeck(
         setCount,
       },
       parseOutput: (raw: unknown) => {
-        const data = raw as Record<string, unknown>;
-        const sets = (data.sets as WorkedExampleSet[]) || [];
+        const data = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+        const sets = Array.isArray(data.sets) ? (data.sets as WorkedExampleSet[]) : [];
         return { sets };
       },
     });

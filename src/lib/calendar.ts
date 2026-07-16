@@ -6,7 +6,6 @@ export const MODE_LABELS: Record<string, string> = {
   ERROR_REPAIR: "Error Repair",
   EXAM_SIM: "Exam Sim",
   WORKED_EXAMPLES: "Worked Examples",
-  OFFICE_HOURS_PREP: "Office Hours Prep",
 };
 
 export function buildCalendarTitle(params: {

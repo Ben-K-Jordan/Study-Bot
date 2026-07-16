@@ -29,7 +29,6 @@ describe("buildCalendarTitle", () => {
       ["ERROR_REPAIR", "Error Repair"],
       ["EXAM_SIM", "Exam Sim"],
       ["WORKED_EXAMPLES", "Worked Examples"],
-      ["OFFICE_HOURS_PREP", "Office Hours Prep"],
     ] as const;
 
     for (const [mode, label] of modes) {
