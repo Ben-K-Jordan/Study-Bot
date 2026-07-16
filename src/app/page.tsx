@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
@@ -565,6 +565,13 @@ function OnboardingFlow({
   onComplete: () => void;
   onSkip: () => void;
 }) {
+  // Focus the dialog once on mount. An inline ref callback would re-fire on
+  // every render and steal focus from the display-name input mid-typing.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
   const steps = [
     {
       title: "Welcome to Study Bot!",
@@ -669,7 +676,7 @@ function OnboardingFlow({
       }}
     >
       <div
-        ref={(el) => el?.focus()}
+        ref={dialogRef}
         tabIndex={-1}
         style={{
           background: "var(--color-bg)",

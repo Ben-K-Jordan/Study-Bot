@@ -339,29 +339,50 @@ describe.skipIf(!hasDb)("Integration: ERROR_REPAIR mode", () => {
 
     const startResult = await startOrResumeRun(userId, retrievalSessionId);
     retrievalRunId = startResult.data!.run_id;
+    const deck = startResult.data!.prompts as {
+      meta?: { pack?: string; source_error_log_id?: string };
+    }[];
 
-    // Submit INCORRECT with error log
-    await submitAttempt(userId, retrievalRunId, {
-      prompt_index: 0,
-      user_answer: "Wrong answer",
-      self_score: "INCORRECT",
-      time_to_answer_seconds: 15,
-      error_log: {
-        error_type: "MISCONCEPTION",
-        correction_rule: "Always handle exceptions in catch blocks",
-        variant_question: "What happens if you don't catch an exception?",
-      },
-    });
+    // The deck may start with a prepended PRE_TEST diagnostic (new objective,
+    // no mastery record). Pretest attempts are quarantined and never create
+    // error logs — submit the INCORRECT on the first GENERATED prompt, answer
+    // everything else CORRECT (including the injected variant) to completion.
+    let injectedError = false;
+    let idx = startResult.data!.current_index as number;
+    let status: string = startResult.data!.status;
+    while (status === "ACTIVE") {
+      const deckPrompt = deck[idx];
+      const isPre = deckPrompt?.meta?.pack === "PRE_TEST";
+      const payload =
+        !injectedError && deckPrompt && !isPre
+          ? {
+              prompt_index: idx,
+              user_answer: "Wrong answer",
+              self_score: "INCORRECT" as const,
+              time_to_answer_seconds: 15,
+              error_log: {
+                error_type: "MISCONCEPTION" as const,
+                correction_rule: "Always handle exceptions in catch blocks",
+                variant_question: "What happens if you don't catch an exception?",
+              },
+            }
+          : {
+              prompt_index: idx,
+              user_answer: "Correct answer",
+              self_score: "CORRECT" as const,
+              time_to_answer_seconds: 10,
+            };
+      if (payload.self_score === "INCORRECT") injectedError = true;
 
-    // Submit CORRECT to complete
-    await submitAttempt(userId, retrievalRunId, {
-      prompt_index: 1,
-      user_answer: "Correct answer",
-      self_score: "CORRECT",
-      time_to_answer_seconds: 10,
-    });
+      const res = await submitAttempt(userId, retrievalRunId, payload);
+      expect("data" in res).toBe(true);
+      status = (res as { data: { status: string } }).data.status;
+      idx = (res as { data: { current_index: number } }).data.current_index;
+    }
+    expect(injectedError).toBe(true);
 
-    // Verify error log was created
+    // Verify exactly one unresolved error log was created (the variant answered
+    // CORRECT advances its streak but does not resolve it — criterion is 2 days)
     const errorLogs = await prisma.sessionErrorLog.findMany({
       where: { runId: retrievalRunId, resolvedAt: null },
     });

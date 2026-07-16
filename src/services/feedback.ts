@@ -260,8 +260,10 @@ async function generateAndPersist(
     const result = await generateContent(userId, attempt);
 
     // Persist the full FeedbackResponse so refetch/polling returns it
-    // verbatim and never re-runs the AI calls.
-    await prisma.sessionAttempt.update({
+    // verbatim and never re-runs the AI calls. updateMany tolerates the
+    // attempt having been deleted while generation ran (eager generation
+    // races test cleanup / account deletion) — 0 rows is a clean no-op.
+    await prisma.sessionAttempt.updateMany({
       where: { id: attempt.id },
       data: {
         feedbackStatus: "READY",

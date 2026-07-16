@@ -171,25 +171,3 @@ export async function listStudyGuides(
     created_at: g.createdAt.toISOString(),
   }));
 }
-
-export async function getStudyGuide(
-  userId: string,
-  guideId: string,
-): Promise<StudyGuideData | null> {
-  const guide = await prisma.studyGuide.findUnique({
-    where: { id: guideId },
-  });
-
-  if (!guide || guide.userId !== userId) return null;
-
-  return {
-    id: guide.id,
-    user_id: guide.userId,
-    course_name: guide.courseName,
-    exam_name: guide.examName,
-    guide_type: guide.guideType as GuideType,
-    title: guide.title,
-    sections: guide.content as unknown as GuideSection[],
-    created_at: guide.createdAt.toISOString(),
-  };
-}
