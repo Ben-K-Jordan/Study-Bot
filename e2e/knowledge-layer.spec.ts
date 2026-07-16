@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
+import pg from "pg";
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const USER_ID = "e2e_test_user";
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 // Override extraHTTPHeaders to remove X-User-Id — we set it via localStorage
 // and the client JS adds it to fetch calls. Having Playwright ALSO inject it
@@ -13,7 +15,23 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   const RECOGNIZABLE = "Dijkstra shortest path algorithm uses a priority queue to greedily select minimum distance vertices";
   let sessionId: string;
 
+  test.afterAll(async () => {
+    await pool.end();
+  });
+
   test("setup: upload doc, create session, start run", async ({ request }) => {
+    // Deterministic deck: seed mastery so the new objective doesn't get a
+    // PRE_TEST diagnostic prepended (pretest prompts skip the error-log form
+    // by design, which this spec's INCORRECT flow depends on), and purge any
+    // error logs left by a previous attempt (retries keep the DB).
+    await pool.query(
+      `INSERT INTO objective_mastery (id, user_id, course_name, objective_key, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, NOW())
+       ON CONFLICT (user_id, course_name, objective_key) DO NOTHING`,
+      [USER_ID, COURSE, "obj_graphs"]
+    );
+    await pool.query(`DELETE FROM session_error_logs WHERE user_id = $1`, [USER_ID]);
+
     // Upload a doc with recognizable content
     const docContent = `Introduction to Graph Algorithms\n\n${RECOGNIZABLE}\n\nThe algorithm maintains a set of visited vertices and relaxes edges.\n\nBellman-Ford handles negative weights but is slower.\n\nFloyd-Warshall computes all-pairs shortest paths.`;
 
@@ -172,13 +190,20 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     expect(raw).not.toContain('"snippets"');
     expect(raw).not.toContain('"doc_title"');
 
-    // Phase 1: now call the deferred feedback endpoint
-    const feedbackRes = await request.get(
-      `${BASE_URL}/api/attempts/${attemptData.attempt_id}/feedback`,
-      { headers: { "X-User-Id": USER_ID } }
-    );
-    expect(feedbackRes.status()).toBe(200);
-    const feedbackData = await feedbackRes.json();
+    // Phase 1: now call the deferred feedback endpoint. Generation starts
+    // eagerly at submit time, so PENDING is a valid transient state — poll
+    // like the client does.
+    let feedbackData: { status: string } = { status: "PENDING" };
+    for (let i = 0; i < 30; i++) {
+      const feedbackRes = await request.get(
+        `${BASE_URL}/api/attempts/${attemptData.attempt_id}/feedback`,
+        { headers: { "X-User-Id": USER_ID } }
+      );
+      expect(feedbackRes.status()).toBe(200);
+      feedbackData = await feedbackRes.json();
+      if (feedbackData.status !== "PENDING") break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
     expect(["OK", "UNAVAILABLE"]).toContain(feedbackData.status);
 
     // Phase 2: verify prompt endpoint works

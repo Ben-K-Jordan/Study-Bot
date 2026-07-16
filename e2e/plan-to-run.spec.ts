@@ -160,8 +160,18 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     expect(attemptRes.status()).toBe(200);
     const result = await attemptRes.json();
     expect(result.current_index).toBe(1);
-    expect(result.metrics.correct_count).toBe(1);
-    expect(result.metrics.attempts_count).toBe(1);
+    // Plan-created sessions carry never-studied objectives, so the deck may
+    // start with a PRE_TEST diagnostic — quarantined from graded metrics by
+    // design (Richland 2009) and tracked separately.
+    const firstPrompt = (run.prompts as { meta?: { pack?: string } }[])[0];
+    if (firstPrompt?.meta?.pack === "PRE_TEST") {
+      expect(result.metrics.pretest_count).toBe(1);
+      expect(result.metrics.pretest_correct).toBe(1);
+      expect(result.metrics.correct_count).toBe(0);
+    } else {
+      expect(result.metrics.correct_count).toBe(1);
+      expect(result.metrics.attempts_count).toBe(1);
+    }
   });
 
   test("resume preserves state after attempt", async ({ request }) => {
@@ -174,8 +184,10 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
     const body = await response.json();
     expect(body.resumed).toBe(true);
     expect(body.current_index).toBe(1);
-    expect(body.metrics.attempts_count).toBe(1);
-    expect(body.metrics.correct_count).toBe(1);
+    // One attempt exists either way; it counts toward graded metrics only
+    // when it wasn't a pretest diagnostic.
+    const m = body.metrics as { attempts_count: number; pretest_count?: number };
+    expect(m.attempts_count + (m.pretest_count ?? 0)).toBe(1);
   });
 });
 

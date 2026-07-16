@@ -3,6 +3,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 
+// Secure cookies must follow the actual serving protocol, not the build
+// mode: a production build served over plain http (e.g. `npm start` on
+// localhost) would set Secure cookies the browser silently drops, making
+// sign-in impossible. Browsers only honor the __Secure- prefix over https.
+const useSecureCookies =
+  process.env.NEXTAUTH_URL?.startsWith("https://") ??
+  process.env.NODE_ENV === "production";
+
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
@@ -11,12 +19,12 @@ export const authOptions: NextAuthOptions = {
   },
   cookies: {
     sessionToken: {
-      name: process.env.NODE_ENV === "production" ? "__Secure-next-auth.session-token" : "next-auth.session-token",
+      name: useSecureCookies ? "__Secure-next-auth.session-token" : "next-auth.session-token",
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: process.env.NODE_ENV === "production",
+        secure: useSecureCookies,
       },
     },
   },
