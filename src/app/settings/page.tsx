@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 const DEFAULTS = {
-  displayName: "",
   studyStart: "09:00",
   studyEnd: "17:00",
   dailyCap: 180,
@@ -37,27 +36,17 @@ const TIMEZONE_OPTIONS: string[] =
     : COMMON_TIMEZONES;
 
 export default function SettingsPage() {
-  const [displayName, setDisplayName] = useState(DEFAULTS.displayName);
   const [studyStart, setStudyStart] = useState(DEFAULTS.studyStart);
   const [studyEnd, setStudyEnd] = useState(DEFAULTS.studyEnd);
   const [dailyCap, setDailyCap] = useState(DEFAULTS.dailyCap);
   const [dailyXpGoal, setDailyXpGoal] = useState(DEFAULTS.dailyXpGoal);
-  const [leaderboardVisible, setLeaderboardVisible] = useState(true);
   const [timezone, setTimezone] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [googleStatus, setGoogleStatus] = useState<"loading" | "connected" | "disconnected">("loading");
-
-  // Notification preferences
-  const [pushReminders, setPushReminders] = useState(true);
-  const [streakReminders, setStreakReminders] = useState(true);
-  const [emailReminders, setEmailReminders] = useState(true);
-  const [weeklyDigest, setWeeklyDigest] = useState(true);
-  const [reminderTime, setReminderTime] = useState("09:00");
-  const [pushSupported, setPushSupported] = useState(false);
-  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [googleConfigured, setGoogleConfigured] = useState(true);
 
   // Load settings from backend (with localStorage fallback)
   useEffect(() => {
@@ -66,13 +55,12 @@ export default function SettingsPage() {
         const res = await fetch("/api/settings");
         if (res.ok) {
           const data = await res.json();
-          setDisplayName(data.displayName || "");
           setStudyStart(data.studyStart || DEFAULTS.studyStart);
           setStudyEnd(data.studyEnd || DEFAULTS.studyEnd);
           setDailyCap(data.dailyCap ?? DEFAULTS.dailyCap);
           setDailyXpGoal(data.dailyXpGoal ?? DEFAULTS.dailyXpGoal);
-          setLeaderboardVisible(data.leaderboardVisible !== false);
           setTimezone(data.timezone || "");
+          setGoogleConfigured(Boolean(data.google_configured));
           // Also sync to localStorage for plan page compatibility
           localStorage.setItem("study_bot_prefs", JSON.stringify({
             studyStart: data.studyStart || DEFAULTS.studyStart,
@@ -105,30 +93,6 @@ export default function SettingsPage() {
     }
 
     loadSettings();
-
-    // Load notification preferences
-    fetch("/api/notifications/preferences")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          setPushReminders(data.pushReminders);
-          setStreakReminders(data.streakReminders);
-          setEmailReminders(data.emailReminders);
-          setWeeklyDigest(data.weeklyDigest);
-          setReminderTime(data.reminderTime || "09:00");
-        }
-      })
-      .catch(() => {});
-
-    // Check push notification support
-    if ("serviceWorker" in navigator && "PushManager" in window) {
-      setPushSupported(true);
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setPushSubscribed(!!sub);
-        });
-      });
-    }
   }, []);
 
   useEffect(() => {
@@ -160,21 +124,13 @@ export default function SettingsPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          displayName: displayName.trim() || undefined,
           studyStart,
           studyEnd,
           dailyCap,
           dailyXpGoal,
-          leaderboardVisible,
           timezone: timezone.trim() || null,
         }),
       });
-      // Save notification preferences in parallel
-      await fetch("/api/notifications/preferences", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pushReminders, streakReminders, emailReminders, weeklyDigest, reminderTime }),
-      }).catch(() => {});
 
       if (res.ok) {
         setSaved(true);
@@ -193,44 +149,6 @@ export default function SettingsPage() {
     window.location.href = `/api/integrations/google/connect`;
   };
 
-  const handlePushToggle = async () => {
-    if (!pushSupported) return;
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      if (pushSubscribed) {
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          await fetch("/api/push/unsubscribe", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ endpoint: sub.endpoint }),
-          });
-          await sub.unsubscribe();
-        }
-        setPushSubscribed(false);
-      } else {
-        const keyRes = await fetch("/api/push/vapid-key");
-        const { publicKey } = await keyRes.json();
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: publicKey,
-        });
-        const json = sub.toJSON();
-        await fetch("/api/push/subscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            endpoint: sub.endpoint,
-            keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
-          }),
-        });
-        setPushSubscribed(true);
-      }
-    } catch {
-      // Permission denied or other error
-    }
-  };
-
   if (loading) {
     return (
       <div style={pageStyle}>
@@ -243,20 +161,6 @@ export default function SettingsPage() {
   return (
     <div id="main-content" style={pageStyle} role="form" aria-label="User settings">
       <h1 style={headingStyle}>Settings</h1>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Profile</h2>
-        <p style={hintStyle}>Set a display name for the leaderboard.</p>
-        <input
-          type="text"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="Your display name"
-          maxLength={50}
-          aria-label="Display name"
-          style={textInputStyle}
-        />
-      </section>
 
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Study hours</h2>
@@ -328,22 +232,6 @@ export default function SettingsPage() {
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Leaderboard</h2>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={leaderboardVisible}
-            onChange={(e) => setLeaderboardVisible(e.target.checked)}
-            style={{ accentColor: "var(--color-primary)", width: 18, height: 18, cursor: "pointer" }}
-          />
-          <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Show me on the leaderboard</span>
-        </label>
-        <p style={{ ...hintStyle, marginTop: "0.35rem" }}>
-          When off, your name won&apos;t appear to other users.
-        </p>
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Google Calendar</h2>
         {googleStatus === "loading" ? (
           <p style={hintStyle}>Checking connection...</p>
@@ -352,70 +240,19 @@ export default function SettingsPage() {
             <span style={{ color: "var(--color-success)", fontSize: "0.95rem" }}>Connected</span>
             <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
           </div>
-        ) : (
+        ) : googleConfigured ? (
           <div>
             <p style={hintStyle}>Connect to publish study sessions to your calendar and auto-detect busy times.</p>
             <button onClick={handleGoogleConnect} style={connectBtnStyle}>
               Connect Google Calendar
             </button>
           </div>
+        ) : (
+          <p style={hintStyle}>
+            Google Calendar sync is not configured on this server. Set GOOGLE_CLIENT_ID and
+            GOOGLE_CLIENT_SECRET (see .env.example) to enable it.
+          </p>
         )}
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Notifications</h2>
-        <p style={hintStyle}>Control how Study Bot nags you (lovingly).</p>
-
-        {pushSupported && (
-          <div style={{ marginBottom: "1rem" }}>
-            <label style={toggleRowStyle}>
-              <input
-                type="checkbox"
-                checked={pushSubscribed}
-                onChange={handlePushToggle}
-                style={checkboxStyle}
-              />
-              <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Push notifications</span>
-            </label>
-            <p style={{ ...hintStyle, marginLeft: "2rem", marginTop: "0.15rem" }}>
-              {pushSubscribed ? "We'll bug you right on your device." : "Allow browser notifications for study reminders."}
-            </p>
-          </div>
-        )}
-
-        <label style={toggleRowStyle}>
-          <input type="checkbox" checked={pushReminders} onChange={(e) => setPushReminders(e.target.checked)} style={checkboxStyle} />
-          <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Study reminders</span>
-        </label>
-
-        <label style={toggleRowStyle}>
-          <input type="checkbox" checked={streakReminders} onChange={(e) => setStreakReminders(e.target.checked)} style={checkboxStyle} />
-          <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Streak warnings</span>
-        </label>
-
-        <label style={toggleRowStyle}>
-          <input type="checkbox" checked={emailReminders} onChange={(e) => setEmailReminders(e.target.checked)} style={checkboxStyle} />
-          <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Email reminders</span>
-        </label>
-
-        <label style={toggleRowStyle}>
-          <input type="checkbox" checked={weeklyDigest} onChange={(e) => setWeeklyDigest(e.target.checked)} style={checkboxStyle} />
-          <span style={{ color: "var(--color-text)", fontSize: "0.95rem" }}>Weekly digest email</span>
-        </label>
-
-        <div style={{ marginTop: "0.75rem" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Reminder time
-            </span>
-            <input
-              type="time"
-              value={reminderTime}
-              onChange={(e) => setReminderTime(e.target.value)}
-              style={timeInputStyle}
-            />
-          </label>
-        </div>
       </section>
 
       {saveError && (
@@ -498,21 +335,6 @@ const saveBtnStyle: React.CSSProperties = {
   fontSize: "1.05rem",
   cursor: "pointer",
   borderRadius: "var(--radius-sm)",
-};
-
-const toggleRowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: "0.75rem",
-  cursor: "pointer",
-  marginBottom: "0.5rem",
-};
-
-const checkboxStyle: React.CSSProperties = {
-  accentColor: "var(--color-primary)",
-  width: 18,
-  height: 18,
-  cursor: "pointer",
 };
 
 const connectBtnStyle: React.CSSProperties = {

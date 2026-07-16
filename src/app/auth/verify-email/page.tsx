@@ -61,6 +61,12 @@ function VerifyEmailContent() {
         <p style={mutedStyle}>
           The link expires in 24 hours. If you don&apos;t see it, check your spam folder.
         </p>
+        <p style={mutedStyle}>
+          Running locally with the default console email provider? The verification link is
+          printed in the terminal where <code>npm run dev</code> is running. And unless
+          REQUIRE_EMAIL_VERIFICATION is set, verification is optional and you can just sign
+          in directly.
+        </p>
 
         {error && <div style={errorStyle} role="alert" aria-live="polite">{error}</div>}
         {resent && <div style={successStyle} role="alert">Verification email resent!</div>}
