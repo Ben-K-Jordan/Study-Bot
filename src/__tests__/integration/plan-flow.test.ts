@@ -227,6 +227,11 @@ describe.skipIf(!hasDb)("Integration: plan creation and retrieval", () => {
   it("can submit an attempt on a plan-created session run", async () => {
     const runResult = await startOrResumeRun(userId, firstSessionId);
     const runId = runResult.data.run_id;
+    // Plan-created sessions carry never-studied objectives, so the deck
+    // starts with a prepended PRE_TEST diagnostic. Pretest attempts are
+    // quarantined from graded metrics (Richland 2009) and tracked separately.
+    const firstPrompt = (runResult.data.prompts as { meta?: { pack?: string } }[])[0];
+    const firstIsPretest = firstPrompt?.meta?.pack === "PRE_TEST";
 
     const result = await submitAttempt(userId, runId, {
       prompt_index: 0,
@@ -237,7 +242,13 @@ describe.skipIf(!hasDb)("Integration: plan creation and retrieval", () => {
 
     expect("data" in result).toBe(true);
     expect(result.data.current_index).toBe(1);
-    expect(result.data.metrics.correct_count).toBe(1);
+    if (firstIsPretest) {
+      expect(result.data.metrics.pretest_count).toBe(1);
+      expect(result.data.metrics.pretest_correct).toBe(1);
+      expect(result.data.metrics.correct_count).toBe(0);
+    } else {
+      expect(result.data.metrics.correct_count).toBe(1);
+    }
   });
 
   it("resume after attempt preserves state", async () => {
@@ -245,7 +256,10 @@ describe.skipIf(!hasDb)("Integration: plan creation and retrieval", () => {
     expect("data" in result).toBe(true);
     expect(result.data.resumed).toBe(true);
     expect(result.data.current_index).toBe(1);
-    expect(result.data.metrics.attempts_count).toBe(1);
+    // One attempt row exists either way; it only counts toward graded
+    // metrics when it wasn't a pretest diagnostic.
+    const m = result.data.metrics as { attempts_count: number; pretest_count?: number };
+    expect(m.attempts_count + (m.pretest_count ?? 0)).toBe(1);
   });
 });
 

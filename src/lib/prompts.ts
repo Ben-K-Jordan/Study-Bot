@@ -280,21 +280,6 @@ export function shuffleMcqChoices(prompt: Prompt, runSeed: string): Prompt {
   };
 }
 
-// ---- EXAM_SIM ----
-
-/**
- * Generates an exam simulation deck. Same prompt generation as retrieval
- * but policies differ (delayed scoring). The deck itself is identical.
- */
-export function generateExamSimPrompts(session: {
-  objectives?: Objective[] | null;
-  target_outcome?: { prompt_count?: number } | null;
-  topic_scope: string;
-}): Prompt[] {
-  // Exam sim uses same prompt generation as retrieval
-  return generateRetrievalPrompts(session);
-}
-
 // ---- ERROR_REPAIR ----
 
 export interface ErrorLogForRepair {

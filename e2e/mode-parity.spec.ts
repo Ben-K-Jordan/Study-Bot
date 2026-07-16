@@ -14,6 +14,12 @@ async function seedMastery(userId: string, courseName: string, objectiveKeys: st
       [userId, courseName, key]
     );
   }
+  // Purge error logs from any previous attempt of this spec (retries restart
+  // the worker but keep the DB). Unresolved logs — which now survive a single
+  // correct retrieval by design (successive relearning criterion) — would
+  // otherwise inject CROSS_SESSION_REPAIR prompts into the new run's deck and
+  // shift the exact prompt counts these tests assert.
+  await pool.query(`DELETE FROM session_error_logs WHERE user_id = $1`, [userId]);
 }
 
 async function cleanupMastery(userId: string) {

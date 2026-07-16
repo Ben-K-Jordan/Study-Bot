@@ -57,6 +57,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [revealLoading, setRevealLoading] = useState(false);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Landing spot for keyboard focus when a phase swap unmounts the focused
+  // control (answer -> scoring -> review). Without this, focus falls to
+  // <body> after every answer and keyboard/AT users re-Tab from the top.
+  const phaseFocusRef = useRef<HTMLDivElement>(null);
   const excerptRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   // Use current_prompt from run data (Phase 2: no full prompt array needed)
@@ -165,10 +169,21 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setHighlightedCitation(null);
     excerptRefs.current.clear();
     startTimeRef.current = Date.now();
-    if (!isReviewPhase) {
-      textareaRef.current?.focus();
-    }
+    // Focus restoration happens in the phase-focus effect below — calling
+    // focus() here would fire before the next phase's elements mount.
   };
+
+  // Restore keyboard focus after each phase swap, once the new phase's
+  // elements exist. The free-recall textarea gets focus directly; other
+  // phases land on the phase container (tabIndex=-1).
+  useEffect(() => {
+    if (uiPhase === "answering" && !isMcq && !isReviewPhase) {
+      textareaRef.current?.focus();
+    } else {
+      phaseFocusRef.current?.focus();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiPhase, promptKey]);
 
   // Reset state when the prompt changes UNDERNEATH the UI (exam answering,
   // phase transitions, resume). While the review panel is up, the parent has
@@ -457,7 +472,10 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     const tag = target?.tagName;
     const isTyping =
       tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || !!target?.isContentEditable;
-    if (isTyping || e.metaKey || e.ctrlKey || e.altKey || submitting) return;
+    // Links and buttons keep their native Enter/Space activation — the
+    // shortcuts must never hijack a focused control (e.g. a nav link).
+    const isInteractive = tag === "A" || tag === "BUTTON";
+    if (isTyping || isInteractive || e.metaKey || e.ctrlKey || e.altKey || submitting) return;
 
     if (uiPhase === "answering" && isMcq && currentPrompt.choices) {
       let idx = -1;
@@ -491,8 +509,32 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     }
   };
 
+  // Screen-reader announcement for the loop's key events: answer recorded,
+  // outcome known, feedback arrived. Visually silent.
+  const announceText =
+    uiPhase === "review"
+      ? [
+          mcqResult
+            ? `${mcqResult.is_correct ? "Correct" : "Incorrect"} — the answer is ${String.fromCharCode(65 + mcqResult.correct_index)}, ${mcqResult.correct_choice}.`
+            : lastScore
+              ? `Scored ${lastScore.toLowerCase()}.`
+              : "",
+          fb.explanation || fb.reinforcement ? "Feedback ready." : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : uiPhase === "scoring" && !isReviewPhase
+        ? `Answer recorded.${reveal?.model_answer ? " Model answer shown — score yourself against it." : ""}`
+        : "";
+
   return (
     <div>
+      {/* Live region: announces answer outcomes and feedback arrival to
+          assistive tech. Always mounted so changes are reliably read. */}
+      <div role="status" aria-live="polite" className="visually-hidden">
+        {announceText}
+      </div>
+
       {/* Single quiet status line — everything the student doesn't need to
           think about lives here in low contrast (Sweller: extraneous UI load
           competes with learning). */}
@@ -596,6 +638,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               <button
                 key={val}
                 onClick={() => setMcqConfidence(mcqConfidence === val ? null : val)}
+                aria-pressed={mcqConfidence === val}
+                aria-keyshortcuts={key.toLowerCase()}
                 style={{
                   padding: "0.2rem 0.55rem",
                   fontSize: "0.72rem",
@@ -607,11 +651,17 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   cursor: "pointer",
                 }}
               >
-                {lbl} <span style={{ opacity: 0.6 }}>{key}</span>
+                {lbl} <span aria-hidden="true" style={{ opacity: 0.6 }}>{key}</span>
               </button>
             ))}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div
+            ref={phaseFocusRef}
+            tabIndex={-1}
+            role="group"
+            aria-label="Answer choices"
+            style={{ display: "flex", flexDirection: "column", gap: "0.5rem", outline: "none" }}
+          >
             {currentPrompt.choices.map((choice: string, idx: number) => {
               const label = String.fromCharCode(65 + idx);
               const isSelected = selectedChoice === idx;
@@ -620,6 +670,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   key={idx}
                   onClick={() => handleMcqSelect(idx)}
                   disabled={submitting}
+                  aria-pressed={isSelected}
+                  aria-keyshortcuts={`${idx + 1} ${label.toLowerCase()}`}
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
@@ -645,7 +697,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     fontSize: "0.95rem",
                   }}>{label}.</span>
                   <span style={{ flex: 1 }}>{choice}</span>
-                  <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", alignSelf: "center" }}>{idx + 1}</span>
+                  <span aria-hidden="true" style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", alignSelf: "center" }}>{idx + 1}</span>
                 </button>
               );
             })}
@@ -694,6 +746,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                   <button
                     key={level}
                     onClick={() => setConfidence(level)}
+                    aria-label={`${level} — ${confidenceLabels[level - 1]}`}
+                    aria-pressed={confidence === level}
                     style={{
                       flex: 1,
                       padding: "0.4rem",
@@ -734,7 +788,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
       {/* Scoring phase */}
       {uiPhase === "scoring" && (
-        <div>
+        <div ref={phaseFocusRef} tabIndex={-1} style={{ outline: "none" }}>
           {!isReviewPhase && (
             <div
               style={{
@@ -839,14 +893,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     : "How did you do? Be honest."}
               </p>
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button onClick={() => handleScore("CORRECT")} disabled={submitting} style={scoreBtn("var(--color-success)", submitting)}>
-                  ✓ Correct <span style={{ opacity: 0.5, fontWeight: 400 }}>1</span>
+                <button onClick={() => handleScore("CORRECT")} disabled={submitting} aria-keyshortcuts="1" style={scoreBtn("var(--color-success)", submitting)}>
+                  ✓ Correct <span aria-hidden="true" style={{ opacity: 0.5, fontWeight: 400 }}>1</span>
                 </button>
-                <button onClick={() => handleScore("PARTIAL")} disabled={submitting} style={scoreBtn("var(--color-warning)", submitting)}>
-                  ~ Partial <span style={{ opacity: 0.5, fontWeight: 400 }}>2</span>
+                <button onClick={() => handleScore("PARTIAL")} disabled={submitting} aria-keyshortcuts="2" style={scoreBtn("var(--color-warning)", submitting)}>
+                  ~ Partial <span aria-hidden="true" style={{ opacity: 0.5, fontWeight: 400 }}>2</span>
                 </button>
-                <button onClick={() => handleScore("INCORRECT")} disabled={submitting} style={scoreBtn("var(--color-error)", submitting)}>
-                  ✗ Incorrect <span style={{ opacity: 0.5, fontWeight: 400 }}>3</span>
+                <button onClick={() => handleScore("INCORRECT")} disabled={submitting} aria-keyshortcuts="3" style={scoreBtn("var(--color-error)", submitting)}>
+                  ✗ Incorrect <span aria-hidden="true" style={{ opacity: 0.5, fontWeight: 400 }}>3</span>
                 </button>
               </div>
             </div>
@@ -919,7 +973,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
       {/* Review & Repair panel — shown AFTER scoring with deferred feedback */}
       {uiPhase === "review" && (
-        <div data-testid="review-panel">
+        <div data-testid="review-panel" ref={phaseFocusRef} tabIndex={-1} style={{ outline: "none" }}>
           {/* Hypercorrection callout (Butterfield & Metcalfe 2001): a
               high-confidence miss is the single most correctable moment —
               direct full attention to the correction. */}
@@ -1459,7 +1513,9 @@ function renderExplanationWithCitations(
             key={i}
             role="button"
             tabIndex={0}
+            className="compact-btn"
             style={inlineCitationStyle}
+            aria-label={`Citation ${num}: ${excerpts[num - 1].doc_title}${excerpts[num - 1].page_number ? `, page ${excerpts[num - 1].page_number}` : ""}`}
             title={`Source: ${excerpts[num - 1].doc_title}${excerpts[num - 1].page_number ? ` p.${excerpts[num - 1].page_number}` : ""}`}
             onClick={() => onCitationClick(num - 1)}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onCitationClick(num - 1); } }}

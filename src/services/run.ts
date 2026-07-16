@@ -3,7 +3,6 @@ import { generateSessionId } from "@/lib/session-id";
 import {
   generateRetrievalPrompts,
   generateInterleavedPrompts,
-  generateExamSimPrompts,
   generateErrorRepairPrompts,
   interleaveByObjective,
   type Prompt,
@@ -193,6 +192,7 @@ async function runPostCompletionEffects(
   userId: string,
   runId: string,
   sessionId: string,
+  finalMetrics?: RunMetrics,
 ): Promise<void> {
   try {
     const s = await prisma.session.findUnique({
@@ -218,12 +218,17 @@ async function runPostCompletionEffects(
         dueRows.map((r) => r.nextDueAt!).filter(Boolean),
       );
       if (followups.length > 0) {
-        const runRow = await prisma.sessionRun.findUnique({
-          where: { runId },
-          select: { metrics: true },
-        });
-        if (runRow) {
-          const m = runRow.metrics as unknown as RunMetrics;
+        // Callers that just computed the final metrics pass them in; only
+        // fall back to a re-read when they weren't provided.
+        let m: RunMetrics | undefined = finalMetrics;
+        if (!m) {
+          const runRow = await prisma.sessionRun.findUnique({
+            where: { runId },
+            select: { metrics: true },
+          });
+          if (runRow) m = runRow.metrics as unknown as RunMetrics;
+        }
+        if (m) {
           await prisma.sessionRun.update({
             where: { runId },
             data: { metrics: { ...m, recommended_followups: followups } as object },
@@ -420,7 +425,7 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       // once corrected, are remembered best), then newest.
       const errorLogs = await prisma.sessionErrorLog.findMany({
         where: {
-          run: { userId },
+          userId,
           resolvedAt: null,
         },
         orderBy: [
@@ -428,28 +433,32 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
           { createdAt: "desc" },
         ],
         take: count,
-        include: {
-          run: {
-            select: {
-              attempts: {
-                select: { promptText: true, promptIndex: true },
-              },
-            },
-          },
-        },
       });
 
-      const logsForRepair: ErrorLogForRepair[] = errorLogs.map((log) => {
-        const attempt = log.run.attempts.find((a) => a.promptIndex === log.promptIndex);
-        return {
-          id: log.id,
-          prompt_index: log.promptIndex,
-          error_type: log.errorType,
-          correction_rule: log.correctionRule,
-          variant_question: log.variantQuestion,
-          prompt_text: attempt?.promptText,
-        };
-      });
+      // Batch-fetch only the specific attempts we need (avoids loading all
+      // attempts per parent run).
+      const attemptKeys = errorLogs.map((log) => ({
+        runId: log.runId,
+        promptIndex: log.promptIndex,
+      }));
+      const relevantAttempts = attemptKeys.length > 0
+        ? await prisma.sessionAttempt.findMany({
+            where: { OR: attemptKeys },
+            select: { runId: true, promptIndex: true, promptText: true },
+          })
+        : [];
+      const attemptTextByKey = new Map(
+        relevantAttempts.map((a) => [`${a.runId}:${a.promptIndex}`, a.promptText]),
+      );
+
+      const logsForRepair: ErrorLogForRepair[] = errorLogs.map((log) => ({
+        id: log.id,
+        prompt_index: log.promptIndex,
+        error_type: log.errorType,
+        correction_rule: log.correctionRule,
+        variant_question: log.variantQuestion,
+        prompt_text: attemptTextByKey.get(`${log.runId}:${log.promptIndex}`),
+      }));
 
       if (logsForRepair.length === 0) {
         // No unresolved errors — generate a minimal retrieval deck instead
@@ -499,6 +508,29 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
   const policies = policiesForMode(mode);
   const phase = initialPhaseForMode(mode);
 
+  // Rows for the normalized SessionRunPrompt table, built up front so the
+  // advisory-lock transaction below only issues a single batch insert
+  // instead of one round-trip per prompt.
+  const promptRowsToInsert = prompts.map((p, i) => {
+    // Merge MCQ fields into meta JSON for storage
+    const storedMeta: Record<string, unknown> = p.meta ? { ...p.meta } : {};
+    if (p.format === "MCQ" && p.choices && p.correctIndex != null) {
+      storedMeta.format = p.format;
+      storedMeta.choices = p.choices;
+      storedMeta.correctIndex = p.correctIndex;
+    }
+    return {
+      runId,
+      promptIndex: i,
+      objectiveId: p.objective_id ?? null,
+      text: p.text,
+      difficulty: p.difficulty ?? 1,
+      sourceType: p.meta?.source_error_log_id ? "ERROR_LOG" : "GENERATED",
+      sourceRefId: p.meta?.source_error_log_id ?? null,
+      meta: Object.keys(storedMeta).length > 0 ? (storedMeta as object) : undefined,
+    };
+  });
+
   // Create run + persist prompts to SessionRunPrompt table in one transaction.
   // An advisory lock + re-check closes the find-then-create race: two
   // overlapping /runs/start requests must not both create an ACTIVE run for
@@ -535,29 +567,8 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       },
     });
 
-    // Write prompts to normalized table
-    for (let i = 0; i < prompts.length; i++) {
-      const p = prompts[i];
-      // Merge MCQ fields into meta JSON for storage
-      const storedMeta: Record<string, unknown> = p.meta ? { ...p.meta } : {};
-      if (p.format === "MCQ" && p.choices && p.correctIndex != null) {
-        storedMeta.format = p.format;
-        storedMeta.choices = p.choices;
-        storedMeta.correctIndex = p.correctIndex;
-      }
-      await tx.sessionRunPrompt.create({
-        data: {
-          runId,
-          promptIndex: i,
-          objectiveId: p.objective_id ?? null,
-          text: p.text,
-          difficulty: p.difficulty ?? 1,
-          sourceType: p.meta?.source_error_log_id ? "ERROR_LOG" : "GENERATED",
-          sourceRefId: p.meta?.source_error_log_id ?? null,
-          meta: Object.keys(storedMeta).length > 0 ? (storedMeta as object) : undefined,
-        },
-      });
-    }
+    // Write prompts to normalized table in a single batch insert
+    await tx.sessionRunPrompt.createMany({ data: promptRowsToInsert });
   });
 
   // Lost the race — another request created a run for this session while we
@@ -1230,7 +1241,7 @@ async function handleImmediateScoring(
       const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
       logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
 
-      await runPostCompletionEffects(userId, run.runId, run.sessionId);
+      await runPostCompletionEffects(userId, run.runId, run.sessionId, finalMetrics);
 
       return {
         data: {
@@ -1489,7 +1500,7 @@ async function handleExamScore(
       const finalMetrics = { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) };
       logger.info("run.completed", { user_id: userId, run_id: run.runId, accuracy: finalMetrics.accuracy });
 
-      await runPostCompletionEffects(userId, run.runId, run.sessionId);
+      await runPostCompletionEffects(userId, run.runId, run.sessionId, finalMetrics);
 
       return {
         data: {
@@ -1764,8 +1775,9 @@ async function updateObjectiveMastery(userId: string, runId: string, courseName:
     // Pretest attempts are diagnostic — expected pre-study errors must not
     // depress mastery (Richland et al. 2009).
     const objectiveScores = new Map<string, { correct: number; total: number; confidenceSum: number; confidenceCount: number }>();
+    const rowByIndex = new Map(promptRows.map((p) => [p.promptIndex, p]));
     for (const attempt of attempts) {
-      const promptRow = promptRows.find((p) => p.promptIndex === attempt.promptIndex);
+      const promptRow = rowByIndex.get(attempt.promptIndex);
       const objId = promptRow?.objectiveId;
       if (!objId) continue;
       const rowMeta = promptRow?.meta as { pack?: string } | null;
@@ -1862,7 +1874,7 @@ export async function completeRun(userId: string, runId: string) {
     };
   }
 
-  await runPostCompletionEffects(userId, runId, run.sessionId);
+  await runPostCompletionEffects(userId, runId, run.sessionId, txResult.metrics);
 
   logger.info("run.completed", {
     user_id: userId,
