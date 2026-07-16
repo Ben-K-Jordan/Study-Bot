@@ -231,36 +231,6 @@ model ObjectiveAnchor {
   @@map("objective_anchors")
 }
 
-model PracticeSet {
-  id         String   @id @default(uuid())
-  userId     String   @map("user_id")
-  courseName String   @map("course_name")
-  examName   String?  @map("exam_name")
-  title      String
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  questions PracticeQuestion[]
-
-  @@index([userId, courseName, examName], map: "practice_sets_user_course_exam_idx")
-  @@map("practice_sets")
-}
-
-model PracticeQuestion {
-  id            String   @id @default(uuid())
-  practiceSetId String   @map("practice_set_id")
-  kind          String // SHORT_ANSWER | MCQ | CODING
-  promptText    String   @map("prompt_text")
-  answerKey     String?  @map("answer_key")
-  solutionSteps String?  @map("solution_steps")
-  tags          Json?
-  createdAt     DateTime @default(now()) @map("created_at")
-
-  practiceSet PracticeSet @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
-
-  @@index([practiceSetId])
-  @@map("practice_questions")
-}
-
 model EvidencePaper {
   id         String   @id @default(uuid())
   userId     String   @map("user_id")
@@ -647,29 +617,11 @@ model User {
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
   chatMessages           ChatMessage[]
-  scheduledReminders     ScheduledReminder[]
   verificationTokens     VerificationToken[]
 
   @@map("users")
-}
-
-// ── Push Notifications ──────────────────────────────────────────
-
-model PushSubscription {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  endpoint  String
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, endpoint])
-  @@map("push_subscriptions")
 }
 
 // ── Chat Persistence ────────────────────────────────────────────
@@ -706,24 +658,6 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notification_preferences")
-}
-
-// ── Email Reminders (scheduled) ─────────────────────────────────
-
-model ScheduledReminder {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  type         String // STUDY_REMINDER | STREAK_WARNING | WEEKLY_DIGEST
-  scheduledFor DateTime  @map("scheduled_for")
-  sentAt       DateTime? @map("sent_at")
-  payload      Json? // extra data (plan items, streak count, etc.)
-  createdAt    DateTime  @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([scheduledFor, sentAt])
-  @@index([userId])
-  @@map("scheduled_reminders")
 }
 
 // ── Verification Tokens (email verify, password reset) ──────────

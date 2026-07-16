@@ -12,6 +12,7 @@ import { buildGoogleCalendarLink } from "@/lib/gcal-link";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { buildContentAwarePlanInput, extractObjectivesFromContent } from "@/services/content-plan";
+import { buildObjectiveAnchors } from "@/services/anchors";
 import {
   applyPreExamTaper,
   adjustDurationByMode,
@@ -409,6 +410,38 @@ export async function createPlan(userId: string, input: unknown) {
     plan_id: planId,
     items_count: items.length,
   });
+
+  // Fire-and-forget: pre-build objective anchors so the feedback fast path
+  // (objective -> top chunks) is warm before the first session runs. Failure
+  // is non-fatal — feedback falls back to FTS when no anchors exist.
+  const anchorObjectives = Array.from(
+    new Map(
+      items.flatMap((item) => item.block.objectives).map((o) => [o.id, o]),
+    ).values(),
+  );
+  if (anchorObjectives.length > 0) {
+    void buildObjectiveAnchors(
+      userId,
+      parsed.course_name,
+      parsed.exam_name,
+      anchorObjectives,
+    )
+      .then((res) =>
+        // Exam-scoped search only matches documents tagged with this exact
+        // exam name. When none are, rebuild unscoped (anchors keyed by "") —
+        // the feedback lookup serves both keys, preferring exact matches.
+        res.anchors_created === 0
+          ? buildObjectiveAnchors(userId, parsed.course_name, undefined, anchorObjectives)
+          : res,
+      )
+      .catch((err) => {
+        logger.warn("plan.anchor_build_failed", {
+          user_id: userId,
+          plan_id: planId,
+          error: String(err),
+        });
+      });
+  }
 
   const baseUrl = getBaseUrl();
   const feedUrl = `${baseUrl}/api/plans/${planId}/feed`;

@@ -162,15 +162,49 @@ export async function generateContentAwarePrompts(
         errorPatterns: errorPatterns.length > 0 ? errorPatterns : undefined,
       },
       parseOutput: (raw: unknown) => {
-        const data = raw as Record<string, unknown>;
-        const prompts = (data.prompts as GeneratedPrompt[]) || [];
+        const data = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+        const prompts = Array.isArray(data.prompts) ? (data.prompts as GeneratedPrompt[]) : [];
         return { prompts };
       },
     });
 
-    const generated = result.output.prompts;
-    if (generated.length === 0) {
+    const returned = result.output.prompts;
+    if (returned.length === 0) {
       logger.warn("content_prompts.empty_result", { user_id: userId });
+      return null;
+    }
+
+    // Model output is untrusted: a prompt without real question text or an
+    // objective id is unusable (blank card / unattributable mastery). Drop
+    // malformed entries instead of persisting them into the run.
+    const generated = returned.filter(
+      (g): g is GeneratedPrompt =>
+        !!g &&
+        typeof g === "object" &&
+        typeof g.text === "string" &&
+        g.text.trim().length > 0 &&
+        typeof g.objective_id === "string",
+    );
+
+    if (generated.length < returned.length) {
+      logger.warn("content_prompts.invalid_prompts_dropped", {
+        user_id: userId,
+        course_name: courseName,
+        returned: returned.length,
+        valid: generated.length,
+        dropped: returned.length - generated.length,
+      });
+    }
+
+    // Too few usable questions for a meaningful session — signal the caller
+    // to use the deterministic fallback deck instead of a threadbare AI one.
+    if (generated.length < 3) {
+      logger.warn("content_prompts.too_few_valid", {
+        user_id: userId,
+        course_name: courseName,
+        returned: returned.length,
+        valid: generated.length,
+      });
       return null;
     }
 

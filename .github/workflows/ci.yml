@@ -81,8 +81,8 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - name: Push schema to test DB
-        run: npx prisma db push --force-reset --accept-data-loss
+      - name: Apply migration history to test DB
+        run: npx prisma migrate deploy
       - name: Apply pgvector migration
         run: psql "${DATABASE_URL%%\?*}" -f prisma/manual-scripts/001_pgvector.sql
       - run: npm run test:integration
@@ -121,8 +121,8 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
-      - name: Push schema to test DB
-        run: npx prisma db push --force-reset --accept-data-loss
+      - name: Apply migration history to test DB
+        run: npx prisma migrate deploy
       - name: Apply pgvector migration
         run: psql "${DATABASE_URL%%\?*}" -f prisma/manual-scripts/001_pgvector.sql
       - run: npx playwright install --with-deps chromium
