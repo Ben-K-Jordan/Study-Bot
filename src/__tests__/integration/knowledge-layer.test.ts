@@ -1,5 +1,5 @@
 /**
- * Integration tests for the Knowledge Layer (CKB, Practice Bank, Evidence Cards).
+ * Integration tests for the Knowledge Layer (CKB, Evidence Cards).
  *
  * These tests exercise the service layer directly (no HTTP). They require a
  * running PostgreSQL database. Set DATABASE_URL to a test database before running.
@@ -85,12 +85,6 @@ The outer loop invariant must account for the inner loop's effect.
       where: { paper: { userId: { in: [USER_A, USER_B] } } },
     });
     await prisma.evidencePaper.deleteMany({
-      where: { userId: { in: [USER_A, USER_B] } },
-    });
-    await prisma.practiceQuestion.deleteMany({
-      where: { practiceSet: { userId: { in: [USER_A, USER_B] } } },
-    });
-    await prisma.practiceSet.deleteMany({
       where: { userId: { in: [USER_A, USER_B] } },
     });
     await prisma.contentChunk.deleteMany({
@@ -259,56 +253,6 @@ The outer loop invariant must account for the inner loop's effect.
       expect(result.data.feedback_status).toBe("PENDING");
       // No inline feedback in the response
       expect(result.data.feedback).toBeUndefined();
-    });
-  });
-
-  // Practice Bank
-  describe("Practice Bank", () => {
-    let setId: string;
-
-    it("creates a practice set", async () => {
-      const set = await prisma.practiceSet.create({
-        data: {
-          userId: USER_A,
-          courseName: COURSE,
-          title: "Midterm Prep",
-        },
-      });
-      expect(set.id).toBeTruthy();
-      setId = set.id;
-    });
-
-    it("imports questions", async () => {
-      const questions = [
-        { kind: "SHORT_ANSWER", promptText: "Define loop invariant" },
-        { kind: "MCQ", promptText: "Which is NOT a loop property?", answerKey: "D" },
-      ];
-      for (const q of questions) {
-        await prisma.practiceQuestion.create({
-          data: {
-            practiceSet: { connect: { id: setId } },
-            kind: q.kind,
-            promptText: q.promptText,
-            answerKey: q.answerKey ?? null,
-          },
-        });
-      }
-      const count = await prisma.practiceQuestion.count({ where: { practiceSetId: setId } });
-      expect(count).toBe(2);
-    });
-
-    it("lists questions", async () => {
-      const questions = await prisma.practiceQuestion.findMany({
-        where: { practiceSetId: setId },
-      });
-      expect(questions.length).toBe(2);
-    });
-
-    it("user B cannot import into user A's set", async () => {
-      // Verify ownership check: user B should not own the set
-      const set = await prisma.practiceSet.findUnique({ where: { id: setId } });
-      expect(set.userId).toBe(USER_A);
-      expect(set.userId).not.toBe(USER_B);
     });
   });
 

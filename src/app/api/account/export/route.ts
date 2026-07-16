@@ -25,13 +25,10 @@ export async function GET(request: NextRequest) {
       flashcardDecks,
       chatMessages,
       notificationPreference,
-      pushSubscriptions,
-      scheduledReminders,
       userGameState,
       aiCallLogs,
       contentDocuments,
       objectiveAnchors,
-      practiceSets,
       evidencePapers,
       planReflowAudits,
       planCalendarPublications,
@@ -73,15 +70,6 @@ export async function GET(request: NextRequest) {
         where: { userId },
       }),
 
-      prisma.pushSubscription.findMany({
-        where: { userId },
-        omit: { auth: true, p256dh: true },
-      }),
-
-      prisma.scheduledReminder.findMany({
-        where: { userId },
-      }),
-
       prisma.userGameState.findUnique({
         where: { userId },
       }),
@@ -98,11 +86,6 @@ export async function GET(request: NextRequest) {
 
       prisma.objectiveAnchor.findMany({
         where: { userId },
-      }),
-
-      prisma.practiceSet.findMany({
-        where: { userId },
-        include: { questions: true },
       }),
 
       prisma.evidencePaper.findMany({
@@ -163,7 +146,6 @@ export async function GET(request: NextRequest) {
       sessions,
       contentDocuments,
       flashcardDecks,
-      practiceSets,
       evidencePapers,
       objectiveAnchors,
       objectiveMastery,
@@ -180,8 +162,6 @@ export async function GET(request: NextRequest) {
       planItemExternalEvents,
       googleIntegration,
       notificationPreference,
-      pushSubscriptions,
-      scheduledReminders,
     };
 
     logger.info("account.export.success", { userId });
