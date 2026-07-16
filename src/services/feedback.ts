@@ -13,6 +13,13 @@ import type { Prisma } from "../../generated/prisma/client";
 export interface FeedbackResponse {
   status: "OK" | "UNAVAILABLE" | "NOT_FOUND" | "PENDING";
   excerpts: FeedbackExcerpt[];
+  /**
+   * Explicit terminal no-sources marker: search found nothing in the user's
+   * materials for this attempt. Persisted READY (like any generated result)
+   * so polling clients resolve to an honest "nothing in your materials"
+   * state instead of treating the empty payload as still-loading.
+   */
+  no_sources?: boolean;
   // AI explanation (PARTIAL/INCORRECT)
   explanation?: string;
   key_takeaway?: string;
@@ -357,7 +364,10 @@ async function generateContent(
 
   if (results.length === 0) {
     logger.info("feedback.empty", { attempt_id: attemptId, fts_ms: ftsMs });
-    return { status: "OK", excerpts: [] };
+    // Terminal state: generateAndPersist stores this as READY, so refetches
+    // return it verbatim and the client stops polling. Without the explicit
+    // marker this payload is indistinguishable from "not generated yet".
+    return { status: "OK", excerpts: [], no_sources: true };
   }
 
   // Build excerpts and store citations in a single batch transaction

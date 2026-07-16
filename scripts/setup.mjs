@@ -6,7 +6,7 @@
  *
  * What it does:
  *   1. Copies .env.example -> .env (never overwrites an existing .env).
- *   2. Generates NEXTAUTH_SECRET, TOKEN_ENC_KEY and CRON_SECRET where they
+ *   2. Generates NEXTAUTH_SECRET and TOKEN_ENC_KEY where they
  *      are empty (user-set values are never touched).
  *   3. Starts the Postgres container via Docker Compose (if Docker is
  *      available) and waits for its healthcheck.
@@ -26,7 +26,7 @@ const envPath = join(root, ".env");
 const examplePath = join(root, ".env.example");
 
 // ---------------------------------------------------------------------------
-// 0. Node version check (Next.js 15 + this script need Node 20.19+)
+// 0. Node version check (Next.js 14 + this script need Node 20.19+)
 // ---------------------------------------------------------------------------
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 if (nodeMajor < 20 || (nodeMajor === 20 && nodeMinor < 19)) {
@@ -81,7 +81,6 @@ if (existsSync(envPath)) {
 const SECRET_GENERATORS = {
   NEXTAUTH_SECRET: () => randomBytes(32).toString("base64"),
   TOKEN_ENC_KEY: () => randomBytes(32).toString("hex"),
-  CRON_SECRET: () => randomBytes(16).toString("hex"),
 };
 
 let envText = readFileSync(envPath, "utf8");

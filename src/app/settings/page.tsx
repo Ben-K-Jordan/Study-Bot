@@ -48,6 +48,34 @@ export default function SettingsPage() {
   const [googleStatus, setGoogleStatus] = useState<"loading" | "connected" | "disconnected">("loading");
   const [googleConfigured, setGoogleConfigured] = useState(true);
 
+  // Ticks every second so the timezone preview shows a live clock.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Instant validation feedback: render the current time in the selected
+  // zone, or flag the value as unrecognized. Empty means UTC (the default).
+  const effectiveZone = timezone.trim() || "UTC";
+  let zonePreview: string | null = null;
+  try {
+    zonePreview = new Intl.DateTimeFormat(undefined, {
+      timeZone: effectiveZone,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(now);
+  } catch {
+    zonePreview = null; // Not a valid IANA timezone
+  }
+
+  const handleDetectTimezone = () => {
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detected) setTimezone(detected);
+  };
+
   // Load settings from backend (with localStorage fallback)
   useEffect(() => {
     async function loadSettings() {
@@ -175,20 +203,42 @@ export default function SettingsPage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionStyle}>Timezone</h2>
         <p style={hintStyle}>Used for streak day boundaries. Leave empty for UTC.</p>
-        <input
-          type="text"
-          value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-          placeholder="e.g. America/New_York"
-          list="timezone-options"
-          aria-label="Timezone"
-          style={textInputStyle}
-        />
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <input
+            type="text"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            placeholder="e.g. America/New_York"
+            list="timezone-options"
+            aria-label="Timezone"
+            style={{ ...textInputStyle, flex: 1 }}
+          />
+          <button
+            type="button"
+            onClick={handleDetectTimezone}
+            title="Use your browser's timezone"
+            style={detectBtnStyle}
+          >
+            Detect
+          </button>
+        </div>
         <datalist id="timezone-options">
           {TIMEZONE_OPTIONS.map((tz) => (
             <option key={tz} value={tz} />
           ))}
         </datalist>
+        <p
+          aria-live="polite"
+          style={{
+            fontSize: "0.85rem",
+            margin: "0.5rem 0 0",
+            color: zonePreview ? "var(--color-text-muted)" : "var(--color-error)",
+          }}
+        >
+          {zonePreview
+            ? `Current time in ${effectiveZone}: ${zonePreview}`
+            : `"${timezone.trim()}" is not a recognized timezone (expected an IANA name like America/New_York).`}
+        </p>
       </section>
 
       <section style={{ marginBottom: "2rem" }}>
@@ -335,6 +385,19 @@ const saveBtnStyle: React.CSSProperties = {
   fontSize: "1.05rem",
   cursor: "pointer",
   borderRadius: "var(--radius-sm)",
+};
+
+const detectBtnStyle: React.CSSProperties = {
+  background: "var(--color-bg-input)",
+  color: "var(--color-text)",
+  border: "1px solid var(--color-border)",
+  padding: "0.5rem 0.9rem",
+  fontFamily: "inherit",
+  fontSize: "0.9rem",
+  fontWeight: 600,
+  cursor: "pointer",
+  borderRadius: "var(--radius-sm)",
+  whiteSpace: "nowrap",
 };
 
 const connectBtnStyle: React.CSSProperties = {

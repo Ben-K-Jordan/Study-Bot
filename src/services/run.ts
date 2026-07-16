@@ -449,11 +449,17 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
       const count = promptCount;
       // Fetch unresolved error logs — high-confidence errors first
       // (hypercorrection: Butterfield & Metcalfe 2001 — confident misses,
-      // once corrected, are remembered best), then newest.
+      // once corrected, are remembered best), then newest. Scoped to this
+      // session's course (matching the cross-session repair injection and
+      // the recommendation trigger) so a Chemistry repair session never
+      // surfaces Biology errors.
       const errorLogs = await prisma.sessionErrorLog.findMany({
         where: {
           userId,
           resolvedAt: null,
+          run: {
+            session: { courseName: session.courseName },
+          },
         },
         orderBy: [
           { confidenceRating: { sort: "desc", nulls: "last" } },
@@ -1255,8 +1261,14 @@ async function handleImmediateScoring(
         ? { ...newMetrics, recommended_followups: computeFollowups(newMetrics.accuracy) }
         : newMetrics;
 
-      await tx.sessionRun.update({
-        where: { id: run.id },
+      // Guarded update: under READ COMMITTED a concurrent completeRun may
+      // have committed the ACTIVE -> COMPLETED transition after our fresh
+      // read above. The status filter makes this update claim the transition
+      // atomically — if another caller already completed the run, count is 0
+      // and we bail (RunCompletedError) instead of resurrecting the run or
+      // double-running post-completion effects (double SM-2 advance).
+      const updated = await tx.sessionRun.updateMany({
+        where: { id: run.id, status: { not: "COMPLETED" } },
         data: {
           currentIndex: newIndex,
           promptCount: finalPromptCount,
@@ -1267,6 +1279,7 @@ async function handleImmediateScoring(
           endedAt: isLastPromptFinal ? new Date() : undefined,
         },
       });
+      if (updated.count === 0) throw new RunCompletedError();
 
       return { attemptId: attempt.id, newMetrics, newIndex, promptCount: finalPromptCount, isLastPrompt: isLastPromptFinal, updatedBreakState: updatedBreakStateFinal, variantInjected };
     });
@@ -1983,8 +1996,16 @@ export async function getDeckPreview(
   const { courseName, mode, objectives, promptCount } = params;
 
   if (mode === "ERROR_REPAIR") {
+    // Course-scoped to mirror the real deck builder (and the cross-session
+    // repair injection): only this course's unresolved errors count.
     const unresolved = await prisma.sessionErrorLog.count({
-      where: { userId, resolvedAt: null },
+      where: {
+        userId,
+        resolvedAt: null,
+        run: {
+          session: { courseName },
+        },
+      },
     });
     const repairs = Math.min(unresolved, promptCount);
     return repairs > 0

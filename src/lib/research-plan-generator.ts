@@ -7,7 +7,7 @@
  * template when AI is unavailable or returns null blocks.
  */
 import { SessionMode } from "./validation";
-import { generatePlan, PlanBlock } from "./plan-generator";
+import { generatePlan, PlanBlock, buildObjectiveIdMap, slugifyObjectiveTitle } from "./plan-generator";
 import { buildResearchContext } from "@/services/research";
 import { runTask, GatewayError } from "./ai/gateway";
 import type { GatewayContext } from "./ai/gateway";
@@ -60,8 +60,14 @@ function availableMinutes(avail: { start: string; end: string }): number {
   return (eh * 60 + em) - (sh * 60 + sm);
 }
 
-function toObjectiveEntries(strs: string[]): { id: string; title: string }[] {
-  return strs.map((s, i) => ({ id: `obj_${i}`, title: s }));
+function toObjectiveEntries(
+  strs: string[],
+  idByTitle: Map<string, string>,
+): { id: string; title: string }[] {
+  return strs.map((s) => ({
+    id: idByTitle.get(s) ?? slugifyObjectiveTitle(s),
+    title: s,
+  }));
 }
 
 /**
@@ -74,6 +80,10 @@ function convertAiBlocks(
   availability: { start: string; end: string }[],
 ): PlanBlock[] {
   const dayRemaining: Record<number, number> = {};
+
+  // Stable ids derived from titles, disambiguated across the whole plan so an
+  // objective keeps the same id in every block it appears in.
+  const objectiveIds = buildObjectiveIdMap(allObjectives);
 
   const results: PlanBlock[] = [];
 
@@ -103,7 +113,7 @@ function convertAiBlocks(
       dayIndex: b.dayIndex,
       mode: b.mode as SessionMode,
       topicScope: objs.join(", "),
-      objectives: toObjectiveEntries(objs),
+      objectives: toObjectiveEntries(objs, objectiveIds),
       plannedMinutes: minutes,
       targetOutcome: {
         type: b.outcomeType ?? undefined,

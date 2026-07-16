@@ -50,7 +50,6 @@ export async function DELETE(request: NextRequest) {
         tx.objectiveAnchor.deleteMany({ where: { userId } }),
         tx.sessionErrorLog.deleteMany({ where: { userId } }),
         tx.chatMessage.deleteMany({ where: { userId } }),
-        tx.notificationPreference.deleteMany({ where: { userId } }),
         tx.verificationToken.deleteMany({ where: { userId } }),
       ]);
 

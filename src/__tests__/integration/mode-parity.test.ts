@@ -450,8 +450,9 @@ describe.skipIf(!hasDb)("Integration: ERROR_REPAIR mode", () => {
       data: { lastCorrectAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
 
+    // Same course as the original error — ERROR_REPAIR decks are course-scoped
     const result = await createSession(userId, {
-      course_name: "REPAIR TEST DAY2",
+      course_name: "REPAIR TEST",
       exam_name: "Quiz 1",
       mode: "ERROR_REPAIR",
       topic_scope: "Errors",
@@ -480,9 +481,10 @@ describe.skipIf(!hasDb)("Integration: ERROR_REPAIR mode", () => {
   });
 
   it("resolved errors are not included in new ERROR_REPAIR decks", async () => {
-    // Create another repair session
+    // Create another repair session in the SAME course (a different course
+    // would exclude the error via course scoping, not via resolution)
     const result = await createSession(userId, {
-      course_name: "REPAIR TEST 2",
+      course_name: "REPAIR TEST",
       exam_name: "Quiz 2",
       mode: "ERROR_REPAIR",
       topic_scope: "Errors",
@@ -499,6 +501,219 @@ describe.skipIf(!hasDb)("Integration: ERROR_REPAIR mode", () => {
     for (const p of prompts) {
       expect(p.meta?.source_error_log_id).not.toBe(errorLogId);
     }
+  });
+});
+
+// ============================================================
+// ERROR_REPAIR course scoping
+// ============================================================
+
+describe.skipIf(!hasDb)("Integration: ERROR_REPAIR decks are course-scoped", () => {
+  const userId = "test_errorrepair_scope_user";
+  let getDeckPreview: any;
+  let courseAErrorId: string;
+  let courseBErrorId: string;
+
+  beforeAll(async () => {
+    const dbModule = await import("@/lib/db");
+    prisma = dbModule.prisma;
+    const sessionService = await import("@/services/session");
+    createSession = sessionService.createSession;
+    const runService = await import("@/services/run");
+    startOrResumeRun = runService.startOrResumeRun;
+    getDeckPreview = runService.getDeckPreview;
+
+    // Seed one unresolved error in each of two courses. Runs and error logs
+    // are inserted directly — the deck builder only cares about the rows,
+    // not how they got there.
+    const seedError = async (courseName: string, correctionRule: string) => {
+      const created = await createSession(userId, {
+        course_name: courseName,
+        exam_name: "Quiz 1",
+        mode: "RETRIEVAL",
+        topic_scope: "Errors",
+        planned_minutes: 15,
+        objectives: [{ id: "obj_1", title: "Topic" }],
+        target_outcome: { prompt_count: 2 },
+        break_protocol: { type: "TEST_3_2", cycles: 1 },
+      });
+      const run = await prisma.sessionRun.create({
+        data: {
+          runId: `run_scope_${courseName.replace(/\W/g, "_").toLowerCase()}`,
+          sessionId: created.session_id,
+          userId,
+          status: "COMPLETED",
+          prompts: [],
+        },
+      });
+      const log = await prisma.sessionErrorLog.create({
+        data: {
+          runId: run.runId,
+          userId,
+          promptIndex: 0,
+          errorType: "MISCONCEPTION",
+          correctionRule: correctionRule,
+          variantQuestion: `Variant for ${courseName}`,
+        },
+      });
+      return log.id;
+    };
+
+    courseAErrorId = await seedError("SCOPE COURSE A", "Rule for course A");
+    courseBErrorId = await seedError("SCOPE COURSE B", "Rule for course B");
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.sessionErrorLog.deleteMany({ where: { run: { userId } } });
+    await prisma.sessionAttempt.deleteMany({ where: { run: { userId } } });
+    await prisma.sessionRun.deleteMany({ where: { userId } });
+    await prisma.session.deleteMany({ where: { userId } });
+  });
+
+  it("an ERROR_REPAIR deck contains only the current course's unresolved errors", async () => {
+    const result = await createSession(userId, {
+      course_name: "SCOPE COURSE A",
+      exam_name: "Quiz 1",
+      mode: "ERROR_REPAIR",
+      topic_scope: "Errors",
+      planned_minutes: 15,
+      target_outcome: { prompt_count: 5 },
+      break_protocol: { type: "TEST_3_2", cycles: 1 },
+    });
+
+    const startResult = await startOrResumeRun(userId, result.session_id);
+    const d = startResult.data!;
+    expect(d.mode).toBe("ERROR_REPAIR");
+    const prompts = d.prompts as any[];
+    const sourceIds = prompts
+      .map((p) => p.meta?.source_error_log_id)
+      .filter(Boolean);
+
+    // Course A's error is repaired; course B's error never leaks in
+    expect(sourceIds).toContain(courseAErrorId);
+    expect(sourceIds).not.toContain(courseBErrorId);
+  });
+
+  it("getDeckPreview counts only the current course's unresolved errors", async () => {
+    // Course B still has its own unresolved error (untouched above)
+    const previewB = await getDeckPreview(userId, {
+      courseName: "SCOPE COURSE B",
+      mode: "ERROR_REPAIR",
+      objectives: null,
+      promptCount: 5,
+    });
+    expect(previewB.repair_count).toBe(1);
+    expect(previewB.total).toBe(1);
+
+    // A course with no errors at all falls back to a small retrieval deck
+    const previewEmpty = await getDeckPreview(userId, {
+      courseName: "SCOPE COURSE EMPTY",
+      mode: "ERROR_REPAIR",
+      objectives: null,
+      promptCount: 5,
+    });
+    expect(previewEmpty.repair_count).toBe(0);
+    expect(previewEmpty.new_count).toBe(3);
+  });
+});
+
+// ============================================================
+// Completion race: exactly one caller runs post-completion effects
+// ============================================================
+
+describe.skipIf(!hasDb)("Integration: concurrent final attempt + completeRun", () => {
+  const userId = "test_completion_race_user";
+  let submitAttemptFn: any;
+  let completeRunFn: any;
+
+  beforeAll(async () => {
+    const dbModule = await import("@/lib/db");
+    prisma = dbModule.prisma;
+    const sessionService = await import("@/services/session");
+    createSession = sessionService.createSession;
+    const runService = await import("@/services/run");
+    startOrResumeRun = runService.startOrResumeRun;
+    submitAttemptFn = runService.submitAttempt;
+    completeRunFn = runService.completeRun;
+
+    // Suppress pre-test prepends so the deck is exactly the requested prompts
+    await prisma.objectiveMastery.createMany({
+      data: [{ userId, courseName: "RACE 101", objectiveKey: "obj_race" }],
+      skipDuplicates: true,
+    });
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.xpEvent.deleteMany({ where: { userId } });
+    await prisma.sessionErrorLog.deleteMany({ where: { run: { userId } } });
+    await prisma.sessionAttempt.deleteMany({ where: { run: { userId } } });
+    await prisma.sessionRun.deleteMany({ where: { userId } });
+    await prisma.session.deleteMany({ where: { userId } });
+    await prisma.objectiveMastery.deleteMany({ where: { userId } });
+  });
+
+  it("racing the final attempt against completeRun awards SESSION_COMPLETED XP exactly once", async () => {
+    const created = await createSession(userId, {
+      course_name: "RACE 101",
+      exam_name: "Midterm",
+      mode: "RETRIEVAL",
+      topic_scope: "Racing",
+      planned_minutes: 15,
+      objectives: [{ id: "obj_race", title: "Race conditions" }],
+      target_outcome: { prompt_count: 2 },
+      break_protocol: { type: "TEST_3_2", cycles: 1 },
+    });
+    const startResult = await startOrResumeRun(userId, created.session_id);
+    const runId = startResult.data!.run_id as string;
+
+    // Answer everything except the last prompt
+    const promptCount = startResult.data!.prompt_count as number;
+    for (let i = 0; i < promptCount - 1; i++) {
+      const res = await submitAttemptFn(userId, runId, {
+        prompt_index: i,
+        user_answer: `Answer ${i}`,
+        self_score: "CORRECT",
+        time_to_answer_seconds: 5,
+      });
+      expect("data" in res).toBe(true);
+    }
+
+    // Race the final attempt against a manual completeRun. Exactly one path
+    // may claim the ACTIVE -> COMPLETED transition and run post-completion
+    // effects; the loser must observe the completed run (as data or a
+    // run_completed error), never resurrect it or re-run effects.
+    const [attemptRes, completeRes] = await Promise.all([
+      submitAttemptFn(userId, runId, {
+        prompt_index: promptCount - 1,
+        user_answer: "Final answer",
+        self_score: "CORRECT",
+        time_to_answer_seconds: 5,
+      }),
+      completeRunFn(userId, runId),
+    ]);
+
+    // completeRun is idempotent — it always reports COMPLETED
+    expect("data" in completeRes).toBe(true);
+    expect(completeRes.data!.status).toBe("COMPLETED");
+    // The attempt either landed (winner or pre-completion) or was rejected
+    // because completeRun won the transition first
+    if ("error" in attemptRes) {
+      expect(attemptRes.error).toBe("run_completed");
+    } else {
+      expect(attemptRes.data!.status).toBe("COMPLETED");
+    }
+
+    // The run is completed exactly once
+    const run = await prisma.sessionRun.findUnique({ where: { runId } });
+    expect(run.status).toBe("COMPLETED");
+
+    // Post-completion effects ran exactly once: one SESSION_COMPLETED XP event
+    const xpEvents = await prisma.xpEvent.findMany({
+      where: { userId, action: "SESSION_COMPLETED", sourceId: runId },
+    });
+    expect(xpEvents).toHaveLength(1);
   });
 });
 

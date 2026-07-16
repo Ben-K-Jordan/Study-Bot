@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getOrCreateUserId } from "@/lib/client-utils";
+import { apiGet } from "@/lib/client-api";
 import { ALL_BADGES, TOTAL_BADGES, CATEGORY_LABELS } from "@/lib/badge-data";
 
 interface GameState {
@@ -21,9 +21,7 @@ export default function AchievementsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const userId = getOrCreateUserId();
-    fetch("/api/stats/game", { headers: { "X-User-Id": userId } })
-      .then((r) => r.json())
+    apiGet("/api/stats/game")
       .then((state) => setGameState(state))
       .catch(() => {})
       .finally(() => setLoading(false));

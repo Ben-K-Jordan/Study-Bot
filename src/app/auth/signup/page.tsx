@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import {
   containerStyle,
@@ -51,6 +52,37 @@ export default function SignUpPage() {
       if (!res.ok) {
         setError(data.error || "Failed to create account");
         setLoading(false);
+        return;
+      }
+
+      // When email verification is not required (the default), sign the new
+      // user in with the credentials they just chose and land them on the
+      // dashboard, which shows onboarding for fresh accounts. Only send them
+      // to "Check Your Email" when this server actually requires verification.
+      let verificationRequired = true;
+      try {
+        const configRes = await fetch("/api/config");
+        if (configRes.ok) {
+          const config = await configRes.json();
+          verificationRequired = config.verification_required === true;
+        }
+      } catch {
+        // Config unavailable — fall through to the verify-email page, which
+        // explains that verification may be optional.
+      }
+
+      if (!verificationRequired) {
+        const result = await signIn("credentials", {
+          email,
+          password,
+          redirect: false,
+        });
+        if (!result?.error) {
+          window.location.href = "/";
+          return;
+        }
+        // Auto sign-in failed unexpectedly; let the user sign in manually.
+        router.push("/auth/signin");
         return;
       }
 

@@ -38,11 +38,18 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [feedbackExcerpts, setFeedbackExcerpts] = useState<FeedbackExcerpt[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  // Terminal feedback outcome reached (READY content, empty, or failed) —
+  // stops the poll loop and swaps the spinner for an honest fallback.
+  const [feedbackSettled, setFeedbackSettled] = useState(false);
   const [lastScore, setLastScore] = useState<string | null>(null);
   // Consolidated AI feedback content — avoids 8 separate setState calls
   const emptyFeedback: FeedbackResult = { status: "", excerpts: [] };
   const [fb, setFb] = useState<FeedbackResult>(emptyFeedback);
   const [confidence, setConfidence] = useState<number>(3);
+  // Calibration integrity: confidence is only submitted when the student
+  // actually touched the widget — the untouched default (3) must never be
+  // recorded as a rating (mirrors the MCQ path's null-until-rated rule).
+  const [confidenceTouched, setConfidenceTouched] = useState(false);
   const [selfExplanation, setSelfExplanation] = useState("");
   const [generatedExample, setGeneratedExample] = useState("");
   const [socraticAnswer, setSocraticAnswer] = useState("");
@@ -100,33 +107,40 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
   // Deferred feedback — generation starts server-side the moment the attempt
   // lands; poll until it's ready (PENDING means another worker owns it).
+  // Every outcome — content, explicitly-empty (no_sources), UNAVAILABLE,
+  // poll timeout, or fetch error — marks the feedback settled so the loop
+  // runs at most once per attempt and the spinner always resolves.
+  // (feedbackLoading must NOT be a dependency here: this effect sets it,
+  // which would cancel its own in-flight poll and strand the spinner.)
   useEffect(() => {
-    const shouldFetch =
-      run.last_attempt_id &&
-      !feedbackLoading &&
-      feedbackExcerpts.length === 0 &&
-      !fb.explanation &&
-      !fb.reinforcement &&
-      uiPhase === "review";
+    if (uiPhase !== "review" || !run.last_attempt_id || feedbackSettled) return;
 
-    if (!shouldFetch) return;
-
-    let mounted = true;
+    let cancelled = false;
     setFeedbackLoading(true);
-    pollFeedback(run.last_attempt_id!, () => !mounted)
+    pollFeedback(run.last_attempt_id, () => cancelled)
       .then((result: FeedbackResult | null) => {
-        if (!mounted || !result) return;
-        if (result.status === "OK") {
-          if (result.excerpts.length > 0) setFeedbackExcerpts(result.excerpts);
+        if (cancelled) return;
+        setFeedbackSettled(true);
+        if (result) {
+          if (result.status === "OK" && result.excerpts.length > 0) {
+            setFeedbackExcerpts(result.excerpts);
+          }
           setFb(result);
+        } else {
+          // Poll budget exhausted while the server still reported PENDING.
+          setFb({ status: "TIMEOUT", excerpts: [] });
         }
       })
       .catch(() => {
-        // Feedback failure is non-fatal
+        // Feedback failure is non-fatal — settle into the honest fallback.
+        if (!cancelled) {
+          setFeedbackSettled(true);
+          setFb({ status: "UNAVAILABLE", excerpts: [] });
+        }
       })
-      .finally(() => { if (mounted) setFeedbackLoading(false); });
-    return () => { mounted = false; };
-  }, [run.last_attempt_id, uiPhase, feedbackLoading, feedbackExcerpts.length, fb.explanation, fb.reinforcement]);
+      .finally(() => { if (!cancelled) setFeedbackLoading(false); });
+    return () => { cancelled = true; };
+  }, [run.last_attempt_id, uiPhase, feedbackSettled]);
 
   // Answer standard reveal: once the student commits an answer (scoring
   // phase), fetch the model answer + key points so self-scoring happens
@@ -156,10 +170,12 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setErrorType("MISCONCEPTION");
     setFeedbackExcerpts([]);
     setFeedbackLoading(false);
+    setFeedbackSettled(false);
     setLastScore(null);
     setMcqResult(null);
     setFb(emptyFeedback);
     setConfidence(3);
+    setConfidenceTouched(false);
     setSelfExplanation("");
     setGeneratedExample("");
     setSocraticAnswer("");
@@ -196,28 +212,43 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptKey, uiPhase]);
 
-  // Draft preservation: a break can interrupt at submit time (the server
-  // rejects the attempt and this screen unmounts) — keep the free-recall
-  // draft in sessionStorage so it survives the break and reloads.
+  // Draft preservation: a mid-session refresh (or a break interrupting at
+  // submit time) must not eat typed work. The in-flight draft — the answer
+  // plus any error-log elaboration typed before the score lands — lives in
+  // localStorage keyed by run + prompt, is restored on mount, and is cleared
+  // once the server accepts the scored attempt. The review panel is excluded
+  // both ways: by then the parent has already advanced promptKey to the NEXT
+  // prompt, and reading/writing there would leak this answer forward.
   const draftKey = `draft:${run.run_id}:${promptKey}`;
   useEffect(() => {
-    if (isReviewPhase) return;
-    try {
-      const saved = sessionStorage.getItem(draftKey);
-      if (saved) setAnswer((prev) => prev || saved);
-    } catch { /* storage unavailable */ }
+    if (isReviewPhase || uiPhase === "review") return;
+    const draft = readDraft(draftKey);
+    if (!draft) return;
+    if (draft.answer) setAnswer((prev) => prev || draft.answer!);
+    if (draft.correction_rule) setCorrectionRule((prev) => prev || draft.correction_rule!);
+    if (draft.variant_question) setVariantQuestion((prev) => prev || draft.variant_question!);
+    if (draft.error_type) setErrorType((prev) => (prev === "MISCONCEPTION" ? draft.error_type! : prev));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey, isReviewPhase]);
   useEffect(() => {
-    if (isReviewPhase) return;
+    if (isReviewPhase || uiPhase === "review") return;
     try {
-      if (answer) sessionStorage.setItem(draftKey, answer);
-      else sessionStorage.removeItem(draftKey);
+      if (answer || correctionRule || variantQuestion) {
+        const draft: PromptDraft = {
+          answer: answer || undefined,
+          correction_rule: correctionRule || undefined,
+          variant_question: variantQuestion || undefined,
+          error_type: errorType !== "MISCONCEPTION" ? errorType : undefined,
+        };
+        localStorage.setItem(draftKey, JSON.stringify(draft));
+      } else {
+        localStorage.removeItem(draftKey);
+      }
     } catch { /* storage unavailable */ }
-  }, [answer, draftKey, isReviewPhase]);
+  }, [answer, correctionRule, variantQuestion, errorType, draftKey, isReviewPhase, uiPhase]);
 
   const clearDraft = () => {
-    try { sessionStorage.removeItem(draftKey); } catch { /* noop */ }
+    try { localStorage.removeItem(draftKey); } catch { /* noop */ }
   };
 
   // Keyboard-first loop (deliberate practice = maximum feedback cycles per
@@ -268,7 +299,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         kind: "ANSWER",
         user_answer: answer,
         time_to_answer_seconds: elapsed,
-        confidence_rating: confidence,
+        // Only sent when the student actually rated it — the untouched
+        // default would corrupt end-screen calibration (MCQ path parity).
+        ...(confidenceTouched ? { confidence_rating: confidence } : {}),
       });
       clearDraft();
     } catch {
@@ -357,7 +390,9 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       user_answer: answer,
       self_score: s,
       time_to_answer_seconds: elapsed,
-      confidence_rating: confidence,
+      // Calibration integrity: omitted entirely unless the student rated it
+      // (server stores null, and calibration/mastery skip null ratings).
+      ...(confidenceTouched ? { confidence_rating: confidence } : {}),
     };
     if (isPretest) attempt.is_pretest = true;
     if (isRepair) attempt.is_repair = true;
@@ -736,34 +771,43 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                <span style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>How confident are you?</span>
-                <span style={{ fontSize: "0.8rem", fontWeight: 600, color: confidenceColors[confidence - 1] }}>
-                  {confidenceLabels[confidence - 1]}
+                <span style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>How confident are you? (optional)</span>
+                <span
+                  style={{
+                    fontSize: "0.8rem",
+                    fontWeight: confidenceTouched ? 600 : 400,
+                    color: confidenceTouched ? confidenceColors[confidence - 1] : "var(--color-text-faint)",
+                  }}
+                >
+                  {confidenceTouched ? confidenceLabels[confidence - 1] : "Not rated"}
                 </span>
               </div>
               <div style={{ display: "flex", gap: "0.4rem" }}>
-                {[1, 2, 3, 4, 5].map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => setConfidence(level)}
-                    aria-label={`${level} — ${confidenceLabels[level - 1]}`}
-                    aria-pressed={confidence === level}
-                    style={{
-                      flex: 1,
-                      padding: "0.4rem",
-                      fontSize: "0.8rem",
-                      fontWeight: confidence === level ? 700 : 400,
-                      background: confidence === level ? confidenceTints[level - 1] : "var(--color-bg-card)",
-                      color: confidence === level ? confidenceColors[level - 1] : "var(--color-text-faint)",
-                      border: `1px solid ${confidence === level ? confidenceColors[level - 1] : "var(--color-border)"}`,
-                      borderRadius: "var(--radius-sm)",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    {level}
-                  </button>
-                ))}
+                {[1, 2, 3, 4, 5].map((level) => {
+                  const selected = confidenceTouched && confidence === level;
+                  return (
+                    <button
+                      key={level}
+                      onClick={() => { setConfidence(level); setConfidenceTouched(true); }}
+                      aria-label={`${level} — ${confidenceLabels[level - 1]}`}
+                      aria-pressed={selected}
+                      style={{
+                        flex: 1,
+                        padding: "0.4rem",
+                        fontSize: "0.8rem",
+                        fontWeight: selected ? 700 : 400,
+                        background: selected ? confidenceTints[level - 1] : "var(--color-bg-card)",
+                        color: selected ? confidenceColors[level - 1] : "var(--color-text-faint)",
+                        border: `1px solid ${selected ? confidenceColors[level - 1] : "var(--color-border)"}`,
+                        borderRadius: "var(--radius-sm)",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {level}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1212,9 +1256,18 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 );
               })}
 
-              {!feedbackLoading && feedbackExcerpts.length === 0 && !fb.explanation && (
-                <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", fontStyle: "italic" }}>
-                  No relevant excerpts found in your materials.
+              {/* Honest terminal fallbacks — never a spinner once the poll
+                  settles. no_sources / empty OK: the materials genuinely have
+                  nothing matching. Anything else (UNAVAILABLE, timeout,
+                  fetch error): generation didn't produce a result. */}
+              {feedbackSettled && !feedbackLoading && feedbackExcerpts.length === 0 && !fb.explanation && (
+                <p
+                  style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", fontStyle: "italic" }}
+                  data-testid="feedback-empty"
+                >
+                  {fb.no_sources || fb.status === "OK"
+                    ? "Nothing matching in your materials for this one."
+                    : "Feedback couldn't be generated this time — your answer is saved."}
                 </p>
               )}
 
@@ -1377,6 +1430,26 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 }
 
 // --- Helpers ---
+
+/** In-flight prompt work persisted locally so a refresh can't eat it. */
+interface PromptDraft {
+  answer?: string;
+  correction_rule?: string;
+  variant_question?: string;
+  error_type?: string;
+}
+
+/** Read a persisted prompt draft; malformed or missing entries yield null. */
+function readDraft(key: string): PromptDraft | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as PromptDraft) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Escape HTML entities to prevent XSS when using dangerouslySetInnerHTML */
 function escapeHtml(str: string): string {
