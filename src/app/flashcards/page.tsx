@@ -563,7 +563,7 @@ export default function FlashcardsPage() {
             No course documents yet
           </p>
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
-            Upload your lecture notes, textbooks, or slides to get started with flashcards.
+            Create a plan and upload your course notes there, then come back to generate flashcards.
           </p>
           <Link href="/plan" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
             Create a Study Plan

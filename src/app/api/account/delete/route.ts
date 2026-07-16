@@ -49,9 +49,7 @@ export async function DELETE(request: NextRequest) {
         tx.planReflowAudit.deleteMany({ where: { userId } }),
         tx.objectiveAnchor.deleteMany({ where: { userId } }),
         tx.sessionErrorLog.deleteMany({ where: { userId } }),
-        tx.scheduledReminder.deleteMany({ where: { userId } }),
         tx.chatMessage.deleteMany({ where: { userId } }),
-        tx.pushSubscription.deleteMany({ where: { userId } }),
         tx.notificationPreference.deleteMany({ where: { userId } }),
         tx.verificationToken.deleteMany({ where: { userId } }),
       ]);
@@ -64,7 +62,6 @@ export async function DELETE(request: NextRequest) {
 
       // Phase 3: Parent models with userId (their cascading children are gone)
       await Promise.all([
-        tx.practiceSet.deleteMany({ where: { userId } }),
         tx.evidencePaper.deleteMany({ where: { userId } }),
         tx.flashcardDeck.deleteMany({ where: { userId } }),
         tx.sessionRun.deleteMany({ where: { userId } }),

@@ -30,6 +30,7 @@ import { RUNNABLE_MODES } from "@/lib/validation";
 import { generateVariantQuestion, MAX_VARIANTS_PER_SESSION } from "@/lib/variant-questions";
 import { createFlashcardsFromErrors } from "@/lib/auto-flashcards";
 import { dayKey, getUserTimezone } from "@/lib/timezone";
+import { awardXp } from "@/services/gamification";
 
 // ---- Sentinel errors for transaction control flow ----
 
@@ -213,6 +214,21 @@ async function runPostCompletionEffects(
     if (!s) return;
 
     await updateObjectiveMastery(userId, runId, s.courseName);
+
+    // Sessions are the app's highest-value activity — they must move the
+    // daily XP goal (previously only flashcard reviews did, nudging users
+    // toward card grinding over retrieval practice). Deduped per run.
+    try {
+      const already = await prisma.xpEvent.findFirst({
+        where: { userId, action: "SESSION_COMPLETED", sourceId: runId },
+        select: { id: true },
+      });
+      if (!already) {
+        await awardXp(userId, "SESSION_COMPLETED", undefined, runId);
+      }
+    } catch (xpErr) {
+      logger.warn("xp.session_award_failed", { user_id: userId, run_id: runId, error: String(xpErr) });
+    }
 
     // Replace the fixed-offset follow-up ladder with the actual SM-2 due
     // dates just computed (Cepeda 2008: the review gap should come from the
@@ -1067,8 +1083,8 @@ async function handleImmediateScoring(
         throw new WrongIndexError(fresh.currentIndex);
       }
 
-      const promptCount = fresh.promptCount || (fresh.prompts as unknown as Prompt[]).length;
-      const metrics = fresh.metrics as unknown as RunMetrics;
+      const promptCount = fresh.promptCount || (Array.isArray(fresh.prompts) ? (fresh.prompts as unknown as Prompt[]).length : 0);
+      const metrics: RunMetrics = { ...emptyMetrics(), ...(fresh.metrics as object) };
       const freshBreak = fresh.breakState as unknown as BreakState;
       const newMetrics: RunMetrics = isPretest
         ? {
@@ -1356,7 +1372,7 @@ async function handleExamAnswer(
       const isLastAnswer = newIndex >= promptCount;
       const updatedBreakState = isLastAnswer ? freshBreak : checkBreakNeeded(freshBreak);
 
-      const metrics = fresh.metrics as unknown as RunMetrics;
+      const metrics: RunMetrics = { ...emptyMetrics(), ...(fresh.metrics as object) };
       const newMetrics: RunMetrics = {
         ...metrics,
         time_spent_seconds: metrics.time_spent_seconds + (timeToAnswer ?? 0),
@@ -1456,8 +1472,8 @@ async function handleExamScore(
       if (!existing) throw new Error("no_attempt_to_score");
       if (existing.selfScore !== null) throw new Error("already_scored");
 
-      const promptCount = fresh.promptCount || (fresh.prompts as unknown as Prompt[]).length;
-      const metrics = fresh.metrics as unknown as RunMetrics;
+      const promptCount = fresh.promptCount || (Array.isArray(fresh.prompts) ? (fresh.prompts as unknown as Prompt[]).length : 0);
+      const metrics: RunMetrics = { ...emptyMetrics(), ...(fresh.metrics as object) };
       const newScoredCount = (fresh.scoredCount ?? 0) + 1;
       const newIndex = fresh.currentIndex + 1;
       const isLastScore = newIndex >= promptCount;

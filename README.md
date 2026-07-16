@@ -24,6 +24,8 @@ The full treatment, with effect sizes, primary citations, and the failure modes 
 
 ## Quick start
 
+Prerequisites: Node 20.19 or newer, plus Docker Desktop (or your own PostgreSQL server).
+
 ```
 git clone <repo> && cd Study-Bot
 npm install
@@ -31,7 +33,9 @@ npm run setup
 npm run dev
 ```
 
-Then open http://localhost:3000. The defaults need no API keys or external accounts: the AI provider is a deterministic mock, email logs to the console, and calendar sync uses a local fake. For real AI generated questions and feedback, set `AI_PROVIDER` to `openai` and add your `OPENAI_API_KEY` in `.env`.
+Then open http://localhost:3000. The defaults need no API keys or external accounts: the AI provider is a deterministic mock, email logs to the console, and calendar sync uses a local fake.
+
+To be blunt about the default: mock mode exists for tests. With `AI_PROVIDER` set to `mock`, sessions get template questions and canned feedback, which exercises the machinery but teaches you nothing. To actually study, set `AI_PROVIDER` to `openai` and add an `OPENAI_API_KEY` in `.env`.
 
 What `npm run setup` does: copies `.env.example` to `.env`, generates `NEXTAUTH_SECRET`, `TOKEN_ENC_KEY`, and `CRON_SECRET`, starts PostgreSQL through Docker, and applies all migrations. It is idempotent and never overwrites a value you set yourself.
 
@@ -138,6 +142,13 @@ Each technique below is implemented in the product. Citations are shortened here
 * `LOG_LEVEL` accepts debug, info, warn, or error.
 
 One warning: `ALLOW_TEST_AUTH` makes the app trust a header as the authenticated identity. It exists only for automated tests and must never be set in production.
+
+## Deployment and ops notes
+
+* **Auth gates.** `REQUIRE_EMAIL_VERIFICATION` is off by default, so new accounts can sign in immediately; enable it only once real SMTP is configured, because the console email provider prints verification links to server logs only. `ALLOW_TEST_AUTH` must never be set in production. `TOKEN_ENC_KEY` is required in production (setup generates one for local use).
+* **One long lived Node process.** The app is not serverless safe. Feedback is generated eagerly when an attempt lands, and the AI rate limiter and circuit breaker hold their state in process, so run it as a single persistent Node server via `npm start` rather than as per request functions.
+* **The port 3000 trap.** If something else already holds port 3000, Next silently starts on 3001 while `NEXTAUTH_URL` still points at 3000, and sign in breaks with baffling redirects. Free port 3000, or update `NEXTAUTH_URL` (plus `BASE_URL` and `NEXT_PUBLIC_APP_URL`) to the port actually in use.
+* **Admin routes.** The `/admin` pages and admin APIs are gated by `ADMIN_USER_IDS`, a comma separated list of user UUIDs. Until you set it, nobody is an admin.
 
 ## Development
 

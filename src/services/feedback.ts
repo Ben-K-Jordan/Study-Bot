@@ -458,6 +458,25 @@ async function detectMistakePatterns(
   }
 }
 
+// ---- Model output guards ----
+
+/**
+ * Model output is untrusted JSON. Only accept real strings — any other shape
+ * (number, array, object, null) is dropped so malformed fields never reach
+ * feedbackJson. A bare `as string` cast would let e.g. a numeric
+ * `explanation: 42` survive `|| undefined` (truthy) and get persisted.
+ */
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** Coerce untrusted model output into a plain record for field extraction. */
+function asRecord(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+}
+
 // ---- AI Explanation (PARTIAL/INCORRECT) ----
 
 async function generateAIExplanation(
@@ -516,14 +535,16 @@ async function generateAIExplanation(
           })),
         },
         parseOutput: (raw: unknown) => {
-          const data = raw as Record<string, unknown>;
+          const data = asRecord(raw);
           return {
-            explanation: (data.explanation as string) || "",
-            key_takeaway: (data.key_takeaway as string) || "",
-            concept_connection: (data.concept_connection as string) || null,
-            mnemonic: (data.mnemonic as string) || null,
-            pattern_advice: (data.pattern_advice as string) || null,
-            referenced_chunk_ids: (data.referenced_chunk_ids as string[]) || [],
+            explanation: stringOrNull(data.explanation) ?? "",
+            key_takeaway: stringOrNull(data.key_takeaway) ?? "",
+            concept_connection: stringOrNull(data.concept_connection),
+            mnemonic: stringOrNull(data.mnemonic),
+            pattern_advice: stringOrNull(data.pattern_advice),
+            referenced_chunk_ids: Array.isArray(data.referenced_chunk_ids)
+              ? data.referenced_chunk_ids.filter((id): id is string => typeof id === "string")
+              : [],
           };
         },
       },
@@ -584,11 +605,11 @@ async function generateReinforcement(
           })),
         },
         parseOutput: (raw: unknown) => {
-          const data = raw as Record<string, unknown>;
+          const data = asRecord(raw);
           return {
-            reinforcement: (data.reinforcement as string) || "",
-            deeper_insight: (data.deeper_insight as string) || "",
-            concept_connection: (data.concept_connection as string) || null,
+            reinforcement: stringOrNull(data.reinforcement) ?? "",
+            deeper_insight: stringOrNull(data.deeper_insight) ?? "",
+            concept_connection: stringOrNull(data.concept_connection),
           };
         },
       },
@@ -651,10 +672,10 @@ async function generateSocraticFollowup(
           })),
         },
         parseOutput: (raw: unknown) => {
-          const data = raw as Record<string, unknown>;
+          const data = asRecord(raw);
           return {
-            followup_question: (data.followup_question as string) || "",
-            purpose: (data.purpose as string) || "",
+            followup_question: stringOrNull(data.followup_question) ?? "",
+            purpose: stringOrNull(data.purpose) ?? "",
           };
         },
       },

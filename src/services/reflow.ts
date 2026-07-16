@@ -35,7 +35,6 @@ const MODE_PRIORITY: Record<string, number> = {
   ERROR_REPAIR: 2,
   EXAM_SIM: 3,
   WORKED_EXAMPLES: 4,
-  OFFICE_HOURS_PREP: 5,
 };
 
 export interface ReflowItem {

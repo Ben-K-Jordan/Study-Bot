@@ -43,6 +43,43 @@ export default function LearnPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourseRaw] = useState<string | null>(null);
   const [recs, setRecs] = useState<Recommendation | null>(null);
+  const [startingSession, setStartingSession] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  // The core-loop entry point: turn the recommendation into a real session
+  // and go study. Objective ids reuse the mastery keys so spaced repetition,
+  // warm-ups, and pretest gating stay continuous with past sessions.
+  const startRecommendedSession = async () => {
+    if (!recs || !data || startingSession) return;
+    const activeCourse = data.courses.find((c) => c.courseName === selectedCourse) || data.courses[0];
+    if (!activeCourse) return;
+    setStartingSession(true);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_name: activeCourse.courseName,
+          exam_name: activeCourse.examNames[0] || "General",
+          mode: recs.next_session.mode,
+          topic_scope: recs.next_session.topic_scope || activeCourse.courseName,
+          planned_minutes: 30,
+          objectives: recs.next_session.objectives.length > 0
+            ? recs.next_session.objectives.map((key) => ({ id: key, title: key.replace(/_/g, " ") }))
+            : undefined,
+          target_outcome: { prompt_count: 10 },
+          break_protocol: { type: "25_5", cycles: 1 },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to create session");
+      window.location.href = body.session_url || `/s/${body.session_id}`;
+    } catch (e: unknown) {
+      setStartError(e instanceof Error ? e.message : "Failed to create session");
+      setStartingSession(false);
+    }
+  };
   const setSelectedCourse = (v: string | null) => { setSelectedCourseRaw(v); if (v) setActiveCourse(v); };
 
   useEffect(() => {
@@ -213,12 +250,16 @@ export default function LearnPage() {
               {recs.unresolved_errors.count} unresolved error{recs.unresolved_errors.count !== 1 ? "s" : ""} to repair
             </div>
           )}
-          <Link
-            href={`/plan?mode=${recs.next_session.mode}&topic=${encodeURIComponent(recs.next_session.topic_scope)}`}
-            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.5rem", fontSize: "0.85rem", padding: "0.5rem 1.25rem" }}
+          <button
+            onClick={startRecommendedSession}
+            disabled={startingSession}
+            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.5rem", fontSize: "0.85rem", padding: "0.5rem 1.25rem", opacity: startingSession ? 0.6 : 1, cursor: startingSession ? "wait" : "pointer", border: "none" }}
           >
-            Start {recs.next_session.mode.replace(/_/g, " ")} Session
-          </Link>
+            {startingSession ? "Creating session..." : `Start ${recs.next_session.mode.replace(/_/g, " ")} Session`}
+          </button>
+          {startError && (
+            <p style={{ color: "var(--color-error)", fontSize: "0.8rem", margin: "0.4rem 0 0" }}>{startError}</p>
+          )}
         </section>
       )}
 

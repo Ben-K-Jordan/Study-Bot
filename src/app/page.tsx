@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getOrCreateUserId, MODE_LABELS } from "@/lib/client-utils";
+import { MODE_LABELS } from "@/lib/client-utils";
 import { BADGE_MAP, TOTAL_BADGES } from "@/lib/badge-data";
 import { ErrorBoundary } from "@/ui/components/ErrorBoundary";
 
@@ -59,19 +59,6 @@ interface GameState {
 }
 
 
-interface LeaderboardEntry {
-  rank: number;
-  displayName: string;
-  xp: number;
-  isCurrentUser: boolean;
-}
-
-interface LeaderboardData {
-  leaderboard: LeaderboardEntry[];
-  period: string;
-  userRank: number | null;
-}
-
 // ---- Helpers ----
 
 function formatTime(iso: string): string {
@@ -88,7 +75,6 @@ const MODE_COLORS: Record<string, string> = {
   ERROR_REPAIR: "var(--color-error)",
   EXAM_SIM: "var(--color-primary)",
   WORKED_EXAMPLES: "var(--color-success)",
-  OFFICE_HOURS_PREP: "var(--color-warning)",
 };
 
 // ---- Component ----
@@ -102,19 +88,12 @@ export default function DashboardPage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [celebrationBadge, setCelebrationBadge] = useState<string | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null);
-  const [lbLoading, setLbLoading] = useState(false);
-  const [lbPeriod, setLbPeriod] = useState<"week" | "month" | "all">("week");
   const [onboarding, setOnboarding] = useState<{ show: boolean; step: number }>({ show: false, step: 0 });
-  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
-    const userId = getOrCreateUserId();
     async function fetchPlans() {
       try {
-        const res = await fetch("/api/plans", {
-          headers: { "X-User-Id": userId },
-        });
+        const res = await fetch("/api/plans");
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || `HTTP ${res.status}`);
@@ -129,9 +108,7 @@ export default function DashboardPage() {
     }
     async function fetchActivity() {
       try {
-        const res = await fetch("/api/stats/activity", {
-          headers: { "X-User-Id": userId },
-        });
+        const res = await fetch("/api/stats/activity");
         if (res.ok) {
           const data = await res.json();
           setActivityData(data);
@@ -142,9 +119,7 @@ export default function DashboardPage() {
     }
     async function fetchGameState() {
       try {
-        const res = await fetch("/api/stats/game", {
-          headers: { "X-User-Id": userId },
-        });
+        const res = await fetch("/api/stats/game");
         if (res.ok) {
           const data: GameState = await res.json();
           setGameState(data);
@@ -161,9 +136,7 @@ export default function DashboardPage() {
     }
     async function checkOnboarding() {
       try {
-        const res = await fetch("/api/onboarding", {
-          headers: { "X-User-Id": userId },
-        });
+        const res = await fetch("/api/onboarding");
         if (res.ok) {
           const data = await res.json();
           if (!data.complete) {
@@ -178,21 +151,7 @@ export default function DashboardPage() {
     fetchActivity();
     fetchGameState();
     checkOnboarding();
-    // Leaderboard is fetched by the lbPeriod effect
   }, []);
-
-  // Reload leaderboard when period changes
-  useEffect(() => {
-    const userId = getOrCreateUserId();
-    setLbLoading(true);
-    fetch(`/api/leaderboard?period=${lbPeriod}`, {
-      headers: { "X-User-Id": userId },
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setLeaderboard(data); })
-      .catch(() => {})
-      .finally(() => setLbLoading(false));
-  }, [lbPeriod]);
 
   const allItems = useMemo(() => plans.flatMap((p) => p.items), [plans]);
   const today = useMemo(() => new Date(), []);
@@ -273,32 +232,15 @@ export default function DashboardPage() {
       {onboarding.show && (
         <OnboardingFlow
           step={onboarding.step}
-          displayName={displayName}
-          onDisplayNameChange={setDisplayName}
           onNext={() => setOnboarding((prev) => ({ ...prev, step: prev.step + 1 }))}
           onComplete={async () => {
             setOnboarding({ show: false, step: 0 });
-            const userId = getOrCreateUserId();
-            if (displayName.trim()) {
-              await fetch("/api/settings", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "X-User-Id": userId },
-                body: JSON.stringify({ displayName: displayName.trim() }),
-              }).catch(() => {});
-            }
-            await fetch("/api/onboarding", {
-              method: "POST",
-              headers: { "X-User-Id": userId },
-            }).catch(() => {});
-            router.push("/learn");
+            await fetch("/api/onboarding", { method: "POST" }).catch(() => {});
+            router.push("/plan");
           }}
           onSkip={async () => {
             setOnboarding({ show: false, step: 0 });
-            const userId = getOrCreateUserId();
-            await fetch("/api/onboarding", {
-              method: "POST",
-              headers: { "X-User-Id": userId },
-            }).catch(() => {});
+            await fetch("/api/onboarding", { method: "POST" }).catch(() => {});
           }}
         />
       )}
@@ -481,69 +423,6 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Leaderboard */}
-      {leaderboard && leaderboard.leaderboard.length > 0 && (
-        <section style={{ marginBottom: "2rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-            <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Leaderboard</h2>
-            <div style={{ display: "flex", gap: "0.25rem" }}>
-              {(["week", "month", "all"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setLbPeriod(p)}
-                  aria-pressed={lbPeriod === p}
-                  style={{
-                    padding: "0.2rem 0.5rem",
-                    fontSize: "0.7rem",
-                    fontFamily: "inherit",
-                    background: lbPeriod === p ? "var(--color-bg-selected)" : "transparent",
-                    color: lbPeriod === p ? "var(--color-primary)" : "var(--color-text-faint)",
-                    border: `1px solid ${lbPeriod === p ? "var(--color-primary)" : "var(--color-border-subtle)"}`,
-                    borderRadius: "var(--radius-sm)",
-                    cursor: "pointer",
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius)", boxShadow: "var(--shadow-card)", overflow: "hidden", opacity: lbLoading ? 0.5 : 1, transition: "opacity 0.15s" }}>
-            {leaderboard.leaderboard.slice(0, 10).map((entry) => (
-              <div
-                key={entry.rank}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0.5rem 0.75rem",
-                  borderBottom: "1px solid var(--color-border-subtle)",
-                  background: entry.isCurrentUser ? "var(--color-bg-selected)" : "transparent",
-                }}
-              >
-                <span style={{
-                  width: 24, textAlign: "center", fontWeight: 700, fontSize: "0.85rem",
-                  color: entry.rank === 1 ? "var(--color-primary)" : entry.rank === 2 ? "#c4c4c4" : entry.rank === 3 ? "#cd7f32" : "var(--color-text-faint)",
-                }}>
-                  {entry.rank}
-                </span>
-                <span style={{ flex: 1, marginLeft: "0.5rem", fontSize: "0.85rem", color: entry.isCurrentUser ? "var(--color-primary)" : "var(--color-text)", fontWeight: entry.isCurrentUser ? 600 : 400 }}>
-                  {entry.displayName}
-                  {entry.isCurrentUser && <span style={{ fontSize: "0.7rem", color: "var(--color-text-faint)", marginLeft: "0.35rem" }}>(you)</span>}
-                </span>
-                <span style={{ fontSize: "0.8rem", color: "var(--color-primary)", fontWeight: 600 }}>
-                  {entry.xp} XP
-                </span>
-              </div>
-            ))}
-          </div>
-          {leaderboard.userRank && leaderboard.userRank > 10 && (
-            <p style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", marginTop: "0.4rem", textAlign: "center" }}>
-              Your rank: #{leaderboard.userRank}
-            </p>
-          )}
-        </section>
-      )}
     </main>
   );
 }
@@ -552,15 +431,11 @@ export default function DashboardPage() {
 
 function OnboardingFlow({
   step,
-  displayName,
-  onDisplayNameChange,
   onNext,
   onComplete,
   onSkip,
 }: {
   step: number;
-  displayName: string;
-  onDisplayNameChange: (v: string) => void;
   onNext: () => void;
   onComplete: () => void;
   onSkip: () => void;
@@ -598,34 +473,6 @@ function OnboardingFlow({
       ),
     },
     {
-      title: "Set your display name",
-      content: (
-        <div>
-          <p style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
-            Choose a name for the leaderboard. You can always change this later in Settings.
-          </p>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => onDisplayNameChange(e.target.value)}
-            placeholder="Your display name"
-            maxLength={50}
-            style={{
-              width: "100%",
-              background: "var(--color-bg-input)",
-              color: "var(--color-text)",
-              border: "1px solid var(--color-border)",
-              padding: "0.6rem 0.75rem",
-              fontFamily: "inherit",
-              fontSize: "1rem",
-              borderRadius: "var(--radius-sm)",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-      ),
-    },
-    {
       title: "Your learning journey",
       content: (
         <div>
@@ -634,8 +481,8 @@ function OnboardingFlow({
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {[
-              { step: "1", title: "Upload documents", desc: "Add your lecture notes, textbooks, or slides via the Flashcards page" },
-              { step: "2", title: "Generate study materials", desc: "Create flashcard decks and study guides from your content" },
+              { step: "1", title: "Create a plan", desc: "On the Plan page: course name, exam date, and upload your notes" },
+              { step: "2", title: "Study your sessions", desc: "Each plan day links to a session with questions from your materials" },
               { step: "3", title: "Review regularly", desc: "Use spaced repetition to build lasting knowledge" },
               { step: "4", title: "Track progress", desc: "Watch your XP grow and unlock achievements" },
             ].map((item) => (

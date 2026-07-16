@@ -20,23 +20,20 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    displayName: state.displayName,
     studyStart: state.studyStartTime,
     studyEnd: state.studyEndTime,
     dailyCap: state.dailyStudyCap,
     dailyXpGoal: state.dailyXpGoal,
-    leaderboardVisible: state.leaderboardVisible,
     timezone: state.timezone,
+    google_configured: Boolean(process.env.GOOGLE_CLIENT_ID),
   });
 }
 
 const updateSchema = z.object({
-  displayName: z.string().max(50).optional(),
   studyStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
   studyEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
   dailyCap: z.number().int().min(30).max(480).optional(),
   dailyXpGoal: z.number().int().min(10).max(500).optional(),
-  leaderboardVisible: z.boolean().optional(),
   // IANA timezone for streak day boundaries; empty string or null clears it (= UTC)
   timezone: z.string().max(100).nullable().optional(),
 });
@@ -67,12 +64,10 @@ export async function PUT(request: NextRequest) {
 
   const data = parsed.data;
   const updateData: Record<string, unknown> = {};
-  if (data.displayName !== undefined) updateData.displayName = data.displayName || null;
   if (data.studyStart !== undefined) updateData.studyStartTime = data.studyStart;
   if (data.studyEnd !== undefined) updateData.studyEndTime = data.studyEnd;
   if (data.dailyCap !== undefined) updateData.dailyStudyCap = data.dailyCap;
   if (data.dailyXpGoal !== undefined) updateData.dailyXpGoal = data.dailyXpGoal;
-  if (data.leaderboardVisible !== undefined) updateData.leaderboardVisible = data.leaderboardVisible;
   if (data.timezone !== undefined) {
     if (data.timezone === null || data.timezone === "") {
       updateData.timezone = null;
@@ -99,12 +94,10 @@ export async function PUT(request: NextRequest) {
     logger.info("settings.updated", { user_id: userId, fields: Object.keys(updateData) });
 
     return NextResponse.json({
-      displayName: state.displayName,
       studyStart: state.studyStartTime,
       studyEnd: state.studyEndTime,
       dailyCap: state.dailyStudyCap,
       dailyXpGoal: state.dailyXpGoal,
-      leaderboardVisible: state.leaderboardVisible,
       timezone: state.timezone,
     });
   } catch (err) {

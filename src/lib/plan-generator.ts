@@ -95,13 +95,22 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
       objs: packA,
       desiredMinutes: 70,
     },
-    // Day 1: Retrieval pack B
+    // Day 1: Worked examples for first exposure to pack B (Sweller & Cooper
+    // 1985: novices learn more from studying solutions than problem solving),
+    // then retrieval on the same material.
+    {
+      dayIndex: 1,
+      mode: "WORKED_EXAMPLES",
+      scope: packB.join(", "),
+      objs: packB,
+      desiredMinutes: 30,
+    },
     {
       dayIndex: 1,
       mode: "RETRIEVAL",
       scope: packB.join(", "),
       objs: packB,
-      desiredMinutes: 80,
+      desiredMinutes: 60,
     },
     // Day 2: Interleaved A+B
     {

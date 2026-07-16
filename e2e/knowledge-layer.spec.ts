@@ -5,10 +5,9 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 const USER_ID = "e2e_test_user";
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-// Override extraHTTPHeaders to remove X-User-Id — we set it via localStorage
-// and the client JS adds it to fetch calls. Having Playwright ALSO inject it
-// causes duplicate headers which break the ownership check.
-test.use({ extraHTTPHeaders: {} });
+// Playwright context headers ride on every browser request, so app fetches
+// authenticate as the test user (clients no longer send identity headers).
+test.use({ extraHTTPHeaders: { "X-User-Id": USER_ID } });
 
 test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   const COURSE = "E2E_CS_KL";
@@ -78,10 +77,6 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
   test("review panel NOT visible before submitting answer", async ({ page }) => {
     const sessionUrl = `${BASE_URL}/s/${sessionId}`;
     await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
-    await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session|resume session/i }).click();
 
@@ -97,10 +92,6 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
 
   test("review panel appears after INCORRECT scoring with deferred feedback", async ({ page }) => {
     const sessionUrl = `${BASE_URL}/s/${sessionId}`;
-    await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
     await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session|resume session/i }).click();

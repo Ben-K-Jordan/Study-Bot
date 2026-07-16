@@ -23,10 +23,9 @@ const SESSION_PAYLOAD = {
 let sessionId: string;
 let sessionUrl: string;
 
-// Override extraHTTPHeaders to remove X-User-Id — we set it via localStorage
-// and the client JS adds it to fetch calls. Having Playwright ALSO inject it
-// causes duplicate headers which break the ownership check.
-test.use({ extraHTTPHeaders: {} });
+// Playwright context headers ride on every browser request, so app fetches
+// authenticate as the test user (clients no longer send identity headers).
+test.use({ extraHTTPHeaders: { "X-User-Id": USER_ID } });
 
 test.describe.serial("E2E: Full Retrieval Session Runner", () => {
   test.beforeAll(async () => {
@@ -80,11 +79,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
   });
 
   test("start session and see first prompt", async ({ page }) => {
-    // Need to set the user ID in localStorage before starting
-    await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
     await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session/i }).click();
@@ -95,10 +89,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
   });
 
   test("submit a CORRECT answer", async ({ page }) => {
-    await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
     await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session|resume session/i }).click();
@@ -124,10 +114,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
   });
 
   test("submit an INCORRECT answer with error log", async ({ page }) => {
-    await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
     await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session|resume session/i }).click();
@@ -160,10 +146,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
 
   test("refresh page mid-run preserves progress", async ({ page }) => {
     await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
-    await page.goto(sessionUrl);
 
     // Should show Resume (not Start) since we have an active run
     await expect(page.getByRole("button", { name: /resume session/i })).toBeVisible({
@@ -177,10 +159,6 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
   });
 
   test("complete final prompt and see end screen", async ({ page }) => {
-    await page.goto(sessionUrl);
-    await page.evaluate((uid) => {
-      localStorage.setItem("study_bot_user_id", uid);
-    }, USER_ID);
     await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session|resume session/i }).click();

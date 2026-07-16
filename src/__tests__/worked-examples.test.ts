@@ -227,6 +227,75 @@ describe("generateWorkedExampleDeck", () => {
     expect(result![3].meta?.pack).toBe("WE_FULL");
   });
 
+  it("rejects sets whose steps are missing an action or a why", async () => {
+    const emptyWhy = {
+      ...makeSet("obj_0", "X"),
+      steps: [
+        { action: "do the thing", why: "because" },
+        { action: "do the next thing", why: "" },
+      ],
+    };
+    const missingAction = {
+      ...makeSet("obj_0", "Y"),
+      steps: [
+        { action: "   ", why: "reason" },
+        { action: "step two", why: "reason two" },
+      ],
+    };
+    const nonObjectStep = {
+      ...makeSet("obj_0", "Z"),
+      steps: [{ action: "a", why: "b" }, null],
+    };
+    const valid = makeSet("obj_1", "B");
+
+    mockRunTaskSets([emptyWhy, missingAction, nonObjectStep, valid]);
+
+    const result = await generateWorkedExampleDeck(DEFAULT_PARAMS);
+
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(4);
+    expect(result!.every((p) => p.objective_id === "obj_1")).toBe(true);
+  });
+
+  it("rejects sets missing completion problems or the model answer", async () => {
+    const emptyCompletion1 = { ...makeSet("obj_0", "X"), completion_problem_1: "" };
+    const missingCompletion2 = { ...makeSet("obj_0", "Y"), completion_problem_2: undefined };
+    const emptyModelAnswer = { ...makeSet("obj_0", "Z"), model_answer: "   " };
+    const missingModelAnswer = { ...makeSet("obj_0", "W"), model_answer: undefined };
+    const valid = makeSet("obj_1", "B");
+
+    mockRunTaskSets([
+      emptyCompletion1,
+      missingCompletion2,
+      emptyModelAnswer,
+      missingModelAnswer,
+      valid,
+    ]);
+
+    const result = await generateWorkedExampleDeck(DEFAULT_PARAMS);
+
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(4);
+    expect(result!.every((p) => p.objective_id === "obj_1")).toBe(true);
+    expect(result![3].meta?.model_answer).toBe("B model answer");
+  });
+
+  it("returns null when sets is not an array or raw output is not an object", async () => {
+    const mockRunTaskRaw = (raw: unknown) =>
+      runTaskMock.mockImplementation(
+        async (_ctx: unknown, spec: { parseOutput: (r: unknown) => unknown }) => ({
+          output: spec.parseOutput(raw),
+          meta: { cacheHit: false, latencyMs: 1, promptVersion: "v", model: "m", task: AiTask.GENERATE_WORKED_EXAMPLES },
+        }),
+      );
+
+    mockRunTaskRaw({ sets: "garbage" });
+    expect(await generateWorkedExampleDeck(DEFAULT_PARAMS)).toBeNull();
+
+    mockRunTaskRaw(null);
+    expect(await generateWorkedExampleDeck(DEFAULT_PARAMS)).toBeNull();
+  });
+
   it("returns null when all sets are invalid", async () => {
     mockRunTaskSets([
       { ...makeSet("obj_0", "X"), problem: "" },
