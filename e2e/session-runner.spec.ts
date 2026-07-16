@@ -184,17 +184,22 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
     await page.goto(sessionUrl);
 
     await page.getByRole("button", { name: /start session|resume session/i }).click();
-    await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
+    // The review panel renders reflection textareas too, so target the
+    // answer box by its placeholder.
+    const answerBox = page.getByPlaceholder("Type your answer from memory...");
+    await expect(answerBox).toBeVisible({ timeout: 5000 });
 
     // Submit remaining prompts (original + variant injected by earlier INCORRECT)
     for (let i = 0; i < 2; i++) {
-      await page.locator("textarea").fill(`Answer ${i}`);
+      await answerBox.fill(`Answer ${i}`);
       await page.getByRole("button", { name: /submit answer/i }).click();
       await page.getByRole("button", { name: "✓ Correct" }).click();
 
-      // After last prompt, end screen appears; otherwise wait for next prompt
+      // The last CORRECT completes the run and jumps straight to the end
+      // screen; otherwise a review panel appears and Next Prompt advances.
       if (i < 1) {
-        await expect(page.locator("textarea")).toBeVisible({ timeout: 5000 });
+        await page.getByRole("button", { name: /next prompt/i }).click();
+        await expect(answerBox).toBeVisible({ timeout: 5000 });
       }
     }
 
