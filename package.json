@@ -16,9 +16,6 @@
     "test:integration": "vitest run src/__tests__/integration/",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "assets:build": "tsx scripts/assets-build.ts",
-    "assets:check": "tsx scripts/assets-check.ts",
-    "prebuild": "npm run assets:build",
     "worker": "tsx scripts/worker.ts",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
@@ -40,7 +37,6 @@
     "pg": "^8.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -52,12 +48,10 @@
     "@types/react": "^19.2.14",
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^6.0.1",
+    "dotenv": "^17.4.2",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
-    "fast-glob": "^3.3.3",
     "prisma": "^7.6.0",
-    "sharp": "^0.34.5",
-    "svgo": "^4.0.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"

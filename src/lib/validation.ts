@@ -6,7 +6,6 @@ export const SESSION_MODES = [
   "ERROR_REPAIR",
   "EXAM_SIM",
   "WORKED_EXAMPLES",
-  "OFFICE_HOURS_PREP",
 ] as const;
 
 export type SessionMode = (typeof SESSION_MODES)[number];

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { NavBar, NAV_HEIGHT } from "@/ui/components/NavBar";
 import { SessionProviderWrapper } from "@/ui/components/SessionProviderWrapper";
-import { ServiceWorkerRegistration } from "@/ui/components/ServiceWorkerRegistration";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,7 +30,6 @@ export default function RootLayout({
           <a href="#main-content" className="skip-to-content">
             Skip to content
           </a>
-          <ServiceWorkerRegistration />
           <NavBar />
           <main id="main-content" style={{ paddingTop: NAV_HEIGHT }}>
             {children}
