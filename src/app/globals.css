@@ -32,12 +32,14 @@
   --color-border-subtle: #202634;
   --color-border-done: #2f4a3a;
 
-  /* Text (4 steps of hierarchy is plenty) */
+  /* Text (4 steps of hierarchy is plenty). The two dimmest steps are still
+     WCAG AA readable on cards (faint 4.71:1, dim 4.69:1 on --color-bg-card) —
+     "dim" means lower salience, never illegible. */
   --color-text: #e7eaf0;
   --color-text-secondary: #b8bfcc;
   --color-text-muted: #949dae;
-  --color-text-faint: #737d90;
-  --color-text-dim: #5a6375;
+  --color-text-faint: #7d8799;
+  --color-text-dim: #7c86a0;
 
   /* Accent + semantics */
   --color-primary: #6ea8fe;
@@ -76,6 +78,19 @@ body {
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
+}
+
+/* Screen-reader-only content (aria-live announcements etc.) */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 ::selection {
@@ -232,7 +247,8 @@ button:active:not(:disabled),
 }
 
 /* Allow small inline badges / icon buttons to opt out with a class */
-button.compact-btn {
+button.compact-btn,
+[role="button"].compact-btn {
   min-height: auto;
   min-width: auto;
 }

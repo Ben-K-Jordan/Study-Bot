@@ -199,7 +199,13 @@ The loop invariant for binary search is that the target element, if present, mus
     });
 
     it("GET feedback returns excerpts and stores citations", async () => {
-      const result = await generateFeedback(USER, attemptId);
+      // submitAttempt fires eager generation; while that claim is live the
+      // service correctly answers PENDING — poll like the client does.
+      let result = await generateFeedback(USER, attemptId);
+      for (let i = 0; i < 40 && result.status === "PENDING"; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        result = await generateFeedback(USER, attemptId);
+      }
       expect(result.status).toBe("OK");
       // We have course docs, should get results
       if (result.excerpts.length > 0) {
