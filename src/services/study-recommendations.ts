@@ -9,6 +9,7 @@
 import { prisma } from "@/lib/db";
 import { getDueObjectives, getMasterySummary } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
+import { dayKey, getUserTimezone } from "@/lib/timezone";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,40 +84,51 @@ function buildTopicScope(objectiveKeys: string[]): string {
 /**
  * Compute the student's current study streak from session run completions.
  * A streak day counts when at least one SessionRun was completed on that calendar day.
+ *
+ * Calendar days follow the user's timezone (UserGameState.timezone); a null
+ * timezone means UTC day keys — identical to the historical behavior.
  */
 async function computeStudyStreak(userId: string): Promise<number> {
-  // Fetch the last 365 completed run dates (should be plenty)
-  const completedRuns = await prisma.sessionRun.findMany({
-    where: {
-      userId,
-      status: "COMPLETED",
-      endedAt: { not: null },
-    },
-    select: { endedAt: true },
-    orderBy: { endedAt: "desc" },
-    take: 365,
-  });
+  // Fetch the last 365 completed run dates (should be plenty) and the user's
+  // timezone in parallel
+  const [completedRuns, tz] = await Promise.all([
+    prisma.sessionRun.findMany({
+      where: {
+        userId,
+        status: "COMPLETED",
+        endedAt: { not: null },
+      },
+      select: { endedAt: true },
+      orderBy: { endedAt: "desc" },
+      take: 365,
+    }),
+    getUserTimezone(userId),
+  ]);
 
   if (completedRuns.length === 0) return 0;
 
-  // Collect unique calendar days
+  // Collect unique calendar days (keyed in the user's timezone; UTC when null)
   const activeDays = new Set<string>();
   for (const run of completedRuns) {
     if (run.endedAt) {
-      activeDays.add(run.endedAt.toISOString().slice(0, 10));
+      activeDays.add(dayKey(run.endedAt, tz));
     }
   }
 
-  // Walk backward from today counting consecutive days, using the same UTC
-  // day keys as activeDays. Local-midnight arithmetic would start the walk on
-  // the wrong UTC day on servers with a non-zero UTC offset, dropping today's
-  // activity.
+  // Walk backward from today counting consecutive days, using the SAME day
+  // keys as activeDays: subtract 24h from a timestamp and re-key with dayKey.
+  // Local-midnight arithmetic would start the walk on the wrong day on
+  // servers with a non-zero UTC offset, dropping today's activity.
   const DAY_MS = 86_400_000;
   const now = new Date();
-  const todayKey = now.toISOString().slice(0, 10);
+  const todayKey = dayKey(now, tz);
   const [year, month, day] = todayKey.split("-").map(Number);
-  let cursor = Date.UTC(year, month - 1, day);
-  const yesterdayKey = new Date(cursor - DAY_MS).toISOString().slice(0, 10);
+  // Anchor the cursor mid-day (12:00 UTC of today's key) so 24h steps never
+  // skip or repeat a key across DST transitions. For extreme offsets
+  // (UTC+13/+14) 12:00 UTC already keys to tomorrow — step back once.
+  let cursor = Date.UTC(year, month - 1, day, 12);
+  if (dayKey(new Date(cursor), tz) !== todayKey) cursor -= DAY_MS / 2;
+  const yesterdayKey = dayKey(new Date(cursor - DAY_MS), tz);
 
   // Streak starts from today or yesterday
   if (!activeDays.has(todayKey) && !activeDays.has(yesterdayKey)) return 0;
@@ -127,7 +139,7 @@ async function computeStudyStreak(userId: string): Promise<number> {
   }
 
   let streak = 0;
-  while (activeDays.has(new Date(cursor).toISOString().slice(0, 10))) {
+  while (activeDays.has(dayKey(new Date(cursor), tz))) {
     streak++;
     cursor -= DAY_MS;
   }

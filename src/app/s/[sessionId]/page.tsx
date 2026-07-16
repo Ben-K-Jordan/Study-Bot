@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { MODE_LABELS } from "@/lib/calendar";
 import { notFound } from "next/navigation";
 import { SessionRunner } from "./session-runner";
+import { getDeckPreview } from "@/services/run";
 
 interface SessionPageProps {
   params: { sessionId: string };
@@ -36,6 +37,22 @@ export default async function SessionPage({ params }: SessionPageProps) {
     orderBy: { endedAt: "desc" },
   });
 
+  // Deck composition preview for the preflight contract ("7 new · 2 review
+  // · 1 diagnostic"). Only meaningful before a run exists; best effort.
+  let deckPreview = null;
+  if (session.runs.length === 0) {
+    try {
+      deckPreview = await getDeckPreview(session.userId, {
+        courseName: session.courseName,
+        mode: session.mode,
+        objectives,
+        promptCount: (outcome?.prompt_count as number | undefined) ?? 10,
+      });
+    } catch {
+      // Preview is decorative — never block the page on it
+    }
+  }
+
   const sessionData = {
     session_id: session.sessionId,
     course_name: session.courseName,
@@ -47,6 +64,7 @@ export default async function SessionPage({ params }: SessionPageProps) {
     target_outcome: outcome,
     break_protocol: breaks,
     objectives,
+    deck_preview: deckPreview,
     has_active_run: session.runs.length > 0,
     active_run_id: session.runs[0]?.runId ?? null,
     last_completed_run: lastCompletedRun

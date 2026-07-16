@@ -29,6 +29,7 @@ import type {
 import { RUNNABLE_MODES } from "@/lib/validation";
 import { generateVariantQuestion, MAX_VARIANTS_PER_SESSION } from "@/lib/variant-questions";
 import { createFlashcardsFromErrors } from "@/lib/auto-flashcards";
+import { dayKey, getUserTimezone } from "@/lib/timezone";
 
 // ---- Sentinel errors for transaction control flow ----
 
@@ -118,6 +119,16 @@ function policiesForMode(mode: string): RunPolicies {
 
 function initialPhaseForMode(mode: string): string {
   return mode === "EXAM_SIM" ? "EXAM" : "ACTIVE";
+}
+
+/**
+ * How many deck slots review/diagnostic/repair injections may occupy.
+ * Scales with session size, capped at 3 — the deck total never exceeds
+ * what the student asked for.
+ */
+export function prependBudget(promptCount: number): number {
+  if (promptCount < 2) return 0;
+  return Math.min(3, Math.ceil(promptCount / 4));
 }
 
 /**
@@ -478,27 +489,50 @@ export async function startOrResumeRun(userId: string, sessionId: string) {
   }
 
   // ---- Pre-test + Spaced Review + Cross-Session Error Repair Warm-ups ----
-  // Skip for EXAM_SIM (fixed format) and ERROR_REPAIR (already targeted).
-  if (mode !== "EXAM_SIM" && mode !== "ERROR_REPAIR") {
-    // Pre-test: generate diagnostic questions for new objectives with no mastery records
-    const pretestPrompts = await generatePretestPrompts(userId, session.courseName, objectives);
-    // Spaced review: prepend review questions on due objectives
-    const warmupPrompts = await generateWarmupPrompts(userId, session.courseName, objectives);
-    // Cross-session error repair: inject unresolved errors from previous sessions
-    // Research (Rawson & Dunlosky 2011): Successive relearning — re-testing errors
-    // from prior sessions produces cumulative retention gains across sessions.
-    const errorRepairPrompts = await generateCrossSessionRepairs(userId, session.courseName);
+  // Skip for EXAM_SIM (fixed format), ERROR_REPAIR (already targeted), and
+  // WORKED_EXAMPLES (structured fading sequences must not be interrupted).
+  //
+  // Injections are BUDGETED INTO the requested prompt count, not stacked on
+  // top: a student who asks for 10 prompts gets 10, of which up to 3 are
+  // review/diagnostic/repair items. Session length stays predictable.
+  // Priority when the budget is tight: repairs (successive relearning on
+  // known gaps) > pretests (prime the new material) > warm-ups (due review).
+  if (mode !== "EXAM_SIM" && mode !== "ERROR_REPAIR" && mode !== "WORKED_EXAMPLES") {
+    const budget = prependBudget(promptCount);
+    if (budget > 0) {
+      const [pretestPrompts, warmupPrompts, errorRepairPrompts] = await Promise.all([
+        generatePretestPrompts(userId, session.courseName, objectives),
+        generateWarmupPrompts(userId, session.courseName, objectives),
+        generateCrossSessionRepairs(userId, session.courseName),
+      ]);
 
-    const prependedPrompts = [...pretestPrompts, ...warmupPrompts, ...errorRepairPrompts];
-    if (prependedPrompts.length > 0) {
-      prompts = [...prependedPrompts, ...prompts];
-      logger.info("run.warmup_prepended", {
-        user_id: userId,
-        session_id: sessionId,
-        pretest_count: pretestPrompts.length,
-        warmup_count: warmupPrompts.length,
-        error_repair_count: errorRepairPrompts.length,
-      });
+      const selected: Prompt[] = [];
+      for (const list of [errorRepairPrompts, pretestPrompts, warmupPrompts]) {
+        for (const p of list) {
+          if (selected.length < budget) selected.push(p);
+        }
+      }
+
+      if (selected.length > 0) {
+        // Deck order: diagnostics first (pretesting primes what follows),
+        // then due reviews, then repairs — regardless of selection priority.
+        const ordered = [
+          ...selected.filter((p) => p.meta?.pack === "PRE_TEST"),
+          ...selected.filter((p) => p.meta?.pack === "WARMUP"),
+          ...selected.filter((p) => p.meta?.pack === "CROSS_SESSION_REPAIR"),
+        ];
+        const remainder = Math.max(1, promptCount - ordered.length);
+        prompts = [...ordered, ...prompts.slice(0, remainder)];
+        logger.info("run.warmup_budgeted", {
+          user_id: userId,
+          session_id: sessionId,
+          budget,
+          pretest_count: ordered.filter((p) => p.meta?.pack === "PRE_TEST").length,
+          warmup_count: ordered.filter((p) => p.meta?.pack === "WARMUP").length,
+          repair_count: ordered.filter((p) => p.meta?.pack === "CROSS_SESSION_REPAIR").length,
+          total: prompts.length,
+        });
+      }
     }
   }
 
@@ -995,6 +1029,13 @@ async function handleImmediateScoring(
   const finalScoreValue = effectiveScore;
   const finalErrorLog = effectiveErrorLog;
 
+  // The relearning criterion compares calendar days in the student's
+  // timezone (null = UTC). Fetched outside the transaction; single indexed
+  // row lookup.
+  const userTz = prompt.meta?.source_error_log_id
+    ? await getUserTimezone(userId)
+    : null;
+
   // Server-stored prompt meta is authoritative (never trust client flags):
   // pretest items are diagnostic — quarantined from accuracy, error logs,
   // variant injection, and mastery (Richland et al. 2009: pretesting helps
@@ -1105,11 +1146,13 @@ async function handleImmediateScoring(
           });
           if (srcLog && !srcLog.resolvedAt) {
             const now = new Date();
-            const today = now.toISOString().slice(0, 10);
+            // Calendar days follow the student's clock (11pm miss + 7am
+            // repair should count as different days for THEM); null tz = UTC.
+            const today = dayKey(now, userTz);
             const lastDay = srcLog.lastCorrectAt
-              ? srcLog.lastCorrectAt.toISOString().slice(0, 10)
+              ? dayKey(srcLog.lastCorrectAt, userTz)
               : null;
-            // At most one streak increment per calendar day (UTC)
+            // At most one streak increment per calendar day
             if (lastDay !== today) {
               const newStreak = srcLog.correctStreak + 1;
               await tx.sessionErrorLog.update({
@@ -1892,6 +1935,75 @@ export async function completeRun(userId: string, runId: string) {
       started_at: txResult.startedAt?.toISOString() ?? null,
       ended_at: endedAt.toISOString(),
     },
+  };
+}
+
+// ---- Deck composition preview ----
+
+export interface DeckComposition {
+  total: number;
+  new_count: number;
+  diagnostic_count: number;
+  review_count: number;
+  repair_count: number;
+}
+
+/**
+ * Predict the deck composition for a session BEFORE the run starts, so the
+ * preflight screen can state the contract ("7 new · 2 review · 1 diagnostic")
+ * instead of surprising the student. Runs the same generators and budget the
+ * real deck builder uses (database only — no AI calls), so the prediction
+ * matches the deck the run will actually build.
+ */
+export async function getDeckPreview(
+  userId: string,
+  params: {
+    courseName: string;
+    mode: string;
+    objectives: { id: string; title: string }[] | null;
+    promptCount: number;
+  },
+): Promise<DeckComposition> {
+  const { courseName, mode, objectives, promptCount } = params;
+
+  if (mode === "ERROR_REPAIR") {
+    const unresolved = await prisma.sessionErrorLog.count({
+      where: { userId, resolvedAt: null },
+    });
+    const repairs = Math.min(unresolved, promptCount);
+    return repairs > 0
+      ? { total: repairs, new_count: 0, diagnostic_count: 0, review_count: 0, repair_count: repairs }
+      : { total: Math.min(3, promptCount), new_count: Math.min(3, promptCount), diagnostic_count: 0, review_count: 0, repair_count: 0 };
+  }
+
+  if (mode === "EXAM_SIM" || mode === "WORKED_EXAMPLES") {
+    return { total: promptCount, new_count: promptCount, diagnostic_count: 0, review_count: 0, repair_count: 0 };
+  }
+
+  const budget = prependBudget(promptCount);
+  let diagnostic = 0;
+  let review = 0;
+  let repair = 0;
+  if (budget > 0) {
+    const [pretests, warmups, repairs] = await Promise.all([
+      generatePretestPrompts(userId, courseName, objectives),
+      generateWarmupPrompts(userId, courseName, objectives),
+      generateCrossSessionRepairs(userId, courseName),
+    ]);
+    let slots = budget;
+    repair = Math.min(repairs.length, slots);
+    slots -= repair;
+    diagnostic = Math.min(pretests.length, slots);
+    slots -= diagnostic;
+    review = Math.min(warmups.length, slots);
+  }
+  const injected = diagnostic + review + repair;
+  return {
+    total: promptCount,
+    new_count: Math.max(1, promptCount - injected),
+    diagnostic_count: diagnostic,
+    review_count: review,
+    repair_count: repair,
   };
 }
 

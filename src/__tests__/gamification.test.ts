@@ -25,6 +25,7 @@ interface GameStateRow {
   dailyXpGoal: number;
   streakFreezes: number;
   streakFreezeUsedDate: string | null;
+  timezone: string | null;
 }
 
 type Where = Record<string, unknown>;
@@ -126,6 +127,7 @@ vi.mock("@/lib/db", () => {
             dailyXpGoal: 50,
             streakFreezes: 0,
             streakFreezeUsedDate: null,
+            timezone: null,
           };
           gameStates.set(where.userId, row);
           return row;
@@ -195,6 +197,7 @@ function setGameState(overrides: Partial<GameStateRow> = {}): void {
     dailyXpGoal: 50,
     streakFreezes: 0,
     streakFreezeUsedDate: null,
+    timezone: null,
     ...overrides,
   });
 }
@@ -356,6 +359,65 @@ describe("computeStreak", () => {
 
     // Only yesterday is genuinely active — the award marker must not extend it
     expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
+  });
+});
+
+describe("computeStreak with a user timezone", () => {
+  const NY_STATE = { ...NO_FREEZE_STATE, timezone: "America/New_York" };
+
+  it("keys a 9pm ET session to the local day 2026-07-15, not the UTC day 2026-07-16", async () => {
+    // 2026-07-16T01:00:00Z is 9pm on July 15 in New York. At NOW (July 15
+    // UTC/ET) the ET user sees today's activity; UTC keys file the same
+    // event under the 16th — tomorrow — so the streak would read 0.
+    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") });
+
+    expect(await computeStreak("user1", NY_STATE)).toBe(1);
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(0);
+  });
+
+  it("keeps a two-day local streak unbroken when a late-night session crosses the UTC boundary", async () => {
+    vi.setSystemTime(new Date("2026-07-16T01:30:00Z")); // 9:30pm July 15 ET
+
+    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") }); // 9pm Jul 15 ET (UTC day Jul 16)
+    addXpEvent({ createdAt: new Date("2026-07-14T15:00:00Z") }); // 11am Jul 14 ET (UTC day Jul 14)
+
+    // ET days: Jul 14 + Jul 15 — consecutive
+    expect(await computeStreak("user1", NY_STATE)).toBe(2);
+    // UTC days: Jul 14 + Jul 16 — broken at Jul 15
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
+  });
+
+  it("reads the timezone from the game state row when none is passed in", async () => {
+    setGameState({ timezone: "America/New_York" });
+    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") }); // 9pm Jul 15 ET
+
+    expect(await computeStreak("user1")).toBe(1);
+  });
+});
+
+describe("consumeStreakFreeze with a user timezone", () => {
+  it("stamps the bridged day in the user's local day, not the UTC day", async () => {
+    vi.setSystemTime(new Date("2026-07-16T01:00:00Z")); // 9pm July 15 ET
+    setGameState({ streakFreezes: 2, timezone: "America/New_York" });
+
+    const result = await consumeStreakFreeze("user1");
+
+    expect(result).toEqual({ success: true, freezesRemaining: 1 });
+    expect(testPrisma.gameStates.get("user1")?.streakFreezeUsedDate).toBe("2026-07-15");
+
+    const used = testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_USED");
+    expect(used).toHaveLength(1);
+    expect(used[0].sourceId).toBe("2026-07-15");
+  });
+
+  it("refuses a second freeze on the same LOCAL day even after the UTC date rolls over", async () => {
+    vi.setSystemTime(new Date("2026-07-16T01:00:00Z")); // still July 15 in ET
+    setGameState({ streakFreezes: 2, streakFreezeUsedDate: "2026-07-15", timezone: "America/New_York" });
+
+    const result = await consumeStreakFreeze("user1");
+
+    expect(result).toEqual({ success: false, freezesRemaining: 2 });
+    expect(testPrisma.xpEvents).toHaveLength(0);
   });
 });
 
