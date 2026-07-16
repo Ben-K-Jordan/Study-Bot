@@ -1,28 +1,107 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MODE_LABELS } from "@/lib/client-utils";
-
-const DAY_LABELS = ["Day 0 (Today)", "Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
 
 interface PlanItem {
   id: string;
   day_index: number;
   start_time: string;
   end_time: string;
+  status?: string;
   session_id: string;
   session_url: string;
   mode: string;
   topic_scope: string;
   planned_minutes: number;
+  objectives?: { id: string; title: string }[];
 }
 
-interface PlanResult {
+interface PlanDetail {
   plan_id: string;
   ics_download_url: string;
   feed_url: string;
   webcal_url: string;
+  course_name: string;
+  exam_name: string;
+  exam_date: string; // YYYY-MM-DD
+  timezone: string;
+  start_date: string;
+  end_date: string;
   items: PlanItem[];
+}
+
+interface PlanSummary {
+  plan_id: string;
+  course_name: string;
+  exam_name: string;
+  exam_date: string;
+  created_at: string;
+}
+
+// ---- Date helpers (all computed in the plan's timezone) ----
+
+function ymdInTz(date: Date, tz?: string): string {
+  const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digit", day: "2-digit" };
+  try {
+    return new Intl.DateTimeFormat("en-CA", { ...opts, timeZone: tz }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-CA", opts).format(date);
+  }
+}
+
+function ymdToUtcMs(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+/** Calendar days from today (in the plan tz) until a YYYY-MM-DD date. */
+function daysUntil(ymd: string, tz?: string): number {
+  return Math.round((ymdToUtcMs(ymd) - ymdToUtcMs(ymdInTz(new Date(), tz))) / 86400000);
+}
+
+/** "Wednesday, Jul 16" for an ISO instant, rendered in the plan tz. */
+function formatDayLabel(iso: string, tz?: string): string {
+  const opts: Intl.DateTimeFormatOptions = { weekday: "long", month: "short", day: "numeric" };
+  try {
+    return new Intl.DateTimeFormat("en-US", { ...opts, timeZone: tz }).format(new Date(iso));
+  } catch {
+    return new Intl.DateTimeFormat("en-US", opts).format(new Date(iso));
+  }
+}
+
+/** "Wednesday, Jul 23" for a YYYY-MM-DD calendar date (no tz math needed). */
+function formatCalendarDate(ymd: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(ymdToUtcMs(ymd)));
+}
+
+function formatTime(iso: string, tz?: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: tz });
+  } catch {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+}
+
+/** Short per-session focus line: the item's own objectives, first 2 + "+N more". */
+function focusLine(item: PlanItem): string {
+  const titles = (item.objectives ?? []).map((o) => o.title).filter(Boolean);
+  if (titles.length === 0) return item.topic_scope;
+  const shown = titles.slice(0, 2).join(", ");
+  return titles.length > 2 ? `${shown} +${titles.length - 2} more` : shown;
+}
+
+function countdownText(plan: PlanDetail): string {
+  const n = daysUntil(plan.exam_date, plan.timezone);
+  if (n > 1) return `${n} days until ${plan.exam_name}`;
+  if (n === 1) return `1 day until ${plan.exam_name}`;
+  if (n === 0) return `${plan.exam_name} is today`;
+  return `${plan.exam_name} was ${-n} ${-n === 1 ? "day" : "days"} ago`;
 }
 
 export default function PlanPage() {
@@ -35,7 +114,17 @@ export default function PlanPage() {
   const [objectivesText, setObjectivesText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PlanResult | null>(null);
+
+  // Availability prefilled from saved settings (falls back to localStorage, then defaults)
+  const [studyStart, setStudyStart] = useState("09:00");
+  const [studyEnd, setStudyEnd] = useState("17:00");
+  const [dailyCap, setDailyCap] = useState(180);
+
+  // Persistent plan state — loaded from the API on every visit
+  const [plans, setPlans] = useState<PlanSummary[]>([]);
+  const [plan, setPlan] = useState<PlanDetail | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
 
   const [googleConnected, setGoogleConnected] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -57,6 +146,75 @@ export default function PlanPage() {
     }
     checkGoogle();
   }, []);
+
+  // Prefill availability from saved study hours (backend first, localStorage fallback)
+  useEffect(() => {
+    async function loadPrefs() {
+      try {
+        const res = await fetch("/api/settings");
+        if (!res.ok) throw new Error("fallback");
+        const settings = await res.json();
+        if (settings.studyStart) setStudyStart(settings.studyStart);
+        if (settings.studyEnd) setStudyEnd(settings.studyEnd);
+        if (settings.dailyCap) setDailyCap(settings.dailyCap);
+      } catch {
+        try {
+          const raw = localStorage.getItem("study_bot_prefs");
+          if (raw) {
+            const prefs = JSON.parse(raw);
+            if (prefs.studyStart) setStudyStart(prefs.studyStart);
+            if (prefs.studyEnd) setStudyEnd(prefs.studyEnd);
+            if (prefs.dailyCap) setDailyCap(prefs.dailyCap);
+          }
+        } catch { /* defaults */ }
+      }
+    }
+    loadPrefs();
+  }, []);
+
+  const fetchPlanDetail = useCallback(async (planId: string): Promise<PlanDetail> => {
+    const res = await fetch(`/api/plans/${planId}`, { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to load plan");
+    return data as PlanDetail;
+  }, []);
+
+  // Load the user's plans and show the most recent one (or the preferred one)
+  const refreshPlans = useCallback(async (preferPlanId?: string) => {
+    const res = await fetch("/api/plans", { cache: "no-store" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to load plans");
+    const list: PlanSummary[] = data.plans ?? [];
+    setPlans(list);
+    const target = (preferPlanId && list.find((p) => p.plan_id === preferPlanId)) || list[0];
+    if (target) {
+      const detail = await fetchPlanDetail(target.plan_id);
+      setPlan(detail);
+      setShowForm(false);
+      setReflowPreview(null);
+    } else {
+      setPlan(null);
+      setShowForm(true);
+    }
+  }, [fetchPlanDetail]);
+
+  useEffect(() => {
+    refreshPlans()
+      .catch(() => setError("Failed to load your plans"))
+      .finally(() => setInitialLoading(false));
+  }, [refreshPlans]);
+
+  const switchPlan = async (planId: string) => {
+    setError(null);
+    try {
+      const detail = await fetchPlanDetail(planId);
+      setPlan(detail);
+      setPublishDone(false);
+      setReflowPreview(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load plan");
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -117,11 +275,11 @@ export default function PlanPage() {
   };
 
   const handlePublish = async () => {
-    if (!result) return;
+    if (!plan) return;
     setPublishing(true);
     setError(null);
     try {
-      const res = await fetch(`/api/plans/${result.plan_id}/publish/google`, {
+      const res = await fetch(`/api/plans/${plan.plan_id}/publish/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -155,33 +313,35 @@ export default function PlanPage() {
       return;
     }
 
-    // Read saved preferences — try backend first, fall back to localStorage
-    let studyStart = "09:00";
-    let studyEnd = "17:00";
-    let dailyCap = 180;
-    try {
-      const settingsRes = await fetch("/api/settings", {
-      });
-      if (settingsRes.ok) {
-        const settings = await settingsRes.json();
-        if (settings.studyStart) studyStart = settings.studyStart;
-        if (settings.studyEnd) studyEnd = settings.studyEnd;
-        if (settings.dailyCap) dailyCap = settings.dailyCap;
-      } else {
-        throw new Error("fallback");
+    // Replace (never stack) any existing plan for the same course
+    const sameCourse = plans.filter(
+      (p) => p.course_name.trim().toLowerCase() === courseName.trim().toLowerCase(),
+    );
+    if (sameCourse.length > 0) {
+      const ok = window.confirm(
+        `You already have a plan for ${sameCourse[0].course_name}. Creating a new one will replace it. Continue?`,
+      );
+      if (!ok) {
+        setLoading(false);
+        return;
       }
-    } catch {
-      // Fall back to localStorage
-      try {
-        const raw = localStorage.getItem("study_bot_prefs");
-        if (raw) {
-          const prefs = JSON.parse(raw);
-          if (prefs.studyStart) studyStart = prefs.studyStart;
-          if (prefs.studyEnd) studyEnd = prefs.studyEnd;
-          if (prefs.dailyCap) dailyCap = prefs.dailyCap;
+      for (const old of sameCourse) {
+        try {
+          const delRes = await fetch(`/api/plans/${old.plan_id}`, { method: "DELETE" });
+          if (!delRes.ok && delRes.status !== 404) {
+            const data = await delRes.json().catch(() => ({}));
+            setError(data.error || "Failed to replace the existing plan");
+            setLoading(false);
+            return;
+          }
+        } catch {
+          setError("Network error");
+          setLoading(false);
+          return;
         }
-      } catch { /* defaults */ }
+      }
     }
+
     const availability = Array.from({ length: 7 }, () => ({ start: studyStart, end: studyEnd }));
 
     try {
@@ -205,8 +365,15 @@ export default function PlanPage() {
         setError(data.error || "Failed to create plan");
         return;
       }
-      setResult(data);
       setPublishDone(false);
+      // Reset the form for next time and switch to the persistent plan view
+      setCourseName("");
+      setExamName("");
+      setExamDate("");
+      setUploadedFiles([]);
+      setObjectivesText("");
+      setUseManualObjectives(false);
+      await refreshPlans(data.plan_id);
     } catch {
       setError("Network error");
     } finally {
@@ -215,12 +382,12 @@ export default function PlanPage() {
   };
 
   const handleDeletePlan = async () => {
-    if (!result || deletingPlan) return;
+    if (!plan || deletingPlan) return;
     if (!window.confirm("Delete this study plan? This cannot be undone.")) return;
     setDeletingPlan(true);
     setError(null);
     try {
-      const res = await fetch(`/api/plans/${result.plan_id}`, {
+      const res = await fetch(`/api/plans/${plan.plan_id}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -228,8 +395,8 @@ export default function PlanPage() {
         setError(data.error || "Failed to delete plan");
         return;
       }
-      setResult(null);
       setPublishDone(false);
+      await refreshPlans();
     } catch {
       setError("Network error");
     } finally {
@@ -240,11 +407,11 @@ export default function PlanPage() {
   // ---- Reflow: reschedule missed sessions (the recovery path a slipping
   // exam week actually needs; ~900 lines of tested logic behind one button)
   const previewReflow = async () => {
-    if (!result || reflowLoading) return;
+    if (!plan || reflowLoading) return;
     setReflowLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/plans/${result.plan_id}/reflow/preview`, {
+      const res = await fetch(`/api/plans/${plan.plan_id}/reflow/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: "missed_sessions" }),
@@ -260,11 +427,11 @@ export default function PlanPage() {
   };
 
   const applyReflow = async () => {
-    if (!result || reflowLoading) return;
+    if (!plan || reflowLoading) return;
     setReflowLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/plans/${result.plan_id}/reflow/apply`, {
+      const res = await fetch(`/api/plans/${plan.plan_id}/reflow/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: "missed_sessions" }),
@@ -272,11 +439,8 @@ export default function PlanPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to apply reschedule");
       // Refresh the plan so the new times render
-      const fresh = await fetch(`/api/plans/${result.plan_id}`);
-      const freshData = await fresh.json();
-      if (fresh.ok && freshData.items) {
-        setResult((prev) => (prev ? { ...prev, items: freshData.items } : prev));
-      }
+      const fresh = await fetchPlanDetail(plan.plan_id);
+      setPlan(fresh);
       setReflowPreview(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to apply reschedule");
@@ -285,18 +449,28 @@ export default function PlanPage() {
     }
   };
 
-  const grouped = result
-    ? result.items.reduce<Record<number, PlanItem[]>>((acc, item) => {
-        (acc[item.day_index] = acc[item.day_index] || []).push(item);
-        return acc;
-      }, {})
-    : {};
-
-  // ---- Form view ----
-  if (!result) {
+  // ---- Loading view ----
+  if (initialLoading) {
     return (
       <div id="main-content" style={pageStyle}>
-        <h1 style={headingStyle}>New Study Plan</h1>
+        <h1 style={headingStyle}>Your Plan</h1>
+        <div style={{ color: "var(--color-text-muted)" }}>Loading your plan...</div>
+      </div>
+    );
+  }
+
+  // ---- Form view ----
+  if (showForm || !plan) {
+    return (
+      <div id="main-content" style={pageStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "0.5rem" }}>
+          <h1 style={headingStyle}>New Study Plan</h1>
+          {plan && (
+            <button type="button" onClick={() => { setShowForm(false); setError(null); }} style={btnStyle}>
+              Back to your plan
+            </button>
+          )}
+        </div>
         <form onSubmit={handleSubmit} style={{ maxWidth: 500 }}>
           <div style={{ marginBottom: "1.25rem" }}>
             <label style={labelStyle}>
@@ -325,7 +499,7 @@ export default function PlanPage() {
               />
             </label>
           </div>
-          <div style={{ marginBottom: "1.5rem" }}>
+          <div style={{ marginBottom: "1.25rem" }}>
             <label style={labelStyle}>
               Exam date
               <input
@@ -333,6 +507,26 @@ export default function PlanPage() {
                 value={examDate}
                 onChange={(e) => setExamDate(e.target.value)}
                 required
+                style={inputStyle}
+              />
+            </label>
+          </div>
+          <div style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem" }}>
+            <label style={{ ...labelStyle, flex: 1 }}>
+              Study from
+              <input
+                type="time"
+                value={studyStart}
+                onChange={(e) => setStudyStart(e.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={{ ...labelStyle, flex: 1 }}>
+              Until
+              <input
+                type="time"
+                value={studyEnd}
+                onChange={(e) => setStudyEnd(e.target.value)}
                 style={inputStyle}
               />
             </label>
@@ -409,11 +603,25 @@ export default function PlanPage() {
     );
   }
 
-  // ---- Result view ----
+  // ---- Plan view (persistent) ----
+  const tz = plan.timezone;
+  const todayYmd = ymdInTz(new Date(), tz);
+  const grouped = plan.items.reduce<Record<number, PlanItem[]>>((acc, item) => {
+    (acc[item.day_index] = acc[item.day_index] || []).push(item);
+    return acc;
+  }, {});
+  const dayIndexes = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+  const otherPlans = plans.filter((p) => p.plan_id !== plan.plan_id);
+
   return (
     <div id="main-content" style={pageStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
-        <h1 style={headingStyle}>Your Plan</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+        <div>
+          <h1 style={{ ...headingStyle, margin: 0 }}>Your Plan</h1>
+          <div style={{ color: "var(--color-text-secondary)", fontSize: "0.95rem", marginTop: "0.35rem" }}>
+            {plan.course_name} · {countdownText(plan)}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           {googleConnected && !publishDone && (
             <button onClick={handlePublish} disabled={publishing} style={googleBtnStyle(publishing)}>
@@ -423,7 +631,7 @@ export default function PlanPage() {
           {publishDone && (
             <span style={{ color: "var(--color-success)", fontSize: "0.95rem", padding: "0.5rem" }}>Added to calendar</span>
           )}
-          <a href={result.ics_download_url} style={btnStyle}>Download .ics</a>
+          <a href={plan.ics_download_url} style={btnStyle}>Download .ics</a>
           {!reflowPreview ? (
             <button onClick={previewReflow} disabled={reflowLoading} style={btnStyle}>
               {reflowLoading ? "Checking..." : "Reschedule missed sessions"}
@@ -441,8 +649,8 @@ export default function PlanPage() {
               </button>
             </span>
           )}
-          <button onClick={() => { setResult(null); setPublishDone(false); }} style={btnStyle}>
-            New Plan
+          <button onClick={() => { setShowForm(true); setError(null); }} style={btnStyle}>
+            Create a new plan
           </button>
           <button
             onClick={handleDeletePlan}
@@ -455,18 +663,19 @@ export default function PlanPage() {
       </div>
 
       <div style={{ fontSize: "0.95rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
-        {result.items.length} sessions across 7 days
+        {plan.items.length} sessions for {plan.exam_name}
       </div>
 
       {error && <div style={errorStyle} role="alert" aria-live="polite">{error}</div>}
 
-      {[0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
+      {dayIndexes.map((dayIdx) => {
         const dayItems = grouped[dayIdx];
-        if (!dayItems || dayItems.length === 0) return null;
+        const isToday = ymdInTz(new Date(dayItems[0].start_time), tz) === todayYmd;
         return (
           <div key={dayIdx} style={{ marginBottom: "1.25rem" }}>
-            <h2 style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 0.5rem", fontFamily: "var(--font-display)" }}>
-              {DAY_LABELS[dayIdx]}
+            <h2 style={dayHeadingStyle}>
+              {formatDayLabel(dayItems[0].start_time, tz)}
+              {isToday && <span style={{ color: "var(--color-primary)" }}> · Today</span>}
             </h2>
             {dayItems.map((item) => (
               <a
@@ -479,21 +688,46 @@ export default function PlanPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.25rem" }}>
                   <span style={{ fontWeight: "bold", color: "var(--color-text)" }}>
                     {MODE_LABELS[item.mode] || item.mode}
+                    {item.status === "DONE" && (
+                      <span style={{ fontWeight: "normal", fontSize: "0.8rem", color: "var(--color-success)" }}> · done</span>
+                    )}
+                    {item.status === "MISSED" && (
+                      <span style={{ fontWeight: "normal", fontSize: "0.8rem", color: "var(--color-warning)" }}> · missed</span>
+                    )}
                   </span>
                   <span style={{ fontSize: "0.9rem", color: "var(--color-text-dim)" }}>
-                    {new Date(item.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatTime(item.start_time, tz)}
                     {" - "}
-                    {new Date(item.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatTime(item.end_time, tz)}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
-                  {item.topic_scope}
+                  {focusLine(item)}
                 </div>
               </a>
             ))}
           </div>
         );
       })}
+
+      <div style={{ marginBottom: "1.25rem" }}>
+        <h2 style={dayHeadingStyle}>{formatCalendarDate(plan.exam_date)}</h2>
+        <div style={examRowStyle}>
+          {plan.exam_name} — exam day
+        </div>
+      </div>
+
+      {otherPlans.length > 0 && (
+        <div style={{ marginTop: "2rem" }}>
+          <h2 style={dayHeadingStyle}>Other plans</h2>
+          {otherPlans.map((p) => (
+            <button key={p.plan_id} onClick={() => switchPlan(p.plan_id)} style={otherPlanRowStyle}>
+              <span>{p.course_name} · {p.exam_name}</span>
+              <span style={{ color: "var(--color-text-dim)", fontSize: "0.85rem" }}>{formatCalendarDate(p.exam_date)}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -515,6 +749,16 @@ const headingStyle: React.CSSProperties = {
   fontSize: "1.5rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
+  fontFamily: "var(--font-display)",
+};
+
+const dayHeadingStyle: React.CSSProperties = {
+  color: "var(--color-text-muted)",
+  fontSize: "0.85rem",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  margin: "0 0 0.5rem",
   fontFamily: "var(--font-display)",
 };
 
@@ -623,4 +867,32 @@ const sessionCardStyle: React.CSSProperties = {
   borderLeft: "3px solid var(--color-primary)",
   textDecoration: "none",
   borderRadius: "var(--radius-sm)",
+};
+
+const examRowStyle: React.CSSProperties = {
+  background: "var(--color-bg-card)",
+  padding: "0.75rem 1rem",
+  border: "1px solid var(--color-border-subtle)",
+  borderLeft: "3px solid var(--color-warning)",
+  borderRadius: "var(--radius-sm)",
+  fontWeight: 600,
+  color: "var(--color-text)",
+};
+
+const otherPlanRowStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "0.5rem",
+  width: "100%",
+  textAlign: "left",
+  background: "var(--color-bg-card)",
+  color: "var(--color-text-secondary)",
+  padding: "0.6rem 1rem",
+  marginBottom: "0.4rem",
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius-sm)",
+  fontFamily: "inherit",
+  fontSize: "0.95rem",
+  cursor: "pointer",
 };

@@ -62,10 +62,10 @@ function VerifyEmailContent() {
           The link expires in 24 hours. If you don&apos;t see it, check your spam folder.
         </p>
         <p style={mutedStyle}>
-          Running locally with the default console email provider? The verification link is
-          printed in the terminal where <code>npm run dev</code> is running. And unless
-          REQUIRE_EMAIL_VERIFICATION is set, verification is optional and you can just sign
-          in directly.
+          Seeing this page means this server has REQUIRE_EMAIL_VERIFICATION enabled
+          (verification is off by default). Running locally with the default console email
+          provider? The verification link is printed in the terminal where{" "}
+          <code>npm run dev</code> is running.
         </p>
 
         {error && <div style={errorStyle} role="alert" aria-live="polite">{error}</div>}

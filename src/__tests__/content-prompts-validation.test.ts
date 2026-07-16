@@ -206,6 +206,32 @@ describe("generateContentAwarePrompts output validation", () => {
     expect(mcq.meta?.key_points).toEqual(["point one", "point two"]);
   });
 
+  it("sanitizes difficulty: rounds floats, clamps to 1..5, and defaults non-finite/non-number values to 1", async () => {
+    mockRunTaskRaw({
+      prompts: [
+        { ...validPrompt(1), difficulty: 3.6 }, // float → rounded
+        { ...validPrompt(2), difficulty: NaN }, // NaN → 1
+        { ...validPrompt(3), difficulty: Infinity }, // non-finite → 1
+        { ...validPrompt(4), difficulty: "4" }, // string → 1 (not coerced)
+        { ...validPrompt(5), difficulty: 99 }, // above range → 5
+        { ...validPrompt(6), difficulty: -2 }, // below range → 1
+        { ...validPrompt(7), difficulty: undefined }, // missing → 1
+        { ...validPrompt(8), difficulty: 0.4 }, // rounds to 0 → clamped to 1
+      ],
+    });
+
+    const result = await generateContentAwarePrompts(DEFAULT_PARAMS);
+
+    expect(result).not.toBeNull();
+    expect(result!.map((p) => p.difficulty)).toEqual([4, 1, 1, 1, 5, 1, 1, 1]);
+    // Every persisted difficulty is a valid Int in range for the Prisma column
+    for (const p of result!) {
+      expect(Number.isInteger(p.difficulty)).toBe(true);
+      expect(p.difficulty).toBeGreaterThanOrEqual(1);
+      expect(p.difficulty).toBeLessThanOrEqual(5);
+    }
+  });
+
   it("returns null when runTask throws", async () => {
     runTaskMock.mockRejectedValue(new Error("provider down"));
 

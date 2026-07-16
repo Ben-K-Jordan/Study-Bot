@@ -32,6 +32,16 @@ interface ContentPromptParams {
   gatewayCtx: GatewayContext | null;
 }
 
+/**
+ * Difficulty is persisted into a Prisma Int column; the model may emit
+ * floats, NaN, strings, or nothing. Accept only finite numbers, round,
+ * and clamp to 1..5 — anything else defaults to 1.
+ */
+function sanitizeDifficulty(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(5, Math.round(value)));
+}
+
 interface GeneratedPrompt {
   objective_id: string;
   text: string;
@@ -255,7 +265,7 @@ export async function generateContentAwarePrompts(
         id: `p_${i}`,
         objective_id: g.objective_id,
         text: g.text,
-        difficulty: Math.max(1, Math.min(5, g.difficulty || 1)),
+        difficulty: sanitizeDifficulty(g.difficulty),
         format: isMcq ? "MCQ" : "FREE_RECALL",
         ...(isMcq ? {
           choices: g.choices as string[],

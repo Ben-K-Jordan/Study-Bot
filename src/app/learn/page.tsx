@@ -2,8 +2,16 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getOrCreateUserId, getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { getActiveCourse, setActiveCourse } from "@/lib/client-utils";
 import { apiGet } from "@/lib/client-api";
+
+/** Render a mastery key / objective slug (e.g. "photosynthesis_light_reactions") as a clean label. */
+function prettifyObjectiveKey(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 interface CourseData {
   courseName: string;
@@ -66,7 +74,7 @@ export default function LearnPage() {
           topic_scope: recs.next_session.topic_scope || activeCourse.courseName,
           planned_minutes: 30,
           objectives: recs.next_session.objectives.length > 0
-            ? recs.next_session.objectives.map((key) => ({ id: key, title: key.replace(/_/g, " ") }))
+            ? recs.next_session.objectives.map((key) => ({ id: key, title: prettifyObjectiveKey(key) }))
             : undefined,
           target_outcome: { prompt_count: 10 },
           break_protocol: { type: "25_5", cycles: 1 },
@@ -83,9 +91,7 @@ export default function LearnPage() {
   const setSelectedCourse = (v: string | null) => { setSelectedCourseRaw(v); if (v) setActiveCourse(v); };
 
   useEffect(() => {
-    const userId = getOrCreateUserId();
-    fetch("/api/learn", { headers: { "X-User-Id": userId } })
-      .then((r) => r.json())
+    apiGet("/api/learn")
       .then((d) => {
         setData(d);
         if (d.courses?.length > 0) {
@@ -263,8 +269,9 @@ export default function LearnPage() {
         </section>
       )}
 
-      {/* Due cards alert */}
-      {course.dueCardCount > 0 && (
+      {/* Due cards alert — only meaningful when the course actually has decks
+          to review; without decks there is no due queue to send anyone to. */}
+      {course.deckCount > 0 && course.dueCardCount > 0 && (
         <section style={{ ...recommendationStyle, background: "var(--color-bg-warning-tint)", borderLeftColor: "var(--color-warning)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
             <span style={{ color: "var(--color-warning)", fontSize: "1.1rem" }}>!</span>
@@ -282,7 +289,7 @@ export default function LearnPage() {
       <section style={{ marginBottom: "1.5rem" }}>
         <h3 style={sectionLabelStyle}>Quick Actions</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          {course.dueCardCount > 0 && (
+          {course.deckCount > 0 && course.dueCardCount > 0 && (
             <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "var(--color-warning)" }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Review Due Cards</div>

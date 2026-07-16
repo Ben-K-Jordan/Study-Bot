@@ -227,14 +227,25 @@ describe("feedback persistence and eager generation", () => {
       expect(runTaskMock).not.toHaveBeenCalled();
     });
 
-    it("persists the empty-results response when search finds nothing", async () => {
+    it("persists an explicit no-sources terminal state when search finds nothing", async () => {
       searchChunksMock.mockResolvedValue([]);
 
       const result = await generateFeedback("user-1", "attempt-1");
 
-      expect(result).toEqual({ status: "OK", excerpts: [] });
+      // no_sources marks the empty result as terminal — clients stop polling
+      // and render an honest fallback instead of an eternal spinner.
+      expect(result).toEqual({ status: "OK", excerpts: [], no_sources: true });
       expect(store.row?.feedbackStatus).toBe("READY");
       expect(store.row?.feedbackJson).toEqual(result);
+
+      // Refetch returns the persisted terminal state verbatim — no
+      // regeneration, no renewed searching.
+      searchChunksMock.mockClear();
+      runTaskMock.mockClear();
+      const second = await generateFeedback("user-1", "attempt-1");
+      expect(second).toEqual(result);
+      expect(searchChunksMock).not.toHaveBeenCalled();
+      expect(runTaskMock).not.toHaveBeenCalled();
     });
 
     it("does not persist or claim for unscored (EXAM-phase) attempts", async () => {
