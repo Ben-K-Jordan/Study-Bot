@@ -158,6 +158,14 @@ export interface SessionData {
   target_outcome: Record<string, unknown> | null;
   break_protocol: Record<string, unknown> | null;
   objectives: { id: string; title: string }[] | null;
+  /** Predicted deck composition, shown on preflight (null once a run exists). */
+  deck_preview?: {
+    total: number;
+    new_count: number;
+    diagnostic_count: number;
+    review_count: number;
+    repair_count: number;
+  } | null;
   has_active_run: boolean;
   active_run_id: string | null;
   last_completed_run: {

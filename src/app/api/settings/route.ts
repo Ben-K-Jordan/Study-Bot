@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { isValidTimezone } from "@/lib/timezone";
 
 /**
  * GET /api/settings — fetch user preferences (synced to backend).
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
     dailyCap: state.dailyStudyCap,
     dailyXpGoal: state.dailyXpGoal,
     leaderboardVisible: state.leaderboardVisible,
+    timezone: state.timezone,
   });
 }
 
@@ -35,6 +37,8 @@ const updateSchema = z.object({
   dailyCap: z.number().int().min(30).max(480).optional(),
   dailyXpGoal: z.number().int().min(10).max(500).optional(),
   leaderboardVisible: z.boolean().optional(),
+  // IANA timezone for streak day boundaries; empty string or null clears it (= UTC)
+  timezone: z.string().max(100).nullable().optional(),
 });
 
 /**
@@ -69,6 +73,18 @@ export async function PUT(request: NextRequest) {
   if (data.dailyCap !== undefined) updateData.dailyStudyCap = data.dailyCap;
   if (data.dailyXpGoal !== undefined) updateData.dailyXpGoal = data.dailyXpGoal;
   if (data.leaderboardVisible !== undefined) updateData.leaderboardVisible = data.leaderboardVisible;
+  if (data.timezone !== undefined) {
+    if (data.timezone === null || data.timezone === "") {
+      updateData.timezone = null;
+    } else if (isValidTimezone(data.timezone)) {
+      updateData.timezone = data.timezone;
+    } else {
+      return NextResponse.json(
+        { error: `Invalid timezone: ${data.timezone}` },
+        { status: 400 },
+      );
+    }
+  }
 
   try {
     const state = await prisma.userGameState.upsert({
@@ -89,6 +105,7 @@ export async function PUT(request: NextRequest) {
       dailyCap: state.dailyStudyCap,
       dailyXpGoal: state.dailyXpGoal,
       leaderboardVisible: state.leaderboardVisible,
+      timezone: state.timezone,
     });
   } catch (err) {
     logger.error("settings.update_failed", { userId, error: String(err) });

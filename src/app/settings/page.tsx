@@ -9,6 +9,33 @@ const DEFAULTS = {
   dailyXpGoal: 50,
 };
 
+// Fallback for runtimes without Intl.supportedValuesOf
+const COMMON_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Madrid",
+  "Africa/Cairo",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Shanghai",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
+
+const TIMEZONE_OPTIONS: string[] =
+  typeof Intl.supportedValuesOf === "function"
+    ? Intl.supportedValuesOf("timeZone")
+    : COMMON_TIMEZONES;
+
 export default function SettingsPage() {
   const [displayName, setDisplayName] = useState(DEFAULTS.displayName);
   const [studyStart, setStudyStart] = useState(DEFAULTS.studyStart);
@@ -16,6 +43,7 @@ export default function SettingsPage() {
   const [dailyCap, setDailyCap] = useState(DEFAULTS.dailyCap);
   const [dailyXpGoal, setDailyXpGoal] = useState(DEFAULTS.dailyXpGoal);
   const [leaderboardVisible, setLeaderboardVisible] = useState(true);
+  const [timezone, setTimezone] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,6 +72,7 @@ export default function SettingsPage() {
           setDailyCap(data.dailyCap ?? DEFAULTS.dailyCap);
           setDailyXpGoal(data.dailyXpGoal ?? DEFAULTS.dailyXpGoal);
           setLeaderboardVisible(data.leaderboardVisible !== false);
+          setTimezone(data.timezone || "");
           // Also sync to localStorage for plan page compatibility
           localStorage.setItem("study_bot_prefs", JSON.stringify({
             studyStart: data.studyStart || DEFAULTS.studyStart,
@@ -137,6 +166,7 @@ export default function SettingsPage() {
           dailyCap,
           dailyXpGoal,
           leaderboardVisible,
+          timezone: timezone.trim() || null,
         }),
       });
       // Save notification preferences in parallel
@@ -236,6 +266,25 @@ export default function SettingsPage() {
           <span style={{ color: "var(--color-text-muted)" }}>to</span>
           <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} aria-label="Study end time" style={timeInputStyle} />
         </div>
+      </section>
+
+      <section style={{ marginBottom: "2rem" }}>
+        <h2 style={sectionStyle}>Timezone</h2>
+        <p style={hintStyle}>Used for streak day boundaries. Leave empty for UTC.</p>
+        <input
+          type="text"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          placeholder="e.g. America/New_York"
+          list="timezone-options"
+          aria-label="Timezone"
+          style={textInputStyle}
+        />
+        <datalist id="timezone-options">
+          {TIMEZONE_OPTIONS.map((tz) => (
+            <option key={tz} value={tz} />
+          ))}
+        </datalist>
       </section>
 
       <section style={{ marginBottom: "2rem" }}>

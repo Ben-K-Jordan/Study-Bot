@@ -50,6 +50,34 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
         )}
       </div>
 
+      {/* Deck composition contract: the student sees exactly what the deck
+          holds before starting — no surprise session growth. */}
+      {session.deck_preview && (
+        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "1.5rem", alignItems: "center" }}>
+          <span style={{ ...metaLabel, marginBottom: 0 }}>Deck</span>
+          {session.deck_preview.new_count > 0 && (
+            <span style={deckChip("var(--color-info)")}>
+              {session.deck_preview.new_count} new
+            </span>
+          )}
+          {session.deck_preview.review_count > 0 && (
+            <span style={deckChip("var(--color-success)")}>
+              {session.deck_preview.review_count} review
+            </span>
+          )}
+          {session.deck_preview.diagnostic_count > 0 && (
+            <span style={deckChip("var(--color-warning)")}>
+              {session.deck_preview.diagnostic_count} diagnostic
+            </span>
+          )}
+          {session.deck_preview.repair_count > 0 && (
+            <span style={deckChip("var(--color-error)")}>
+              {session.deck_preview.repair_count} repair
+            </span>
+          )}
+        </div>
+      )}
+
       {session.mode === "EXAM_SIM" && (
         <div style={examBanner}>
           Exam Simulation: answer all prompts first, then self-score. No feedback until review.
@@ -71,6 +99,15 @@ const metaLabel: React.CSSProperties = {
   display: "block",
   marginBottom: "0.15rem",
 };
+
+const deckChip = (color: string): React.CSSProperties => ({
+  padding: "0.15rem 0.55rem",
+  fontSize: "0.78rem",
+  color,
+  border: `1px solid ${color}`,
+  borderRadius: "999px",
+  background: "transparent",
+});
 
 const examBanner: React.CSSProperties = {
   background: "var(--color-bg-review-tint)",
