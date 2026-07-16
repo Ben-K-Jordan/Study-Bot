@@ -44,6 +44,18 @@ class SmtpProvider implements EmailProvider {
 class ConsoleProvider implements EmailProvider {
   async send(to: string, subject: string, html: string): Promise<void> {
     const divider = "═".repeat(60);
+    // Collect every URL in the email (href attributes and bare URLs) so
+    // links like verification/reset URLs are always printed in full, even
+    // when the body preview below is truncated.
+    const urls = new Set<string>();
+    for (const match of html.matchAll(/href="([^"]+)"/g)) urls.add(match[1]);
+    for (const match of html.replace(/<[^>]+>/g, " ").matchAll(/https?:\/\/[^\s<>"')\]]+/g)) {
+      urls.add(match[0]);
+    }
+    const linkBlock =
+      urls.size > 0
+        ? `\n  Links (full, untruncated):\n${[...urls].map((u) => `  ${u}`).join("\n")}\n${divider}`
+        : "";
     console.log(`
 ${divider}
   EMAIL (console provider)
@@ -52,7 +64,7 @@ ${divider}
   Subject: ${subject}
 ${divider}
 ${html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500)}
-${divider}
+${divider}${linkBlock}
 `);
     logger.info("email_sent_console", { to, subject });
   }
