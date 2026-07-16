@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { TOTAL_BADGES, ALL_BADGES } from "@/lib/badge-data";
+import { dayKey, getUserTimezone } from "@/lib/timezone";
 
 export const XP_AMOUNTS: Record<string, number> = {
   FLASHCARD_REVIEW: 2,
@@ -103,7 +104,9 @@ export async function setDailyXpGoal(userId: string, goal: number): Promise<void
 }
 
 export async function consumeStreakFreeze(userId: string): Promise<{ success: boolean; freezesRemaining: number }> {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // "Today" follows the user's clock (null timezone = UTC, the old behavior)
+  const timezone = await getUserTimezone(userId);
+  const todayStr = dayKey(new Date(), timezone);
 
   // Atomic conditional update: only decrement if freezes > 0 and not already used today.
   // streakFreezeUsedDate is NULL until the first use, and Prisma's scalar `not:`
@@ -153,18 +156,26 @@ export async function consumeStreakFreeze(userId: string): Promise<{ success: bo
 /**
  * Compute current streak from active days (dates with any XP or completed plan items).
  * Accepts pre-fetched gameState to avoid redundant DB read.
+ *
+ * Day boundaries follow the user's timezone (UserGameState.timezone); a null
+ * timezone means UTC day keys — identical to the historical behavior.
  */
 export async function computeStreak(
   userId: string,
-  existingGameState?: { streakFreezeUsedDate: string | null; streakFreezes: number } | null,
+  existingGameState?: {
+    streakFreezeUsedDate: string | null;
+    streakFreezes: number;
+    timezone?: string | null;
+  } | null,
 ): Promise<number> {
   const now = new Date();
   const ninetyDaysAgo = new Date(now);
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-  // Fetch event dates and completed plan items in parallel.
+  // Fetch event dates, completed plan items, and (when not pre-fetched) the
+  // game state row in parallel.
   // Use findMany + select (only createdAt) — groupBy on DateTime doesn't reduce rows.
-  const [xpEvents, planItems] = await Promise.all([
+  const [xpEvents, planItems, gameState] = await Promise.all([
     prisma.xpEvent.findMany({
       where: { userId, createdAt: { gte: ninetyDaysAgo } },
       select: { createdAt: true, action: true, sourceId: true },
@@ -173,26 +184,28 @@ export async function computeStreak(
       where: { plan: { userId }, status: "DONE", completedAt: { gte: ninetyDaysAgo } },
       select: { completedAt: true, startTime: true },
     }),
+    existingGameState ?? prisma.userGameState.findUnique({ where: { userId } }),
   ]);
 
-  // Dedupe into calendar dates (UTC day keys)
+  const tz = gameState?.timezone ?? null;
+
+  // Dedupe into calendar dates (day keys in the user's timezone; UTC when null)
   const activeDays = new Set<string>();
   for (const e of xpEvents) {
     // Zero-XP bookkeeping events: a freeze award is not study activity, but a
     // consumed freeze bridges the day it was used (sourceId = bridged date).
     if (e.action === "STREAK_FREEZE_AWARD") continue;
     if (e.action === "STREAK_FREEZE_USED") {
-      activeDays.add(e.sourceId ?? e.createdAt.toISOString().slice(0, 10));
+      activeDays.add(e.sourceId ?? dayKey(e.createdAt, tz));
       continue;
     }
-    activeDays.add(e.createdAt.toISOString().slice(0, 10));
+    activeDays.add(dayKey(e.createdAt, tz));
   }
   for (const item of planItems) {
     const d = item.completedAt || item.startTime;
-    activeDays.add(d.toISOString().slice(0, 10));
+    activeDays.add(dayKey(d, tz));
   }
 
-  const gameState = existingGameState ?? await prisma.userGameState.findUnique({ where: { userId } });
   // Legacy single-date field — kept for rows that predate STREAK_FREEZE_USED events
   if (gameState?.streakFreezeUsedDate) {
     activeDays.add(gameState.streakFreezeUsedDate);
@@ -200,21 +213,26 @@ export async function computeStreak(
 
   if (activeDays.size === 0) return 0;
 
-  // Walk backward day-by-day using the same UTC day keys as activeDays.
-  // Local-midnight arithmetic would start the walk on the wrong UTC day on
-  // servers with a non-zero UTC offset, dropping today's activity.
+  // Walk backward day-by-day using the SAME day keys as activeDays: subtract
+  // 24h from a timestamp and re-key with dayKey. Local-midnight arithmetic
+  // would start the walk on the wrong day on servers with a non-zero UTC
+  // offset, dropping today's activity.
   const DAY_MS = 86_400_000;
-  const todayKey = now.toISOString().slice(0, 10);
+  const todayKey = dayKey(now, tz);
   const [year, month, day] = todayKey.split("-").map(Number);
-  let cursor = Date.UTC(year, month - 1, day);
-  const yesterdayKey = new Date(cursor - DAY_MS).toISOString().slice(0, 10);
+  // Anchor the cursor mid-day (12:00 UTC of today's key) so 24h steps never
+  // skip or repeat a key across DST transitions. For extreme offsets
+  // (UTC+13/+14) 12:00 UTC already keys to tomorrow — step back once.
+  let cursor = Date.UTC(year, month - 1, day, 12);
+  if (dayKey(new Date(cursor), tz) !== todayKey) cursor -= DAY_MS / 2;
+  const yesterdayKey = dayKey(new Date(cursor - DAY_MS), tz);
 
   if (!activeDays.has(todayKey) && !activeDays.has(yesterdayKey)) return 0;
 
   if (!activeDays.has(todayKey)) cursor -= DAY_MS;
 
   let streak = 0;
-  while (activeDays.has(new Date(cursor).toISOString().slice(0, 10))) {
+  while (activeDays.has(dayKey(new Date(cursor), tz))) {
     streak++;
     cursor -= DAY_MS;
   }
