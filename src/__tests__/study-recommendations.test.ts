@@ -12,9 +12,14 @@ interface RunRow {
   endedAt: Date | null;
 }
 
+interface GameStateHolder {
+  row: { timezone: string | null } | null;
+}
+
 // Mock prisma before importing the service
 vi.mock("@/lib/db", () => {
   const completedRuns: RunRow[] = [];
+  const gameState: GameStateHolder = { row: null };
 
   return {
     prisma: {
@@ -27,7 +32,11 @@ vi.mock("@/lib/db", () => {
       studyPlan: {
         findFirst: vi.fn(async () => null),
       },
-      _test: { completedRuns },
+      userGameState: {
+        // getUserTimezone reads UserGameState.timezone; null row = no timezone (UTC)
+        findUnique: vi.fn(async () => gameState.row),
+      },
+      _test: { completedRuns, gameState },
     },
   };
 });
@@ -40,7 +49,11 @@ vi.mock("@/lib/mastery", () => ({
 import { getStudyRecommendations } from "@/services/study-recommendations";
 import { prisma } from "@/lib/db";
 
-const testPrisma = (prisma as unknown as { _test: { completedRuns: RunRow[] } })._test;
+const testPrisma = (
+  prisma as unknown as {
+    _test: { completedRuns: RunRow[]; gameState: GameStateHolder };
+  }
+)._test;
 
 const NOW = new Date("2026-07-15T10:00:00Z"); // UTC day 2026-07-15, Tokyo 19:00
 
@@ -57,6 +70,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   testPrisma.completedRuns.length = 0;
+  testPrisma.gameState.row = null;
   vi.clearAllMocks();
 });
 
@@ -104,5 +118,35 @@ describe("study streak (via getStudyRecommendations)", () => {
     addCompletedRun(new Date("2026-07-12T09:00:00Z"));
 
     expect(await getStreak()).toBe(0);
+  });
+});
+
+describe("study streak with a user timezone", () => {
+  it("keys a 9pm ET run to the local day 2026-07-15, not the UTC day 2026-07-16", async () => {
+    // 2026-07-16T01:00:00Z is 9pm on July 15 in New York. At NOW (July 15
+    // UTC/ET) the ET user sees today's activity; UTC keys file the same run
+    // under the 16th — tomorrow — so the streak would read 0.
+    addCompletedRun(new Date("2026-07-16T01:00:00Z"));
+
+    testPrisma.gameState.row = { timezone: "America/New_York" };
+    expect(await getStreak()).toBe(1);
+
+    testPrisma.gameState.row = null; // UTC day keys
+    expect(await getStreak()).toBe(0);
+  });
+
+  it("keeps a two-day local streak unbroken when a late-night run crosses the UTC boundary", async () => {
+    vi.setSystemTime(new Date("2026-07-16T01:30:00Z")); // 9:30pm July 15 ET
+
+    addCompletedRun(new Date("2026-07-16T01:00:00Z")); // 9pm Jul 15 ET (UTC day Jul 16)
+    addCompletedRun(new Date("2026-07-14T15:00:00Z")); // 11am Jul 14 ET (UTC day Jul 14)
+
+    // ET days: Jul 14 + Jul 15 — consecutive
+    testPrisma.gameState.row = { timezone: "America/New_York" };
+    expect(await getStreak()).toBe(2);
+
+    // UTC days: Jul 14 + Jul 16 — broken at Jul 15
+    testPrisma.gameState.row = null;
+    expect(await getStreak()).toBe(1);
   });
 });
