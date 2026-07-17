@@ -497,13 +497,13 @@ export default function FlashcardsPage() {
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
               <button
                 onClick={() => openStudyMode(studyData.deck.id)}
-                style={{ ...generateBtnStyle, fontSize: "0.9rem", padding: "0.6rem" }}
+                style={{ ...generateBtnStyle, width: "auto", fontSize: "1rem", padding: "0.7rem 1.4rem" }}
               >
                 Study Again
               </button>
               <button
                 onClick={() => setView("list")}
-                style={{ ...backBtn, padding: "0.6rem 1rem" }}
+                style={{ ...backBtn, fontSize: "0.95rem", padding: "0.7rem 1.25rem" }}
               >
                 Back to Decks
               </button>
@@ -569,7 +569,7 @@ export default function FlashcardsPage() {
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Create a plan and upload your course notes there, then come back to generate flashcards.
           </p>
-          <Link href="/plan" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+          <Link href="/plan" style={{ display: "inline-block", padding: "0.7rem 1.4rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "1rem" }}>
             Create a Study Plan
           </Link>
         </div>
@@ -729,7 +729,7 @@ const backBtn: React.CSSProperties = {
   background: "none",
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius-sm)",
-  padding: "0.4rem 0.75rem",
+  padding: "0.45rem 0.9rem",
   cursor: "pointer",
 };
 

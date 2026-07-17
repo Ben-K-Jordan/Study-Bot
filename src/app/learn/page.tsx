@@ -241,7 +241,7 @@ export default function LearnPage() {
           <button
             onClick={startRecommendedSession}
             disabled={startingSession}
-            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.6rem", fontSize: "0.95rem", padding: "0.6rem 1.5rem", opacity: startingSession ? 0.6 : 1, cursor: startingSession ? "wait" : "pointer", border: "none" }}
+            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.6rem", opacity: startingSession ? 0.6 : 1, cursor: startingSession ? "wait" : "pointer", border: "none" }}
           >
             {startingSession ? "Creating session..." : `Start ${modeLabel(recs.next_session.mode)} Session`}
           </button>
@@ -484,8 +484,8 @@ const emptyCardStyle: React.CSSProperties = {
 };
 
 const primaryBtnStyle: React.CSSProperties = {
-  padding: "0.6rem 1.25rem",
-  fontSize: "0.95rem",
+  padding: "0.7rem 1.4rem",
+  fontSize: "1rem",
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
@@ -497,7 +497,7 @@ const primaryBtnStyle: React.CSSProperties = {
 };
 
 const secondaryBtnStyle: React.CSSProperties = {
-  padding: "0.6rem 1.25rem",
+  padding: "0.7rem 1.25rem",
   fontSize: "0.95rem",
   background: "transparent",
   color: "var(--color-primary)",

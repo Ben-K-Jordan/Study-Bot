@@ -49,7 +49,7 @@ export const generateBtnStyle: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   cursor: "pointer",
 };
 

@@ -446,24 +446,24 @@ const saveBtnStyle: React.CSSProperties = {
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  padding: "0.6rem 1.5rem",
+  padding: "0.7rem 1.5rem",
   fontFamily: "inherit",
   fontWeight: "bold",
-  fontSize: "1.05rem",
+  fontSize: "1rem",
   cursor: "pointer",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
 };
 
 const detectBtnStyle: React.CSSProperties = {
   background: "var(--color-bg-input)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
-  padding: "0.5rem 0.9rem",
+  padding: "0.7rem 1.25rem",
   fontFamily: "inherit",
-  fontSize: "0.9rem",
+  fontSize: "0.95rem",
   fontWeight: 600,
   cursor: "pointer",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   whiteSpace: "nowrap",
 };
 
@@ -471,10 +471,10 @@ const connectBtnStyle: React.CSSProperties = {
   background: "var(--color-info)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  padding: "0.5rem 1rem",
+  padding: "0.7rem 1.25rem",
   fontFamily: "inherit",
   fontWeight: "bold",
   fontSize: "0.95rem",
   cursor: "pointer",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
 };

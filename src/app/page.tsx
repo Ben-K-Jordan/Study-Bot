@@ -577,8 +577,8 @@ function OnboardingFlow({
             onClick={isLast ? onComplete : onNext}
             style={{
               background: "var(--color-primary)", color: "var(--color-bg-darkest)", border: "none",
-              padding: "0.55rem 1.5rem", fontSize: "0.95rem", fontWeight: 600,
-              fontFamily: "inherit", borderRadius: "var(--radius-sm)", cursor: "pointer",
+              padding: "0.7rem 1.5rem", fontSize: "1rem", fontWeight: 600,
+              fontFamily: "inherit", borderRadius: "var(--radius)", cursor: "pointer",
             }}
           >
             {isLast ? "Get Started" : "Next"}
@@ -850,25 +850,25 @@ const emptyCardStyle: React.CSSProperties = {
 // Filled primary — the single visual primary action on the page.
 const primaryBtnStyle: React.CSSProperties = {
   display: "inline-block",
-  padding: "0.45rem 1.1rem",
-  fontSize: "0.9rem",
+  padding: "0.7rem 1.4rem",
+  fontSize: "1rem",
   fontWeight: 600,
   color: "var(--color-bg-darkest)",
   backgroundColor: "var(--color-primary)",
   border: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   textDecoration: "none",
   cursor: "pointer",
   fontFamily: "inherit",
 };
 
 const actionBtnStyle: React.CSSProperties = {
-  padding: "0.5rem 1rem",
-  fontSize: "0.9rem",
+  padding: "0.7rem 1.25rem",
+  fontSize: "0.95rem",
   fontWeight: 600,
   color: "var(--color-primary)",
   border: "1px solid var(--color-primary)",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   backgroundColor: "var(--color-bg-selected)",
   textDecoration: "none",
   cursor: "pointer",

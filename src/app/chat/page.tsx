@@ -669,14 +669,14 @@ const inputStyle: React.CSSProperties = {
 };
 
 const sendButton: React.CSSProperties = {
-  padding: "0.7rem 1.5rem",
-  fontSize: "0.95rem",
+  padding: "0.7rem 1.4rem",
+  fontSize: "1rem",
   fontFamily: "var(--font-display)",
   fontWeight: 700,
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   cursor: "pointer",
   alignSelf: "flex-end",
 };
