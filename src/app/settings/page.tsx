@@ -48,6 +48,23 @@ export default function SettingsPage() {
   const [googleStatus, setGoogleStatus] = useState<"loading" | "connected" | "disconnected">("loading");
   const [googleConfigured, setGoogleConfigured] = useState(true);
 
+  // null = config not loaded yet — note stays hidden until we know for sure.
+  const [aiMock, setAiMock] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/config")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((config) => {
+        if (!cancelled && config) setAiMock(config.ai_mock === true);
+      })
+      .catch(() => {
+        // Non-critical — leave note hidden.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Ticks every second so the timezone preview shows a live clock.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -298,12 +315,18 @@ export default function SettingsPage() {
             </button>
           </div>
         ) : (
-          <p style={hintStyle}>
-            Google Calendar sync is not configured on this server. Set GOOGLE_CLIENT_ID and
-            GOOGLE_CLIENT_SECRET (see .env.example) to enable it.
-          </p>
+          <p style={hintStyle}>Google Calendar sync is not configured on this server.</p>
         )}
       </section>
+
+      {aiMock === true && (
+        <section style={{ marginBottom: "2rem" }}>
+          <h2 style={sectionStyle}>AI provider</h2>
+          <p style={hintStyle}>
+            Mock provider active. Set AI_PROVIDER and OPENAI_API_KEY in .env for real AI.
+          </p>
+        </section>
+      )}
 
       {saveError && (
         <div role="alert" aria-live="polite" style={{ background: "var(--color-bg-error-tint)", color: "var(--color-error)", border: "1px solid var(--color-error)", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", marginBottom: "0.75rem", textAlign: "center" }}>

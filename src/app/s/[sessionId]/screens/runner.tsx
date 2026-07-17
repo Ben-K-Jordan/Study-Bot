@@ -21,6 +21,17 @@ interface Props {
 
 type UIPhase = "answering" | "scoring" | "error_log" | "review";
 
+/** What the student just answered, frozen at submit time — the parent
+ *  advances run.current_prompt immediately, but post-answer phases must keep
+ *  showing the question the feedback belongs to. */
+interface AnsweredPromptSnapshot {
+  text: string;
+  label: string;
+  index: number;
+  isPretest: boolean;
+  savedAnswer: string;
+}
+
 export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   const isExamSim = run.mode === "EXAM_SIM";
   const isExamPhase = isExamSim && run.phase === "EXAM";
@@ -62,6 +73,16 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   // standard the student self-scores against.
   const [reveal, setReveal] = useState<AnswerReveal | null>(null);
   const [revealLoading, setRevealLoading] = useState(false);
+  // Snapshot of the just-answered prompt, captured at submit time. The parent
+  // advances run.current_prompt as soon as the attempt lands, so post-answer
+  // phases would otherwise show the NEXT question above feedback that belongs
+  // to the one just answered. Cleared when the student advances (goNext).
+  const [answeredSnapshot, setAnsweredSnapshot] = useState<AnsweredPromptSnapshot | null>(null);
+  // Reflection textareas are opt-in (collapsed by default) — one quiet toggle
+  // instead of two more boxes stacked into the review panel.
+  const [showReflection, setShowReflection] = useState(false);
+  // Touch/coarse-pointer viewports never see keyboard-shortcut hints.
+  const [coarsePointer, setCoarsePointer] = useState(false);
   const startTimeRef = useRef(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Landing spot for keyboard focus when a phase swap unmounts the focused
@@ -89,7 +110,24 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       : `REVIEWING ${currentIndex + 1} / ${total}`
     : `PROMPT ${currentIndex + 1} / ${total}`;
 
-  const progressPct = total > 0 ? (currentIndex / total) * 100 : 0;
+  // Progress never regresses: a repair prompt injected mid-run grows the
+  // total, which would pull the raw fraction backward. Floor the bar at the
+  // highest value seen this phase (EXAM_SIM's REVIEW pass restarts it).
+  const rawProgressPct = total > 0 ? (currentIndex / total) * 100 : 0;
+  const progressFloorRef = useRef({ phase: run.phase, pct: 0 });
+  if (progressFloorRef.current.phase !== run.phase) {
+    progressFloorRef.current = { phase: run.phase, pct: 0 };
+  }
+  if (rawProgressPct > progressFloorRef.current.pct) {
+    progressFloorRef.current.pct = rawProgressPct;
+  }
+  const progressPct = progressFloorRef.current.pct;
+
+  // Deck growth = repair injection. Name it quietly instead of letting the
+  // "PROMPT k / N" count change silently.
+  const baseTotalRef = useRef(total);
+  if (baseTotalRef.current === 0) baseTotalRef.current = total;
+  const injectedRepairs = Math.max(0, total - baseTotalRef.current);
 
   // Get saved answer for REVIEW phase
   const savedAnswer = isReviewPhase && run.attempts
@@ -104,6 +142,26 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     currentPrompt?.source_type === "VARIANT_REPAIR" ||
     currentPrompt?.source_type === "ERROR_LOG";
   const isMcq = currentPrompt?.format === "MCQ" && Array.isArray(currentPrompt.choices);
+
+  // Post-answer phases render the snapshot of the prompt just answered — the
+  // parent has already advanced current_prompt underneath us. The real
+  // current prompt takes over only when the student advances (goNext).
+  const shownSnapshot =
+    uiPhase === "review" || uiPhase === "error_log" ? answeredSnapshot : null;
+  const displayLabel = shownSnapshot?.label ?? progressLabel;
+  const displayText = shownSnapshot ? shownSnapshot.text : currentPrompt?.text ?? "";
+  const displayIsPretest = shownSnapshot ? shownSnapshot.isPretest : isPretest;
+  const displaySavedAnswer = shownSnapshot ? shownSnapshot.savedAnswer : savedAnswer;
+  const displayIndex = shownSnapshot ? shownSnapshot.index : currentIndex;
+
+  // The full diagnostic framing appears once per run (first pretest prompt),
+  // then compresses to a one-liner — repeating the two-line banner on every
+  // pretest item just trains banner-blindness.
+  const firstDiagnosticIndexRef = useRef<number | null>(null);
+  if (isPretest && firstDiagnosticIndexRef.current === null) {
+    firstDiagnosticIndexRef.current = currentIndex;
+  }
+  const isFirstDiagnostic = firstDiagnosticIndexRef.current === displayIndex;
 
   // Deferred feedback — generation starts server-side the moment the attempt
   // lands; poll until it's ready (PENDING means another worker owns it).
@@ -146,8 +204,13 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
   // phase), fetch the model answer + key points so self-scoring happens
   // against an explicit standard, not a feeling. Not for MCQ (server grades)
   // and never during the EXAM phase (delayed feedback is the point there).
+  // Eligibility spans scoring AND error_log as one boolean so the fetch
+  // survives the scoring -> error_log transition (the card stays up, dimmed,
+  // while the student writes the correction).
+  const revealEligible =
+    (uiPhase === "scoring" || uiPhase === "error_log") && !isExamPhase && !isMcq;
   useEffect(() => {
-    if (uiPhase !== "scoring" || isExamPhase || isMcq) return;
+    if (!revealEligible) return;
     if (reveal !== null || revealLoading) return;
     let mounted = true;
     setRevealLoading(true);
@@ -157,7 +220,16 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       .finally(() => { if (mounted) setRevealLoading(false); });
     return () => { mounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uiPhase, isExamPhase, currentIndex, run.run_id]);
+  }, [revealEligible, currentIndex, run.run_id]);
+
+  // Keyboard-shortcut hints are noise on touch viewports.
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarsePointer(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   const resetForPrompt = (key: string) => {
     uiPromptKeyRef.current = key;
@@ -182,6 +254,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     setMcqConfidence(null);
     setReveal(null);
     setRevealLoading(false);
+    setAnsweredSnapshot(null);
+    setShowReflection(false);
     setHighlightedCitation(null);
     excerptRefs.current.clear();
     startTimeRef.current = Date.now();
@@ -290,6 +364,19 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     }
   };
 
+  // Freeze the prompt being answered BEFORE the submit lands — the parent
+  // advances run.current_prompt the moment the attempt is accepted, and the
+  // review/error_log UI must keep showing the question this feedback is for.
+  const snapshotAnswered = () => {
+    setAnsweredSnapshot({
+      text: currentPrompt.text,
+      label: progressLabel,
+      index: currentIndex,
+      isPretest: !!isPretest,
+      savedAnswer,
+    });
+  };
+
   const doExamAnswer = async () => {
     setSubmitting(true);
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
@@ -339,6 +426,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
       // Immediate modes: the server grades the choice (the client never has
       // the answer key) and returns the outcome.
+      snapshotAnswered();
       const res = await onSubmit({
         prompt_index: currentIndex,
         user_answer: userAnswer,
@@ -409,6 +497,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     }
 
     try {
+      snapshotAnswered();
       const res = await onSubmit(attempt);
       if (!res) return; // break intercepted — nothing recorded
       clearDraft();
@@ -446,6 +535,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     }
 
     try {
+      snapshotAnswered();
       const res = await onSubmit(attempt);
       if (!res) return; // break intercepted — nothing recorded
       setLastScore(s);
@@ -544,6 +634,38 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
     }
   };
 
+  // The standard the student corrects against. Full-strength while scoring;
+  // dimmed (but still visible) behind the error log so the correction is
+  // written WITH the model answer on screen, not from memory of it.
+  const renderModelAnswerCard = (dimmed: boolean) =>
+    !isMcq && reveal?.model_answer ? (
+      <div
+        style={{
+          background: "var(--color-bg-info-tint)",
+          border: "1px solid var(--color-info)",
+          borderRadius: "var(--radius)",
+          padding: "1rem",
+          marginBottom: "1rem",
+          opacity: dimmed ? 0.7 : 1,
+        }}
+        data-testid="model-answer"
+      >
+        <p style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--color-info)", letterSpacing: "0.05em" }}>
+          MODEL ANSWER — compare before you score
+        </p>
+        <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+          {reveal.model_answer}
+        </p>
+        {reveal.key_points && reveal.key_points.length > 0 && (
+          <ul style={{ margin: "0.6rem 0 0", paddingLeft: "1.1rem", fontSize: "0.82rem", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
+            {reveal.key_points.map((kp, i) => (
+              <li key={i}>{kp}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    ) : null;
+
   // Screen-reader announcement for the loop's key events: answer recorded,
   // outcome known, feedback arrived. Visually silent.
   const announceText =
@@ -583,13 +705,12 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           color: "var(--color-text-muted)",
         }}
       >
+        {/* No running score tally here — the end screen owns the numbers;
+            mid-session score-watching competes with the work itself. */}
         <span>
           {session.course_name} · {session.mode_label}
           {isExamPhase && <span style={{ color: "var(--color-review)" }}> · EXAM — feedback after all answers</span>}
           {isReviewPhase && <span style={{ color: "var(--color-info)" }}> · REVIEW — score your answers</span>}
-        </span>
-        <span>
-          {run.metrics.correct_count}✓ {run.metrics.partial_count}~ {run.metrics.incorrect_count}✗
         </span>
       </div>
 
@@ -613,6 +734,14 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
         />
       </div>
 
+      {/* Repair injection grows the deck mid-session — say so in one quiet
+          line rather than letting the count change silently. */}
+      {injectedRepairs > 0 && (
+        <p style={{ margin: "-1rem 0 1.25rem", fontSize: "0.7rem", color: "var(--color-text-muted)" }}>
+          +{injectedRepairs} repair{injectedRepairs === 1 ? "" : "s"} added to this session
+        </p>
+      )}
+
       {/* Prompt — the question is the biggest thing on screen */}
       <div
         style={{
@@ -632,21 +761,23 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             letterSpacing: "0.08em",
           }}
         >
-          {progressLabel}
+          {displayLabel}
         </div>
-        {isPretest && (
+        {displayIsPretest && (
           <div style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginBottom: "0.5rem" }}>
-            DIAGNOSTIC — answer from what you already know. Being wrong here is
-            expected and useful: it primes you to learn this next.
+            {isFirstDiagnostic
+              ? "DIAGNOSTIC — answer from what you already know. Being wrong here is expected and useful: it primes you to learn this next."
+              : "Diagnostic — being wrong is useful"}
           </div>
         )}
         <p style={{ margin: 0, fontSize: "1.1rem", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
-          {currentPrompt.text}
+          {displayText}
         </p>
       </div>
 
-      {/* REVIEW: show saved answer read-only */}
-      {isReviewPhase && savedAnswer && (
+      {/* REVIEW: show saved answer read-only (snapshot while the review
+          panel is up — the parent has already advanced current_index) */}
+      {isReviewPhase && displaySavedAnswer && (
         <div
           style={{
             background: "var(--color-bg-card)",
@@ -658,7 +789,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           }}
         >
           <strong>Your answer:</strong>
-          <p style={{ margin: "0.5rem 0 0", whiteSpace: "pre-wrap" }}>{savedAnswer}</p>
+          <p style={{ margin: "0.5rem 0 0", whiteSpace: "pre-wrap" }}>{displaySavedAnswer}</p>
         </div>
       )}
 
@@ -813,7 +944,11 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "0.7rem", color: "var(--color-text-faint)" }}>Ctrl+Enter to submit</span>
+            {/* Keyboard hint is meaningless on touch — keep the spacer span so
+                the submit button stays right-aligned. */}
+            <span style={{ fontSize: "0.7rem", color: "var(--color-text-faint)" }}>
+              {coarsePointer ? "" : "Ctrl+Enter to submit"}
+            </span>
             <button
               onClick={handleAnswerSubmit}
               disabled={!answer.trim() || submitting}
@@ -857,32 +992,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               Loading model answer...
             </p>
           )}
-          {!isMcq && reveal?.model_answer && (
-            <div
-              style={{
-                background: "var(--color-bg-info-tint)",
-                border: "1px solid var(--color-info)",
-                borderRadius: "var(--radius)",
-                padding: "1rem",
-                marginBottom: "1rem",
-              }}
-              data-testid="model-answer"
-            >
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", fontWeight: 600, color: "var(--color-info)", letterSpacing: "0.05em" }}>
-                MODEL ANSWER — compare before you score
-              </p>
-              <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                {reveal.model_answer}
-              </p>
-              {reveal.key_points && reveal.key_points.length > 0 && (
-                <ul style={{ margin: "0.6rem 0 0", paddingLeft: "1.1rem", fontSize: "0.82rem", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
-                  {reveal.key_points.map((kp, i) => (
-                    <li key={i}>{kp}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          {renderModelAnswerCard(false)}
 
           {reviewMcqScorable ? (
             <div>
@@ -955,6 +1065,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
       {/* Error logging phase */}
       {uiPhase === "error_log" && (
         <div>
+          {/* Keep the standard on screen while the correction is written */}
+          {renderModelAnswerCard(true)}
           <div
             style={{
               background: score === "INCORRECT" ? "var(--color-bg-error-tint)" : "var(--color-bg-warning-tint)",
@@ -1044,11 +1156,11 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           )}
 
           {/* Pretest framing: a wrong diagnostic answer is priming, not failure */}
-          {isPretest && (
+          {displayIsPretest && (
             <div
               style={{
-                background: "var(--color-bg-warning-tint)",
-                border: "1px solid var(--color-warning)",
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius)",
                 padding: "0.75rem 1rem",
                 marginBottom: "1rem",
@@ -1068,8 +1180,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
           {mcqResult && (
             <div
               style={{
-                background: mcqResult.is_correct ? "var(--color-bg-done)" : "var(--color-bg-error-tint)",
-                border: `1px solid ${mcqResult.is_correct ? "var(--color-success)" : "var(--color-error)"}`,
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
@@ -1097,7 +1209,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             <div
               style={{
                 background: "var(--color-bg-card)",
-                border: "1px solid var(--color-success)",
+                border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
@@ -1122,7 +1234,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </div>
               )}
               {fb.concept_connection && (
-                <div style={{ ...insightBox, borderColor: "var(--color-review)" }}>
+                <div style={insightBox}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-review)", marginBottom: "0.3rem" }}>
                     Connection
                   </p>
@@ -1132,7 +1244,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 </div>
               )}
               {fb.socratic_followup && (
-                <div style={{ ...insightBox, borderColor: "var(--color-primary)" }}>
+                <div style={insightBox}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-primary)", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
@@ -1149,7 +1261,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             <div
               style={{
                 background: "var(--color-bg-card)",
-                border: "1px solid var(--color-success)",
+                border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
@@ -1166,7 +1278,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             <div
               style={{
                 background: "var(--color-bg-card)",
-                border: "1px solid var(--color-success)",
+                border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius)",
                 padding: "1rem",
                 marginBottom: "1rem",
@@ -1181,7 +1293,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 <div
                   style={{
                     background: "var(--color-bg-card)",
-                    border: "1px solid var(--color-info)",
+                    border: "1px solid var(--color-border)",
                     borderRadius: "var(--radius-sm)",
                     padding: "0.75rem",
                     marginBottom: "0.75rem",
@@ -1248,7 +1360,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                     <p
                       style={{ margin: 0, fontSize: "0.8rem", lineHeight: 1.5 }}
                       dangerouslySetInnerHTML={{
-                        __html: escapeHtml(excerpt.snippet)
+                        __html: escapeHtml(stripMarkdownForDisplay(excerpt.snippet))
                           .replace(/&lt;&lt;(.*?)&gt;&gt;/g, '<mark style="background:rgba(110,168,254,0.22);color:var(--color-primary)">$1</mark>'),
                       }}
                     />
@@ -1273,7 +1385,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Concept connection */}
               {fb.concept_connection && (
-                <div style={{ ...insightBox, borderColor: "var(--color-review)", marginTop: "0.75rem" }}>
+                <div style={{ ...insightBox, marginTop: "0.75rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-review)", marginBottom: "0.3rem" }}>
                     Connection
                   </p>
@@ -1285,7 +1397,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Mnemonic / memory aid */}
               {fb.mnemonic && (
-                <div style={{ ...insightBox, borderColor: "var(--color-success)", marginTop: "0.5rem" }}>
+                <div style={{ ...insightBox, marginTop: "0.5rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-success)", marginBottom: "0.3rem" }}>
                     Memory Aid
                   </p>
@@ -1297,7 +1409,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Mistake pattern advice */}
               {fb.pattern_advice && (
-                <div style={{ ...insightBox, borderColor: "var(--color-warning)", marginTop: "0.5rem" }}>
+                <div style={{ ...insightBox, marginTop: "0.5rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-warning)", marginBottom: "0.3rem" }}>
                     Pattern Noticed
                   </p>
@@ -1309,7 +1421,7 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
 
               {/* Socratic follow-up */}
               {fb.socratic_followup && (
-                <div style={{ ...insightBox, borderColor: "var(--color-primary)", marginTop: "0.5rem" }}>
+                <div style={{ ...insightBox, marginTop: "0.5rem" }}>
                   <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "var(--color-primary)", marginBottom: "0.3rem" }}>
                     Think Deeper
                   </p>
@@ -1342,8 +1454,8 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
               {(correctionRule || variantQuestion) && (
                 <div
                   style={{
-                    background: "var(--color-bg-error-tint)",
-                    border: "1px solid var(--color-error)",
+                    background: "var(--color-bg-card)",
+                    border: "1px solid var(--color-border)",
                     borderRadius: "var(--radius-sm)",
                     padding: "0.75rem",
                     marginTop: "0.75rem",
@@ -1370,10 +1482,28 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
             </div>
           )}
 
-          {/* Self-explanation prompt (all scores) — available WHILE feedback
-              generates: writing the reflection converts wait time into
-              germane processing instead of dead time. */}
-          {lastScore && (
+          {/* Reflection prompts (self-explanation + generation effect) are
+              opt-in behind one quiet toggle — germane processing on demand
+              without stacking two more boxes into the review panel. */}
+          {lastScore && !showReflection && (
+            <button
+              onClick={() => setShowReflection(true)}
+              style={{
+                display: "block",
+                background: "none",
+                border: "none",
+                padding: 0,
+                marginBottom: "0.75rem",
+                fontSize: "0.78rem",
+                fontFamily: "inherit",
+                color: "var(--color-text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              + Add a reflection
+            </button>
+          )}
+          {lastScore && showReflection && (
             <div
               style={{
                 background: "var(--color-bg-card)",
@@ -1393,30 +1523,20 @@ export function RunnerScreen({ run, session, onSubmit, onComplete }: Props) {
                 rows={2}
                 style={{ ...textareaStyle, marginBottom: 0 }}
               />
-            </div>
-          )}
-
-          {/* Generation effect: create your own example (for correct answers) */}
-          {lastScore === "CORRECT" && (
-            <div
-              style={{
-                background: "var(--color-bg-card)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius)",
-                padding: "0.75rem 1rem",
-                marginBottom: "0.75rem",
-              }}
-            >
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "var(--color-text)" }}>
-                Create your own example of this concept (optional):
-              </p>
-              <textarea
-                value={generatedExample}
-                onChange={(e) => setGeneratedExample(e.target.value)}
-                placeholder="Think of a new scenario where this concept applies..."
-                rows={2}
-                style={{ ...textareaStyle, marginBottom: 0 }}
-              />
+              {lastScore === "CORRECT" && (
+                <>
+                  <p style={{ margin: "0.75rem 0 0.5rem", fontSize: "0.8rem", fontWeight: 600, color: "var(--color-text)" }}>
+                    Create your own example of this concept (optional):
+                  </p>
+                  <textarea
+                    value={generatedExample}
+                    onChange={(e) => setGeneratedExample(e.target.value)}
+                    placeholder="Think of a new scenario where this concept applies..."
+                    rows={2}
+                    style={{ ...textareaStyle, marginBottom: 0 }}
+                  />
+                </>
+              )}
             </div>
           )}
 
@@ -1449,6 +1569,22 @@ function readDraft(key: string): PromptDraft | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Display-only cleanup for excerpt snippets: chunks cut from markdown sources
+ * carry raw heading markers ("# CS 4820 ... ##") and emphasis symbols that
+ * read as noise in a quote card. Stored data is untouched.
+ */
+function stripMarkdownForDisplay(str: string): string {
+  return str
+    // Heading markers at the start of any line, and closing hash runs
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/\s+#{1,6}\s*$/gm, "")
+    // Bold/italic emphasis pairs (asterisk + double-underscore forms only —
+    // single underscores stay, they're common in identifiers like snake_case)
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "$2")
+    .replace(/\*(?=\S)([^*\n]*\S)\*/g, "$1");
 }
 
 /** Escape HTML entities to prevent XSS when using dangerouslySetInnerHTML */
