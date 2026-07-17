@@ -241,7 +241,7 @@ export default function ChatPage() {
       {/* Header */}
       <div style={headerStyle}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1 style={titleStyle}>Source Chat</h1>
+          <h1 style={titleStyle}>Chat</h1>
           {messages.length > 0 && (
             <button
               onClick={clearChat}

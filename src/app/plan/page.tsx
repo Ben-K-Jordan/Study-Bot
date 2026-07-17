@@ -91,9 +91,13 @@ function formatTime(iso: string, tz?: string): string {
 /** Short per-session focus line: the item's own objectives, first 2 + "+N more". */
 function focusLine(item: PlanItem): string {
   const titles = (item.objectives ?? []).map((o) => o.title).filter(Boolean);
-  if (titles.length === 0) return item.topic_scope;
-  const shown = titles.slice(0, 2).join(", ");
-  return titles.length > 2 ? `${shown} +${titles.length - 2} more` : shown;
+  // Fall back to topic_scope, but never print the full comma-joined list
+  const parts =
+    titles.length > 0
+      ? titles
+      : item.topic_scope.split(",").map((s) => s.trim()).filter(Boolean);
+  const shown = parts.slice(0, 2).join(", ");
+  return parts.length > 2 ? `${shown} +${parts.length - 2} more` : shown;
 }
 
 function countdownText(plan: PlanDetail): string {
@@ -701,7 +705,7 @@ export default function PlanPage() {
                     {formatTime(item.end_time, tz)}
                   </span>
                 </div>
-                <div style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
+                <div style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginTop: "0.2rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {focusLine(item)}
                 </div>
               </a>
@@ -782,6 +786,8 @@ const inputStyle: React.CSSProperties = {
 
 function dropZoneStyle(busy: boolean): React.CSSProperties {
   return {
+    background: "transparent",
+    fontFamily: "inherit",
     border: "2px dashed var(--color-border)",
     borderRadius: "var(--radius)",
     padding: "1.25rem",

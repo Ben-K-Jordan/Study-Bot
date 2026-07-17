@@ -109,7 +109,10 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
       page.getByRole("button", { name: "✓ Correct" }).click(),
     ]);
 
-    // Prompt should advance
+    // The review panel keeps the just-answered prompt on the card — the
+    // prompt advances only when the student moves on.
+    await expect(page.getByText("PROMPT 1 / 3")).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: /next prompt/i }).click();
     await expect(page.getByText("PROMPT 2 / 3")).toBeVisible({ timeout: 10_000 });
   });
 
@@ -140,8 +143,14 @@ test.describe.serial("E2E: Full Retrieval Session Runner", () => {
       page.getByRole("button", { name: /save.*next/i }).click(),
     ]);
 
-    // Prompt should advance — variant injection extends deck from 3 to 4
+    // The review panel keeps the just-answered prompt (snapshotted at submit
+    // time, before variant injection grew the deck) on the card.
+    await expect(page.getByText("PROMPT 2 / 3")).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: /next prompt/i }).click();
+    // Prompt should advance — variant injection extends deck from 3 to 4,
+    // and the runner names the growth instead of changing the count silently.
     await expect(page.getByText("PROMPT 3 / 4")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("+1 repair added to this session")).toBeVisible();
   });
 
   test("refresh page mid-run preserves progress", async ({ page }) => {

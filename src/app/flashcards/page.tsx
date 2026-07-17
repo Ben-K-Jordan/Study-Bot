@@ -158,14 +158,16 @@ export default function FlashcardsPage() {
     return () => { mounted = false; };
   }, []);
 
-  // Fetch decks when course changes
+  // Fetch decks when course changes. Deck listing is scoped by course only
+  // (not exam) so the decks shown here always match the per-course deck/due
+  // counts reported by /api/learn — a deck generated without an exam name
+  // must not vanish when an exam-specific option is selected.
   useEffect(() => {
     if (!selectedCourse) return;
     let mounted = true;
     setLoadingDecks(true);
-    const [courseName, examName] = selectedCourse.split("||");
+    const [courseName] = selectedCourse.split("||");
     const params = new URLSearchParams({ course_name: courseName });
-    if (examName) params.set("exam_name", examName);
     apiGet(`/api/flashcards?${params.toString()}`)
       .then((data) => {
         if (mounted && data.decks) setDecks(data.decks);
