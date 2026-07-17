@@ -39,8 +39,3 @@ next-env.d.ts
 
 # uploaded content
 /data/uploads
-
-# generated assets (rebuilt from design/exports-raw via assets:build)
-/public/assets/ui/
-# generated manifest
-/src/ui/assets/manifest.ts
