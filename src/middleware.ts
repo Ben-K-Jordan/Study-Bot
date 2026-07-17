@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/auth/forgot-password",
   "/auth/reset-password",
   "/api/auth",
+  "/api/config", // non-secret runtime flags; signup reads it before a session exists
   "/api/health",
   "/s/", // Session links are shareable; API-level auth guards operations
 ];
