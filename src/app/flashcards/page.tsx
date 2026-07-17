@@ -350,6 +350,7 @@ export default function FlashcardsPage() {
           @keyframes xp-float { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-30px); } }
         `}</style>
 
+        <div style={studyColumn}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button onClick={() => setView("list")} style={backBtn}>
@@ -371,14 +372,14 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        <h2 style={{ ...titleStyle, fontSize: "1.3rem", marginBottom: "0.5rem" }}>{studyData.deck.title}</h2>
+        <h2 style={{ ...titleStyle, fontSize: "1.45rem", marginBottom: "0.5rem" }}>{studyData.deck.title}</h2>
 
         {/* Stats bar */}
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
           {(["new", "learning", "review", "mastered"] as const).map((s) => {
             const count = studyData.stats[`${s}Count` as keyof typeof studyData.stats];
             return (
-              <span key={s} style={{ fontSize: "0.7rem", color: STATUS_COLORS[s], background: STATUS_TINTS[s], padding: "0.15rem 0.5rem", borderRadius: 3 }}>
+              <span key={s} style={{ fontSize: "0.75rem", color: STATUS_COLORS[s], background: STATUS_TINTS[s], padding: "0.2rem 0.6rem", borderRadius: 3 }}>
                 {STATUS_LABELS[s]}: {count}
               </span>
             );
@@ -389,10 +390,10 @@ export default function FlashcardsPage() {
         <div style={progressBarBg}>
           <div style={{ ...progressBarFill, width: `${progressPct}%` }} />
         </div>
-        <p style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginBottom: "0.5rem", textAlign: "center" }}>
+        <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", marginBottom: "0.5rem", textAlign: "center" }}>
           Card {cardIndex + 1} of {total}
         </p>
-        <p style={{ fontSize: "0.65rem", color: "var(--color-text-dim)", marginBottom: "1rem", textAlign: "center" }}>
+        <p style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", marginBottom: "1rem", textAlign: "center" }}>
           <kbd style={kbdStyle}>Space</kbd> flip &nbsp;
           <kbd style={kbdStyle}>1</kbd> Again &nbsp;
           <kbd style={kbdStyle}>2</kbd> Hard &nbsp;
@@ -425,15 +426,15 @@ export default function FlashcardsPage() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-              <span style={{ fontSize: "0.65rem", color: flipped ? "var(--color-info)" : "var(--color-text-muted)", letterSpacing: "0.08em" }}>
+              <span style={{ fontSize: "0.75rem", color: flipped ? "var(--color-info)" : "var(--color-text-muted)", letterSpacing: "0.08em" }}>
                 {flipped ? "ANSWER" : "QUESTION"}
               </span>
-              <span style={{ fontSize: "0.6rem", color: STATUS_COLORS[card.status], background: STATUS_TINTS[card.status], padding: "0.1rem 0.4rem", borderRadius: 3 }}>
+              <span style={{ fontSize: "0.7rem", color: STATUS_COLORS[card.status], background: STATUS_TINTS[card.status], padding: "0.15rem 0.5rem", borderRadius: 3 }}>
                 {STATUS_LABELS[card.status]}
                 {card.intervalDays > 0 && ` · ${card.intervalDays}d`}
               </span>
             </div>
-            <div aria-live="polite" style={{ fontSize: "1.05rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+            <div aria-live="polite" style={{ fontSize: "1.25rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
               {flipped ? card.back : card.front}
             </div>
             {card.tags && card.tags.length > 0 && (
@@ -447,18 +448,18 @@ export default function FlashcardsPage() {
         </div>
 
         {!flipped && (
-          <p style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", textAlign: "center", margin: "0.5rem 0" }}>
+          <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", textAlign: "center", margin: "0.75rem 0" }}>
             Tap card or press Space to flip
           </p>
         )}
 
         {/* Rating buttons — only show when flipped */}
         {flipped && !sessionComplete && (
-          <div style={{ marginTop: "0.75rem" }}>
-            <p style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", textAlign: "center", marginBottom: "0.5rem" }}>
+          <div style={{ marginTop: "1rem" }}>
+            <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", textAlign: "center", marginBottom: "0.6rem" }}>
               How well did you know this?
             </p>
-            <div style={{ display: "flex", gap: "0.4rem" }}>
+            <div style={{ display: "flex", gap: "0.6rem" }}>
               {(["AGAIN", "HARD", "GOOD", "EASY"] as const).map((rating, i) => (
                 <button
                   key={rating}
@@ -473,7 +474,7 @@ export default function FlashcardsPage() {
                     opacity: reviewing ? 0.5 : 1,
                   }}
                 >
-                  <span style={{ fontSize: "0.7rem", opacity: 0.6 }}>{i + 1}</span>
+                  <span style={{ fontSize: "0.75rem", opacity: 0.6 }}>{i + 1}</span>
                   <span>{rating.charAt(0) + rating.slice(1).toLowerCase()}</span>
                 </button>
               ))}
@@ -511,6 +512,7 @@ export default function FlashcardsPage() {
         )}
 
         {error && <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
+        </div>
       </div>
       </ErrorBoundary>
     );
@@ -525,7 +527,7 @@ export default function FlashcardsPage() {
       </div>
 
       {courses.length > 0 ? (
-        <div style={{ marginBottom: "1.5rem" }}>
+        <div style={{ marginBottom: "2rem", maxWidth: 640 }}>
           <label style={labelStyle}>Course</label>
           <select
             aria-label="Select course"
@@ -592,35 +594,38 @@ export default function FlashcardsPage() {
       {decks.length > 0 && (
         <div>
           <h2 style={{ ...sectionTitleStyle, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR DECKS</h2>
-          {decks.map((deck) => (
-            <div key={deck.id} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-              <button
-                onClick={() => openStudyMode(deck.id)}
-                disabled={loadingDeck}
-                style={{ ...deckCard, flex: 1 }}
-              >
-                <div style={{ flex: 1, textAlign: "left" }}>
-                  <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.2rem" }}>
-                    {deck.title}
+          <div style={deckGrid}>
+            {decks.map((deck) => (
+              <div key={deck.id} style={deckCard}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.3rem", lineHeight: 1.4 }}>
+                      {deck.title}
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
+                      {deck.card_count} cards · {new Date(deck.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </div>
                   </div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)" }}>
-                    {deck.card_count} cards · {new Date(deck.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </div>
+                  <button
+                    className="compact-btn"
+                    onClick={() => handleDeleteDeck(deck.id)}
+                    disabled={deleting === deck.id}
+                    aria-label={`Delete ${deck.title}`}
+                    style={{ ...deleteBtnStyle, padding: "0.05rem 0.5rem" }}
+                  >
+                    {deleting === deck.id ? "..." : "×"}
+                  </button>
                 </div>
-                <span style={{ color: "var(--color-primary)", fontSize: "0.85rem", fontWeight: 600 }}>
+                <button
+                  onClick={() => openStudyMode(deck.id)}
+                  disabled={loadingDeck}
+                  style={studyDeckBtn}
+                >
                   Study →
-                </span>
-              </button>
-              <button
-                onClick={() => handleDeleteDeck(deck.id)}
-                disabled={deleting === deck.id}
-                aria-label={`Delete ${deck.title}`}
-                style={deleteBtnStyle}
-              >
-                {deleting === deck.id ? "..." : "×"}
-              </button>
-            </div>
-          ))}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -630,30 +635,53 @@ export default function FlashcardsPage() {
 // --- Styles ---
 
 const pageContainer: React.CSSProperties = {
-  maxWidth: 700,
+  maxWidth: 1100,
   margin: "0 auto",
-  padding: "1.5rem 1rem",
+  padding: "1.5rem clamp(1.5rem, 4vw, 2rem)",
   fontFamily: "var(--font-body)",
   color: "var(--color-text)",
 };
 
+const studyColumn: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 760,
+  margin: "0 auto",
+};
+
+const deckGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
+  gap: 16,
+};
+
 const deckCard: React.CSSProperties = {
   display: "flex",
-  alignItems: "center",
-  padding: "0.85rem 1rem",
+  flexDirection: "column",
+  padding: "1.25rem 1.5rem",
   fontFamily: "inherit",
   background: "var(--color-bg-card)",
   color: "var(--color-text)",
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius)",
-  cursor: "pointer",
   textAlign: "left",
 };
 
+const studyDeckBtn: React.CSSProperties = {
+  marginTop: "auto",
+  padding: "0.85rem 0 0",
+  alignSelf: "flex-start",
+  fontFamily: "inherit",
+  fontSize: "0.9rem",
+  fontWeight: 600,
+  color: "var(--color-primary)",
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+};
 
 const cardStyle: React.CSSProperties = {
-  minHeight: 200,
-  padding: "1.5rem",
+  minHeight: 280,
+  padding: "2rem 2.25rem",
   borderRadius: "var(--radius-lg)",
   boxShadow: "var(--shadow-card)",
   border: "2px solid var(--color-border)",
@@ -683,9 +711,9 @@ const ratingBtn: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
-  gap: "0.15rem",
-  padding: "0.6rem 0.3rem",
-  fontSize: "0.8rem",
+  gap: "0.2rem",
+  padding: "0.85rem 0.4rem",
+  fontSize: "0.9rem",
   fontFamily: "inherit",
   fontWeight: 600,
   background: "var(--color-bg-card)",
@@ -695,13 +723,13 @@ const ratingBtn: React.CSSProperties = {
 };
 
 const backBtn: React.CSSProperties = {
-  fontSize: "0.8rem",
+  fontSize: "0.85rem",
   fontFamily: "inherit",
   color: "var(--color-text-dim)",
   background: "none",
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius-sm)",
-  padding: "0.3rem 0.6rem",
+  padding: "0.4rem 0.75rem",
   cursor: "pointer",
 };
 

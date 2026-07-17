@@ -475,8 +475,8 @@ export default function PlanPage() {
             </button>
           )}
         </div>
-        <form onSubmit={handleSubmit} style={{ maxWidth: 500 }}>
-          <div style={{ marginBottom: "1.25rem" }}>
+        <form onSubmit={handleSubmit} style={{ maxWidth: 720 }}>
+          <div style={formRowStyle}>
             <label style={labelStyle}>
               Course
               <input
@@ -489,8 +489,6 @@ export default function PlanPage() {
                 style={inputStyle}
               />
             </label>
-          </div>
-          <div style={{ marginBottom: "1.25rem" }}>
             <label style={labelStyle}>
               Exam
               <input
@@ -503,7 +501,7 @@ export default function PlanPage() {
               />
             </label>
           </div>
-          <div style={{ marginBottom: "1.25rem" }}>
+          <div style={formRowStyle}>
             <label style={labelStyle}>
               Exam date
               <input
@@ -515,8 +513,8 @@ export default function PlanPage() {
               />
             </label>
           </div>
-          <div style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem" }}>
-            <label style={{ ...labelStyle, flex: 1 }}>
+          <div style={{ ...formRowStyle, marginBottom: "1.5rem" }}>
+            <label style={labelStyle}>
               Study from
               <input
                 type="time"
@@ -525,7 +523,7 @@ export default function PlanPage() {
                 style={inputStyle}
               />
             </label>
-            <label style={{ ...labelStyle, flex: 1 }}>
+            <label style={labelStyle}>
               Until
               <input
                 type="time"
@@ -681,13 +679,14 @@ export default function PlanPage() {
               {formatDayLabel(dayItems[0].start_time, tz)}
               {isToday && <span style={{ color: "var(--color-primary)" }}> · Today</span>}
             </h2>
+            <div style={cardGridStyle}>
             {dayItems.map((item) => (
               <a
                 key={item.id || item.session_id}
                 href={item.session_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={sessionCardStyle}
+                style={dayItems.length === 1 ? { ...sessionCardStyle, gridColumn: "1 / -1" } : sessionCardStyle}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.25rem" }}>
                   <span style={{ fontWeight: "bold", color: "var(--color-text)" }}>
@@ -710,6 +709,7 @@ export default function PlanPage() {
                 </div>
               </a>
             ))}
+            </div>
           </div>
         );
       })}
@@ -724,12 +724,14 @@ export default function PlanPage() {
       {otherPlans.length > 0 && (
         <div style={{ marginTop: "2rem" }}>
           <h2 style={dayHeadingStyle}>Other plans</h2>
-          {otherPlans.map((p) => (
-            <button key={p.plan_id} onClick={() => switchPlan(p.plan_id)} style={otherPlanRowStyle}>
-              <span>{p.course_name} · {p.exam_name}</span>
-              <span style={{ color: "var(--color-text-dim)", fontSize: "0.85rem" }}>{formatCalendarDate(p.exam_date)}</span>
-            </button>
-          ))}
+          <div style={cardGridStyle}>
+            {otherPlans.map((p) => (
+              <button key={p.plan_id} onClick={() => switchPlan(p.plan_id)} style={otherPlanRowStyle}>
+                <span>{p.course_name} · {p.exam_name}</span>
+                <span style={{ color: "var(--color-text-dim)", fontSize: "0.85rem" }}>{formatCalendarDate(p.exam_date)}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -743,8 +745,8 @@ const pageStyle: React.CSSProperties = {
   background: "var(--color-bg)",
   color: "var(--color-text)",
   minHeight: "100vh",
-  padding: "1.5rem 1rem",
-  maxWidth: 700,
+  padding: "1.5rem clamp(1.5rem, 4vw, 2rem)",
+  maxWidth: 1100,
   margin: "0 auto",
 };
 
@@ -764,6 +766,21 @@ const dayHeadingStyle: React.CSSProperties = {
   letterSpacing: "0.08em",
   margin: "0 0 0.5rem",
   fontFamily: "var(--font-display)",
+};
+
+// Responsive grid for peer cards (sessions within a day, other plans)
+const cardGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gap: 16,
+};
+
+// Two-column form row on desktop, collapses to one column on narrow screens
+const formRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+  gap: "1rem",
+  marginBottom: "1.25rem",
 };
 
 const labelStyle: React.CSSProperties = {
@@ -788,6 +805,7 @@ function dropZoneStyle(busy: boolean): React.CSSProperties {
   return {
     background: "transparent",
     fontFamily: "inherit",
+    width: "100%",
     border: "2px dashed var(--color-border)",
     borderRadius: "var(--radius)",
     padding: "1.25rem",
@@ -867,8 +885,8 @@ function googleBtnStyle(disabled: boolean): React.CSSProperties {
 const sessionCardStyle: React.CSSProperties = {
   display: "block",
   background: "var(--color-bg-card)",
-  padding: "0.75rem 1rem",
-  marginBottom: "0.4rem",
+  padding: "1.25rem 1.5rem",
+  minWidth: 0,
   border: "1px solid var(--color-border-subtle)",
   borderLeft: "3px solid var(--color-primary)",
   textDecoration: "none",
@@ -877,7 +895,7 @@ const sessionCardStyle: React.CSSProperties = {
 
 const examRowStyle: React.CSSProperties = {
   background: "var(--color-bg-card)",
-  padding: "0.75rem 1rem",
+  padding: "1.25rem 1.5rem",
   border: "1px solid var(--color-border-subtle)",
   borderLeft: "3px solid var(--color-warning)",
   borderRadius: "var(--radius-sm)",
@@ -894,8 +912,8 @@ const otherPlanRowStyle: React.CSSProperties = {
   textAlign: "left",
   background: "var(--color-bg-card)",
   color: "var(--color-text-secondary)",
-  padding: "0.6rem 1rem",
-  marginBottom: "0.4rem",
+  padding: "1.25rem 1.5rem",
+  minWidth: 0,
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius-sm)",
   fontFamily: "inherit",
