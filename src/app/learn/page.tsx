@@ -2,8 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getActiveCourse, setActiveCourse } from "@/lib/client-utils";
+import { getActiveCourse, setActiveCourse, MODE_LABELS } from "@/lib/client-utils";
 import { apiGet } from "@/lib/client-api";
+
+/** Pretty label for a session mode (e.g. "RETRIEVAL" → "Retrieval"). */
+function modeLabel(mode: string): string {
+  return MODE_LABELS[mode] || mode.replace(/_/g, " ");
+}
 
 /** Render a mastery key / objective slug (e.g. "photosynthesis_light_reactions") as a clean label. */
 function prettifyObjectiveKey(key: string): string {
@@ -26,7 +31,6 @@ interface CourseData {
 interface LearnData {
   courses: CourseData[];
   hasCourses: boolean;
-  weeklyXp: number;
 }
 
 interface Recommendation {
@@ -100,7 +104,7 @@ export default function LearnPage() {
           setSelectedCourse(match ? match.courseName : d.courses[0].courseName);
         }
       })
-      .catch(() => setData({ courses: [], hasCourses: false, weeklyXp: 0 }))
+      .catch(() => setData({ courses: [], hasCourses: false }))
       .finally(() => setLoading(false));
   }, []);
 
@@ -199,28 +203,6 @@ export default function LearnPage() {
         )}
       </section>
 
-      {/* Course stats row */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.5rem", marginBottom: "1.5rem" }}>
-        <div style={miniStatStyle}>
-          <span style={miniStatNumStyle}>{course.docCount}</span>
-          <span style={miniStatLabelStyle}>Docs</span>
-        </div>
-        <div style={miniStatStyle}>
-          <span style={{ ...miniStatNumStyle, color: "var(--color-info)" }}>{course.deckCount}</span>
-          <span style={miniStatLabelStyle}>Decks</span>
-        </div>
-        <div style={miniStatStyle}>
-          <span style={{ ...miniStatNumStyle, color: course.dueCardCount > 0 ? "var(--color-warning)" : "var(--color-success)" }}>
-            {course.dueCardCount}
-          </span>
-          <span style={miniStatLabelStyle}>Due Cards</span>
-        </div>
-        <div style={miniStatStyle}>
-          <span style={{ ...miniStatNumStyle, color: "var(--color-review)" }}>{course.guideCount}</span>
-          <span style={miniStatLabelStyle}>Guides</span>
-        </div>
-      </section>
-
       {/* Mastery-driven recommendation */}
       {recs && (
         <section style={{ ...recommendationStyle, borderLeftColor: "var(--color-primary)" }}>
@@ -240,7 +222,7 @@ export default function LearnPage() {
           )}
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
             <span style={{ color: "var(--color-primary)", fontWeight: 700, fontSize: "0.95rem" }}>
-              Recommended: {recs.next_session.mode.replace(/_/g, " ")}
+              Recommended: {modeLabel(recs.next_session.mode)}
             </span>
           </div>
           <p style={{ color: "var(--color-text-dim)", fontSize: "0.8rem", margin: "0 0 0.5rem", lineHeight: 1.4 }}>
@@ -261,27 +243,11 @@ export default function LearnPage() {
             disabled={startingSession}
             style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.5rem", fontSize: "0.85rem", padding: "0.5rem 1.25rem", opacity: startingSession ? 0.6 : 1, cursor: startingSession ? "wait" : "pointer", border: "none" }}
           >
-            {startingSession ? "Creating session..." : `Start ${recs.next_session.mode.replace(/_/g, " ")} Session`}
+            {startingSession ? "Creating session..." : `Start ${modeLabel(recs.next_session.mode)} Session`}
           </button>
           {startError && (
             <p style={{ color: "var(--color-error)", fontSize: "0.8rem", margin: "0.4rem 0 0" }}>{startError}</p>
           )}
-        </section>
-      )}
-
-      {/* Due cards alert — only meaningful when the course actually has decks
-          to review; without decks there is no due queue to send anyone to. */}
-      {course.deckCount > 0 && course.dueCardCount > 0 && (
-        <section style={{ ...recommendationStyle, background: "var(--color-bg-warning-tint)", borderLeftColor: "var(--color-warning)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
-            <span style={{ color: "var(--color-warning)", fontSize: "1.1rem" }}>!</span>
-            <span style={{ color: "var(--color-warning)", fontWeight: 600, fontSize: "0.9rem" }}>
-              {course.dueCardCount} card{course.dueCardCount !== 1 ? "s" : ""} due for review
-            </span>
-          </div>
-          <p style={{ color: "var(--color-text-dim)", fontSize: "0.8rem", margin: 0 }}>
-            Reviewing now helps retain information using spaced repetition.
-          </p>
         </section>
       )}
 
@@ -339,7 +305,10 @@ export default function LearnPage() {
         </div>
       </section>
 
-      {/* Suggested learning path */}
+      {/* Suggested learning path — onboarding scaffolding for new courses.
+          Once materials are uploaded and the first deck exists, the user has
+          found the core loop and this checklist just repeats the nav. */}
+      {!(course.processedDocCount > 0 && course.deckCount > 0) && (
       <section style={{ marginBottom: "1.5rem" }}>
         <h3 style={sectionLabelStyle}>Suggested Learning Path</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -380,12 +349,6 @@ export default function LearnPage() {
           />
         </div>
       </section>
-
-      {/* Weekly XP */}
-      {data.weeklyXp > 0 && (
-        <div style={{ textAlign: "center", color: "var(--color-text-dim)", fontSize: "0.8rem", marginTop: "1rem" }}>
-          {data.weeklyXp} XP earned this week
-        </div>
       )}
     </main>
   );
@@ -480,32 +443,6 @@ const sectionLabelStyle: React.CSSProperties = {
   fontWeight: 600,
   textTransform: "uppercase",
   letterSpacing: "0.08em",
-};
-
-const miniStatStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  padding: "0.75rem 0.5rem",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
-  backgroundColor: "var(--color-bg-card)",
-};
-
-const miniStatNumStyle: React.CSSProperties = {
-  fontSize: "1.3rem",
-  fontWeight: 700,
-  color: "var(--color-primary)",
-  lineHeight: 1,
-  fontFamily: "var(--font-display)",
-};
-
-const miniStatLabelStyle: React.CSSProperties = {
-  fontSize: "0.65rem",
-  color: "var(--color-text-faint)",
-  marginTop: "0.3rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
 };
 
 const recommendationStyle: React.CSSProperties = {

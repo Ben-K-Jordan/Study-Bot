@@ -201,50 +201,6 @@ export function EndScreen({ run, session, onNewRun }: Props) {
         />
       </div>
 
-      {/* Attempts breakdown */}
-      <div
-        style={{
-          background: "var(--color-bg-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          padding: "1rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <h2 style={sectionTitle}>SCORE BREAKDOWN</h2>
-        <div style={{ display: "flex", height: 8, borderRadius: "var(--radius-sm)", overflow: "hidden", marginBottom: "0.5rem" }}>
-          {metrics.correct_count > 0 && (
-            <div
-              style={{
-                flex: metrics.correct_count,
-                background: "var(--color-success)",
-              }}
-            />
-          )}
-          {metrics.partial_count > 0 && (
-            <div
-              style={{
-                flex: metrics.partial_count,
-                background: "var(--color-warning)",
-              }}
-            />
-          )}
-          {metrics.incorrect_count > 0 && (
-            <div
-              style={{
-                flex: metrics.incorrect_count,
-                background: "var(--color-error)",
-              }}
-            />
-          )}
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-          <span style={{ color: "var(--color-success)" }}>✓ {metrics.correct_count}</span>
-          <span style={{ color: "var(--color-warning)" }}>~ {metrics.partial_count}</span>
-          <span style={{ color: "var(--color-error)" }}>✗ {metrics.incorrect_count}</span>
-        </div>
-      </div>
-
       {/* Calibration Dashboard */}
       <CalibrationDashboard attempts={run?.attempts} />
 
@@ -375,10 +331,11 @@ const sectionTitle: React.CSSProperties = {
   fontFamily: "var(--font-display)",
 };
 
+// Quiet outline button attached to the follow-ups list — deliberately not a
+// second full-width primary; "Practice this session again" is the one CTA.
 const secondaryBtn: React.CSSProperties = {
-  width: "100%",
-  padding: "0.6rem 1.25rem",
-  fontSize: "0.95rem",
+  padding: "0.45rem 1rem",
+  fontSize: "0.85rem",
   fontFamily: "var(--font-body)",
   fontWeight: 600,
   background: "transparent",
