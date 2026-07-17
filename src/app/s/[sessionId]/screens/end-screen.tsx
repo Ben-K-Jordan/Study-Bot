@@ -154,10 +154,10 @@ export function EndScreen({ run, session, onNewRun }: Props) {
         >
           SESSION COMPLETE
         </div>
-        <h1 style={{ fontSize: "1.6rem", margin: "0 0 0.25rem", fontFamily: "var(--font-display)", color: "var(--color-primary)" }}>
+        <h1 style={{ fontSize: "2rem", margin: "0 0 0.35rem", fontFamily: "var(--font-display)", color: "var(--color-primary)" }}>
           {session.course_name} | {session.exam_name}
         </h1>
-        <p style={{ color: "var(--color-text-muted)", margin: 0 }}>
+        <p style={{ color: "var(--color-text-muted)", margin: 0, fontSize: "1.05rem" }}>
           {session.mode_label}: {session.topic_scope}
         </p>
       </div>
@@ -182,13 +182,13 @@ export function EndScreen({ run, session, onNewRun }: Props) {
         </div>
       )}
 
-      {/* Stats grid */}
+      {/* Stats grid: 4-across on desktop, 2x2 on phones (auto-fit grid) */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "0.75rem",
-          marginBottom: "1.5rem",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: "1rem",
+          marginBottom: "1.75rem",
         }}
       >
         <StatCard label="Accuracy" value={`${accuracyPct}%`} color={accuracyColor(metrics.accuracy)} />
@@ -211,12 +211,12 @@ export function EndScreen({ run, session, onNewRun }: Props) {
             background: "var(--color-bg-card)",
             border: "1px solid var(--color-border)",
             borderRadius: "var(--radius)",
-            padding: "1rem",
+            padding: "1.5rem 1.75rem",
             marginBottom: "1.5rem",
           }}
         >
           <h2 style={sectionTitle}>RECOMMENDED FOLLOW-UPS</h2>
-          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.95rem", lineHeight: 1.8 }}>
+          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "1rem", lineHeight: 1.9 }}>
             {followups.map((f, i) => (
               <li key={i}>
                 {f.label} — <span style={{ color: "var(--color-info)" }}>{f.date}</span>
@@ -280,10 +280,10 @@ function CalibrationDashboard({ attempts }: { attempts?: RunData["attempts"] }) 
   const color = gap < 0.15 ? "var(--color-success)" : gap < 0.3 ? "var(--color-warning)" : "var(--color-error)";
 
   return (
-    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "1rem", marginBottom: "1.5rem" }}>
+    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "1.5rem 1.75rem", marginBottom: "1.5rem" }}>
       <h2 style={sectionTitle}>CONFIDENCE CALIBRATION</h2>
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: overconfidentCount > 0 || underconfidentCount > 0 ? "0.5rem" : 0 }}>
-        <span style={{ fontSize: "1.05rem", color, fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: "1.15rem", color, fontWeight: 600 }}>{label}</span>
         <span style={{ fontSize: "0.85rem", color: "var(--color-text-dim)" }}>({(gap * 100).toFixed(0)}% gap)</span>
       </div>
       {overconfidentCount > 0 && (
@@ -307,12 +307,12 @@ function StatCard({ label, value, color }: { label: string; value: string; color
         background: "var(--color-bg-card)",
         border: "1px solid var(--color-border)",
         borderRadius: "var(--radius)",
-        padding: "0.85rem",
+        padding: "1.25rem 1rem",
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: "1.5rem", fontWeight: 700, color, fontFamily: "var(--font-display)" }}>{value}</div>
-      <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>{label}</div>
+      <div style={{ fontSize: "1.9rem", fontWeight: 700, color, fontFamily: "var(--font-display)" }}>{value}</div>
+      <div style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "0.35rem" }}>{label}</div>
     </div>
   );
 }
@@ -324,10 +324,10 @@ function accuracyColor(accuracy: number): string {
 }
 
 const sectionTitle: React.CSSProperties = {
-  fontSize: "0.8rem",
+  fontSize: "0.85rem",
   letterSpacing: "0.08em",
   color: "var(--color-info)",
-  margin: "0 0 0.5rem",
+  margin: "0 0 0.65rem",
   fontFamily: "var(--font-display)",
 };
 
@@ -347,8 +347,8 @@ const secondaryBtn: React.CSSProperties = {
 
 const primaryBtn: React.CSSProperties = {
   width: "100%",
-  padding: "0.75rem 1.5rem",
-  fontSize: "1.05rem",
+  padding: "1rem 1.5rem",
+  fontSize: "1.15rem",
   fontFamily: "var(--font-body)",
   fontWeight: 600,
   background: "var(--color-primary)",

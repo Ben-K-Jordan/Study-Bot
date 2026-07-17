@@ -59,14 +59,14 @@ export const inputStyle: React.CSSProperties = {
 
 export const buttonStyle: React.CSSProperties = {
   width: "100%",
-  padding: "0.75rem",
+  padding: "0.75rem 1.5rem",
   fontSize: "1.05rem",
   fontFamily: "inherit",
   fontWeight: 600,
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   cursor: "pointer",
   marginTop: "0.5rem",
 };

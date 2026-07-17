@@ -457,9 +457,10 @@ export function SessionRunner({ session }: Props) {
   return (
     <main
       style={{
-        maxWidth: 700,
+        maxWidth: 900,
         margin: "0 auto",
-        padding: "1.5rem 1rem",
+        // 32px sides on desktop, tapering to 16px at phone widths.
+        padding: "1.5rem clamp(1rem, 3vw, 2rem) 3rem",
         fontFamily: "var(--font-body)",
         color: "var(--color-text)",
         backgroundColor: "var(--color-bg)",

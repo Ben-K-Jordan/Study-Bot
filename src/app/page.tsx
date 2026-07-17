@@ -268,8 +268,8 @@ export default function DashboardPage() {
       <section style={{ marginBottom: "2rem" }}>
         <h2 style={sectionHeadingStyle}>Today</h2>
         {todaySessions.length === 0 ? (
-          <div style={emptyCardStyle}>
-            <p style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
+          <div style={plans.length === 0 ? { ...emptyCardStyle, padding: "3.5rem 2rem" } : emptyCardStyle}>
+            <p style={{ fontSize: plans.length === 0 ? "1.25rem" : "1.1rem", marginBottom: "0.5rem" }}>
               {plans.length === 0 ? "Welcome to Study Bot" : "No sessions today"}
             </p>
             <p style={{ color: "var(--color-text-dim)", fontSize: "0.9rem", margin: 0 }}>
@@ -284,33 +284,61 @@ export default function DashboardPage() {
             )}
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div
+            style={
+              todaySessions.length === 1
+                ? { display: "flex", flexDirection: "column", gap: 16 }
+                : { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }
+            }
+          >
             {todaySessions.map((item) => {
+              const single = todaySessions.length === 1;
               const mc = MODE_COLORS[item.mode] || "var(--color-info)";
               const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
-              const cardContent = (
+              const actionLabel = item.status === "IN_PROGRESS" ? "Continue" : "Start";
+              const cardContent = single ? (
+                  // Single session: one wide row so the lone card feels substantial.
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                     <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem", minWidth: "6rem" }}>
                       {formatTime(item.start_time)} - {formatTime(item.end_time)}
                     </span>
-                    <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "1.15rem" }}>
                       {MODE_LABELS[item.mode] || item.mode}
                     </span>
                     <span style={{ color: "var(--color-text-muted)", flex: 1, minWidth: 0, fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {formatScope(item.topic_scope)}
                     </span>
-                    {actionable && (
-                      <span style={primaryBtnStyle}>
-                        {item.status === "IN_PROGRESS" ? "Continue" : "Start"}
-                      </span>
-                    )}
+                    {actionable && <span style={primaryBtnStyle}>{actionLabel}</span>}
                     {item.status === "DONE" && (
                       <span style={{ color: "var(--color-success)", fontSize: "0.85rem" }}>Done</span>
+                    )}
+                  </div>
+              ) : (
+                  // Grid cards: stacked layout that reads cleanly at ~320px wide.
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.75rem" }}>
+                      <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>
+                        {formatTime(item.start_time)} - {formatTime(item.end_time)}
+                      </span>
+                      {item.status === "DONE" && (
+                        <span style={{ color: "var(--color-success)", fontSize: "0.85rem" }}>Done</span>
+                      )}
+                    </div>
+                    <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                      {MODE_LABELS[item.mode] || item.mode}
+                    </span>
+                    <span style={{ color: "var(--color-text-muted)", fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {formatScope(item.topic_scope)}
+                    </span>
+                    {actionable && (
+                      <span style={{ ...primaryBtnStyle, alignSelf: "flex-start", marginTop: "auto" }}>{actionLabel}</span>
                     )}
                   </div>
               );
               const cardStyle = {
                 ...sessionCardStyle,
+                padding: single ? "1.75rem 2rem" : "1.25rem 1.5rem",
+                ...(single ? {} : { display: "flex" as const, flexDirection: "column" as const }),
                 textDecoration: "none" as const,
                 cursor: actionable ? "pointer" as const : "default" as const,
                 borderLeft: `3px solid ${mc}`,
@@ -370,7 +398,7 @@ export default function DashboardPage() {
               </Link>
             </div>
             {gameState && gameState.achievements.length > 0 ? (
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: "0.6rem" }}>
                 {gameState.achievements.map((a) => {
                   const info = BADGE_MAP[a.badgeType];
                   if (!info) return null;
@@ -507,8 +535,8 @@ function OnboardingFlow({
           border: "1px solid var(--color-border)",
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-card)",
-          padding: "2rem",
-          maxWidth: 480,
+          padding: "2.5rem",
+          maxWidth: 560,
           width: "100%",
           textAlign: "center",
           fontFamily: "var(--font-body)",
@@ -549,8 +577,8 @@ function OnboardingFlow({
             onClick={isLast ? onComplete : onNext}
             style={{
               background: "var(--color-primary)", color: "var(--color-bg-darkest)", border: "none",
-              padding: "0.55rem 1.5rem", fontSize: "0.95rem", fontWeight: 600,
-              fontFamily: "inherit", borderRadius: "var(--radius-sm)", cursor: "pointer",
+              padding: "0.7rem 1.5rem", fontSize: "1rem", fontWeight: 600,
+              fontFamily: "inherit", borderRadius: "var(--radius)", cursor: "pointer",
             }}
           >
             {isLast ? "Get Started" : "Next"}
@@ -686,10 +714,18 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
   const cellGap = 2;
   const step = cellSize + cellGap;
 
+  // Natural drawing size; the SVGs scale up to fill the container on wide
+  // viewports (via viewBox + width 100%) and scroll horizontally on narrow ones.
+  const naturalWidth = weeks.length * step;
+
   return (
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ display: "flex", marginBottom: "0.2rem", marginLeft: 0, height: 14, minWidth: weeks.length * step }}>
-        <svg width={weeks.length * step} height={14} style={{ display: "block" }}>
+      <div style={{ minWidth: naturalWidth }}>
+        <svg
+          viewBox={`0 0 ${naturalWidth} 14`}
+          width="100%"
+          style={{ display: "block", marginBottom: "0.2rem" }}
+        >
           {monthLabels.map((m, i) => (
             <text
               key={`${m.label}-${i}`}
@@ -703,38 +739,38 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
             </text>
           ))}
         </svg>
-      </div>
-      <svg
-        width={weeks.length * step}
-        height={7 * step}
-        style={{ display: "block" }}
-      >
-        {weeks.map((week, wi) =>
-          week.map((day) => (
-            <rect
-              key={day.date}
-              x={wi * step}
-              y={day.dayOfWeek * step}
-              width={cellSize}
-              height={cellSize}
-              rx={2}
-              fill={getColor(day.count)}
-              stroke="var(--color-bg)"
-              strokeWidth={0.5}
-            >
-              <title>{day.date}: {day.count} session{day.count !== 1 ? "s" : ""}</title>
-            </rect>
-          ))
-        )}
-      </svg>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.4rem", justifyContent: "flex-end" }}>
-        <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>Less</span>
-        {[0, 1, 2, 3, 5].map((n) => (
-          <svg key={n} width={cellSize} height={cellSize}>
-            <rect width={cellSize} height={cellSize} rx={2} fill={getColor(n)} />
-          </svg>
-        ))}
-        <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>More</span>
+        <svg
+          viewBox={`0 0 ${naturalWidth} ${7 * step}`}
+          width="100%"
+          style={{ display: "block" }}
+        >
+          {weeks.map((week, wi) =>
+            week.map((day) => (
+              <rect
+                key={day.date}
+                x={wi * step}
+                y={day.dayOfWeek * step}
+                width={cellSize}
+                height={cellSize}
+                rx={2}
+                fill={getColor(day.count)}
+                stroke="var(--color-bg)"
+                strokeWidth={0.5}
+              >
+                <title>{day.date}: {day.count} session{day.count !== 1 ? "s" : ""}</title>
+              </rect>
+            ))
+          )}
+        </svg>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.4rem", justifyContent: "flex-end" }}>
+          <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>Less</span>
+          {[0, 1, 2, 3, 5].map((n) => (
+            <svg key={n} width={cellSize} height={cellSize}>
+              <rect width={cellSize} height={cellSize} rx={2} fill={getColor(n)} />
+            </svg>
+          ))}
+          <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>More</span>
+        </div>
       </div>
     </div>
   );
@@ -743,9 +779,9 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
 // ---- Styles ----
 
 const mainStyle: React.CSSProperties = {
-  maxWidth: 700,
+  maxWidth: 1100,
   margin: "0 auto",
-  padding: "1.5rem 1rem",
+  padding: "1.5rem 1.75rem",
   fontFamily: "var(--font-body)",
   color: "var(--color-text)",
   backgroundColor: "var(--color-bg)",
@@ -753,7 +789,7 @@ const mainStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  fontSize: "1.5rem",
+  fontSize: "1.6rem",
   margin: "0 0 1.5rem",
   color: "var(--color-text)",
   fontWeight: 700,
@@ -814,25 +850,25 @@ const emptyCardStyle: React.CSSProperties = {
 // Filled primary — the single visual primary action on the page.
 const primaryBtnStyle: React.CSSProperties = {
   display: "inline-block",
-  padding: "0.45rem 1.1rem",
-  fontSize: "0.9rem",
+  padding: "0.7rem 1.4rem",
+  fontSize: "1rem",
   fontWeight: 600,
   color: "var(--color-bg-darkest)",
   backgroundColor: "var(--color-primary)",
   border: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   textDecoration: "none",
   cursor: "pointer",
   fontFamily: "inherit",
 };
 
 const actionBtnStyle: React.CSSProperties = {
-  padding: "0.5rem 1rem",
-  fontSize: "0.9rem",
+  padding: "0.7rem 1.25rem",
+  fontSize: "0.95rem",
   fontWeight: 600,
   color: "var(--color-primary)",
   border: "1px solid var(--color-primary)",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   backgroundColor: "var(--color-bg-selected)",
   textDecoration: "none",
   cursor: "pointer",

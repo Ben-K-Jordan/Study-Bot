@@ -168,7 +168,7 @@ export default function GuidesPage() {
 
       {/* Course selector + guide type picker */}
       {courses.length > 0 ? (
-        <div style={{ marginBottom: "1.5rem" }}>
+        <div style={{ marginBottom: "2rem", maxWidth: 640 }}>
           <label style={labelStyle}>Course</label>
           <select
             value={selectedCourse}
@@ -234,7 +234,7 @@ export default function GuidesPage() {
           <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Create a plan and upload your course notes there, then come back to generate study guides.
           </p>
-          <Link href="/plan" style={{ padding: "0.5rem 1rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>
+          <Link href="/plan" style={{ display: "inline-block", padding: "0.7rem 1.4rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "1rem" }}>
             Create a Study Plan
           </Link>
         </div>
@@ -259,34 +259,36 @@ export default function GuidesPage() {
       {guides.length > 0 && (
         <div>
           <h2 style={{ ...sectionTitleStyle, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR GUIDES</h2>
+          <div style={guidesGrid}>
           {guides.map((guide) => (
-            <div key={guide.id} style={{ marginBottom: "0.75rem" }}>
-              <div style={{ display: "flex", gap: "0.35rem" }}>
+            <div key={guide.id} style={expandedGuide === guide.id ? { gridColumn: "1 / -1" } : undefined}>
+              <div style={{ position: "relative" }}>
                 <button
                   aria-expanded={expandedGuide === guide.id}
                   onClick={() =>
                     setExpandedGuide(expandedGuide === guide.id ? null : guide.id)
                   }
-                  style={{ ...guideHeader, flex: 1 }}
+                  style={{ ...guideHeader, paddingRight: "3.5rem" }}
                 >
-                  <div style={{ flex: 1, textAlign: "left" }}>
-                    <span style={guideTypeTag}>{guide.guide_type.replace(/_/g, " ")}</span>
-                    <span style={{ fontSize: "0.9rem" }}>{guide.title}</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontSize: "0.7rem", color: "var(--color-text-dim)" }}>
+                  <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
+                    <div style={{ marginBottom: "0.4rem" }}>
+                      <span style={guideTypeTag}>{guide.guide_type.replace(/_/g, " ")}</span>
+                    </div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 600, lineHeight: 1.4 }}>{guide.title}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.4rem" }}>
                       {new Date(guide.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                    </span>
-                    <span style={{ color: "var(--color-text-dim)" }}>
-                      {expandedGuide === guide.id ? "▼" : "▶"}
-                    </span>
+                    </div>
                   </div>
+                  <span style={{ color: "var(--color-text-dim)", marginLeft: "0.5rem" }}>
+                    {expandedGuide === guide.id ? "▼" : "▶"}
+                  </span>
                 </button>
                 <button
+                  className="compact-btn"
                   onClick={() => handleDeleteGuide(guide.id)}
                   disabled={deleting === guide.id}
                   aria-label={`Delete ${guide.title}`}
-                  style={deleteBtnStyle}
+                  style={{ ...deleteBtnStyle, position: "absolute", top: 12, right: 12, padding: "0.05rem 0.5rem" }}
                 >
                   {deleting === guide.id ? "..." : "×"}
                 </button>
@@ -294,6 +296,7 @@ export default function GuidesPage() {
 
               {expandedGuide === guide.id && (
                 <div style={guideContent}>
+                  <div style={guideProse}>
                   {renderGuideContent(guide)}
                   <div style={{ marginTop: "1rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.75rem", textAlign: "right" }}>
                     <button
@@ -334,10 +337,12 @@ export default function GuidesPage() {
                       Download as Markdown
                     </button>
                   </div>
+                  </div>
                 </div>
               )}
             </div>
           ))}
+          </div>
         </div>
       )}
     </div>
@@ -357,16 +362,16 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`concept-${i}`} style={conceptCard}>
-              <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", color: "var(--color-primary)" }}>
+              <h3 style={{ margin: "0 0 0.4rem", fontSize: "1.05rem", color: "var(--color-primary)" }}>
                 {s.concept || `Concept ${i + 1}`}
               </h3>
               {s.explanation && (
-                <p style={{ margin: "0 0 0.3rem", fontSize: "0.85rem", lineHeight: 1.6 }}>
+                <p style={{ margin: "0 0 0.3rem", fontSize: "0.9rem", lineHeight: 1.65 }}>
                   {s.explanation}
                 </p>
               )}
               {s.importance && (
-                <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--color-info)", fontStyle: "italic" }}>
+                <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--color-info)", fontStyle: "italic" }}>
                   Why it matters: {s.importance}
                 </p>
               )}
@@ -380,11 +385,11 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`faq-${i}`} style={conceptCard}>
-              <p style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", fontWeight: 600, color: "var(--color-text)" }}>
+              <p style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", fontWeight: 600, color: "var(--color-text)" }}>
                 Q: {s.question || `Question ${i + 1}`}
               </p>
               {s.answer && (
-                <p style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, color: "var(--color-text-secondary)" }}>
+                <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.65, color: "var(--color-text-secondary)" }}>
                   {s.answer}
                 </p>
               )}
@@ -398,12 +403,12 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`cheat-${i}`} style={conceptCard}>
-              <h3 style={{ margin: "0 0 0.4rem", fontSize: "0.9rem", color: "var(--color-warning)" }}>
+              <h3 style={{ margin: "0 0 0.4rem", fontSize: "1rem", color: "var(--color-warning)" }}>
                 {s.topic || `Topic ${i + 1}`}
               </h3>
               {s.content && (
                 <div
-                  style={{ fontSize: "0.8rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}
+                  style={{ fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)", overflowX: "auto" }}
                 >
                   {s.content}
                 </div>
@@ -421,11 +426,18 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
 // --- Styles ---
 
 const pageContainer: React.CSSProperties = {
-  maxWidth: 700,
+  maxWidth: 1100,
   margin: "0 auto",
-  padding: "1.5rem 1rem",
+  padding: "1.5rem clamp(1.5rem, 4vw, 2rem)",
   fontFamily: "var(--font-body)",
   color: "var(--color-text)",
+};
+
+const guidesGrid: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
+  gap: 16,
+  alignItems: "start",
 };
 
 const typeButton: React.CSSProperties = {
@@ -443,8 +455,8 @@ const guideHeader: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   width: "100%",
-  padding: "0.75rem 1rem",
-  fontSize: "0.85rem",
+  padding: "1.25rem 1.5rem",
+  fontSize: "0.9rem",
   fontFamily: "inherit",
   background: "var(--color-bg-card)",
   color: "var(--color-text)",
@@ -470,15 +482,20 @@ const guideContent: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderTop: "none",
   borderRadius: "0 0 var(--radius) var(--radius)",
-  padding: "1rem 1.25rem",
+  padding: "1.75rem clamp(1rem, 4vw, 2.5rem) 1.5rem",
   boxShadow: "var(--shadow-card)",
 };
 
+const guideProse: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 820,
+  margin: "0 auto",
+};
 
 const conceptCard: React.CSSProperties = {
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius-sm)",
-  padding: "0.75rem 1rem",
-  marginBottom: "0.5rem",
+  padding: "1rem 1.25rem",
+  marginBottom: "0.75rem",
 };

@@ -220,12 +220,12 @@ export default function LearnPage() {
               ))}
             </div>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
-            <span style={{ color: "var(--color-primary)", fontWeight: 700, fontSize: "0.95rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+            <span style={{ color: "var(--color-primary)", fontWeight: 700, fontSize: "1.35rem", fontFamily: "var(--font-display)" }}>
               Recommended: {modeLabel(recs.next_session.mode)}
             </span>
           </div>
-          <p style={{ color: "var(--color-text-dim)", fontSize: "0.8rem", margin: "0 0 0.5rem", lineHeight: 1.4 }}>
+          <p style={{ color: "var(--color-text-dim)", fontSize: "0.95rem", margin: "0 0 0.75rem", lineHeight: 1.5, maxWidth: "60ch" }}>
             {recs.next_session.reason}
           </p>
           {recs.overdue_objectives.length > 0 && (
@@ -241,7 +241,7 @@ export default function LearnPage() {
           <button
             onClick={startRecommendedSession}
             disabled={startingSession}
-            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.5rem", fontSize: "0.85rem", padding: "0.5rem 1.25rem", opacity: startingSession ? 0.6 : 1, cursor: startingSession ? "wait" : "pointer", border: "none" }}
+            style={{ ...primaryBtnStyle, display: "inline-block", marginTop: "0.6rem", opacity: startingSession ? 0.6 : 1, cursor: startingSession ? "wait" : "pointer", border: "none" }}
           >
             {startingSession ? "Creating session..." : `Start ${modeLabel(recs.next_session.mode)} Session`}
           </button>
@@ -254,51 +254,51 @@ export default function LearnPage() {
       {/* Quick actions — focused on what matters now */}
       <section style={{ marginBottom: "1.5rem" }}>
         <h3 style={sectionLabelStyle}>Quick Actions</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        <div style={quickActionsGridStyle}>
           {course.deckCount > 0 && course.dueCardCount > 0 && (
             <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "var(--color-warning)" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Review Due Cards</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "1.05rem" }}>Review Due Cards</div>
+                <div style={{ fontSize: "0.85rem", color: "var(--color-text-faint)", marginTop: "0.25rem", lineHeight: 1.4 }}>
                   {course.dueCardCount} card{course.dueCardCount !== 1 ? "s" : ""} ready for spaced repetition review
                 </div>
               </div>
-              <span style={{ color: "var(--color-warning)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Review</span>
+              <span style={{ color: "var(--color-warning)", fontWeight: 700, fontSize: "0.9rem" }}>Review →</span>
             </Link>
           )}
           {course.processedDocCount > 0 && course.deckCount === 0 && (
             <Link href="/flashcards" style={{ ...quickActionStyle, borderLeftColor: "var(--color-info)" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Generate Flashcards</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "1.05rem" }}>Generate Flashcards</div>
+                <div style={{ fontSize: "0.85rem", color: "var(--color-text-faint)", marginTop: "0.25rem", lineHeight: 1.4 }}>
                   {course.processedDocCount} doc{course.processedDocCount !== 1 ? "s" : ""} processed and ready
                 </div>
               </div>
-              <span style={{ color: "var(--color-info)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Generate</span>
+              <span style={{ color: "var(--color-info)", fontWeight: 700, fontSize: "0.9rem" }}>Generate →</span>
             </Link>
           )}
           {course.guideCount === 0 && course.processedDocCount > 0 && (
             <Link href="/guides" style={{ ...quickActionStyle, borderLeftColor: "var(--color-review)" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Create Study Guide</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "1.05rem" }}>Create Study Guide</div>
+                <div style={{ fontSize: "0.85rem", color: "var(--color-text-faint)", marginTop: "0.25rem", lineHeight: 1.4 }}>
                   Key concepts, FAQs, or cheat sheets from your materials
                 </div>
               </div>
-              <span style={{ color: "var(--color-review)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Create</span>
+              <span style={{ color: "var(--color-review)", fontWeight: 700, fontSize: "0.9rem" }}>Create →</span>
             </Link>
           )}
           <Link href="/chat" style={{ ...quickActionStyle, borderLeftColor: "var(--color-success)" }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "0.95rem" }}>Ask a Question</div>
-              <div style={{ fontSize: "0.8rem", color: "var(--color-text-faint)", marginTop: "0.1rem" }}>
+              <div style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "1.05rem" }}>Ask a Question</div>
+              <div style={{ fontSize: "0.85rem", color: "var(--color-text-faint)", marginTop: "0.25rem", lineHeight: 1.4 }}>
                 Chat with your {course.courseName} materials
               </div>
             </div>
-            <span style={{ color: "var(--color-success)", fontWeight: 700, fontSize: "0.9rem", flexShrink: 0 }}>Chat</span>
+            <span style={{ color: "var(--color-success)", fontWeight: 700, fontSize: "0.9rem" }}>Chat →</span>
           </Link>
           {course.dueCardCount === 0 && course.deckCount > 0 && (
-            <div style={{ textAlign: "center", padding: "0.75rem", color: "var(--color-success)", fontSize: "0.85rem", background: "var(--color-bg-done)", borderRadius: "var(--radius)", border: "1px solid var(--color-border-done)" }}>
+            <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "1rem", color: "var(--color-success)", fontSize: "0.9rem", background: "var(--color-bg-done)", borderRadius: "var(--radius)", border: "1px solid var(--color-border-done)" }}>
               All caught up! No cards due for review right now.
             </div>
           )}
@@ -311,7 +311,7 @@ export default function LearnPage() {
       {!(course.processedDocCount > 0 && course.deckCount > 0) && (
       <section style={{ marginBottom: "1.5rem" }}>
         <h3 style={sectionLabelStyle}>Suggested Learning Path</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
           <LearningStep
             step={1}
             title="Upload Course Materials"
@@ -368,7 +368,7 @@ function LearningStep({ step, title, description, done, href }: {
       display: "flex",
       alignItems: "center",
       gap: "0.75rem",
-      padding: "0.75rem 1rem",
+      padding: "1rem 1.25rem",
       background: done ? "var(--color-bg-done)" : "var(--color-bg-card)",
       border: `1px solid ${done ? "var(--color-border-done)" : "var(--color-border)"}`,
       borderRadius: "var(--radius)",
@@ -411,9 +411,9 @@ function LearningStep({ step, title, description, done, href }: {
 // ---- Styles ----
 
 const mainStyle: React.CSSProperties = {
-  maxWidth: 700,
+  maxWidth: 1100,
   margin: "0 auto",
-  padding: "1.5rem 1rem",
+  padding: "1.5rem clamp(24px, 4vw, 32px)",
   fontFamily: "var(--font-body)",
   color: "var(--color-text)",
   backgroundColor: "var(--color-bg)",
@@ -421,7 +421,7 @@ const mainStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  fontSize: "1.5rem",
+  fontSize: "2rem",
   margin: "0 0 1.5rem",
   color: "var(--color-primary)",
   fontWeight: 700,
@@ -450,22 +450,29 @@ const recommendationStyle: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderLeft: "3px solid var(--color-border)",
   borderRadius: "var(--radius)",
-  padding: "1rem 1.25rem",
+  padding: "1.5rem clamp(1.25rem, 3vw, 2rem)",
   marginBottom: "1.5rem",
   boxShadow: "var(--shadow-card)",
 };
 
+const quickActionsGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+  gap: 16,
+};
+
 const quickActionStyle: React.CSSProperties = {
   display: "flex",
-  alignItems: "center",
+  flexDirection: "column",
   gap: "0.75rem",
-  padding: "0.85rem 1rem",
+  padding: "1.25rem 1.5rem",
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border)",
   borderLeft: "3px solid var(--color-border)",
   borderRadius: "var(--radius)",
   textDecoration: "none",
   cursor: "pointer",
+  boxShadow: "var(--shadow-card)",
 };
 
 const emptyCardStyle: React.CSSProperties = {
@@ -477,8 +484,8 @@ const emptyCardStyle: React.CSSProperties = {
 };
 
 const primaryBtnStyle: React.CSSProperties = {
-  padding: "0.6rem 1.25rem",
-  fontSize: "0.95rem",
+  padding: "0.7rem 1.4rem",
+  fontSize: "1rem",
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
@@ -490,7 +497,7 @@ const primaryBtnStyle: React.CSSProperties = {
 };
 
 const secondaryBtnStyle: React.CSSProperties = {
-  padding: "0.6rem 1.25rem",
+  padding: "0.7rem 1.25rem",
   fontSize: "0.95rem",
   background: "transparent",
   color: "var(--color-primary)",

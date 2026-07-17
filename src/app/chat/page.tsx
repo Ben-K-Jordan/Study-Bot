@@ -244,6 +244,7 @@ export default function ChatPage() {
           <h1 style={titleStyle}>Chat</h1>
           {messages.length > 0 && (
             <button
+              className="compact-btn"
               onClick={clearChat}
               style={clearButton}
               type="button"
@@ -289,6 +290,7 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div style={messagesContainer} role="log" aria-live="polite">
+        <div style={threadColumn}>
         {hasMore && (
           <div style={{ textAlign: "center", paddingBottom: "0.75rem" }}>
             <button
@@ -345,7 +347,7 @@ export default function ChatPage() {
               >
                 {msg.role === "user" ? "YOU" : "STUDY BOT"}
               </div>
-              <div style={{ fontSize: "0.9rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+              <div style={{ fontSize: "0.95rem", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
                 {renderAnswerWithCitations(msg.content, msg.citations)}
               </div>
             </div>
@@ -462,6 +464,7 @@ export default function ChatPage() {
         )}
 
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input area */}
@@ -477,7 +480,7 @@ export default function ChatPage() {
               : "Ask a question about your materials..."
           }
           disabled={courses.length === 0 || loading}
-          rows={2}
+          rows={3}
           style={inputStyle}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -487,6 +490,7 @@ export default function ChatPage() {
           }}
         />
         <button
+          className="compact-btn"
           onClick={sendMessage}
           disabled={!input.trim() || !selectedCourse || loading || courses.length === 0}
           aria-label="Send message"
@@ -537,14 +541,21 @@ const pageContainer: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   height: "calc(100vh - 52px)",
-  maxWidth: 700,
+  maxWidth: 1100,
   margin: "0 auto",
-  padding: "0 1rem",
+  padding: "0 clamp(1.5rem, 4vw, 2rem)",
   fontFamily: "var(--font-body)",
   color: "var(--color-text)",
 };
 
+const threadColumn: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 900,
+  margin: "0 auto",
+};
+
 const headerStyle: React.CSSProperties = {
+  ...threadColumn,
   padding: "1.25rem 0 1rem",
   borderBottom: "1px solid var(--color-border-subtle)",
   flexShrink: 0,
@@ -565,16 +576,16 @@ const userBubble: React.CSSProperties = {
   background: "var(--color-bg-selected)",
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius)",
-  padding: "0.75rem 1rem",
-  marginLeft: "min(2rem, 10%)",
+  padding: "1rem 1.25rem",
+  marginLeft: "min(3rem, 12%)",
 };
 
 const assistantBubble: React.CSSProperties = {
   background: "var(--color-bg-card)",
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius)",
-  padding: "0.75rem 1rem",
-  marginRight: "min(2rem, 10%)",
+  padding: "1rem 1.25rem",
+  marginRight: "min(3rem, 12%)",
 };
 
 const citationButton: React.CSSProperties = {
@@ -582,8 +593,8 @@ const citationButton: React.CSSProperties = {
   alignItems: "center",
   gap: "0.5rem",
   width: "100%",
-  padding: "0.4rem 0.6rem",
-  fontSize: "0.75rem",
+  padding: "0.55rem 0.8rem",
+  fontSize: "0.8rem",
   fontFamily: "inherit",
   background: "var(--color-bg)",
   color: "var(--color-text-muted)",
@@ -629,14 +640,15 @@ const citationExpanded: React.CSSProperties = {
   border: "1px solid var(--color-border-subtle)",
   borderTop: "none",
   borderRadius: "0 0 var(--radius-sm) var(--radius-sm)",
-  padding: "0.5rem 0.6rem",
+  padding: "0.6rem 0.8rem",
   color: "var(--color-text-secondary)",
 };
 
 const inputContainer: React.CSSProperties = {
+  ...threadColumn,
   display: "flex",
-  gap: "0.5rem",
-  padding: "0.75rem 0",
+  gap: "0.6rem",
+  padding: "0.85rem 0",
   borderTop: "1px solid var(--color-border-subtle)",
   flexShrink: 0,
   position: "sticky",
@@ -646,8 +658,8 @@ const inputContainer: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
-  padding: "0.6rem 0.75rem",
-  fontSize: "0.85rem",
+  padding: "0.75rem 0.9rem",
+  fontSize: "0.95rem",
   fontFamily: "inherit",
   background: "var(--color-bg-input)",
   color: "var(--color-text)",
@@ -657,14 +669,14 @@ const inputStyle: React.CSSProperties = {
 };
 
 const sendButton: React.CSSProperties = {
-  padding: "0.5rem 1rem",
-  fontSize: "0.85rem",
+  padding: "0.7rem 1.4rem",
+  fontSize: "1rem",
   fontFamily: "var(--font-display)",
   fontWeight: 700,
   background: "var(--color-primary)",
   color: "var(--color-bg-darkest)",
   border: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--radius)",
   cursor: "pointer",
   alignSelf: "flex-end",
 };
