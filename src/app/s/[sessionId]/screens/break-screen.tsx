@@ -27,13 +27,13 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
   const seconds = remaining % 60;
 
   return (
-    <div style={{ textAlign: "center", padding: "3rem 0" }}>
+    <div style={{ textAlign: "center", padding: "4rem 0" }}>
       <div
         style={{
-          fontSize: "0.85rem",
-          letterSpacing: "0.1em",
+          fontSize: "1rem",
+          letterSpacing: "0.12em",
           color: "var(--color-warning)",
-          marginBottom: "1rem",
+          marginBottom: "1.25rem",
           fontFamily: "var(--font-display)",
         }}
       >
@@ -42,38 +42,42 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
 
       <div
         style={{
-          fontSize: "3.5rem",
+          fontSize: "5rem",
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
-          marginBottom: "1.5rem",
+          marginBottom: "2rem",
           color: "var(--color-warning)",
           fontFamily: "var(--font-display)",
+          lineHeight: 1,
         }}
       >
         {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
       </div>
 
+      {/* Checklist stays a comfortable reading column, centered on the
+          wider stage rather than stretched across it. */}
       <div
         style={{
           background: "var(--color-bg-card)",
           border: "1px solid var(--color-border)",
           borderRadius: "var(--radius)",
-          padding: "1.25rem",
-          marginBottom: "2rem",
+          padding: "1.5rem 1.75rem",
+          margin: "0 auto 2rem",
+          maxWidth: 560,
           textAlign: "left",
         }}
       >
         <p
           style={{
             margin: "0 0 0.75rem",
-            fontSize: "0.9rem",
+            fontSize: "0.95rem",
             fontWeight: 600,
             color: "var(--color-info)",
           }}
         >
           DO THIS NOW:
         </p>
-        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.95rem", lineHeight: 1.8 }}>
+        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "1.05rem", lineHeight: 1.9 }}>
           <li>Stand up and stretch</li>
           <li>Get water</li>
           <li>Look at something far away (20-20-20 rule)</li>
@@ -81,15 +85,15 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         </ul>
       </div>
 
-      <p style={{ fontSize: "0.85rem", color: "var(--color-text-dim)", marginBottom: "1rem" }}>
+      <p style={{ fontSize: "0.95rem", color: "var(--color-text-dim)", marginBottom: "1.25rem" }}>
         Cycle {breakState.current_cycle + 1} of {breakState.total_cycles}
       </p>
 
       <button
         onClick={onBreakEnd}
         style={{
-          padding: "0.5rem 1.5rem",
-          fontSize: "0.9rem",
+          padding: "0.6rem 1.75rem",
+          fontSize: "0.95rem",
           fontFamily: "var(--font-body)",
           background: "transparent",
           color: "var(--color-text-dim)",

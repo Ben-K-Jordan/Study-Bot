@@ -103,7 +103,7 @@ export default function AchievementsPage() {
               <h2 style={{ ...sectionHeadingStyle, color: catInfo.color, margin: 0 }}>{catInfo.label}</h2>
               <span style={{ fontSize: "0.75rem", color: "var(--color-text-dim)" }}>{earned}/{badges.length}</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
               {badges.map((badge) => {
                 const isEarned = earnedSet.has(badge.key);
                 const earnedDate = earnedMap.get(badge.key);
@@ -116,8 +116,8 @@ export default function AchievementsPage() {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "0.75rem",
-                      padding: "0.75rem 1rem",
+                      gap: "0.85rem",
+                      padding: "1.25rem",
                       background: isEarned ? "var(--color-bg-done)" : "var(--color-bg-card)",
                       border: `1px solid ${isEarned ? "var(--color-border-done)" : "var(--color-border)"}`,
                       borderRadius: "var(--radius)",
@@ -198,9 +198,9 @@ export default function AchievementsPage() {
 // ---- Styles ----
 
 const mainStyle: React.CSSProperties = {
-  maxWidth: 700,
+  maxWidth: 1100,
   margin: "0 auto",
-  padding: "1.5rem 1rem",
+  padding: "1.5rem clamp(24px, 4vw, 32px)",
   fontFamily: "var(--font-body)",
   color: "var(--color-text)",
   backgroundColor: "var(--color-bg)",
@@ -227,7 +227,7 @@ const overviewCardStyle: React.CSSProperties = {
   border: "1px solid var(--color-border-subtle)",
   borderRadius: "var(--radius)",
   boxShadow: "var(--shadow-card)",
-  padding: "1.25rem",
+  padding: "1.5rem",
   marginBottom: "2rem",
 };
 

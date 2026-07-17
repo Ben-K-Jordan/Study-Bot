@@ -205,126 +205,161 @@ export default function SettingsPage() {
 
   return (
     <div id="main-content" style={pageStyle} role="form" aria-label="User settings">
+      <style>{`
+        .settings-row { display: grid; grid-template-columns: 1fr; gap: 0.5rem 2.5rem; align-items: center; }
+        @media (min-width: 720px) { .settings-row { grid-template-columns: minmax(220px, 280px) 1fr; } }
+      `}</style>
       <h1 style={headingStyle}>Settings</h1>
 
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Study hours</h2>
-        <p style={hintStyle}>Sessions will be scheduled between these times.</p>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <input type="time" value={studyStart} onChange={(e) => setStudyStart(e.target.value)} aria-label="Study start time" style={timeInputStyle} />
-          <span style={{ color: "var(--color-text-muted)" }}>to</span>
-          <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} aria-label="Study end time" style={timeInputStyle} />
-        </div>
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Timezone</h2>
-        <p style={hintStyle}>Used for streak day boundaries. Leave empty for UTC.</p>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <input
-            type="text"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            placeholder="e.g. America/New_York"
-            list="timezone-options"
-            aria-label="Timezone"
-            style={{ ...textInputStyle, flex: 1 }}
-          />
-          <button
-            type="button"
-            onClick={handleDetectTimezone}
-            title="Use your browser's timezone"
-            style={detectBtnStyle}
-          >
-            Detect
-          </button>
-        </div>
-        <datalist id="timezone-options">
-          {TIMEZONE_OPTIONS.map((tz) => (
-            <option key={tz} value={tz} />
-          ))}
-        </datalist>
-        <p
-          aria-live="polite"
-          style={{
-            fontSize: "0.85rem",
-            margin: "0.5rem 0 0",
-            color: zonePreview ? "var(--color-text-muted)" : "var(--color-error)",
-          }}
-        >
-          {zonePreview
-            ? `Current time in ${effectiveZone}: ${zonePreview}`
-            : `"${timezone.trim()}" is not a recognized timezone (expected an IANA name like America/New_York).`}
-        </p>
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Daily study cap</h2>
-        <p style={hintStyle}>Maximum study time per day.</p>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <input
-            type="range"
-            min={30}
-            max={480}
-            step={15}
-            value={dailyCap}
-            onChange={(e) => setDailyCap(Number(e.target.value))}
-            aria-label="Daily study cap in minutes"
-            style={{ flex: 1, accentColor: "var(--color-primary)" }}
-          />
-          <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
-            {Math.floor(dailyCap / 60)}h{dailyCap % 60 > 0 ? ` ${dailyCap % 60}m` : ""}
-          </span>
-        </div>
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Daily XP goal</h2>
-        <p style={hintStyle}>Your daily XP target shown on the dashboard.</p>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <input
-            type="range"
-            min={10}
-            max={200}
-            step={10}
-            value={dailyXpGoal}
-            onChange={(e) => setDailyXpGoal(Number(e.target.value))}
-            aria-label="Daily XP goal"
-            style={{ flex: 1, accentColor: "var(--color-primary)" }}
-          />
-          <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
-            {dailyXpGoal} XP
-          </span>
-        </div>
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={sectionStyle}>Google Calendar</h2>
-        {googleStatus === "loading" ? (
-          <p style={hintStyle}>Checking connection...</p>
-        ) : googleStatus === "connected" ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span style={{ color: "var(--color-success)", fontSize: "0.95rem" }}>Connected</span>
-            <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
-          </div>
-        ) : googleConfigured ? (
+      <section style={sectionCardStyle}>
+        <div className="settings-row">
           <div>
-            <p style={hintStyle}>Connect to publish study sessions to your calendar and auto-detect busy times.</p>
-            <button onClick={handleGoogleConnect} style={connectBtnStyle}>
-              Connect Google Calendar
-            </button>
+            <h2 style={sectionStyle}>Study hours</h2>
+            <p style={hintStyle}>Sessions will be scheduled between these times.</p>
           </div>
-        ) : (
-          <p style={hintStyle}>Google Calendar sync is not configured on this server.</p>
-        )}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <input type="time" value={studyStart} onChange={(e) => setStudyStart(e.target.value)} aria-label="Study start time" style={timeInputStyle} />
+            <span style={{ color: "var(--color-text-muted)" }}>to</span>
+            <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} aria-label="Study end time" style={timeInputStyle} />
+          </div>
+        </div>
+      </section>
+
+      <section style={sectionCardStyle}>
+        <div className="settings-row">
+          <div>
+            <h2 style={sectionStyle}>Timezone</h2>
+            <p style={hintStyle}>Used for streak day boundaries. Leave empty for UTC.</p>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <input
+                type="text"
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                placeholder="e.g. America/New_York"
+                list="timezone-options"
+                aria-label="Timezone"
+                style={{ ...textInputStyle, flex: 1, minWidth: 0 }}
+              />
+              <button
+                type="button"
+                className="compact-btn"
+                onClick={handleDetectTimezone}
+                title="Use your browser's timezone"
+                style={detectBtnStyle}
+              >
+                Detect
+              </button>
+            </div>
+            <datalist id="timezone-options">
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz} value={tz} />
+              ))}
+            </datalist>
+            <p
+              aria-live="polite"
+              style={{
+                fontSize: "0.85rem",
+                margin: "0.5rem 0 0",
+                overflowWrap: "break-word",
+                color: zonePreview ? "var(--color-text-muted)" : "var(--color-error)",
+              }}
+            >
+              {zonePreview
+                ? `Current time in ${effectiveZone}: ${zonePreview}`
+                : `"${timezone.trim()}" is not a recognized timezone (expected an IANA name like America/New_York).`}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section style={sectionCardStyle}>
+        <div className="settings-row">
+          <div>
+            <h2 style={sectionStyle}>Daily study cap</h2>
+            <p style={hintStyle}>Maximum study time per day.</p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <input
+              type="range"
+              min={30}
+              max={480}
+              step={15}
+              value={dailyCap}
+              onChange={(e) => setDailyCap(Number(e.target.value))}
+              aria-label="Daily study cap in minutes"
+              style={{ flex: 1, minWidth: 0, accentColor: "var(--color-primary)" }}
+            />
+            <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
+              {Math.floor(dailyCap / 60)}h{dailyCap % 60 > 0 ? ` ${dailyCap % 60}m` : ""}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section style={sectionCardStyle}>
+        <div className="settings-row">
+          <div>
+            <h2 style={sectionStyle}>Daily XP goal</h2>
+            <p style={hintStyle}>Your daily XP target shown on the dashboard.</p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <input
+              type="range"
+              min={10}
+              max={200}
+              step={10}
+              value={dailyXpGoal}
+              onChange={(e) => setDailyXpGoal(Number(e.target.value))}
+              aria-label="Daily XP goal"
+              style={{ flex: 1, minWidth: 0, accentColor: "var(--color-primary)" }}
+            />
+            <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
+              {dailyXpGoal} XP
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section style={sectionCardStyle}>
+        <div className="settings-row">
+          <div>
+            <h2 style={sectionStyle}>Google Calendar</h2>
+            <p style={hintStyle}>Publish study sessions to your calendar.</p>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            {googleStatus === "loading" ? (
+              <p style={{ ...hintStyle, margin: 0 }}>Checking connection...</p>
+            ) : googleStatus === "connected" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                <span style={{ color: "var(--color-success)", fontSize: "0.95rem" }}>Connected</span>
+                <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
+              </div>
+            ) : googleConfigured ? (
+              <div>
+                <p style={{ ...hintStyle, margin: "0 0 0.75rem" }}>Connect to publish study sessions to your calendar and auto-detect busy times.</p>
+                <button onClick={handleGoogleConnect} style={connectBtnStyle}>
+                  Connect Google Calendar
+                </button>
+              </div>
+            ) : (
+              <p style={{ ...hintStyle, margin: 0 }}>Google Calendar sync is not configured on this server.</p>
+            )}
+          </div>
+        </div>
       </section>
 
       {aiMock === true && (
-        <section style={{ marginBottom: "2rem" }}>
-          <h2 style={sectionStyle}>AI provider</h2>
-          <p style={hintStyle}>
-            Mock provider active. Set AI_PROVIDER and OPENAI_API_KEY in .env for real AI.
-          </p>
+        <section style={sectionCardStyle}>
+          <div className="settings-row">
+            <div>
+              <h2 style={sectionStyle}>AI provider</h2>
+            </div>
+            <p style={{ ...hintStyle, margin: 0 }}>
+              Mock provider active. Set AI_PROVIDER and OPENAI_API_KEY in .env for real AI.
+            </p>
+          </div>
         </section>
       )}
 
@@ -350,9 +385,18 @@ const pageStyle: React.CSSProperties = {
   background: "var(--color-bg)",
   color: "var(--color-text)",
   minHeight: "100vh",
-  padding: "2rem",
-  maxWidth: 600,
+  padding: "2rem clamp(24px, 4vw, 32px)",
+  maxWidth: 900,
   margin: "0 auto",
+};
+
+const sectionCardStyle: React.CSSProperties = {
+  background: "var(--color-bg-card)",
+  border: "1px solid var(--color-border-subtle)",
+  borderRadius: "var(--radius)",
+  boxShadow: "var(--shadow-card)",
+  padding: "1.25rem 1.5rem",
+  marginBottom: "1rem",
 };
 
 const headingStyle: React.CSSProperties = {
@@ -374,7 +418,7 @@ const sectionStyle: React.CSSProperties = {
 const hintStyle: React.CSSProperties = {
   color: "var(--color-text-faint)",
   fontSize: "0.9rem",
-  margin: "0 0 0.75rem",
+  margin: "0.25rem 0 0",
 };
 
 const textInputStyle: React.CSSProperties = {
