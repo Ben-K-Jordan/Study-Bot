@@ -461,19 +461,19 @@ export function SessionRunner({ session }: Props) {
         margin: "0 auto",
         // 32px sides on desktop, tapering to 16px at phone widths.
         padding: "1.5rem clamp(1rem, 3vw, 2rem) 3rem",
-        fontFamily: "var(--font-body)",
-        color: "var(--color-text)",
-        backgroundColor: "var(--color-bg)",
+        fontFamily: "var(--sb-font-body)",
+        color: "var(--sb-text)",
+        backgroundColor: "var(--sb-bg)",
         minHeight: "100vh",
       }}
     >
       {error && (
         <div
           style={{
-            background: "var(--color-error)",
-            color: "var(--color-bg-darkest)",
+            background: "var(--sb-error)",
+            color: "var(--sb-bg-darkest)",
             padding: "0.5rem 1rem",
-            borderRadius: "var(--radius-sm)",
+            borderRadius: "var(--sb-radius-sm)",
             marginBottom: "1rem",
             fontSize: "0.85rem",
           }}

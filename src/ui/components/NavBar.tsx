@@ -82,22 +82,22 @@ export function NavBar() {
     left: 0,
     right: 0,
     height: NAV_HEIGHT,
-    background: "var(--color-bg-darkest)",
-    borderBottom: "1px solid var(--color-border-subtle)",
+    background: "var(--sb-bg-darkest)",
+    borderBottom: "1px solid var(--sb-border-subtle)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "0 1.25rem",
-    fontFamily: "var(--font-body)",
+    fontFamily: "var(--sb-font-body)",
     zIndex: 9999,
   };
 
   const brandStyle: React.CSSProperties = {
-    color: "var(--color-primary)",
+    color: "var(--sb-primary)",
     fontSize: "1.4rem",
     fontWeight: 600,
     textDecoration: "none",
-    fontFamily: "var(--font-display)",
+    fontFamily: "var(--sb-font-display)",
     letterSpacing: "0.02em",
     flexShrink: 0,
   };
@@ -124,19 +124,19 @@ export function NavBar() {
         <Link
           href="/"
           style={{
-            color: "var(--color-text-muted)",
+            color: "var(--sb-text-muted)",
             textDecoration: "none",
-            fontFamily: "var(--font-body)",
+            fontFamily: "var(--sb-font-body)",
             fontSize: "0.9rem",
             padding: "0.35rem 0.75rem",
             whiteSpace: "nowrap",
             transition: "color 0.15s",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = "var(--color-text)";
+            e.currentTarget.style.color = "var(--sb-text)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = "var(--color-text-muted)";
+            e.currentTarget.style.color = "var(--sb-text-muted)";
           }}
         >
           Exit
@@ -176,12 +176,12 @@ export function NavBar() {
           const linkStyle: React.CSSProperties = {
             display: "block",
             padding: "0.35rem 0.75rem",
-            color: active ? "var(--color-primary)" : "var(--color-text-muted)",
+            color: active ? "var(--sb-primary)" : "var(--sb-text-muted)",
             textDecoration: "none",
-            fontFamily: "var(--font-body)",
+            fontFamily: "var(--sb-font-body)",
             fontSize: "1rem",
             fontWeight: active ? 600 : 400,
-            borderBottom: active ? "2px solid var(--color-primary)" : "2px solid transparent",
+            borderBottom: active ? "2px solid var(--sb-primary)" : "2px solid transparent",
             transition: "color 0.15s, border-color 0.15s",
             whiteSpace: "nowrap",
           };
@@ -194,10 +194,10 @@ export function NavBar() {
                 aria-current={active ? "page" : undefined}
                 onClick={handleLinkClick}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.color = "var(--color-text)";
+                  if (!active) e.currentTarget.style.color = "var(--sb-text)";
                 }}
                 onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.color = "var(--color-text-muted)";
+                  if (!active) e.currentTarget.style.color = "var(--sb-text-muted)";
                 }}
               >
                 {label}

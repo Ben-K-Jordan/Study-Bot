@@ -1,59 +1,47 @@
-/* ===========================
-   Study Bot — Global Styles
-   =========================== */
+@import "tailwindcss";
 
-/* ---- Design tokens ----
-   A calm, high-contrast dark system. One accent color; semantic colors
-   reserved for meaning (success/warning/error/review). Cognitive-load
-   principle: the interface recedes, the content leads. */
-
+/* Legacy tokens for screens that still use inline styles. They carry an
+   sb- prefix so they never collide with the Tailwind and shadcn theme
+   namespaces (--color-*, --font-*, --radius-*, --shadow-*). Delete each one
+   once no screen reads it. */
 :root {
-  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sb-font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sb-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sb-font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
 
-  /* Surfaces (deep neutral slate, not pure black) */
-  --color-bg-darkest: #0b0e14;
-  --color-bg: #10141c;
-  --color-bg-card: #171c26;
-  --color-bg-input: #1c2230;
-  --color-bg-done: #14231b;
+  --sb-bg-darkest: #0b0e14;
+  --sb-bg: #10141c;
+  --sb-bg-card: #171c26;
+  --sb-bg-input: #1c2230;
+  --sb-bg-done: #14231b;
+  --sb-bg-info-tint: #142230;
+  --sb-bg-success-tint: #14231b;
+  --sb-bg-warning-tint: #2a2314;
+  --sb-bg-error-tint: #2a171c;
+  --sb-bg-review-tint: #221d33;
+  --sb-bg-selected: #1e2c47;
 
-  /* Tinted surfaces for semantic callouts */
-  --color-bg-info-tint: #142230;
-  --color-bg-success-tint: #14231b;
-  --color-bg-warning-tint: #2a2314;
-  --color-bg-error-tint: #2a171c;
-  --color-bg-review-tint: #221d33;
-  --color-bg-selected: #1e2c47;
+  --sb-border: #2a3242;
+  --sb-border-subtle: #202634;
+  --sb-border-done: #2f4a3a;
 
-  /* Borders */
-  --color-border: #2a3242;
-  --color-border-subtle: #202634;
-  --color-border-done: #2f4a3a;
+  --sb-text: #e7eaf0;
+  --sb-text-secondary: #b8bfcc;
+  --sb-text-muted: #949dae;
+  --sb-text-faint: #7d8799;
+  --sb-text-dim: #7c86a0;
 
-  /* Text (4 steps of hierarchy is plenty). The two dimmest steps are still
-     WCAG AA readable on cards (faint 4.71:1, dim 4.69:1 on --color-bg-card) —
-     "dim" means lower salience, never illegible. */
-  --color-text: #e7eaf0;
-  --color-text-secondary: #b8bfcc;
-  --color-text-muted: #949dae;
-  --color-text-faint: #7d8799;
-  --color-text-dim: #7c86a0;
+  --sb-primary: #6ea8fe;
+  --sb-info: #66c5da;
+  --sb-success: #58c98b;
+  --sb-warning: #e2a94f;
+  --sb-error: #e5737f;
+  --sb-review: #a78bfa;
 
-  /* Accent + semantics */
-  --color-primary: #6ea8fe;
-  --color-info: #66c5da;
-  --color-success: #58c98b;
-  --color-warning: #e2a94f;
-  --color-error: #e5737f;
-  --color-review: #a78bfa;
-
-  /* Shape & depth */
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.22);
+  --sb-radius-sm: 6px;
+  --sb-radius: 10px;
+  --sb-radius-lg: 14px;
+  --sb-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.22);
 
   --nav-height: 52px;
 }
@@ -65,22 +53,13 @@ html {
 
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-body);
+  background: var(--sb-bg);
+  color: var(--sb-text);
+  font-family: var(--sb-font-body);
   line-height: 1.5;
 }
 
-/* ---- Shared surface + control primitives ---- */
-
-.card {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-}
-
-/* Screen-reader-only content (aria-live announcements etc.) */
+/* Screen-reader-only content used by the session runner */
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -93,73 +72,29 @@ body {
   border: 0;
 }
 
-::selection {
-  background: rgba(110, 168, 254, 0.28);
-}
-
-/* Scrollbars that don't shout */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
-}
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-/* ---- Skip-to-content link (accessibility) ---- */
-
 .skip-to-content {
   position: absolute;
   top: -100%;
   left: 1rem;
   z-index: 10000;
   padding: 0.75rem 1.5rem;
-  background: var(--color-primary);
-  color: var(--color-bg-darkest);
-  font-family: var(--font-body);
+  background: var(--sb-primary);
+  color: var(--sb-bg-darkest);
   font-weight: 700;
-  font-size: 0.95rem;
   text-decoration: none;
   border-radius: 0 0 6px 6px;
-  transition: top 0.15s ease;
 }
 
 .skip-to-content:focus {
   top: 0;
-  outline: 3px solid var(--color-info);
-  outline-offset: 2px;
 }
-
-/* ---- Focus-visible outlines (accessibility) ---- */
 
 *:focus-visible {
-  outline: 2px solid var(--color-info);
+  outline: 2px solid var(--sb-info);
   outline-offset: 2px;
 }
 
-button:focus-visible,
-a:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--color-info);
-  outline-offset: 2px;
-}
-
-/* ---- Nav responsive ---- */
-
-.nav-container {
-  /* Structural styles are inline; this class enables responsive overrides */
-}
-
+/* Navigation bar (replaced by the app shell) */
 .nav-links {
   display: flex;
   list-style: none;
@@ -182,27 +117,25 @@ input:focus-visible {
   flex-shrink: 0;
 }
 
-.nav-hamburger-line {
+.nav-hamburger-line,
+.nav-hamburger-line::before,
+.nav-hamburger-line::after {
   display: block;
   width: 22px;
   height: 2px;
-  background: var(--color-text);
+  background: var(--sb-text);
   border-radius: 1px;
+}
+
+.nav-hamburger-line {
   position: relative;
-  transition: background 0.2s;
 }
 
 .nav-hamburger-line::before,
 .nav-hamburger-line::after {
-  content: '';
-  display: block;
-  width: 22px;
-  height: 2px;
-  background: var(--color-text);
-  border-radius: 1px;
+  content: "";
   position: absolute;
   left: 0;
-  transition: transform 0.2s, top 0.2s;
 }
 
 .nav-hamburger-line::before {
@@ -213,65 +146,7 @@ input:focus-visible {
   top: 7px;
 }
 
-/* Hamburger open state — animate to X */
-.nav-hamburger[aria-expanded="true"] .nav-hamburger-line {
-  background: transparent;
-}
-
-.nav-hamburger[aria-expanded="true"] .nav-hamburger-line::before {
-  top: 0;
-  transform: rotate(45deg);
-}
-
-.nav-hamburger[aria-expanded="true"] .nav-hamburger-line::after {
-  top: 0;
-  transform: rotate(-45deg);
-}
-
-/* ---- Buttons — touch targets & hover states ---- */
-
-button,
-[role="button"] {
-  min-height: 44px;
-  min-width: 44px;
-}
-
-button:hover:not(:disabled),
-[role="button"]:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-button:active:not(:disabled),
-[role="button"]:active:not(:disabled) {
-  filter: brightness(0.95);
-}
-
-/* Allow small inline badges / icon buttons to opt out with a class */
-button.compact-btn,
-[role="button"].compact-btn {
-  min-height: auto;
-  min-width: auto;
-}
-
-/* ---- Form inputs ---- */
-
-select,
-textarea,
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="search"],
-input[type="url"],
-input[type="number"] {
-  font-size: 16px; /* prevents iOS zoom on focus */
-}
-
-/* ================================================================
-   Tablet breakpoint (max-width: 768px)
-   ================================================================ */
-
 @media (max-width: 768px) {
-  /* -- Mobile nav -- */
   .nav-hamburger {
     display: flex;
   }
@@ -283,112 +158,27 @@ input[type="number"] {
     top: var(--nav-height);
     left: 0;
     right: 0;
-    background: var(--color-bg-darkest);
-    border-bottom: 1px solid var(--color-border-subtle);
+    background: var(--sb-bg-darkest);
     padding: 0.5rem 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 9998;
     overflow: visible;
   }
 
   .nav-links.open {
     display: flex;
   }
-
-  .nav-links li {
-    width: 100%;
-  }
-
-  .nav-links li a {
-    display: block;
-    padding: 0.75rem 1.25rem !important;
-    border-bottom: none !important;
-    font-size: 1.05rem !important;
-  }
-
-  .nav-links li a:hover,
-  .nav-links li a:focus {
-    background: var(--color-bg);
-  }
-
-  /* -- Page containers — reduce side padding -- */
-  main {
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
-  }
-
-  /* -- Stats grids: 4-col to 2-col -- */
-  div[style*="gridTemplateColumns"] {
-    grid-template-columns: repeat(2, 1fr) !important;
-  }
-
-  /* -- Font size adjustments -- */
-  h1 {
-    font-size: 1.35rem;
-  }
-
-  h2 {
-    font-size: 1.1rem;
-  }
-
-  /* -- Chat bubbles: reduce side margins -- */
-  div[style*="marginLeft: \"2rem\""],
-  div[style*="marginLeft"] {
-    margin-left: 0.5rem;
-  }
-
-  div[style*="marginRight: \"2rem\""],
-  div[style*="marginRight"] {
-    margin-right: 0.5rem;
-  }
 }
 
-/* ================================================================
-   Phone breakpoint (max-width: 480px)
-   ================================================================ */
-
-@media (max-width: 480px) {
-  /* -- Even more compact layout -- */
-  main {
-    padding-left: 0.25rem;
-    padding-right: 0.25rem;
-  }
-
-  /* -- Stats grids: single column -- */
-  div[style*="gridTemplateColumns"] {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* -- Cards: less padding -- */
-  .card,
-  div[style*="padding: \"1.5rem\""] {
-    padding: 0.75rem;
-  }
-
-  /* -- Buttons: full width on small screens -- */
-  button:not(.nav-hamburger):not(.compact-btn) {
-    width: 100%;
-    text-align: center;
-  }
-
-  /* -- Font sizes tighten further -- */
-  h1 {
-    font-size: 1.2rem;
-  }
-
-  h2 {
-    font-size: 1rem;
-  }
-
-  /* -- Rating buttons in flashcards -- */
-  div[style*="display: \"flex\""][style*="gap: \"0.4rem\""] {
-    flex-wrap: wrap;
-  }
+/* Inputs stay at 16px so iOS does not zoom on focus */
+select,
+textarea,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="number"] {
+  font-size: 16px;
 }
-
-/* ================================================================
-   Reduced motion preference
-   ================================================================ */
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -398,26 +188,5 @@ input[type="number"] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-}
-
-/* ================================================================
-   Print styles
-   ================================================================ */
-
-@media print {
-  .nav-container,
-  .nav-hamburger,
-  .skip-to-content {
-    display: none !important;
-  }
-
-  body {
-    background: white;
-    color: black;
-  }
-
-  main {
-    padding-top: 0 !important;
   }
 }

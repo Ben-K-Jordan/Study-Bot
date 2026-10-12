@@ -32,9 +32,9 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         style={{
           fontSize: "1rem",
           letterSpacing: "0.12em",
-          color: "var(--color-warning)",
+          color: "var(--sb-warning)",
           marginBottom: "1.25rem",
-          fontFamily: "var(--font-display)",
+          fontFamily: "var(--sb-font-display)",
         }}
       >
         BREAK TIME
@@ -46,8 +46,8 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           fontWeight: 700,
           fontVariantNumeric: "tabular-nums",
           marginBottom: "2rem",
-          color: "var(--color-warning)",
-          fontFamily: "var(--font-display)",
+          color: "var(--sb-warning)",
+          fontFamily: "var(--sb-font-display)",
           lineHeight: 1,
         }}
       >
@@ -58,9 +58,9 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
           wider stage rather than stretched across it. */}
       <div
         style={{
-          background: "var(--color-bg-card)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
+          background: "var(--sb-bg-card)",
+          border: "1px solid var(--sb-border)",
+          borderRadius: "var(--sb-radius)",
           padding: "1.5rem 1.75rem",
           margin: "0 auto 2rem",
           maxWidth: 560,
@@ -72,7 +72,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
             margin: "0 0 0.75rem",
             fontSize: "0.95rem",
             fontWeight: 600,
-            color: "var(--color-info)",
+            color: "var(--sb-info)",
           }}
         >
           DO THIS NOW:
@@ -85,7 +85,7 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         </ul>
       </div>
 
-      <p style={{ fontSize: "0.95rem", color: "var(--color-text-dim)", marginBottom: "1.25rem" }}>
+      <p style={{ fontSize: "0.95rem", color: "var(--sb-text-dim)", marginBottom: "1.25rem" }}>
         Cycle {breakState.current_cycle + 1} of {breakState.total_cycles}
       </p>
 
@@ -94,11 +94,11 @@ export function BreakScreen({ breakState, onBreakEnd }: Props) {
         style={{
           padding: "0.6rem 1.75rem",
           fontSize: "0.95rem",
-          fontFamily: "var(--font-body)",
+          fontFamily: "var(--sb-font-body)",
           background: "transparent",
-          color: "var(--color-text-dim)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
+          color: "var(--sb-text-dim)",
+          border: "1px solid var(--sb-border)",
+          borderRadius: "var(--sb-radius)",
           cursor: "pointer",
         }}
       >

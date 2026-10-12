@@ -159,7 +159,7 @@ export default function ResetPasswordPage() {
     <Suspense fallback={
       <div style={containerStyle}>
         <div style={cardStyle}>
-          <p style={{ textAlign: "center", color: "var(--color-text-muted)" }}>Loading...</p>
+          <p style={{ textAlign: "center", color: "var(--sb-text-muted)" }}>Loading...</p>
         </div>
       </div>
     }>

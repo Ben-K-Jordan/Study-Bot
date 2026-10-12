@@ -15,10 +15,10 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 
   return (
     <div>
-      <h1 style={{ fontSize: "2.1rem", margin: "0 0 0.35rem", fontFamily: "var(--font-display)", color: "var(--color-primary)" }}>
+      <h1 style={{ fontSize: "2.1rem", margin: "0 0 0.35rem", fontFamily: "var(--sb-font-display)", color: "var(--sb-primary)" }}>
         {session.course_name} | {session.exam_name}
       </h1>
-      <p style={{ color: "var(--color-text-muted)", margin: "0 0 1.75rem", fontSize: "1.05rem" }}>
+      <p style={{ color: "var(--sb-text-muted)", margin: "0 0 1.75rem", fontSize: "1.05rem" }}>
         {session.mode_label}: {session.topic_scope}
       </p>
 
@@ -64,22 +64,22 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1.75rem", alignItems: "center" }}>
           <span style={{ ...metaLabel, marginBottom: 0 }}>Deck</span>
           {session.deck_preview.new_count > 0 && (
-            <span style={deckChip("var(--color-info)")}>
+            <span style={deckChip("var(--sb-info)")}>
               {session.deck_preview.new_count} new
             </span>
           )}
           {session.deck_preview.review_count > 0 && (
-            <span style={deckChip("var(--color-success)")}>
+            <span style={deckChip("var(--sb-success)")}>
               {session.deck_preview.review_count} review
             </span>
           )}
           {session.deck_preview.diagnostic_count > 0 && (
-            <span style={deckChip("var(--color-warning)")}>
+            <span style={deckChip("var(--sb-warning)")}>
               {session.deck_preview.diagnostic_count} diagnostic
             </span>
           )}
           {session.deck_preview.repair_count > 0 && (
-            <span style={deckChip("var(--color-error)")}>
+            <span style={deckChip("var(--sb-error)")}>
               {session.deck_preview.repair_count} repair
             </span>
           )}
@@ -100,7 +100,7 @@ export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Pro
 }
 
 const metaLabel: React.CSSProperties = {
-  color: "var(--color-text-dim)",
+  color: "var(--sb-text-dim)",
   fontSize: "0.8rem",
   textTransform: "uppercase",
   letterSpacing: "0.06em",
@@ -109,16 +109,16 @@ const metaLabel: React.CSSProperties = {
 };
 
 const metaCell: React.CSSProperties = {
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border)",
+  borderRadius: "var(--sb-radius)",
   padding: "1rem 1.25rem",
 };
 
 const metaValue: React.CSSProperties = {
   fontSize: "1.35rem",
   fontWeight: 600,
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 const deckChip = (color: string): React.CSSProperties => ({
@@ -131,24 +131,24 @@ const deckChip = (color: string): React.CSSProperties => ({
 });
 
 const examBanner: React.CSSProperties = {
-  background: "var(--color-bg-review-tint)",
-  border: "1px solid var(--color-review)",
-  borderRadius: "var(--radius)",
+  background: "var(--sb-bg-review-tint)",
+  border: "1px solid var(--sb-review)",
+  borderRadius: "var(--sb-radius)",
   padding: "1rem 1.25rem",
   marginBottom: "1.75rem",
   fontSize: "1rem",
-  color: "var(--color-review)",
+  color: "var(--sb-review)",
 };
 
 const buttonStyle: React.CSSProperties = {
   width: "100%",
   padding: "1rem 1.5rem",
   fontSize: "1.15rem",
-  fontFamily: "var(--font-body)",
+  fontFamily: "var(--sb-font-body)",
   fontWeight: 600,
-  background: "var(--color-primary)",
-  color: "var(--color-bg-darkest)",
+  background: "var(--sb-primary)",
+  color: "var(--sb-bg-darkest)",
   border: "none",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
   cursor: "pointer",
 };

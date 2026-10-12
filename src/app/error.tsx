@@ -15,18 +15,18 @@ export default function GlobalError({
         alignItems: "center",
         justifyContent: "center",
         padding: "1rem",
-        fontFamily: "var(--font-body)",
-        backgroundColor: "var(--color-bg)",
+        fontFamily: "var(--sb-font-body)",
+        backgroundColor: "var(--sb-bg)",
       }}
     >
       <div
         style={{
           width: "100%",
           maxWidth: 400,
-          background: "var(--color-bg-card)",
-          border: "1px solid var(--color-border-subtle)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-card)",
+          background: "var(--sb-bg-card)",
+          border: "1px solid var(--sb-border-subtle)",
+          borderRadius: "var(--sb-radius-lg)",
+          boxShadow: "var(--sb-shadow-card)",
           padding: "2rem",
           textAlign: "center",
         }}
@@ -35,8 +35,8 @@ export default function GlobalError({
         <h1
           style={{
             fontSize: "1.6rem",
-            fontFamily: "var(--font-display)",
-            color: "var(--color-error)",
+            fontFamily: "var(--sb-font-display)",
+            color: "var(--sb-error)",
             margin: "0 0 0.5rem",
           }}
         >
@@ -44,7 +44,7 @@ export default function GlobalError({
         </h1>
         <p
           style={{
-            color: "var(--color-text-muted)",
+            color: "var(--sb-text-muted)",
             fontSize: "0.9rem",
             margin: "0 0 1.5rem",
             lineHeight: 1.5,
@@ -60,10 +60,10 @@ export default function GlobalError({
             fontSize: "1.05rem",
             fontFamily: "inherit",
             fontWeight: 600,
-            background: "var(--color-primary)",
-            color: "var(--color-bg-darkest)",
+            background: "var(--sb-primary)",
+            color: "var(--sb-bg-darkest)",
             border: "none",
-            borderRadius: "var(--radius-sm)",
+            borderRadius: "var(--sb-radius-sm)",
             cursor: "pointer",
           }}
         >

@@ -32,7 +32,7 @@ export default function AchievementsPage() {
       <main style={mainStyle}>
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
         <h1 style={headingStyle}>Achievements</h1>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-text-muted)" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--sb-text-muted)" }}>
           <div style={spinnerStyle} />
           <p style={{ marginTop: "1rem" }}>Loading achievements...</p>
         </div>
@@ -63,7 +63,7 @@ export default function AchievementsPage() {
       <section style={overviewCardStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <svg width={64} height={64} viewBox="0 0 64 64" style={{ flexShrink: 0 }}>
-            <circle cx={32} cy={32} r={26} fill="none" strokeWidth={5} style={{ stroke: "var(--color-bg-darkest)" }} />
+            <circle cx={32} cy={32} r={26} fill="none" strokeWidth={5} style={{ stroke: "var(--sb-bg-darkest)" }} />
             <circle
               cx={32} cy={32} r={26}
               fill="none"
@@ -72,17 +72,17 @@ export default function AchievementsPage() {
               strokeDasharray={2 * Math.PI * 26}
               strokeDashoffset={2 * Math.PI * 26 * (1 - completionPct / 100)}
               transform="rotate(-90 32 32)"
-              style={{ transition: "stroke-dashoffset 0.5s", stroke: "var(--color-primary)" }}
+              style={{ transition: "stroke-dashoffset 0.5s", stroke: "var(--sb-primary)" }}
             />
-            <text x={32} y={35} textAnchor="middle" fontSize="14" fontWeight="bold" fontFamily="inherit" style={{ fill: "var(--color-primary)" }}>
+            <text x={32} y={35} textAnchor="middle" fontSize="14" fontWeight="bold" fontFamily="inherit" style={{ fill: "var(--sb-primary)" }}>
               {completionPct}%
             </text>
           </svg>
           <div>
-            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>
+            <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--sb-primary)", fontFamily: "var(--sb-font-display)" }}>
               {totalEarned} / {TOTAL_BADGES} Badges
             </div>
-            <div style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", marginTop: "0.2rem" }}>
+            <div style={{ fontSize: "0.8rem", color: "var(--sb-text-dim)", marginTop: "0.2rem" }}>
               {totalEarned === TOTAL_BADGES
                 ? "All achievements unlocked!"
                 : `${TOTAL_BADGES - totalEarned} more to collect`}
@@ -101,7 +101,7 @@ export default function AchievementsPage() {
           <section key={cat} style={{ marginBottom: "2rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <h2 style={{ ...sectionHeadingStyle, color: catInfo.color, margin: 0 }}>{catInfo.label}</h2>
-              <span style={{ fontSize: "0.75rem", color: "var(--color-text-dim)" }}>{earned}/{badges.length}</span>
+              <span style={{ fontSize: "0.75rem", color: "var(--sb-text-dim)" }}>{earned}/{badges.length}</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
               {badges.map((badge) => {
@@ -118,9 +118,9 @@ export default function AchievementsPage() {
                       alignItems: "center",
                       gap: "0.85rem",
                       padding: "1.25rem",
-                      background: isEarned ? "var(--color-bg-done)" : "var(--color-bg-card)",
-                      border: `1px solid ${isEarned ? "var(--color-border-done)" : "var(--color-border)"}`,
-                      borderRadius: "var(--radius)",
+                      background: isEarned ? "var(--sb-bg-done)" : "var(--sb-bg-card)",
+                      border: `1px solid ${isEarned ? "var(--sb-border-done)" : "var(--sb-border)"}`,
+                      borderRadius: "var(--sb-radius)",
                       opacity: isEarned ? 1 : 0.75,
                     }}
                   >
@@ -132,7 +132,7 @@ export default function AchievementsPage() {
                       alignItems: "center",
                       justifyContent: "center",
                       borderRadius: "50%",
-                      background: isEarned ? "var(--color-bg-card)" : "var(--color-bg)",
+                      background: isEarned ? "var(--sb-bg-card)" : "var(--sb-bg)",
                       filter: isEarned ? "none" : "grayscale(100%)",
                       flexShrink: 0,
                     }}>
@@ -144,22 +144,22 @@ export default function AchievementsPage() {
                         <span style={{
                           fontSize: "0.95rem",
                           fontWeight: 600,
-                          color: isEarned ? "var(--color-text)" : "var(--color-text-muted)",
+                          color: isEarned ? "var(--sb-text)" : "var(--sb-text-muted)",
                         }}>
                           {badge.label}
                         </span>
                         {isEarned && earnedDate && (
-                          <span style={{ fontSize: "0.65rem", color: "var(--color-border-done)" }}>
+                          <span style={{ fontSize: "0.65rem", color: "var(--sb-border-done)" }}>
                             {new Date(earnedDate).toLocaleDateString()}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.15rem" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--sb-text-dim)", marginTop: "0.15rem" }}>
                         {badge.description}
                       </div>
                       {!isEarned && (
                         <div style={{ marginTop: "0.4rem" }}>
-                          <div style={{ height: 4, background: "var(--color-bg-darkest)", borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ height: 4, background: "var(--sb-bg-darkest)", borderRadius: 2, overflow: "hidden" }}>
                             <div style={{
                               height: "100%",
                               width: `${pct}%`,
@@ -169,13 +169,13 @@ export default function AchievementsPage() {
                               opacity: 0.7,
                             }} />
                           </div>
-                          <div style={{ fontSize: "0.6rem", color: "var(--color-text-dim)", marginTop: "0.15rem", textAlign: "right" }}>
+                          <div style={{ fontSize: "0.6rem", color: "var(--sb-text-dim)", marginTop: "0.15rem", textAlign: "right" }}>
                             {current} / {badge.threshold} {badge.unit}
                           </div>
                         </div>
                       )}
                       {isEarned && (
-                        <div style={{ fontSize: "0.7rem", color: "var(--color-success)", marginTop: "0.2rem", fontWeight: 600 }}>
+                        <div style={{ fontSize: "0.7rem", color: "var(--sb-success)", marginTop: "0.2rem", fontWeight: 600 }}>
                           Unlocked
                         </div>
                       )}
@@ -189,7 +189,7 @@ export default function AchievementsPage() {
       })}
 
       <div style={{ textAlign: "center", marginTop: "1rem" }}>
-        <Link href="/" style={{ color: "var(--color-text-dim)", fontSize: "0.85rem", textDecoration: "none" }}>Back to Dashboard</Link>
+        <Link href="/" style={{ color: "var(--sb-text-dim)", fontSize: "0.85rem", textDecoration: "none" }}>Back to Dashboard</Link>
       </div>
     </main>
   );
@@ -201,18 +201,18 @@ const mainStyle: React.CSSProperties = {
   maxWidth: 1100,
   margin: "0 auto",
   padding: "1.5rem clamp(24px, 4vw, 32px)",
-  fontFamily: "var(--font-body)",
-  color: "var(--color-text)",
-  backgroundColor: "var(--color-bg)",
+  fontFamily: "var(--sb-font-body)",
+  color: "var(--sb-text)",
+  backgroundColor: "var(--sb-bg)",
   minHeight: "100vh",
 };
 
 const headingStyle: React.CSSProperties = {
   fontSize: "2rem",
   margin: "0 0 1.5rem",
-  color: "var(--color-primary)",
+  color: "var(--sb-primary)",
   fontWeight: 700,
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 const sectionHeadingStyle: React.CSSProperties = {
@@ -223,10 +223,10 @@ const sectionHeadingStyle: React.CSSProperties = {
 };
 
 const overviewCardStyle: React.CSSProperties = {
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius)",
-  boxShadow: "var(--shadow-card)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderRadius: "var(--sb-radius)",
+  boxShadow: "var(--sb-shadow-card)",
   padding: "1.5rem",
   marginBottom: "2rem",
 };
@@ -234,8 +234,8 @@ const overviewCardStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: "32px",
   height: "32px",
-  border: "3px solid var(--color-border)",
-  borderTop: "3px solid var(--color-primary)",
+  border: "3px solid var(--sb-border)",
+  borderTop: "3px solid var(--sb-primary)",
   borderRadius: "50%",
   margin: "0 auto",
   animation: "dash-spin 0.8s linear infinite",

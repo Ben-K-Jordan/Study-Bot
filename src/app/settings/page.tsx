@@ -198,7 +198,7 @@ export default function SettingsPage() {
     return (
       <div style={pageStyle}>
         <h1 style={headingStyle}>Settings</h1>
-        <p style={{ color: "var(--color-text-dim)" }}>Loading preferences...</p>
+        <p style={{ color: "var(--sb-text-dim)" }}>Loading preferences...</p>
       </div>
     );
   }
@@ -219,7 +219,7 @@ export default function SettingsPage() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
             <input type="time" value={studyStart} onChange={(e) => setStudyStart(e.target.value)} aria-label="Study start time" style={timeInputStyle} />
-            <span style={{ color: "var(--color-text-muted)" }}>to</span>
+            <span style={{ color: "var(--sb-text-muted)" }}>to</span>
             <input type="time" value={studyEnd} onChange={(e) => setStudyEnd(e.target.value)} aria-label="Study end time" style={timeInputStyle} />
           </div>
         </div>
@@ -263,7 +263,7 @@ export default function SettingsPage() {
                 fontSize: "0.85rem",
                 margin: "0.5rem 0 0",
                 overflowWrap: "break-word",
-                color: zonePreview ? "var(--color-text-muted)" : "var(--color-error)",
+                color: zonePreview ? "var(--sb-text-muted)" : "var(--sb-error)",
               }}
             >
               {zonePreview
@@ -289,9 +289,9 @@ export default function SettingsPage() {
               value={dailyCap}
               onChange={(e) => setDailyCap(Number(e.target.value))}
               aria-label="Daily study cap in minutes"
-              style={{ flex: 1, minWidth: 0, accentColor: "var(--color-primary)" }}
+              style={{ flex: 1, minWidth: 0, accentColor: "var(--sb-primary)" }}
             />
-            <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
+            <span style={{ color: "var(--sb-primary)", fontWeight: "bold", minWidth: "4rem", textAlign: "right" }}>
               {Math.floor(dailyCap / 60)}h{dailyCap % 60 > 0 ? ` ${dailyCap % 60}m` : ""}
             </span>
           </div>
@@ -313,9 +313,9 @@ export default function SettingsPage() {
               value={dailyXpGoal}
               onChange={(e) => setDailyXpGoal(Number(e.target.value))}
               aria-label="Daily XP goal"
-              style={{ flex: 1, minWidth: 0, accentColor: "var(--color-primary)" }}
+              style={{ flex: 1, minWidth: 0, accentColor: "var(--sb-primary)" }}
             />
-            <span style={{ color: "var(--color-primary)", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
+            <span style={{ color: "var(--sb-primary)", fontWeight: "bold", minWidth: "3rem", textAlign: "right" }}>
               {dailyXpGoal} XP
             </span>
           </div>
@@ -333,8 +333,8 @@ export default function SettingsPage() {
               <p style={{ ...hintStyle, margin: 0 }}>Checking connection...</p>
             ) : googleStatus === "connected" ? (
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                <span style={{ color: "var(--color-success)", fontSize: "0.95rem" }}>Connected</span>
-                <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
+                <span style={{ color: "var(--sb-success)", fontSize: "0.95rem" }}>Connected</span>
+                <span style={{ color: "var(--sb-text-dim)", fontSize: "0.9rem" }}>Plans can be published to your calendar.</span>
               </div>
             ) : googleConfigured ? (
               <div>
@@ -364,14 +364,14 @@ export default function SettingsPage() {
       )}
 
       {saveError && (
-        <div role="alert" aria-live="polite" style={{ background: "var(--color-bg-error-tint)", color: "var(--color-error)", border: "1px solid var(--color-error)", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", marginBottom: "0.75rem", textAlign: "center" }}>
+        <div role="alert" aria-live="polite" style={{ background: "var(--sb-bg-error-tint)", color: "var(--sb-error)", border: "1px solid var(--sb-error)", padding: "0.5rem 0.75rem", borderRadius: "var(--sb-radius-sm)", fontSize: "0.85rem", marginBottom: "0.75rem", textAlign: "center" }}>
           {saveError}
         </div>
       )}
       <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>
         {saved ? "Saved!" : saving ? "Saving..." : "Save Preferences"}
       </button>
-      <p style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", marginTop: "0.5rem" }}>
+      <p style={{ fontSize: "0.7rem", color: "var(--sb-text-dim)", marginTop: "0.5rem" }}>
         Settings are synced to your account and available on all devices.
       </p>
     </div>
@@ -381,9 +381,9 @@ export default function SettingsPage() {
 // ---- Styles ----
 
 const pageStyle: React.CSSProperties = {
-  fontFamily: "var(--font-body)",
-  background: "var(--color-bg)",
-  color: "var(--color-text)",
+  fontFamily: "var(--sb-font-body)",
+  background: "var(--sb-bg)",
+  color: "var(--sb-text)",
   minHeight: "100vh",
   padding: "2rem clamp(24px, 4vw, 32px)",
   maxWidth: 900,
@@ -391,90 +391,90 @@ const pageStyle: React.CSSProperties = {
 };
 
 const sectionCardStyle: React.CSSProperties = {
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius)",
-  boxShadow: "var(--shadow-card)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderRadius: "var(--sb-radius)",
+  boxShadow: "var(--sb-shadow-card)",
   padding: "1.25rem 1.5rem",
   marginBottom: "1rem",
 };
 
 const headingStyle: React.CSSProperties = {
-  color: "var(--color-primary)",
+  color: "var(--sb-primary)",
   fontSize: "2rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 const sectionStyle: React.CSSProperties = {
-  color: "var(--color-text)",
+  color: "var(--sb-text)",
   fontSize: "1.2rem",
   margin: "0 0 0.25rem",
   fontWeight: 600,
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 const hintStyle: React.CSSProperties = {
-  color: "var(--color-text-faint)",
+  color: "var(--sb-text-faint)",
   fontSize: "0.9rem",
   margin: "0.25rem 0 0",
 };
 
 const textInputStyle: React.CSSProperties = {
   width: "100%",
-  background: "var(--color-bg-input)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg-input)",
+  color: "var(--sb-text)",
+  border: "1px solid var(--sb-border)",
   padding: "0.5rem 0.75rem",
   fontFamily: "inherit",
   fontSize: "1rem",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--sb-radius-sm)",
 };
 
 const timeInputStyle: React.CSSProperties = {
-  background: "var(--color-bg-input)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg-input)",
+  color: "var(--sb-text)",
+  border: "1px solid var(--sb-border)",
   padding: "0.35rem 0.5rem",
   fontFamily: "inherit",
   fontSize: "0.95rem",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--sb-radius-sm)",
 };
 
 const saveBtnStyle: React.CSSProperties = {
-  background: "var(--color-primary)",
-  color: "var(--color-bg-darkest)",
+  background: "var(--sb-primary)",
+  color: "var(--sb-bg-darkest)",
   border: "none",
   padding: "0.7rem 1.5rem",
   fontFamily: "inherit",
   fontWeight: "bold",
   fontSize: "1rem",
   cursor: "pointer",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
 };
 
 const detectBtnStyle: React.CSSProperties = {
-  background: "var(--color-bg-input)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg-input)",
+  color: "var(--sb-text)",
+  border: "1px solid var(--sb-border)",
   padding: "0.7rem 1.25rem",
   fontFamily: "inherit",
   fontSize: "0.95rem",
   fontWeight: 600,
   cursor: "pointer",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
   whiteSpace: "nowrap",
 };
 
 const connectBtnStyle: React.CSSProperties = {
-  background: "var(--color-info)",
-  color: "var(--color-bg-darkest)",
+  background: "var(--sb-info)",
+  color: "var(--sb-bg-darkest)",
   border: "none",
   padding: "0.7rem 1.25rem",
   fontFamily: "inherit",
   fontWeight: "bold",
   fontSize: "0.95rem",
   cursor: "pointer",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
 };

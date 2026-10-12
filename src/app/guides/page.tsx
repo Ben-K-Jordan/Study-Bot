@@ -199,9 +199,9 @@ export default function GuidesPage() {
                 onClick={() => setSelectedType(t.value)}
                 style={{
                   ...typeButton,
-                  background: selectedType === t.value ? "var(--color-bg-info-tint)" : "var(--color-bg-card)",
-                  borderColor: selectedType === t.value ? "var(--color-info)" : "var(--color-border)",
-                  color: selectedType === t.value ? "var(--color-info)" : "var(--color-text-muted)",
+                  background: selectedType === t.value ? "var(--sb-bg-info-tint)" : "var(--sb-bg-card)",
+                  borderColor: selectedType === t.value ? "var(--sb-info)" : "var(--sb-border)",
+                  color: selectedType === t.value ? "var(--sb-info)" : "var(--sb-text-muted)",
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>{t.label}</div>
@@ -223,18 +223,18 @@ export default function GuidesPage() {
           </button>
 
           {error && (
-            <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>
+            <p role="alert" style={{ color: "var(--sb-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>
           )}
         </div>
       ) : (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
-          <p style={{ color: "var(--color-text-muted)", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--sb-border-done)", borderRadius: "var(--sb-radius-lg)" }}>
+          <p style={{ color: "var(--sb-text-muted)", fontSize: "1rem", margin: "0 0 0.5rem" }}>
             No course documents yet
           </p>
-          <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
+          <p style={{ color: "var(--sb-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Create a plan and upload your course notes there, then come back to generate study guides.
           </p>
-          <Link href="/plan" style={{ display: "inline-block", padding: "0.7rem 1.4rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "1rem" }}>
+          <Link href="/plan" style={{ display: "inline-block", padding: "0.7rem 1.4rem", background: "var(--sb-primary)", color: "var(--sb-bg-darkest)", borderRadius: "var(--sb-radius)", fontWeight: 700, textDecoration: "none", fontSize: "1rem" }}>
             Create a Study Plan
           </Link>
         </div>
@@ -242,23 +242,23 @@ export default function GuidesPage() {
 
       {/* Existing guides */}
       {loadingGuides && (
-        <p style={{ color: "var(--color-text-dim)", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
+        <p style={{ color: "var(--sb-text-dim)", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
           Loading guides...
         </p>
       )}
       {!loadingGuides && courses.length > 0 && guides.length === 0 && (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
-          <p style={{ color: "var(--color-text-muted)", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--sb-border-done)", borderRadius: "var(--sb-radius-lg)" }}>
+          <p style={{ color: "var(--sb-text-muted)", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
             No guides generated yet for this course
           </p>
-          <p style={{ color: "var(--color-text-faint)", fontSize: "0.8rem", margin: 0 }}>
+          <p style={{ color: "var(--sb-text-faint)", fontSize: "0.8rem", margin: 0 }}>
             Pick a guide type above and hit Generate to create Key Concepts, FAQs, or Cheat Sheets from your materials.
           </p>
         </div>
       )}
       {guides.length > 0 && (
         <div>
-          <h2 style={{ ...sectionTitleStyle, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR GUIDES</h2>
+          <h2 style={{ ...sectionTitleStyle, color: "var(--sb-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR GUIDES</h2>
           <div style={guidesGrid}>
           {guides.map((guide) => (
             <div key={guide.id} style={expandedGuide === guide.id ? { gridColumn: "1 / -1" } : undefined}>
@@ -275,11 +275,11 @@ export default function GuidesPage() {
                       <span style={guideTypeTag}>{guide.guide_type.replace(/_/g, " ")}</span>
                     </div>
                     <div style={{ fontSize: "0.95rem", fontWeight: 600, lineHeight: 1.4 }}>{guide.title}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.4rem" }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--sb-text-dim)", marginTop: "0.4rem" }}>
                       {new Date(guide.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </div>
                   </div>
-                  <span style={{ color: "var(--color-text-dim)", marginLeft: "0.5rem" }}>
+                  <span style={{ color: "var(--sb-text-dim)", marginLeft: "0.5rem" }}>
                     {expandedGuide === guide.id ? "▼" : "▶"}
                   </span>
                 </button>
@@ -298,7 +298,7 @@ export default function GuidesPage() {
                 <div style={guideContent}>
                   <div style={guideProse}>
                   {renderGuideContent(guide)}
-                  <div style={{ marginTop: "1rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.75rem", textAlign: "right" }}>
+                  <div style={{ marginTop: "1rem", borderTop: "1px solid var(--sb-border-subtle)", paddingTop: "0.75rem", textAlign: "right" }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -326,10 +326,10 @@ export default function GuidesPage() {
                       style={{
                         fontSize: "0.75rem",
                         fontFamily: "inherit",
-                        color: "var(--color-info)",
-                        background: "var(--color-bg)",
-                        border: "1px solid var(--color-border-subtle)",
-                        borderRadius: "var(--radius-sm)",
+                        color: "var(--sb-info)",
+                        background: "var(--sb-bg)",
+                        border: "1px solid var(--sb-border-subtle)",
+                        borderRadius: "var(--sb-radius-sm)",
                         padding: "0.35rem 0.75rem",
                         cursor: "pointer",
                       }}
@@ -353,7 +353,7 @@ export default function GuidesPage() {
 
 function renderGuideContent(guide: StudyGuide): React.ReactNode {
   if (!guide.sections || guide.sections.length === 0) {
-    return <p style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>No content generated.</p>;
+    return <p style={{ color: "var(--sb-text-muted)", fontStyle: "italic" }}>No content generated.</p>;
   }
 
   switch (guide.guide_type) {
@@ -362,7 +362,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`concept-${i}`} style={conceptCard}>
-              <h3 style={{ margin: "0 0 0.4rem", fontSize: "1.05rem", color: "var(--color-primary)" }}>
+              <h3 style={{ margin: "0 0 0.4rem", fontSize: "1.05rem", color: "var(--sb-primary)" }}>
                 {s.concept || `Concept ${i + 1}`}
               </h3>
               {s.explanation && (
@@ -371,7 +371,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
                 </p>
               )}
               {s.importance && (
-                <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--color-info)", fontStyle: "italic" }}>
+                <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--sb-info)", fontStyle: "italic" }}>
                   Why it matters: {s.importance}
                 </p>
               )}
@@ -385,11 +385,11 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`faq-${i}`} style={conceptCard}>
-              <p style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", fontWeight: 600, color: "var(--color-text)" }}>
+              <p style={{ margin: "0 0 0.4rem", fontSize: "0.95rem", fontWeight: 600, color: "var(--sb-text)" }}>
                 Q: {s.question || `Question ${i + 1}`}
               </p>
               {s.answer && (
-                <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.65, color: "var(--color-text-secondary)" }}>
+                <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.65, color: "var(--sb-text-secondary)" }}>
                   {s.answer}
                 </p>
               )}
@@ -403,12 +403,12 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
         <div>
           {guide.sections.map((s, i) => (
             <div key={`cheat-${i}`} style={conceptCard}>
-              <h3 style={{ margin: "0 0 0.4rem", fontSize: "1rem", color: "var(--color-warning)" }}>
+              <h3 style={{ margin: "0 0 0.4rem", fontSize: "1rem", color: "var(--sb-warning)" }}>
                 {s.topic || `Topic ${i + 1}`}
               </h3>
               {s.content && (
                 <div
-                  style={{ fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)", overflowX: "auto" }}
+                  style={{ fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: "var(--sb-font-mono)", overflowX: "auto" }}
                 >
                   {s.content}
                 </div>
@@ -419,7 +419,7 @@ function renderGuideContent(guide: StudyGuide): React.ReactNode {
       );
 
     default:
-      return <p style={{ color: "var(--color-text-muted)" }}>Unknown guide type</p>;
+      return <p style={{ color: "var(--sb-text-muted)" }}>Unknown guide type</p>;
   }
 }
 
@@ -429,8 +429,8 @@ const pageContainer: React.CSSProperties = {
   maxWidth: 1100,
   margin: "0 auto",
   padding: "1.5rem clamp(1.5rem, 4vw, 2rem)",
-  fontFamily: "var(--font-body)",
-  color: "var(--color-text)",
+  fontFamily: "var(--sb-font-body)",
+  color: "var(--sb-text)",
 };
 
 const guidesGrid: React.CSSProperties = {
@@ -445,8 +445,8 @@ const typeButton: React.CSSProperties = {
   minWidth: 0,
   padding: "0.6rem 0.75rem",
   fontFamily: "inherit",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
+  border: "1px solid var(--sb-border)",
+  borderRadius: "var(--sb-radius)",
   cursor: "pointer",
   textAlign: "left",
 };
@@ -458,10 +458,10 @@ const guideHeader: React.CSSProperties = {
   padding: "1.25rem 1.5rem",
   fontSize: "0.9rem",
   fontFamily: "inherit",
-  background: "var(--color-bg-card)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
+  background: "var(--sb-bg-card)",
+  color: "var(--sb-text)",
+  border: "1px solid var(--sb-border)",
+  borderRadius: "var(--sb-radius)",
   cursor: "pointer",
 };
 
@@ -469,8 +469,8 @@ const guideTypeTag: React.CSSProperties = {
   display: "inline-block",
   fontSize: "0.65rem",
   fontWeight: 600,
-  color: "var(--color-info)",
-  background: "var(--color-bg-info-tint)",
+  color: "var(--sb-info)",
+  background: "var(--sb-bg-info-tint)",
   padding: "0.1rem 0.4rem",
   borderRadius: 3,
   marginRight: "0.5rem",
@@ -478,12 +478,12 @@ const guideTypeTag: React.CSSProperties = {
 };
 
 const guideContent: React.CSSProperties = {
-  background: "var(--color-bg)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg)",
+  border: "1px solid var(--sb-border)",
   borderTop: "none",
-  borderRadius: "0 0 var(--radius) var(--radius)",
+  borderRadius: "0 0 var(--sb-radius) var(--sb-radius)",
   padding: "1.75rem clamp(1rem, 4vw, 2.5rem) 1.5rem",
-  boxShadow: "var(--shadow-card)",
+  boxShadow: "var(--sb-shadow-card)",
 };
 
 const guideProse: React.CSSProperties = {
@@ -493,9 +493,9 @@ const guideProse: React.CSSProperties = {
 };
 
 const conceptCard: React.CSSProperties = {
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-sm)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border)",
+  borderRadius: "var(--sb-radius-sm)",
   padding: "1rem 1.25rem",
   marginBottom: "0.75rem",
 };

@@ -52,17 +52,17 @@ type ReviewRating = "AGAIN" | "HARD" | "GOOD" | "EASY";
 // --- Status helpers ---
 
 const STATUS_COLORS: Record<string, string> = {
-  new: "var(--color-info)",
-  learning: "var(--color-warning)",
-  review: "var(--color-review)",
-  mastered: "var(--color-success)",
+  new: "var(--sb-info)",
+  learning: "var(--sb-warning)",
+  review: "var(--sb-review)",
+  mastered: "var(--sb-success)",
 };
 
 const STATUS_TINTS: Record<string, string> = {
-  new: "var(--color-bg-info-tint)",
-  learning: "var(--color-bg-warning-tint)",
-  review: "var(--color-bg-review-tint)",
-  mastered: "var(--color-bg-success-tint)",
+  new: "var(--sb-bg-info-tint)",
+  learning: "var(--sb-bg-warning-tint)",
+  review: "var(--sb-bg-review-tint)",
+  mastered: "var(--sb-bg-success-tint)",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -73,10 +73,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const RATING_COLORS: Record<ReviewRating, string> = {
-  AGAIN: "var(--color-error)",
-  HARD: "var(--color-warning)",
-  GOOD: "var(--color-success)",
-  EASY: "var(--color-info)",
+  AGAIN: "var(--sb-error)",
+  HARD: "var(--sb-warning)",
+  GOOD: "var(--sb-success)",
+  EASY: "var(--sb-info)",
 };
 
 // --- Component ---
@@ -357,16 +357,16 @@ export default function FlashcardsPage() {
               Back to Decks
             </button>
             {lastReview && (
-              <button onClick={handleUndo} style={{ ...backBtn, color: "var(--color-warning)", borderColor: "var(--color-warning)" }}>
+              <button onClick={handleUndo} style={{ ...backBtn, color: "var(--sb-warning)", borderColor: "var(--sb-warning)" }}>
                 Undo
               </button>
             )}
           </div>
           <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--color-primary)", fontWeight: 600 }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--sb-primary)", fontWeight: 600 }}>
               +{sessionXp} XP
             </span>
-            <span style={{ fontSize: "0.8rem", color: "var(--color-text-faint)" }}>
+            <span style={{ fontSize: "0.8rem", color: "var(--sb-text-faint)" }}>
               {reviewedCount}/{total} reviewed
             </span>
           </div>
@@ -390,10 +390,10 @@ export default function FlashcardsPage() {
         <div style={progressBarBg}>
           <div style={{ ...progressBarFill, width: `${progressPct}%` }} />
         </div>
-        <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", marginBottom: "0.5rem", textAlign: "center" }}>
+        <p style={{ fontSize: "0.8rem", color: "var(--sb-text-dim)", marginBottom: "0.5rem", textAlign: "center" }}>
           Card {cardIndex + 1} of {total}
         </p>
-        <p style={{ fontSize: "0.7rem", color: "var(--color-text-dim)", marginBottom: "1rem", textAlign: "center" }}>
+        <p style={{ fontSize: "0.7rem", color: "var(--sb-text-dim)", marginBottom: "1rem", textAlign: "center" }}>
           <kbd style={kbdStyle}>Space</kbd> flip &nbsp;
           <kbd style={kbdStyle}>1</kbd> Again &nbsp;
           <kbd style={kbdStyle}>2</kbd> Hard &nbsp;
@@ -408,7 +408,7 @@ export default function FlashcardsPage() {
               key={xpPopup.key}
               style={{
                 position: "absolute", top: -10, right: 10, zIndex: 10,
-                color: "var(--color-primary)", fontWeight: 700, fontSize: "1.1rem",
+                color: "var(--sb-primary)", fontWeight: 700, fontSize: "1.1rem",
                 animation: "xp-float 1.5s ease-out forwards",
                 pointerEvents: "none",
               }}
@@ -420,13 +420,13 @@ export default function FlashcardsPage() {
             onClick={handleFlip}
             style={{
               ...cardStyle,
-              background: flipped ? "var(--color-bg-info-tint)" : "var(--color-bg-card)",
-              borderColor: flipped ? "var(--color-info)" : "var(--color-border)",
+              background: flipped ? "var(--sb-bg-info-tint)" : "var(--sb-bg-card)",
+              borderColor: flipped ? "var(--sb-info)" : "var(--sb-border)",
               cursor: "pointer",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-              <span style={{ fontSize: "0.75rem", color: flipped ? "var(--color-info)" : "var(--color-text-muted)", letterSpacing: "0.08em" }}>
+              <span style={{ fontSize: "0.75rem", color: flipped ? "var(--sb-info)" : "var(--sb-text-muted)", letterSpacing: "0.08em" }}>
                 {flipped ? "ANSWER" : "QUESTION"}
               </span>
               <span style={{ fontSize: "0.7rem", color: STATUS_COLORS[card.status], background: STATUS_TINTS[card.status], padding: "0.15rem 0.5rem", borderRadius: 3 }}>
@@ -448,7 +448,7 @@ export default function FlashcardsPage() {
         </div>
 
         {!flipped && (
-          <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", textAlign: "center", margin: "0.75rem 0" }}>
+          <p style={{ fontSize: "0.8rem", color: "var(--sb-text-dim)", textAlign: "center", margin: "0.75rem 0" }}>
             Tap card or press Space to flip
           </p>
         )}
@@ -456,7 +456,7 @@ export default function FlashcardsPage() {
         {/* Rating buttons — only show when flipped */}
         {flipped && !sessionComplete && (
           <div style={{ marginTop: "1rem" }}>
-            <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", textAlign: "center", marginBottom: "0.6rem" }}>
+            <p style={{ fontSize: "0.8rem", color: "var(--sb-text-dim)", textAlign: "center", marginBottom: "0.6rem" }}>
               How well did you know this?
             </p>
             <div style={{ display: "flex", gap: "0.6rem" }}>
@@ -484,14 +484,14 @@ export default function FlashcardsPage() {
 
         {/* End of deck summary */}
         {sessionComplete && (
-          <div style={{ textAlign: "center", marginTop: "1.5rem", padding: "1.25rem", background: "var(--color-bg-card)", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-card)" }}>
-            <p style={{ fontSize: "1.2rem", color: "var(--color-primary)", margin: "0 0 0.5rem", fontFamily: "var(--font-display)" }}>
+          <div style={{ textAlign: "center", marginTop: "1.5rem", padding: "1.25rem", background: "var(--sb-bg-card)", borderRadius: "var(--sb-radius-lg)", border: "1px solid var(--sb-border)", boxShadow: "var(--sb-shadow-card)" }}>
+            <p style={{ fontSize: "1.2rem", color: "var(--sb-primary)", margin: "0 0 0.5rem", fontFamily: "var(--sb-font-display)" }}>
               Session Complete!
             </p>
-            <p style={{ fontSize: "0.9rem", color: "var(--color-success)", margin: "0 0 0.25rem" }}>
+            <p style={{ fontSize: "0.9rem", color: "var(--sb-success)", margin: "0 0 0.25rem" }}>
               +{sessionXp} XP earned
             </p>
-            <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", margin: "0 0 1rem" }}>
+            <p style={{ fontSize: "0.85rem", color: "var(--sb-text-muted)", margin: "0 0 1rem" }}>
               {reviewedCount} cards reviewed
             </p>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
@@ -511,7 +511,7 @@ export default function FlashcardsPage() {
           </div>
         )}
 
-        {error && <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
+        {error && <p role="alert" style={{ color: "var(--sb-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
         </div>
       </div>
       </ErrorBoundary>
@@ -559,17 +559,17 @@ export default function FlashcardsPage() {
             {generating ? "Generating..." : "Generate Flashcards"}
           </button>
 
-          {error && <p role="alert" style={{ color: "var(--color-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
+          {error && <p role="alert" style={{ color: "var(--sb-error)", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
         </div>
       ) : (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
-          <p style={{ color: "var(--color-text-muted)", fontSize: "1rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--sb-border-done)", borderRadius: "var(--sb-radius-lg)" }}>
+          <p style={{ color: "var(--sb-text-muted)", fontSize: "1rem", margin: "0 0 0.5rem" }}>
             No course documents yet
           </p>
-          <p style={{ color: "var(--color-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
+          <p style={{ color: "var(--sb-text-faint)", fontSize: "0.85rem", margin: "0 0 1rem" }}>
             Create a plan and upload your course notes there, then come back to generate flashcards.
           </p>
-          <Link href="/plan" style={{ display: "inline-block", padding: "0.7rem 1.4rem", background: "var(--color-primary)", color: "var(--color-bg-darkest)", borderRadius: "var(--radius)", fontWeight: 700, textDecoration: "none", fontSize: "1rem" }}>
+          <Link href="/plan" style={{ display: "inline-block", padding: "0.7rem 1.4rem", background: "var(--sb-primary)", color: "var(--sb-bg-darkest)", borderRadius: "var(--sb-radius)", fontWeight: 700, textDecoration: "none", fontSize: "1rem" }}>
             Create a Study Plan
           </Link>
         </div>
@@ -577,23 +577,23 @@ export default function FlashcardsPage() {
 
       {/* Decks list */}
       {loadingDecks && (
-        <p style={{ color: "var(--color-text-dim)", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
+        <p style={{ color: "var(--sb-text-dim)", fontSize: "0.85rem", textAlign: "center", padding: "1rem 0" }}>
           Loading decks...
         </p>
       )}
       {!loadingDecks && courses.length > 0 && decks.length === 0 && (
-        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--color-border-done)", borderRadius: "var(--radius-lg)" }}>
-          <p style={{ color: "var(--color-text-muted)", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
+        <div style={{ textAlign: "center", padding: "2rem 1rem", border: "1px dashed var(--sb-border-done)", borderRadius: "var(--sb-radius-lg)" }}>
+          <p style={{ color: "var(--sb-text-muted)", fontSize: "0.95rem", margin: "0 0 0.5rem" }}>
             No flashcard decks yet for this course
           </p>
-          <p style={{ color: "var(--color-text-faint)", fontSize: "0.8rem", margin: "0 0 1rem" }}>
+          <p style={{ color: "var(--sb-text-faint)", fontSize: "0.8rem", margin: "0 0 1rem" }}>
             Hit the Generate button above to create your first deck from your uploaded documents.
           </p>
         </div>
       )}
       {decks.length > 0 && (
         <div>
-          <h2 style={{ ...sectionTitleStyle, color: "var(--color-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR DECKS</h2>
+          <h2 style={{ ...sectionTitleStyle, color: "var(--sb-text-muted)", fontWeight: 600, textTransform: "uppercase" }}>YOUR DECKS</h2>
           <div style={deckGrid}>
             {decks.map((deck) => (
               <div key={deck.id} style={deckCard}>
@@ -602,7 +602,7 @@ export default function FlashcardsPage() {
                     <div style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.3rem", lineHeight: 1.4 }}>
                       {deck.title}
                     </div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
+                    <div style={{ fontSize: "0.8rem", color: "var(--sb-text-dim)" }}>
                       {deck.card_count} cards · {new Date(deck.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </div>
                   </div>
@@ -638,8 +638,8 @@ const pageContainer: React.CSSProperties = {
   maxWidth: 1100,
   margin: "0 auto",
   padding: "1.5rem clamp(1.5rem, 4vw, 2rem)",
-  fontFamily: "var(--font-body)",
-  color: "var(--color-text)",
+  fontFamily: "var(--sb-font-body)",
+  color: "var(--sb-text)",
 };
 
 const studyColumn: React.CSSProperties = {
@@ -659,10 +659,10 @@ const deckCard: React.CSSProperties = {
   flexDirection: "column",
   padding: "1.25rem 1.5rem",
   fontFamily: "inherit",
-  background: "var(--color-bg-card)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
+  background: "var(--sb-bg-card)",
+  color: "var(--sb-text)",
+  border: "1px solid var(--sb-border)",
+  borderRadius: "var(--sb-radius)",
   textAlign: "left",
 };
 
@@ -673,7 +673,7 @@ const studyDeckBtn: React.CSSProperties = {
   fontFamily: "inherit",
   fontSize: "0.9rem",
   fontWeight: 600,
-  color: "var(--color-primary)",
+  color: "var(--sb-primary)",
   background: "none",
   border: "none",
   cursor: "pointer",
@@ -682,9 +682,9 @@ const studyDeckBtn: React.CSSProperties = {
 const cardStyle: React.CSSProperties = {
   minHeight: 280,
   padding: "2rem 2.25rem",
-  borderRadius: "var(--radius-lg)",
-  boxShadow: "var(--shadow-card)",
-  border: "2px solid var(--color-border)",
+  borderRadius: "var(--sb-radius-lg)",
+  boxShadow: "var(--sb-shadow-card)",
+  border: "2px solid var(--sb-border)",
   display: "flex",
   flexDirection: "column",
   justifyContent: "center",
@@ -693,7 +693,7 @@ const cardStyle: React.CSSProperties = {
 
 const progressBarBg: React.CSSProperties = {
   height: 4,
-  background: "var(--color-bg-card)",
+  background: "var(--sb-bg-card)",
   borderRadius: 2,
   marginBottom: "0.25rem",
   overflow: "hidden",
@@ -701,7 +701,7 @@ const progressBarBg: React.CSSProperties = {
 
 const progressBarFill: React.CSSProperties = {
   height: "100%",
-  background: "var(--color-info)",
+  background: "var(--sb-info)",
   borderRadius: 2,
   transition: "width 0.3s",
 };
@@ -716,27 +716,27 @@ const ratingBtn: React.CSSProperties = {
   fontSize: "0.9rem",
   fontFamily: "inherit",
   fontWeight: 600,
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border)",
+  borderRadius: "var(--sb-radius)",
   cursor: "pointer",
 };
 
 const backBtn: React.CSSProperties = {
   fontSize: "0.85rem",
   fontFamily: "inherit",
-  color: "var(--color-text-dim)",
+  color: "var(--sb-text-dim)",
   background: "none",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderRadius: "var(--sb-radius-sm)",
   padding: "0.45rem 0.9rem",
   cursor: "pointer",
 };
 
 const tagStyle: React.CSSProperties = {
   fontSize: "0.6rem",
-  background: "var(--color-bg-info-tint)",
-  color: "var(--color-info)",
+  background: "var(--sb-bg-info-tint)",
+  color: "var(--sb-info)",
   padding: "0.1rem 0.4rem",
   borderRadius: 3,
   letterSpacing: "0.03em",
@@ -745,10 +745,10 @@ const tagStyle: React.CSSProperties = {
 const kbdStyle: React.CSSProperties = {
   display: "inline-block",
   fontSize: "0.6rem",
-  fontFamily: "var(--font-mono)",
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
+  fontFamily: "var(--sb-font-mono)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border)",
   borderRadius: 3,
   padding: "0.05rem 0.3rem",
-  color: "var(--color-text)",
+  color: "var(--sb-text)",
 };

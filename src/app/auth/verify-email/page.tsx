@@ -77,9 +77,9 @@ function VerifyEmailContent() {
             disabled={resending}
             style={{
               ...buttonStyle,
-              background: "var(--color-bg-input)",
-              color: "var(--color-text)",
-              border: "1px solid var(--color-border)",
+              background: "var(--sb-bg-input)",
+              color: "var(--sb-text)",
+              border: "1px solid var(--sb-border)",
               opacity: resending ? 0.6 : 1,
               marginTop: "1rem",
             }}
@@ -102,7 +102,7 @@ export default function VerifyEmailPage() {
     <Suspense fallback={
       <div style={containerStyle}>
         <div style={cardStyle}>
-          <p style={{ textAlign: "center", color: "var(--color-text-muted)" }}>Loading...</p>
+          <p style={{ textAlign: "center", color: "var(--sb-text-muted)" }}>Loading...</p>
         </div>
       </div>
     }>

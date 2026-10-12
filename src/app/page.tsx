@@ -84,11 +84,11 @@ function formatScope(scope: string): string {
 }
 
 const MODE_COLORS: Record<string, string> = {
-  RETRIEVAL: "var(--color-info)",
-  INTERLEAVED_PRACTICE: "var(--color-review)",
-  ERROR_REPAIR: "var(--color-error)",
-  EXAM_SIM: "var(--color-primary)",
-  WORKED_EXAMPLES: "var(--color-success)",
+  RETRIEVAL: "var(--sb-info)",
+  INTERLEAVED_PRACTICE: "var(--sb-review)",
+  ERROR_REPAIR: "var(--sb-error)",
+  EXAM_SIM: "var(--sb-primary)",
+  WORKED_EXAMPLES: "var(--sb-success)",
 };
 
 // ---- Component ----
@@ -204,7 +204,7 @@ export default function DashboardPage() {
     return (
       <main style={mainStyle}>
         <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-text-muted)" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--sb-text-muted)" }}>
           <div style={spinnerStyle} />
           <p style={{ marginTop: "1rem" }}>Loading...</p>
         </div>
@@ -215,9 +215,9 @@ export default function DashboardPage() {
   if (error) {
     return (
       <main style={mainStyle}>
-        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--color-error)" }}>
+        <div style={{ textAlign: "center", padding: "4rem 0", color: "var(--sb-error)" }}>
           <p style={{ fontSize: "1.3rem" }}>Failed to load dashboard</p>
-          <p style={{ color: "var(--color-text-muted)", marginTop: "0.5rem" }}>{error}</p>
+          <p style={{ color: "var(--sb-text-muted)", marginTop: "0.5rem" }}>{error}</p>
           <button onClick={() => window.location.reload()} style={actionBtnStyle}>
             Retry
           </button>
@@ -272,7 +272,7 @@ export default function DashboardPage() {
             <p style={{ fontSize: plans.length === 0 ? "1.25rem" : "1.1rem", marginBottom: "0.5rem" }}>
               {plans.length === 0 ? "Welcome to Study Bot" : "No sessions today"}
             </p>
-            <p style={{ color: "var(--color-text-dim)", fontSize: "0.9rem", margin: 0 }}>
+            <p style={{ color: "var(--sb-text-dim)", fontSize: "0.9rem", margin: 0 }}>
               {plans.length === 0
                 ? "Create a study plan and your daily sessions will show up here."
                 : "Rest is part of effective learning."}
@@ -293,41 +293,41 @@ export default function DashboardPage() {
           >
             {todaySessions.map((item) => {
               const single = todaySessions.length === 1;
-              const mc = MODE_COLORS[item.mode] || "var(--color-info)";
+              const mc = MODE_COLORS[item.mode] || "var(--sb-info)";
               const actionable = item.status === "SCHEDULED" || item.status === "IN_PROGRESS";
               const actionLabel = item.status === "IN_PROGRESS" ? "Continue" : "Start";
               const cardContent = single ? (
                   // Single session: one wide row so the lone card feels substantial.
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                    <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem", minWidth: "6rem" }}>
+                    <span style={{ color: "var(--sb-text-dim)", fontSize: "0.9rem", minWidth: "6rem" }}>
                       {formatTime(item.start_time)} - {formatTime(item.end_time)}
                     </span>
-                    <span style={{ fontWeight: 600, color: "var(--color-text)", fontSize: "1.15rem" }}>
+                    <span style={{ fontWeight: 600, color: "var(--sb-text)", fontSize: "1.15rem" }}>
                       {MODE_LABELS[item.mode] || item.mode}
                     </span>
-                    <span style={{ color: "var(--color-text-muted)", flex: 1, minWidth: 0, fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <span style={{ color: "var(--sb-text-muted)", flex: 1, minWidth: 0, fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {formatScope(item.topic_scope)}
                     </span>
                     {actionable && <span style={primaryBtnStyle}>{actionLabel}</span>}
                     {item.status === "DONE" && (
-                      <span style={{ color: "var(--color-success)", fontSize: "0.85rem" }}>Done</span>
+                      <span style={{ color: "var(--sb-success)", fontSize: "0.85rem" }}>Done</span>
                     )}
                   </div>
               ) : (
                   // Grid cards: stacked layout that reads cleanly at ~320px wide.
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.75rem" }}>
-                      <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>
+                      <span style={{ color: "var(--sb-text-dim)", fontSize: "0.9rem" }}>
                         {formatTime(item.start_time)} - {formatTime(item.end_time)}
                       </span>
                       {item.status === "DONE" && (
-                        <span style={{ color: "var(--color-success)", fontSize: "0.85rem" }}>Done</span>
+                        <span style={{ color: "var(--sb-success)", fontSize: "0.85rem" }}>Done</span>
                       )}
                     </div>
-                    <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--sb-text)" }}>
                       {MODE_LABELS[item.mode] || item.mode}
                     </span>
-                    <span style={{ color: "var(--color-text-muted)", fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <span style={{ color: "var(--sb-text-muted)", fontSize: "0.95rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {formatScope(item.topic_scope)}
                     </span>
                     {actionable && (
@@ -393,7 +393,7 @@ export default function DashboardPage() {
           <section style={{ marginBottom: "2rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <h2 style={{ ...sectionHeadingStyle, margin: 0 }}>Achievements</h2>
-              <Link href="/achievements" style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", textDecoration: "none" }}>
+              <Link href="/achievements" style={{ fontSize: "0.75rem", color: "var(--sb-text-faint)", textDecoration: "none" }}>
                 View All ({earnedBadges}/{TOTAL_BADGES})
               </Link>
             </div>
@@ -405,14 +405,14 @@ export default function DashboardPage() {
                   return (
                     <Link key={a.badgeType} href="/achievements" style={{ ...badgeStyle, textDecoration: "none" }} title={`${info.label}: ${info.description}`}>
                       <span style={{ fontSize: "1.3rem" }}>{info.icon}</span>
-                      <span style={{ fontSize: "0.6rem", color: "var(--color-text-muted)", marginTop: "0.15rem" }}>{info.label}</span>
+                      <span style={{ fontSize: "0.6rem", color: "var(--sb-text-muted)", marginTop: "0.15rem" }}>{info.label}</span>
                     </Link>
                   );
                 })}
               </div>
             ) : (
               <Link href="/achievements" style={{ ...emptyCardStyle, display: "block", textDecoration: "none", padding: "1rem" }}>
-                <p style={{ fontSize: "0.9rem", margin: 0, color: "var(--color-text-muted)" }}>
+                <p style={{ fontSize: "0.9rem", margin: 0, color: "var(--sb-text-muted)" }}>
                   No badges earned yet. Start studying to unlock achievements!
                 </p>
               </Link>
@@ -457,7 +457,7 @@ function OnboardingFlow({
       title: "Welcome to Study Bot!",
       content: (
         <div>
-          <p style={{ fontSize: "1rem", color: "var(--color-text)", lineHeight: 1.6, marginBottom: "1rem" }}>
+          <p style={{ fontSize: "1rem", color: "var(--sb-text)", lineHeight: 1.6, marginBottom: "1rem" }}>
             Your AI-powered study companion. Upload your course materials and let Study Bot help you learn more effectively.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", textAlign: "left" }}>
@@ -468,7 +468,7 @@ function OnboardingFlow({
               { icon: "\u{1F4C5}", text: "Plan study sessions and track progress" },
               { icon: "\u{1F3C6}", text: "Earn XP and unlock achievements" },
             ].map((item) => (
-              <div key={item.text} style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.9rem", color: "var(--color-text-secondary)" }}>
+              <div key={item.text} style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.9rem", color: "var(--sb-text-secondary)" }}>
                 <span style={{ fontSize: "1.1rem" }}>{item.icon}</span>
                 <span>{item.text}</span>
               </div>
@@ -481,7 +481,7 @@ function OnboardingFlow({
       title: "Your learning journey",
       content: (
         <div>
-          <p style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
+          <p style={{ fontSize: "0.9rem", color: "var(--sb-text-muted)", marginBottom: "1rem" }}>
             Here&apos;s how to get the most out of Study Bot:
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -494,15 +494,15 @@ function OnboardingFlow({
               <div key={item.step} style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start" }}>
                 <div style={{
                   width: 24, height: 24, borderRadius: "50%",
-                  background: "var(--color-primary)", color: "var(--color-bg-darkest)",
+                  background: "var(--sb-primary)", color: "var(--sb-bg-darkest)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: "0.75rem", fontWeight: 700, flexShrink: 0,
                 }}>
                   {item.step}
                 </div>
                 <div>
-                  <div style={{ fontSize: "0.9rem", color: "var(--color-text)", fontWeight: 600 }}>{item.title}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--color-text-dim)" }}>{item.desc}</div>
+                  <div style={{ fontSize: "0.9rem", color: "var(--sb-text)", fontWeight: 600 }}>{item.title}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--sb-text-dim)" }}>{item.desc}</div>
                 </div>
               </div>
             ))}
@@ -531,15 +531,15 @@ function OnboardingFlow({
         ref={dialogRef}
         tabIndex={-1}
         style={{
-          background: "var(--color-bg)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-card)",
+          background: "var(--sb-bg)",
+          border: "1px solid var(--sb-border)",
+          borderRadius: "var(--sb-radius-lg)",
+          boxShadow: "var(--sb-shadow-card)",
           padding: "2.5rem",
           maxWidth: 560,
           width: "100%",
           textAlign: "center",
-          fontFamily: "var(--font-body)",
+          fontFamily: "var(--sb-font-body)",
           outline: "none",
         }}
       >
@@ -550,7 +550,7 @@ function OnboardingFlow({
               key={i}
               style={{
                 width: 8, height: 8, borderRadius: "50%",
-                background: i <= step ? "var(--color-primary)" : "var(--color-border)",
+                background: i <= step ? "var(--sb-primary)" : "var(--sb-border)",
                 transition: "background 0.3s",
               }}
             />
@@ -558,8 +558,8 @@ function OnboardingFlow({
         </div>
 
         <h2 style={{
-          fontSize: "1.5rem", color: "var(--color-primary)", fontWeight: 700, margin: "0 0 1rem",
-          fontFamily: "var(--font-display)",
+          fontSize: "1.5rem", color: "var(--sb-primary)", fontWeight: 700, margin: "0 0 1rem",
+          fontFamily: "var(--sb-font-display)",
         }}>
           {currentStep.title}
         </h2>
@@ -568,7 +568,7 @@ function OnboardingFlow({
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.5rem" }}>
           <button onClick={onSkip} style={{
-            background: "none", border: "none", color: "var(--color-text-dim)", fontSize: "0.8rem",
+            background: "none", border: "none", color: "var(--sb-text-dim)", fontSize: "0.8rem",
             fontFamily: "inherit", cursor: "pointer", padding: "0.3rem",
           }}>
             Skip
@@ -576,9 +576,9 @@ function OnboardingFlow({
           <button
             onClick={isLast ? onComplete : onNext}
             style={{
-              background: "var(--color-primary)", color: "var(--color-bg-darkest)", border: "none",
+              background: "var(--sb-primary)", color: "var(--sb-bg-darkest)", border: "none",
               padding: "0.7rem 1.5rem", fontSize: "1rem", fontWeight: 600,
-              fontFamily: "inherit", borderRadius: "var(--radius)", cursor: "pointer",
+              fontFamily: "inherit", borderRadius: "var(--sb-radius)", cursor: "pointer",
             }}
           >
             {isLast ? "Get Started" : "Next"}
@@ -595,12 +595,12 @@ function ConfettiOverlay({ badge }: { badge: string | null }) {
   const info = badge ? BADGE_MAP[badge] : null;
   const particles = useMemo(() => {
     const colors = [
-      "var(--color-primary)",
-      "var(--color-warning)",
-      "var(--color-success)",
-      "var(--color-info)",
-      "var(--color-review)",
-      "var(--color-error)",
+      "var(--sb-primary)",
+      "var(--sb-warning)",
+      "var(--sb-success)",
+      "var(--sb-info)",
+      "var(--sb-review)",
+      "var(--sb-error)",
     ];
     return Array.from({ length: 40 }, (_, i) => ({
       id: i,
@@ -639,10 +639,10 @@ function ConfettiOverlay({ badge }: { badge: string | null }) {
           animation: "celebrate-pop 0.5s ease-out forwards",
         }}>
           <div style={{ fontSize: "3rem", marginBottom: "0.5rem" }}>{info.icon}</div>
-          <div style={{ fontSize: "1.3rem", color: "var(--color-primary)", fontWeight: 700, fontFamily: "var(--font-display)" }}>
+          <div style={{ fontSize: "1.3rem", color: "var(--sb-primary)", fontWeight: 700, fontFamily: "var(--sb-font-display)" }}>
             {info.label}!
           </div>
-          <div style={{ fontSize: "0.85rem", color: "var(--color-text)", marginTop: "0.25rem" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--sb-text)", marginTop: "0.25rem" }}>
             {info.description}
           </div>
         </div>
@@ -703,11 +703,11 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
   }, [activity]);
 
   const getColor = useCallback((count: number) => {
-    if (count === 0) return "var(--color-bg-darkest)";
+    if (count === 0) return "var(--sb-bg-darkest)";
     if (count === 1) return "rgba(88, 201, 139, 0.3)"; // --color-success @ 30%
     if (count === 2) return "rgba(88, 201, 139, 0.5)";
     if (count <= 4) return "rgba(88, 201, 139, 0.72)";
-    return "var(--color-success)";
+    return "var(--sb-success)";
   }, []);
 
   const cellSize = 11;
@@ -731,7 +731,7 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
               key={`${m.label}-${i}`}
               x={m.weekIndex * step}
               y={11}
-              fill="var(--color-text-faint)"
+              fill="var(--sb-text-faint)"
               fontSize="9"
               fontFamily="inherit"
             >
@@ -754,7 +754,7 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
                 height={cellSize}
                 rx={2}
                 fill={getColor(day.count)}
-                stroke="var(--color-bg)"
+                stroke="var(--sb-bg)"
                 strokeWidth={0.5}
               >
                 <title>{day.date}: {day.count} session{day.count !== 1 ? "s" : ""}</title>
@@ -763,13 +763,13 @@ function ActivityHeatmap({ activity }: { activity: ActivityDay[] }) {
           )}
         </svg>
         <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginTop: "0.4rem", justifyContent: "flex-end" }}>
-          <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>Less</span>
+          <span style={{ fontSize: "0.55rem", color: "var(--sb-text-dim)" }}>Less</span>
           {[0, 1, 2, 3, 5].map((n) => (
             <svg key={n} width={cellSize} height={cellSize}>
               <rect width={cellSize} height={cellSize} rx={2} fill={getColor(n)} />
             </svg>
           ))}
-          <span style={{ fontSize: "0.55rem", color: "var(--color-text-dim)" }}>More</span>
+          <span style={{ fontSize: "0.55rem", color: "var(--sb-text-dim)" }}>More</span>
         </div>
       </div>
     </div>
@@ -782,23 +782,23 @@ const mainStyle: React.CSSProperties = {
   maxWidth: 1100,
   margin: "0 auto",
   padding: "1.5rem 1.75rem",
-  fontFamily: "var(--font-body)",
-  color: "var(--color-text)",
-  backgroundColor: "var(--color-bg)",
+  fontFamily: "var(--sb-font-body)",
+  color: "var(--sb-text)",
+  backgroundColor: "var(--sb-bg)",
   minHeight: "100vh",
 };
 
 const headingStyle: React.CSSProperties = {
   fontSize: "1.6rem",
   margin: "0 0 1.5rem",
-  color: "var(--color-text)",
+  color: "var(--sb-text)",
   fontWeight: 700,
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 const sectionHeadingStyle: React.CSSProperties = {
   fontSize: "0.8rem",
-  color: "var(--color-text-muted)",
+  color: "var(--sb-text-muted)",
   marginBottom: "0.75rem",
   fontWeight: 600,
   textTransform: "uppercase",
@@ -813,11 +813,11 @@ const statStripStyle: React.CSSProperties = {
   rowGap: "0.2rem",
   margin: 0,
   fontSize: "0.8rem",
-  color: "var(--color-text-muted)",
+  color: "var(--sb-text-muted)",
 };
 
 const statStripDotStyle: React.CSSProperties = {
-  color: "var(--color-text-faint)",
+  color: "var(--sb-text-faint)",
 };
 
 const badgeStyle: React.CSSProperties = {
@@ -825,26 +825,26 @@ const badgeStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   padding: "0.5rem 0.6rem",
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderRadius: "var(--sb-radius)",
   minWidth: 60,
 };
 
 const sessionCardStyle: React.CSSProperties = {
   padding: "0.75rem 1rem",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius)",
-  backgroundColor: "var(--color-bg-card)",
-  boxShadow: "var(--shadow-card)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderRadius: "var(--sb-radius)",
+  backgroundColor: "var(--sb-bg-card)",
+  boxShadow: "var(--sb-shadow-card)",
 };
 
 const emptyCardStyle: React.CSSProperties = {
   padding: "2rem",
-  border: "1px dashed var(--color-border-done)",
-  borderRadius: "var(--radius-lg)",
+  border: "1px dashed var(--sb-border-done)",
+  borderRadius: "var(--sb-radius-lg)",
   textAlign: "center",
-  color: "var(--color-text-secondary)",
+  color: "var(--sb-text-secondary)",
 };
 
 // Filled primary — the single visual primary action on the page.
@@ -853,10 +853,10 @@ const primaryBtnStyle: React.CSSProperties = {
   padding: "0.7rem 1.4rem",
   fontSize: "1rem",
   fontWeight: 600,
-  color: "var(--color-bg-darkest)",
-  backgroundColor: "var(--color-primary)",
+  color: "var(--sb-bg-darkest)",
+  backgroundColor: "var(--sb-primary)",
   border: "none",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
   textDecoration: "none",
   cursor: "pointer",
   fontFamily: "inherit",
@@ -866,10 +866,10 @@ const actionBtnStyle: React.CSSProperties = {
   padding: "0.7rem 1.25rem",
   fontSize: "0.95rem",
   fontWeight: 600,
-  color: "var(--color-primary)",
-  border: "1px solid var(--color-primary)",
-  borderRadius: "var(--radius)",
-  backgroundColor: "var(--color-bg-selected)",
+  color: "var(--sb-primary)",
+  border: "1px solid var(--sb-primary)",
+  borderRadius: "var(--sb-radius)",
+  backgroundColor: "var(--sb-bg-selected)",
   textDecoration: "none",
   cursor: "pointer",
   fontFamily: "inherit",
@@ -878,8 +878,8 @@ const actionBtnStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: "32px",
   height: "32px",
-  border: "3px solid var(--color-border)",
-  borderTop: "3px solid var(--color-primary)",
+  border: "3px solid var(--sb-border)",
+  borderTop: "3px solid var(--sb-primary)",
   borderRadius: "50%",
   margin: "0 auto",
   animation: "dash-spin 0.8s linear infinite",

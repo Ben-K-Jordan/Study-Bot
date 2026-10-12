@@ -120,8 +120,8 @@ export function EndScreen({ run, session, onNewRun }: Props) {
   if (!metrics || metrics.attempts_count === 0) {
     return (
       <div style={{ textAlign: "center", padding: "2rem 0" }}>
-        <h1 style={{ fontSize: "1.6rem", fontFamily: "var(--font-display)" }}>No completed run yet</h1>
-        <p style={{ color: "var(--color-text-muted)", marginBottom: "1.5rem" }}>
+        <h1 style={{ fontSize: "1.6rem", fontFamily: "var(--sb-font-display)" }}>No completed run yet</h1>
+        <p style={{ color: "var(--sb-text-muted)", marginBottom: "1.5rem" }}>
           Start a session to see your results here.
         </p>
         <button onClick={onNewRun} style={primaryBtn}>
@@ -147,17 +147,17 @@ export function EndScreen({ run, session, onNewRun }: Props) {
           style={{
             fontSize: "0.85rem",
             letterSpacing: "0.1em",
-            color: "var(--color-info)",
+            color: "var(--sb-info)",
             marginBottom: "0.5rem",
-            fontFamily: "var(--font-display)",
+            fontFamily: "var(--sb-font-display)",
           }}
         >
           SESSION COMPLETE
         </div>
-        <h1 style={{ fontSize: "2rem", margin: "0 0 0.35rem", fontFamily: "var(--font-display)", color: "var(--color-primary)" }}>
+        <h1 style={{ fontSize: "2rem", margin: "0 0 0.35rem", fontFamily: "var(--sb-font-display)", color: "var(--sb-primary)" }}>
           {session.course_name} | {session.exam_name}
         </h1>
-        <p style={{ color: "var(--color-text-muted)", margin: 0, fontSize: "1.05rem" }}>
+        <p style={{ color: "var(--sb-text-muted)", margin: 0, fontSize: "1.05rem" }}>
           {session.mode_label}: {session.topic_scope}
         </p>
       </div>
@@ -166,13 +166,13 @@ export function EndScreen({ run, session, onNewRun }: Props) {
       {session.mode === "EXAM_SIM" && run && (
         <div
           style={{
-            background: "var(--color-bg-review-tint)",
-            border: "1px solid var(--color-review)",
-            borderRadius: "var(--radius)",
+            background: "var(--sb-bg-review-tint)",
+            border: "1px solid var(--sb-review)",
+            borderRadius: "var(--sb-radius)",
             padding: "0.75rem 1rem",
             marginBottom: "1rem",
             fontSize: "0.9rem",
-            color: "var(--color-review)",
+            color: "var(--sb-review)",
             display: "flex",
             justifyContent: "space-around",
           }}
@@ -192,12 +192,12 @@ export function EndScreen({ run, session, onNewRun }: Props) {
         }}
       >
         <StatCard label="Accuracy" value={`${accuracyPct}%`} color={accuracyColor(metrics.accuracy)} />
-        <StatCard label="Time" value={`${timeMin} min`} color="var(--color-info)" />
-        <StatCard label="Correct" value={String(metrics.correct_count)} color="var(--color-success)" />
+        <StatCard label="Time" value={`${timeMin} min`} color="var(--sb-info)" />
+        <StatCard label="Correct" value={String(metrics.correct_count)} color="var(--sb-success)" />
         <StatCard
           label="Partial / Incorrect"
           value={`${metrics.partial_count} / ${metrics.incorrect_count}`}
-          color="var(--color-error)"
+          color="var(--sb-error)"
         />
       </div>
 
@@ -208,9 +208,9 @@ export function EndScreen({ run, session, onNewRun }: Props) {
       {followups.length > 0 && (
         <div
           style={{
-            background: "var(--color-bg-card)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius)",
+            background: "var(--sb-bg-card)",
+            border: "1px solid var(--sb-border)",
+            borderRadius: "var(--sb-radius)",
             padding: "1.5rem 1.75rem",
             marginBottom: "1.5rem",
           }}
@@ -219,11 +219,11 @@ export function EndScreen({ run, session, onNewRun }: Props) {
           <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "1rem", lineHeight: 1.9 }}>
             {followups.map((f, i) => (
               <li key={i}>
-                {f.label} — <span style={{ color: "var(--color-info)" }}>{f.date}</span>
+                {f.label} — <span style={{ color: "var(--sb-info)" }}>{f.date}</span>
               </li>
             ))}
           </ul>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--sb-text-dim)" }}>
             Based on spaced repetition research: lower accuracy → shorter intervals.
           </p>
           {scheduleRunId && (
@@ -247,10 +247,10 @@ export function EndScreen({ run, session, onNewRun }: Props) {
                 fontSize: "0.9rem",
                 color:
                   scheduleResult.status === "error"
-                    ? "var(--color-error)"
+                    ? "var(--sb-error)"
                     : scheduleResult.status === "no_plan"
-                      ? "var(--color-warning)"
-                      : "var(--color-success)",
+                      ? "var(--sb-warning)"
+                      : "var(--sb-success)",
               }}
             >
               {scheduleResult.status === "no_plan"
@@ -277,22 +277,22 @@ function CalibrationDashboard({ attempts }: { attempts?: RunData["attempts"] }) 
   if (calibrationData.length === 0) return null;
   const { gap, overconfidentCount, underconfidentCount } = computeCalibrationGap(calibrationData);
   const label = gap < 0.15 ? "Well Calibrated" : gap < 0.3 ? "Slightly Miscalibrated" : "Needs Work";
-  const color = gap < 0.15 ? "var(--color-success)" : gap < 0.3 ? "var(--color-warning)" : "var(--color-error)";
+  const color = gap < 0.15 ? "var(--sb-success)" : gap < 0.3 ? "var(--sb-warning)" : "var(--sb-error)";
 
   return (
-    <div style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "1.5rem 1.75rem", marginBottom: "1.5rem" }}>
+    <div style={{ background: "var(--sb-bg-card)", border: "1px solid var(--sb-border)", borderRadius: "var(--sb-radius)", padding: "1.5rem 1.75rem", marginBottom: "1.5rem" }}>
       <h2 style={sectionTitle}>CONFIDENCE CALIBRATION</h2>
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: overconfidentCount > 0 || underconfidentCount > 0 ? "0.5rem" : 0 }}>
         <span style={{ fontSize: "1.15rem", color, fontWeight: 600 }}>{label}</span>
-        <span style={{ fontSize: "0.85rem", color: "var(--color-text-dim)" }}>({(gap * 100).toFixed(0)}% gap)</span>
+        <span style={{ fontSize: "0.85rem", color: "var(--sb-text-dim)" }}>({(gap * 100).toFixed(0)}% gap)</span>
       </div>
       {overconfidentCount > 0 && (
-        <p style={{ margin: "0 0 0.25rem", fontSize: "0.9rem", color: "var(--color-error)" }}>
+        <p style={{ margin: "0 0 0.25rem", fontSize: "0.9rem", color: "var(--sb-error)" }}>
           Overconfident on {overconfidentCount} question{overconfidentCount > 1 ? "s" : ""} — blind spots to review.
         </p>
       )}
       {underconfidentCount > 0 && (
-        <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--color-success)" }}>
+        <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--sb-success)" }}>
           Underconfident on {underconfidentCount} question{underconfidentCount > 1 ? "s" : ""} — you know more than you think.
         </p>
       )}
@@ -304,31 +304,31 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   return (
     <div
       style={{
-        background: "var(--color-bg-card)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius)",
+        background: "var(--sb-bg-card)",
+        border: "1px solid var(--sb-border)",
+        borderRadius: "var(--sb-radius)",
         padding: "1.25rem 1rem",
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: "1.9rem", fontWeight: 700, color, fontFamily: "var(--font-display)" }}>{value}</div>
-      <div style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "0.35rem" }}>{label}</div>
+      <div style={{ fontSize: "1.9rem", fontWeight: 700, color, fontFamily: "var(--sb-font-display)" }}>{value}</div>
+      <div style={{ fontSize: "0.85rem", color: "var(--sb-text-muted)", marginTop: "0.35rem" }}>{label}</div>
     </div>
   );
 }
 
 function accuracyColor(accuracy: number): string {
-  if (accuracy >= 0.85) return "var(--color-success)";
-  if (accuracy >= 0.7) return "var(--color-warning)";
-  return "var(--color-error)";
+  if (accuracy >= 0.85) return "var(--sb-success)";
+  if (accuracy >= 0.7) return "var(--sb-warning)";
+  return "var(--sb-error)";
 }
 
 const sectionTitle: React.CSSProperties = {
   fontSize: "0.85rem",
   letterSpacing: "0.08em",
-  color: "var(--color-info)",
+  color: "var(--sb-info)",
   margin: "0 0 0.65rem",
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 // Quiet outline button attached to the follow-ups list — deliberately not a
@@ -336,12 +336,12 @@ const sectionTitle: React.CSSProperties = {
 const secondaryBtn: React.CSSProperties = {
   padding: "0.45rem 1rem",
   fontSize: "0.85rem",
-  fontFamily: "var(--font-body)",
+  fontFamily: "var(--sb-font-body)",
   fontWeight: 600,
   background: "transparent",
-  color: "var(--color-info)",
-  border: "1px solid var(--color-info)",
-  borderRadius: "var(--radius)",
+  color: "var(--sb-info)",
+  border: "1px solid var(--sb-info)",
+  borderRadius: "var(--sb-radius)",
   cursor: "pointer",
 };
 
@@ -349,11 +349,11 @@ const primaryBtn: React.CSSProperties = {
   width: "100%",
   padding: "1rem 1.5rem",
   fontSize: "1.15rem",
-  fontFamily: "var(--font-body)",
+  fontFamily: "var(--sb-font-body)",
   fontWeight: 600,
-  background: "var(--color-primary)",
-  color: "var(--color-bg-darkest)",
+  background: "var(--sb-primary)",
+  color: "var(--sb-bg-darkest)",
   border: "none",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
   cursor: "pointer",
 };

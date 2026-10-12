@@ -37,11 +37,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
         <div style={{
           padding: "1.5rem",
           margin: "1rem 0",
-          background: "var(--color-bg-card)",
-          border: "1px solid var(--color-border-subtle)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-card)",
-          color: "var(--color-text-secondary)",
+          background: "var(--sb-bg-card)",
+          border: "1px solid var(--sb-border-subtle)",
+          borderRadius: "var(--sb-radius-lg)",
+          boxShadow: "var(--sb-shadow-card)",
+          color: "var(--sb-text-secondary)",
           textAlign: "center",
         }}>
           <p style={{ margin: 0, fontSize: "0.95rem" }}>
@@ -52,10 +52,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
             style={{
               marginTop: "0.75rem",
               padding: "0.4rem 1rem",
-              background: "var(--color-bg-input)",
-              color: "var(--color-text)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-sm)",
+              background: "var(--sb-bg-input)",
+              color: "var(--sb-text)",
+              border: "1px solid var(--sb-border)",
+              borderRadius: "var(--sb-radius-sm)",
               fontWeight: 600,
               cursor: "pointer",
               fontSize: "0.85rem",

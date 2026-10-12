@@ -458,7 +458,7 @@ export default function PlanPage() {
     return (
       <div id="main-content" style={pageStyle}>
         <h1 style={headingStyle}>Your Plan</h1>
-        <div style={{ color: "var(--color-text-muted)" }}>Loading your plan...</div>
+        <div style={{ color: "var(--sb-text-muted)" }}>Loading your plan...</div>
       </div>
     );
   }
@@ -536,7 +536,7 @@ export default function PlanPage() {
 
           {/* Content upload */}
           <div style={{ marginBottom: "1.5rem" }}>
-            <div style={{ fontSize: "0.95rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+            <div style={{ fontSize: "0.95rem", color: "var(--sb-text-muted)", marginBottom: "0.5rem" }}>
               Upload your course materials and we&apos;ll build a plan around them.
             </div>
             <button
@@ -555,10 +555,10 @@ export default function PlanPage() {
                 style={{ display: "none" }}
                 tabIndex={-1}
               />
-              <span style={{ color: "var(--color-primary)" }}>
+              <span style={{ color: "var(--sb-primary)" }}>
                 {uploading ? "Uploading..." : "Click to upload files"}
               </span>
-              <span style={{ color: "var(--color-text-dim)", fontSize: "0.9rem" }}>PDF, text, or markdown</span>
+              <span style={{ color: "var(--sb-text-dim)", fontSize: "0.9rem" }}>PDF, text, or markdown</span>
             </button>
 
             {uploadedFiles.length > 0 && (
@@ -566,7 +566,7 @@ export default function PlanPage() {
                 {uploadedFiles.map((file) => (
                   <div key={file.id} style={fileRowStyle}>
                     <span>{file.name}</span>
-                    <span role="status" style={{ color: file.status === "PROCESSED" ? "var(--color-success)" : "var(--color-warning)", fontSize: "0.85rem" }}>
+                    <span role="status" style={{ color: file.status === "PROCESSED" ? "var(--sb-success)" : "var(--sb-warning)", fontSize: "0.85rem" }}>
                       {file.status}
                     </span>
                   </div>
@@ -575,7 +575,7 @@ export default function PlanPage() {
             )}
 
             <div style={{ marginTop: "0.75rem" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.95rem", color: "var(--color-text-dim)", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.95rem", color: "var(--sb-text-dim)", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={useManualObjectives}
@@ -620,7 +620,7 @@ export default function PlanPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
         <div>
           <h1 style={{ ...headingStyle, margin: 0 }}>Your Plan</h1>
-          <div style={{ color: "var(--color-text-secondary)", fontSize: "0.95rem", marginTop: "0.35rem" }}>
+          <div style={{ color: "var(--sb-text-secondary)", fontSize: "0.95rem", marginTop: "0.35rem" }}>
             {plan.course_name} · {countdownText(plan)}
           </div>
         </div>
@@ -631,7 +631,7 @@ export default function PlanPage() {
             </button>
           )}
           {publishDone && (
-            <span style={{ color: "var(--color-success)", fontSize: "0.95rem", padding: "0.5rem" }}>Added to calendar</span>
+            <span style={{ color: "var(--sb-success)", fontSize: "0.95rem", padding: "0.5rem" }}>Added to calendar</span>
           )}
           <a href={plan.ics_download_url} style={btnStyle}>Download .ics</a>
           {!reflowPreview ? (
@@ -640,7 +640,7 @@ export default function PlanPage() {
             </button>
           ) : (
             <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem" }}>
-              <span style={{ color: "var(--color-text-secondary)" }}>
+              <span style={{ color: "var(--sb-text-secondary)" }}>
                 {reflowPreview.moved} moved · {reflowPreview.kept} kept · {reflowPreview.dropped} dropped
               </span>
               <button onClick={applyReflow} disabled={reflowLoading} style={btnStyle}>
@@ -657,14 +657,14 @@ export default function PlanPage() {
           <button
             onClick={handleDeletePlan}
             disabled={deletingPlan}
-            style={{ ...btnStyle, color: "var(--color-error)", borderColor: "var(--color-error)" }}
+            style={{ ...btnStyle, color: "var(--sb-error)", borderColor: "var(--sb-error)" }}
           >
             {deletingPlan ? "Deleting..." : "Delete"}
           </button>
         </div>
       </div>
 
-      <div style={{ fontSize: "0.95rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
+      <div style={{ fontSize: "0.95rem", color: "var(--sb-text-muted)", marginBottom: "1rem" }}>
         {plan.items.length} sessions for {plan.exam_name}
       </div>
 
@@ -677,7 +677,7 @@ export default function PlanPage() {
           <div key={dayIdx} style={{ marginBottom: "1.25rem" }}>
             <h2 style={dayHeadingStyle}>
               {formatDayLabel(dayItems[0].start_time, tz)}
-              {isToday && <span style={{ color: "var(--color-primary)" }}> · Today</span>}
+              {isToday && <span style={{ color: "var(--sb-primary)" }}> · Today</span>}
             </h2>
             <div style={cardGridStyle}>
             {dayItems.map((item) => (
@@ -689,22 +689,22 @@ export default function PlanPage() {
                 style={dayItems.length === 1 ? { ...sessionCardStyle, gridColumn: "1 / -1" } : sessionCardStyle}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.25rem" }}>
-                  <span style={{ fontWeight: "bold", color: "var(--color-text)" }}>
+                  <span style={{ fontWeight: "bold", color: "var(--sb-text)" }}>
                     {MODE_LABELS[item.mode] || item.mode}
                     {item.status === "DONE" && (
-                      <span style={{ fontWeight: "normal", fontSize: "0.8rem", color: "var(--color-success)" }}> · done</span>
+                      <span style={{ fontWeight: "normal", fontSize: "0.8rem", color: "var(--sb-success)" }}> · done</span>
                     )}
                     {item.status === "MISSED" && (
-                      <span style={{ fontWeight: "normal", fontSize: "0.8rem", color: "var(--color-warning)" }}> · missed</span>
+                      <span style={{ fontWeight: "normal", fontSize: "0.8rem", color: "var(--sb-warning)" }}> · missed</span>
                     )}
                   </span>
-                  <span style={{ fontSize: "0.9rem", color: "var(--color-text-dim)" }}>
+                  <span style={{ fontSize: "0.9rem", color: "var(--sb-text-dim)" }}>
                     {formatTime(item.start_time, tz)}
                     {" - "}
                     {formatTime(item.end_time, tz)}
                   </span>
                 </div>
-                <div style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginTop: "0.2rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontSize: "0.9rem", color: "var(--sb-text-muted)", marginTop: "0.2rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {focusLine(item)}
                 </div>
               </a>
@@ -728,7 +728,7 @@ export default function PlanPage() {
             {otherPlans.map((p) => (
               <button key={p.plan_id} onClick={() => switchPlan(p.plan_id)} style={otherPlanRowStyle}>
                 <span>{p.course_name} · {p.exam_name}</span>
-                <span style={{ color: "var(--color-text-dim)", fontSize: "0.85rem" }}>{formatCalendarDate(p.exam_date)}</span>
+                <span style={{ color: "var(--sb-text-dim)", fontSize: "0.85rem" }}>{formatCalendarDate(p.exam_date)}</span>
               </button>
             ))}
           </div>
@@ -741,9 +741,9 @@ export default function PlanPage() {
 // ---- Styles ----
 
 const pageStyle: React.CSSProperties = {
-  fontFamily: "var(--font-body)",
-  background: "var(--color-bg)",
-  color: "var(--color-text)",
+  fontFamily: "var(--sb-font-body)",
+  background: "var(--sb-bg)",
+  color: "var(--sb-text)",
   minHeight: "100vh",
   padding: "1.5rem clamp(1.5rem, 4vw, 2rem)",
   maxWidth: 1100,
@@ -751,21 +751,21 @@ const pageStyle: React.CSSProperties = {
 };
 
 const headingStyle: React.CSSProperties = {
-  color: "var(--color-primary)",
+  color: "var(--sb-primary)",
   fontSize: "1.5rem",
   margin: "0 0 1.5rem",
   fontWeight: 700,
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 const dayHeadingStyle: React.CSSProperties = {
-  color: "var(--color-text-muted)",
+  color: "var(--sb-text-muted)",
   fontSize: "0.85rem",
   fontWeight: 600,
   textTransform: "uppercase",
   letterSpacing: "0.08em",
   margin: "0 0 0.5rem",
-  fontFamily: "var(--font-display)",
+  fontFamily: "var(--sb-font-display)",
 };
 
 // Responsive grid for peer cards (sessions within a day, other plans)
@@ -788,17 +788,17 @@ const labelStyle: React.CSSProperties = {
   flexDirection: "column",
   gap: "0.3rem",
   fontSize: "0.95rem",
-  color: "var(--color-text-secondary)",
+  color: "var(--sb-text-secondary)",
 };
 
 const inputStyle: React.CSSProperties = {
-  background: "var(--color-bg-input)",
-  color: "var(--color-text)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg-input)",
+  color: "var(--sb-text)",
+  border: "1px solid var(--sb-border)",
   padding: "0.5rem 0.75rem",
   fontFamily: "inherit",
   fontSize: "1rem",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--sb-radius-sm)",
 };
 
 function dropZoneStyle(busy: boolean): React.CSSProperties {
@@ -806,8 +806,8 @@ function dropZoneStyle(busy: boolean): React.CSSProperties {
     background: "transparent",
     fontFamily: "inherit",
     width: "100%",
-    border: "2px dashed var(--color-border)",
-    borderRadius: "var(--radius)",
+    border: "2px dashed var(--sb-border)",
+    borderRadius: "var(--sb-radius)",
     padding: "1.25rem",
     textAlign: "center",
     cursor: busy ? "wait" : "pointer",
@@ -822,27 +822,27 @@ const fileRowStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   padding: "0.35rem 0.5rem",
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg-card)",
+  border: "1px solid var(--sb-border)",
   fontSize: "0.95rem",
   marginBottom: "0.2rem",
   borderRadius: "3px",
 };
 
 const errorStyle: React.CSSProperties = {
-  color: "var(--color-error)",
-  background: "var(--color-bg-error-tint)",
+  color: "var(--sb-error)",
+  background: "var(--sb-bg-error-tint)",
   padding: "0.5rem 0.75rem",
   marginBottom: "1rem",
-  border: "1px solid var(--color-error)",
-  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--sb-error)",
+  borderRadius: "var(--sb-radius-sm)",
   fontSize: "0.95rem",
 };
 
 function primaryBtnStyle(disabled: boolean): React.CSSProperties {
   return {
-    background: "var(--color-primary)",
-    color: "var(--color-bg-darkest)",
+    background: "var(--sb-primary)",
+    color: "var(--sb-bg-darkest)",
     border: "none",
     padding: "0.75rem 1.5rem",
     fontFamily: "inherit",
@@ -850,28 +850,28 @@ function primaryBtnStyle(disabled: boolean): React.CSSProperties {
     fontSize: "1.05rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
-    borderRadius: "var(--radius)",
+    borderRadius: "var(--sb-radius)",
     width: "100%",
   };
 }
 
 const btnStyle: React.CSSProperties = {
-  background: "var(--color-bg-card)",
-  color: "var(--color-text-secondary)",
-  border: "1px solid var(--color-border)",
+  background: "var(--sb-bg-card)",
+  color: "var(--sb-text-secondary)",
+  border: "1px solid var(--sb-border)",
   padding: "0.7rem 1.25rem",
   fontFamily: "inherit",
   fontSize: "0.95rem",
   fontWeight: 600,
   cursor: "pointer",
   textDecoration: "none",
-  borderRadius: "var(--radius)",
+  borderRadius: "var(--sb-radius)",
 };
 
 function googleBtnStyle(disabled: boolean): React.CSSProperties {
   return {
-    background: "var(--color-info)",
-    color: "var(--color-bg-darkest)",
+    background: "var(--sb-info)",
+    color: "var(--sb-bg-darkest)",
     border: "none",
     padding: "0.7rem 1.25rem",
     fontFamily: "inherit",
@@ -879,29 +879,29 @@ function googleBtnStyle(disabled: boolean): React.CSSProperties {
     fontSize: "0.95rem",
     cursor: disabled ? "wait" : "pointer",
     opacity: disabled ? 0.6 : 1,
-    borderRadius: "var(--radius)",
+    borderRadius: "var(--sb-radius)",
   };
 }
 
 const sessionCardStyle: React.CSSProperties = {
   display: "block",
-  background: "var(--color-bg-card)",
+  background: "var(--sb-bg-card)",
   padding: "1.25rem 1.5rem",
   minWidth: 0,
-  border: "1px solid var(--color-border-subtle)",
-  borderLeft: "3px solid var(--color-primary)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderLeft: "3px solid var(--sb-primary)",
   textDecoration: "none",
-  borderRadius: "var(--radius-sm)",
+  borderRadius: "var(--sb-radius-sm)",
 };
 
 const examRowStyle: React.CSSProperties = {
-  background: "var(--color-bg-card)",
+  background: "var(--sb-bg-card)",
   padding: "1.25rem 1.5rem",
-  border: "1px solid var(--color-border-subtle)",
-  borderLeft: "3px solid var(--color-warning)",
-  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderLeft: "3px solid var(--sb-warning)",
+  borderRadius: "var(--sb-radius-sm)",
   fontWeight: 600,
-  color: "var(--color-text)",
+  color: "var(--sb-text)",
 };
 
 const otherPlanRowStyle: React.CSSProperties = {
@@ -911,12 +911,12 @@ const otherPlanRowStyle: React.CSSProperties = {
   gap: "0.5rem",
   width: "100%",
   textAlign: "left",
-  background: "var(--color-bg-card)",
-  color: "var(--color-text-secondary)",
+  background: "var(--sb-bg-card)",
+  color: "var(--sb-text-secondary)",
   padding: "1.25rem 1.5rem",
   minWidth: 0,
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--sb-border-subtle)",
+  borderRadius: "var(--sb-radius-sm)",
   fontFamily: "inherit",
   fontSize: "0.95rem",
   cursor: "pointer",
