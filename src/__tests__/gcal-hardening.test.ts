@@ -21,7 +21,6 @@ describe("token encryption", () => {
   it("fails without TOKEN_ENC_KEY in production", async () => {
     const origEnv = { ...process.env };
     delete process.env.TOKEN_ENC_KEY;
-    delete process.env.GOOGLE_TOKEN_ENC_KEY;
     vi.stubEnv("NODE_ENV", "production");
 
     // Dynamic import to get fresh module
@@ -38,7 +37,6 @@ describe("token encryption", () => {
 
   it("accepts TOKEN_ENC_KEY as primary env var", async () => {
     const origEnv = { ...process.env };
-    delete process.env.GOOGLE_TOKEN_ENC_KEY;
     process.env.TOKEN_ENC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     vi.resetModules();

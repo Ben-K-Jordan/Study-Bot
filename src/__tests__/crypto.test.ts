@@ -11,7 +11,7 @@ describe("crypto encrypt/decrypt", () => {
   let decrypt: (encoded: string) => string;
 
   beforeAll(async () => {
-    process.env.GOOGLE_TOKEN_ENC_KEY = TEST_KEY_HEX;
+    process.env.TOKEN_ENC_KEY = TEST_KEY_HEX;
     const mod = await import("@/lib/crypto/token-vault");
     encrypt = mod.encryptToken;
     decrypt = mod.decryptToken;

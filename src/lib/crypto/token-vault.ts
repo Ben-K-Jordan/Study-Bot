@@ -3,8 +3,7 @@
  *
  * Security requirements:
  *   - Tokens encrypted at rest (AES-256-GCM with random IV + auth tag).
- *   - TOKEN_ENC_KEY required in production.
- *   - In dev/test: TOKEN_ENC_KEY or TEST_TOKEN_ENC_KEY accepted.
+ *   - TOKEN_ENC_KEY is required (npm run setup generates one).
  *   - NEVER log plaintext tokens.
  *   - Format: base64(iv + authTag + ciphertext) — compatible with existing stored tokens.
  */
@@ -19,18 +18,13 @@ const ALGO = "aes-256-gcm";
  * Accepts 64-char hex or 44-char base64 encoding.
  */
 function getKey(): Buffer {
-  const raw =
-    process.env.TOKEN_ENC_KEY ||
-    process.env.GOOGLE_TOKEN_ENC_KEY ||
-    (process.env.NODE_ENV !== "production" ? process.env.TEST_TOKEN_ENC_KEY : undefined);
+  const raw = process.env.TOKEN_ENC_KEY;
 
   if (!raw) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("TOKEN_ENC_KEY env var is required in production");
     }
-    throw new Error(
-      "TOKEN_ENC_KEY (or GOOGLE_TOKEN_ENC_KEY / TEST_TOKEN_ENC_KEY) env var is not set",
-    );
+    throw new Error("TOKEN_ENC_KEY env var is not set");
   }
 
   // Accept hex (64 chars) or base64 (44 chars)

@@ -80,31 +80,12 @@ describe("token-vault", () => {
     it("fails without TOKEN_ENC_KEY in production", async () => {
       const savedEnv = { ...process.env };
       delete process.env.TOKEN_ENC_KEY;
-      delete process.env.GOOGLE_TOKEN_ENC_KEY;
-      delete process.env.TEST_TOKEN_ENC_KEY;
       (process.env as Record<string, string>).NODE_ENV = "production";
 
       vi.resetModules();
       try {
         const { encryptToken: enc } = await import("@/lib/crypto/token-vault");
         expect(() => enc("test")).toThrow("TOKEN_ENC_KEY");
-      } finally {
-        Object.assign(process.env, savedEnv);
-        vi.resetModules();
-      }
-    });
-
-    it("accepts TEST_TOKEN_ENC_KEY in non-production", async () => {
-      const savedEnv = { ...process.env };
-      delete process.env.TOKEN_ENC_KEY;
-      delete process.env.GOOGLE_TOKEN_ENC_KEY;
-      process.env.TEST_TOKEN_ENC_KEY = TEST_KEY_HEX;
-      (process.env as Record<string, string>).NODE_ENV = "test";
-
-      vi.resetModules();
-      try {
-        const { encryptToken: enc, decryptToken: dec } = await import("@/lib/crypto/token-vault");
-        expect(dec(enc("hello"))).toBe("hello");
       } finally {
         Object.assign(process.env, savedEnv);
         vi.resetModules();
