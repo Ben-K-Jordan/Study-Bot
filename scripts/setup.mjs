@@ -26,7 +26,7 @@ const envPath = join(root, ".env");
 const examplePath = join(root, ".env.example");
 
 // ---------------------------------------------------------------------------
-// 0. Node version check (Next.js 14 + this script need Node 20.19+)
+// 0. Node version check (Prisma 7 and this script need Node 20.19+)
 // ---------------------------------------------------------------------------
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 if (nodeMajor < 20 || (nodeMajor === 20 && nodeMinor < 19)) {
