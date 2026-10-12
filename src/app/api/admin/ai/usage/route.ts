@@ -1,23 +1,21 @@
 /**
  * GET /api/admin/ai/usage — AI usage stats.
  *
- * Query params: user_id (optional), days (default 7)
+ * Query params: user_id (optional, defaults to the caller), days (default 7)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getUserId } from "@/lib/auth";
+import { requireAdmin } from "@/lib/admin";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
-  const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const admin = await requireAdmin(request);
+  if ("response" in admin) return admin.response;
 
-  const rl = generalLimiter.check(userId);
+  const rl = generalLimiter.check(admin.userId);
   if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
-  const filterUserId = userId;
+  const filterUserId = request.nextUrl.searchParams.get("user_id") || admin.userId;
   const daysRaw = parseInt(request.nextUrl.searchParams.get("days") || "7", 10);
   const days = Math.max(1, Math.min(Number.isNaN(daysRaw) ? 7 : daysRaw, 365));
   const since = new Date();
@@ -37,7 +35,7 @@ export async function GET(request: NextRequest) {
   const totalCostMicros = logs.reduce((sum, l) => sum + Number(l._sum.costUsdMicros ?? 0), 0);
 
   return NextResponse.json({
-    user_id: userId,
+    user_id: filterUserId,
     period_days: days,
     total_cost_usd: totalCostMicros / 1_000_000,
     breakdown: logs.map((l) => ({
