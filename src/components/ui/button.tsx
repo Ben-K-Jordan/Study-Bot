@@ -3,32 +3,42 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
 
+// Material 3 buttons: pill shape, label-l type, a state layer in the content
+// colour, and a 48px touch target around the 40px default.
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-4xl border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button state-layer relative isolate inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-sm font-medium tracking-[0.1px] whitespace-nowrap transition-[background-color,border-color,color,box-shadow] duration-150 ease-standard outline-none select-none disabled:pointer-events-none disabled:text-on-surface/38 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // Filled: the one primary action in a group.
+        default:
+          "bg-primary text-primary-foreground hover:shadow-sm disabled:bg-on-surface/12 disabled:shadow-none",
+        // Outlined: secondary actions beside a filled button.
         outline:
-          "border-border bg-input/30 hover:bg-input/50 hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
+          "border-outline bg-transparent text-primary aria-expanded:bg-primary/10 disabled:border-on-surface/12",
+        // Tonal: a softer alternative to filled.
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary text-secondary-foreground hover:shadow-sm disabled:bg-on-surface/12 disabled:shadow-none",
+        // Neutral: icon buttons and quiet actions in toolbars.
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "text-on-surface-variant hover:text-on-surface aria-expanded:bg-on-surface/10 aria-expanded:text-on-surface",
+        // Text: low-emphasis actions, dialog actions.
+        text: "text-primary",
+        // Filled error: confirms a destructive action.
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-destructive text-destructive-foreground hover:shadow-sm disabled:bg-on-surface/12 disabled:shadow-none",
+        link: "h-auto! px-0! text-primary underline-offset-4 before:hidden after:hidden hover:underline",
       },
       size: {
         default:
-          "h-9 gap-1.5 px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
-        xs: "h-6 gap-1 px-2.5 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1 px-3 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        lg: "h-10 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
-        icon: "size-9",
-        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+          "h-10 gap-2 px-6 after:absolute after:inset-x-0 after:-inset-y-1 has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4",
+        xs: "h-7 gap-1 px-3 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-8 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3 [&_svg:not([class*='size-'])]:size-4",
+        lg: "h-12 gap-2 px-7 text-base has-data-[icon=inline-end]:pr-5 has-data-[icon=inline-start]:pl-5 [&_svg:not([class*='size-'])]:size-5",
+        icon: "size-10 after:absolute after:-inset-1 [&_svg:not([class*='size-'])]:size-5",
+        "icon-xs": "size-7 [&_svg:not([class*='size-'])]:size-4",
+        "icon-sm": "size-8 [&_svg:not([class*='size-'])]:size-[18px]",
+        "icon-lg": "size-12 [&_svg:not([class*='size-'])]:size-6",
       },
     },
     defaultVariants: {

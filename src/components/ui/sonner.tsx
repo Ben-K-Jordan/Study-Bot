@@ -30,15 +30,17 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
+          "--normal-bg": "var(--inverse-surface)",
+          "--normal-text": "var(--inverse-on-surface)",
+          "--normal-border": "transparent",
+          "--border-radius": "var(--radius-sm)",
         } as React.CSSProperties
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast type-body-m shadow-lg",
+          actionButton: "bg-transparent! text-inverse-primary! font-medium!",
+          cancelButton: "bg-transparent! text-inverse-on-surface!",
         },
       }}
       {...props}

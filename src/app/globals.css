@@ -4,248 +4,641 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Legacy tokens for screens that still use inline styles. They carry an
-   sb- prefix so they never collide with the Tailwind and shadcn theme
-   namespaces (--color-*, --font-*, --radius-*, --shadow-*). Delete each one
-   once no screen reads it. */
+/* The design system page pins interaction states with data-preview="hover",
+   "focus" or "active" so reviewers can see every state without a pointer. */
+@custom-variant hover {
+  @media (hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+  &[data-preview~="hover"] {
+    @slot;
+  }
+}
+@custom-variant focus-visible (&:focus-visible, &[data-preview~="focus"]);
+@custom-variant active (&:active, &[data-preview~="active"]);
+
+/* ==========================================================================
+   Colour roles: Google Material 3 (GM3 web baseline), light theme.
+   Every text and surface pair is contrast-checked in both themes.
+   ========================================================================== */
 :root {
-  --sb-font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --sb-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --sb-font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
 
-  --sb-bg-darkest: #0b0e14;
-  --sb-bg: #10141c;
-  --sb-bg-card: #171c26;
-  --sb-bg-input: #1c2230;
-  --sb-bg-done: #14231b;
-  --sb-bg-info-tint: #142230;
-  --sb-bg-success-tint: #14231b;
-  --sb-bg-warning-tint: #2a2314;
-  --sb-bg-error-tint: #2a171c;
-  --sb-bg-review-tint: #221d33;
-  --sb-bg-selected: #1e2c47;
+  /* Surfaces, from the page down to the most raised tonal container */
+  --surface: #f8fafd;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f8fafd;
+  --surface-container: #f0f4f9;
+  --surface-container-high: #e9eef6;
+  --surface-container-highest: #dde3ea;
+  --on-surface: #1f1f1f;
+  --on-surface-variant: #444746;
+  --outline: #747775;
+  --outline-variant: #c4c7c5;
 
-  --sb-border: #2a3242;
-  --sb-border-subtle: #202634;
-  --sb-border-done: #2f4a3a;
+  --primary: #0b57d0;
+  --on-primary: #ffffff;
+  --primary-container: #d3e3fd;
+  --on-primary-container: #041e49;
+  --secondary-container: #c2e7ff;
+  --on-secondary-container: #001d35;
 
-  --sb-text: #e7eaf0;
-  --sb-text-secondary: #b8bfcc;
-  --sb-text-muted: #949dae;
-  --sb-text-faint: #7d8799;
-  --sb-text-dim: #7c86a0;
+  /* Tertiary carries success */
+  --tertiary: #146c2e;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #c4eed0;
+  --on-tertiary-container: #072711;
 
-  --sb-primary: #6ea8fe;
-  --sb-info: #66c5da;
-  --sb-success: #58c98b;
-  --sb-warning: #e2a94f;
-  --sb-error: #e5737f;
-  --sb-review: #a78bfa;
+  --error: #b3261e;
+  --on-error: #ffffff;
+  --error-container: #f9dedc;
+  --on-error-container: #410e0b;
 
-  --sb-radius-sm: 6px;
-  --sb-radius: 10px;
-  --sb-radius-lg: 14px;
-  --sb-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.22);
+  /* Warning: missed and due states */
+  --warning: #995c00;
+  --on-warning: #ffffff;
+  --warning-container: #feefc3;
+  --on-warning-container: #5c3d00;
 
-  --nav-height: 52px;
+  --inverse-surface: #303030;
+  --inverse-on-surface: #f2f2f2;
+  --inverse-primary: #a8c7fa;
+  --scrim: #000000;
 
-  --background: oklch(1 0 0);
+  /* Lesson palette: Duolingo's grammar in Google's product colours */
+  --lesson-surface: #ffffff;
+  --lesson-on-surface: #1f1f1f;
+  --lesson-muted: #5f6368;
+  --lesson-option: #ffffff;
+  --lesson-option-border: #dadce0;
+  --lesson-option-hover: #f8f9fa;
+  --lesson-selected: #e8f0fe;
+  --lesson-selected-border: #1a73e8;
+  --lesson-selected-lip: #185abc;
+  --lesson-on-selected: #174ea6;
+  --lesson-check: #188038;
+  --lesson-check-lip: #0d652d;
+  --lesson-on-check: #ffffff;
+  --lesson-correct: #e6f4ea;
+  --lesson-on-correct: #137333;
+  --lesson-wrong: #fce8e6;
+  --lesson-on-wrong: #a50e0e;
+  --lesson-wrong-button: #c5221f;
+  --lesson-wrong-lip: #a50e0e;
+  --lesson-on-wrong-button: #ffffff;
+  --lesson-neutral-text: #3c4043;
+  --lesson-disabled: #e8eaed;
+  --lesson-on-disabled: #80868b;
+  --lesson-progress-track: #e8eaed;
+  --lesson-progress-fill: #1e8e3e;
 
-  --foreground: oklch(0.145 0 0);
+  /* shadcn names mapped onto the roles */
+  --background: var(--surface);
+  --foreground: var(--on-surface);
+  --card: var(--surface-container-lowest);
+  --card-foreground: var(--on-surface);
+  --popover: var(--surface-container-low);
+  --popover-foreground: var(--on-surface);
+  --secondary: var(--secondary-container);
+  --secondary-foreground: var(--on-secondary-container);
+  --primary-foreground: var(--on-primary);
+  --muted: var(--surface-container);
+  --muted-foreground: var(--on-surface-variant);
+  --accent: var(--surface-container-high);
+  --accent-foreground: var(--on-surface);
+  --destructive: var(--error);
+  --destructive-foreground: var(--on-error);
+  --border: var(--outline-variant);
+  --input: var(--outline);
+  --ring: var(--primary);
+  --chart-1: #0b57d0;
+  --chart-2: #146c2e;
+  --chart-3: #995c00;
+  --chart-4: #b3261e;
+  --chart-5: #6e4bc0;
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--on-surface-variant);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--on-primary);
+  --sidebar-accent: var(--secondary-container);
+  --sidebar-accent-foreground: var(--on-secondary-container);
+  --sidebar-border: var(--outline-variant);
+  --sidebar-ring: var(--primary);
+  --radius: 0.75rem;
 
-  --card: oklch(1 0 0);
+  /* Motion: M3 durations (easings live in @theme as --ease-*) */
+  --duration-short: 150ms;
+  --duration-medium: 250ms;
+  --duration-long: 350ms;
+  --duration-dial: 450ms;
 
-  --card-foreground: oklch(0.145 0 0);
-
-  --popover: oklch(1 0 0);
-
-  --popover-foreground: oklch(0.145 0 0);
-
-  --primary: oklch(0.205 0 0);
-
-  --primary-foreground: oklch(0.985 0 0);
-
-  --secondary: oklch(0.97 0 0);
-
-  --secondary-foreground: oklch(0.205 0 0);
-
-  --muted: oklch(0.97 0 0);
-
-  --muted-foreground: oklch(0.556 0 0);
-
-  --accent: oklch(0.97 0 0);
-
-  --accent-foreground: oklch(0.205 0 0);
-
-  --destructive: oklch(0.577 0.245 27.325);
-
-  --border: oklch(0.922 0 0);
-
-  --input: oklch(0.922 0 0);
-
-  --ring: oklch(0.708 0 0);
-
-  --chart-1: oklch(0.87 0 0);
-
-  --chart-2: oklch(0.556 0 0);
-
-  --chart-3: oklch(0.439 0 0);
-
-  --chart-4: oklch(0.371 0 0);
-
-  --chart-5: oklch(0.269 0 0);
-
-  --radius: 0.625rem;
-
-  --sidebar: oklch(0.985 0 0);
-
-  --sidebar-foreground: oklch(0.145 0 0);
-
-  --sidebar-primary: oklch(0.205 0 0);
-
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-
-  --sidebar-accent: oklch(0.97 0 0);
-
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-
-  --sidebar-border: oklch(0.922 0 0);
-
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Shell metrics */
+  --app-bar-height: 4rem;
+  --rail-width: 5rem;
+  --bottom-bar-height: 5rem;
 }
 
-html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* Dark theme: the same roles at GM3's dark tones */
+.dark {
+  color-scheme: dark;
+
+  --surface: #131314;
+  --surface-container-lowest: #0e0e0e;
+  --surface-container-low: #1b1b1b;
+  --surface-container: #1e1f20;
+  --surface-container-high: #282a2c;
+  --surface-container-highest: #333537;
+  --on-surface: #e3e3e3;
+  --on-surface-variant: #c4c7c5;
+  --outline: #8e918f;
+  --outline-variant: #444746;
+
+  --primary: #a8c7fa;
+  --on-primary: #062e6f;
+  --primary-container: #0842a0;
+  --on-primary-container: #d3e3fd;
+  --secondary-container: #004a77;
+  --on-secondary-container: #c2e7ff;
+
+  --tertiary: #6dd58c;
+  --on-tertiary: #0a3818;
+  --tertiary-container: #0f5223;
+  --on-tertiary-container: #c4eed0;
+
+  --error: #f2b8b5;
+  --on-error: #601410;
+  --error-container: #8c1d18;
+  --on-error-container: #f9dedc;
+
+  --warning: #fdd663;
+  --on-warning: #3d2e00;
+  --warning-container: #5a4300;
+  --on-warning-container: #feefc3;
+
+  --inverse-surface: #e3e3e3;
+  --inverse-on-surface: #303030;
+  --inverse-primary: #0b57d0;
+
+  --lesson-surface: #131314;
+  --lesson-on-surface: #e3e3e3;
+  --lesson-muted: #bdc1c6;
+  --lesson-option: #131314;
+  --lesson-option-border: #3c4043;
+  --lesson-option-hover: #1e1f20;
+  --lesson-selected: #1c2b41;
+  --lesson-selected-border: #8ab4f8;
+  --lesson-selected-lip: #669df6;
+  --lesson-on-selected: #d2e3fc;
+  --lesson-check: #81c995;
+  --lesson-check-lip: #4ca866;
+  --lesson-on-check: #0d3a1f;
+  --lesson-correct: #122a1b;
+  --lesson-on-correct: #81c995;
+  --lesson-wrong: #3a1a18;
+  --lesson-on-wrong: #f28b82;
+  --lesson-wrong-button: #f28b82;
+  --lesson-wrong-lip: #d9655b;
+  --lesson-on-wrong-button: #601410;
+  --lesson-neutral-text: #e8eaed;
+  --lesson-disabled: #282a2c;
+  --lesson-on-disabled: #9aa0a6;
+  --lesson-progress-track: #3c4043;
+  --lesson-progress-fill: #81c995;
+
+  --popover: var(--surface-container-high);
+  --chart-1: #a8c7fa;
+  --chart-2: #6dd58c;
+  --chart-3: #fdd663;
+  --chart-4: #f2b8b5;
+  --chart-5: #d0bcff;
 }
 
-body {
-  margin: 0;
-  background: var(--sb-bg);
-  color: var(--sb-text);
-  font-family: var(--sb-font-body);
-  line-height: 1.5;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-surface: var(--surface);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+  --color-tertiary: var(--tertiary);
+  --color-on-tertiary: var(--on-tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+  --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
+  --color-warning-container: var(--warning-container);
+  --color-on-warning-container: var(--on-warning-container);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-inverse-primary: var(--inverse-primary);
+  --color-scrim: var(--scrim);
+
+  --color-lesson-surface: var(--lesson-surface);
+  --color-lesson-on-surface: var(--lesson-on-surface);
+  --color-lesson-muted: var(--lesson-muted);
+  --color-lesson-option: var(--lesson-option);
+  --color-lesson-option-border: var(--lesson-option-border);
+  --color-lesson-option-hover: var(--lesson-option-hover);
+  --color-lesson-selected: var(--lesson-selected);
+  --color-lesson-selected-border: var(--lesson-selected-border);
+  --color-lesson-selected-lip: var(--lesson-selected-lip);
+  --color-lesson-on-selected: var(--lesson-on-selected);
+  --color-lesson-check: var(--lesson-check);
+  --color-lesson-check-lip: var(--lesson-check-lip);
+  --color-lesson-on-check: var(--lesson-on-check);
+  --color-lesson-correct: var(--lesson-correct);
+  --color-lesson-on-correct: var(--lesson-on-correct);
+  --color-lesson-wrong: var(--lesson-wrong);
+  --color-lesson-on-wrong: var(--lesson-on-wrong);
+  --color-lesson-wrong-button: var(--lesson-wrong-button);
+  --color-lesson-wrong-lip: var(--lesson-wrong-lip);
+  --color-lesson-on-wrong-button: var(--lesson-on-wrong-button);
+  --color-lesson-neutral-text: var(--lesson-neutral-text);
+  --color-lesson-disabled: var(--lesson-disabled);
+  --color-lesson-on-disabled: var(--lesson-on-disabled);
+  --color-lesson-progress-track: var(--lesson-progress-track);
+  --color-lesson-progress-fill: var(--lesson-progress-fill);
+
+  /* M3 shape scale pinned to the Tailwind radius steps the components use:
+     4px accents and tooltips, 8px text fields and menus, 12px list items
+     and alerts, 16px cards, 28px dialogs and sheets. Pills use rounded-full. */
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-4xl: 28px;
 }
 
-/* Screen-reader-only content used by the session runner */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+@theme static {
+  /* M3 easing: standard for state changes, emphasized for entrances */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+
+  --font-sans: "Google Sans Flex Variable", "Google Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-heading: "Google Sans Flex Variable", "Google Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Google Sans Code Variable", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
 }
 
-.skip-to-content {
-  position: absolute;
-  top: -100%;
-  left: 1rem;
-  z-index: 10000;
-  padding: 0.75rem 1.5rem;
-  background: var(--sb-primary);
-  color: var(--sb-bg-darkest);
-  font-weight: 700;
-  text-decoration: none;
-  border-radius: 0 0 6px 6px;
+/* Elevation: tonal by default. Shadows only for menus, popovers, dialogs and
+   a hovered card (M3 levels 1 to 3). Inputs stay flat. */
+@theme {
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --shadow-md: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --shadow-lg: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 4px 8px 3px rgb(0 0 0 / 0.15);
+  --shadow-xl: 0 2px 3px 0 rgb(0 0 0 / 0.3), 0 6px 10px 4px rgb(0 0 0 / 0.15);
+  --shadow-2xl: 0 4px 4px 0 rgb(0 0 0 / 0.3), 0 8px 12px 6px rgb(0 0 0 / 0.15);
 }
 
-.skip-to-content:focus {
-  top: 0;
+/* ==========================================================================
+   Material 3 type scale. Fixed rem sizes; use these, not text-* sizes, so
+   cn() never drops a size sitting next to a colour class.
+   ========================================================================== */
+@utility type-display-l {
+  font-size: 3.5625rem;
+  line-height: 4rem;
+  font-weight: 400;
+  letter-spacing: -0.25px;
+}
+@utility type-display-m {
+  font-size: 2.8125rem;
+  line-height: 3.25rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-display-s {
+  font-size: 2.25rem;
+  line-height: 2.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-headline-l {
+  font-size: 2rem;
+  line-height: 2.5rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-headline-m {
+  font-size: 1.75rem;
+  line-height: 2.25rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-headline-s {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-title-l {
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@utility type-title-m {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 500;
+  letter-spacing: 0.15px;
+}
+@utility type-title-s {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+@utility type-body-l {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+@utility type-body-m {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 400;
+  letter-spacing: 0.25px;
+}
+@utility type-body-s {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+}
+@utility type-label-l {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+@utility type-label-m {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+@utility type-label-s {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
-*:focus-visible {
-  outline: 2px solid var(--sb-info);
-  outline-offset: 2px;
-}
-
-/* Navigation bar (replaced by the app shell) */
-.nav-links {
-  display: flex;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  gap: 0.25rem;
-  overflow: auto;
-}
-
-.nav-hamburger {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.nav-hamburger-line,
-.nav-hamburger-line::before,
-.nav-hamburger-line::after {
-  display: block;
-  width: 22px;
-  height: 2px;
-  background: var(--sb-text);
-  border-radius: 1px;
-}
-
-.nav-hamburger-line {
-  position: relative;
-}
-
-.nav-hamburger-line::before,
-.nav-hamburger-line::after {
-  content: "";
-  position: absolute;
-  left: 0;
-}
-
-.nav-hamburger-line::before {
-  top: -7px;
-}
-
-.nav-hamburger-line::after {
-  top: 7px;
-}
-
-@media (max-width: 768px) {
-  .nav-hamburger {
-    display: flex;
-  }
-
-  .nav-links {
-    display: none;
-    flex-direction: column;
+/* M3 state layer: an overlay in the content colour at 8% on hover and 10%
+   on focus and press. Works on any filled, tonal, outlined or text control.
+   Pair it with `relative isolate` (or `absolute isolate`) on the element. */
+@utility state-layer {
+  &::before {
+    content: "";
     position: absolute;
-    top: var(--nav-height);
-    left: 0;
-    right: 0;
-    background: var(--sb-bg-darkest);
-    padding: 0.5rem 0;
-    overflow: visible;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background-color: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-short) var(--ease-standard);
   }
-
-  .nav-links.open {
-    display: flex;
+  @variant hover {
+    &::before {
+      opacity: 0.08;
+    }
+  }
+  @variant focus-visible {
+    &::before {
+      opacity: 0.1;
+    }
+  }
+  @variant active {
+    &::before {
+      opacity: 0.1;
+    }
   }
 }
 
-/* Inputs stay at 16px so iOS does not zoom on focus */
-select,
-textarea,
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="search"],
-input[type="url"],
-input[type="number"] {
-  font-size: 16px;
+/* The 4px bottom lip of lesson controls. Pressing moves the control down by
+   2px and shrinks the lip, like a physical key. Set --lip to the lip colour. */
+@utility lesson-lip {
+  box-shadow: 0 4px 0 var(--lip, var(--lesson-option-border));
+  transition:
+    transform var(--duration-short) var(--ease-standard),
+    box-shadow var(--duration-short) var(--ease-standard),
+    background-color var(--duration-short) var(--ease-standard),
+    border-color var(--duration-short) var(--ease-standard);
+  @variant active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 var(--lip, var(--lesson-option-border));
+  }
+}
+
+/* Focus ring for actions: a solid 2px outline in the ring colour with a 2px
+   offset, unlayered so it wins over outline-none. Text fields and the select
+   trigger keep their own 2px border treatment. A component inside a clipping
+   container sets --focus-ring-offset (for example -2px) to draw it inside. */
+:is(
+    button,
+    a[href],
+    summary,
+    [role="button"],
+    [role="tab"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"],
+    [role="slider"],
+    [tabindex]:not([tabindex="-1"])
+  ):not([data-slot="select-trigger"]):is(:focus-visible, [data-preview~="focus"]) {
+  outline: 2px solid var(--focus-ring-color, var(--ring));
+  outline-offset: var(--focus-ring-offset, 2px);
+  --tw-ring-shadow: 0 0 #0000;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+  }
+
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-variation-settings: "ROND" 0;
+    scrollbar-color: var(--outline-variant) transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground type-body-m;
+    min-height: 100dvh;
+    caret-color: var(--primary);
+  }
+
+  ::selection {
+    background-color: var(--secondary-container);
+    color: var(--on-secondary-container);
+  }
+
+  ::placeholder {
+    color: var(--on-surface-variant);
+    opacity: 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Keep focused controls clear of the sticky app bar and bottom bar */
+  :focus {
+    scroll-margin-top: calc(var(--app-bar-height) + 1rem);
+    scroll-margin-bottom: calc(var(--bottom-bar-height) + 1rem);
+  }
+
+  #main-content:focus {
+    outline: none;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    @apply font-mono;
+  }
+
+  /* Thin themed scrollbars */
+  * {
+    scrollbar-width: thin;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--outline-variant);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--outline);
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Chrome autofill keeps the field surface instead of painting it yellow */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--on-surface);
+    -webkit-box-shadow: 0 0 0 1000px var(--surface-container-lowest) inset;
+    caret-color: var(--primary);
+  }
+
+  /* Screen-reader-only content used by the session runner */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* ==========================================================================
+   Lesson scope. Entering a session, the type rounds itself: the ROND axis
+   eases from 0 to 100 and the weight steps up. Sessions only.
+   ========================================================================== */
+@layer components {
+  .lesson {
+    font-variation-settings: "ROND" 100;
+    font-weight: 500;
+    background-color: var(--lesson-surface);
+    color: var(--lesson-on-surface);
+    transition:
+      font-variation-settings var(--duration-dial) var(--ease-emphasized),
+      font-weight var(--duration-dial) var(--ease-emphasized);
+
+    @starting-style {
+      font-variation-settings: "ROND" 0;
+      font-weight: 400;
+    }
+  }
+}
+
+/* The feedback sheet slides up from the bottom after each answer */
+@keyframes feedback-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -257,96 +650,60 @@ input[type="number"] {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
 
-@theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
+  .lesson {
+    transition: none;
   }
+}
+
+/* ==========================================================================
+   Legacy bridge. Screens that still use inline styles read these sb- tokens,
+   which now point at the GM3 roles so they follow both themes. Delete each
+   token once no screen reads it.
+   ========================================================================== */
+:root {
+  --sb-font-display: var(--font-sans);
+  --sb-font-body: var(--font-sans);
+  --sb-font-mono: var(--font-mono);
+
+  --sb-bg-darkest: var(--on-primary);
+  --sb-bg: var(--background);
+  --sb-bg-card: var(--card);
+  --sb-bg-input: var(--surface-container);
+  --sb-bg-done: var(--tertiary-container);
+  --sb-bg-info-tint: var(--primary-container);
+  --sb-bg-success-tint: var(--tertiary-container);
+  --sb-bg-warning-tint: var(--warning-container);
+  --sb-bg-error-tint: var(--error-container);
+  --sb-bg-review-tint: var(--surface-container-high);
+  --sb-bg-selected: var(--secondary-container);
+
+  --sb-border: var(--outline-variant);
+  --sb-border-subtle: var(--outline-variant);
+  --sb-border-done: var(--outline-variant);
+
+  --sb-text: var(--on-surface);
+  --sb-text-secondary: var(--on-surface-variant);
+  --sb-text-muted: var(--on-surface-variant);
+  --sb-text-faint: var(--on-surface-variant);
+  --sb-text-dim: var(--on-surface-variant);
+
+  --sb-primary: var(--primary);
+  --sb-info: var(--primary);
+  --sb-success: var(--tertiary);
+  --sb-warning: var(--warning);
+  --sb-error: var(--error);
+  --sb-review: var(--primary);
+
+  --sb-radius-sm: 8px;
+  --sb-radius: 12px;
+  --sb-radius-lg: 16px;
+  --sb-shadow-card: none;
+}
+
+@media print {
   body {
-    @apply bg-background text-foreground;
-  }
-  button:not(:disabled), [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
-  html {
-    @apply font-sans;
+    background: #ffffff;
+    color: #000000;
   }
 }
