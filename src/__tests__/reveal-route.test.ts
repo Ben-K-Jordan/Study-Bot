@@ -32,7 +32,7 @@ function makeRequest(index: string | null = "0", userId: string | null = "user-1
   }) as unknown as NextRequest;
 }
 
-const PARAMS = { params: { runId: "run-1" } };
+const PARAMS = { params: Promise.resolve({ runId: "run-1" }) };
 
 describe("GET /api/runs/[runId]/reveal", () => {
   beforeEach(() => {

@@ -14,7 +14,7 @@ import { z } from "zod/v4";
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { attemptId: string } }
+  { params }: { params: Promise<{ attemptId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {

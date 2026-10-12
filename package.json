@@ -26,18 +26,18 @@
     "db:seed-research": "tsx scripts/seed-research.ts"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.6.0",
-    "@prisma/client": "^7.6.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "bcryptjs": "^3.0.3",
-    "nanoid": "^3.3.11",
-    "next": "^14.2.35",
-    "next-auth": "^4.24.13",
+    "nanoid": "^3.3.20",
+    "next": "^15.5.27",
+    "next-auth": "^4.24.15",
     "nodemailer": "^7.0.13",
     "pdf-parse": "^1.1.1",
     "pg": "^8.20.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zod": "^4.3.6"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
@@ -45,12 +45,13 @@
     "@types/node": "^25.5.0",
     "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.0.1",
     "dotenv": "^17.4.2",
     "eslint": "^8.57.1",
-    "eslint-config-next": "^14.2.35",
-    "prisma": "^7.6.0",
+    "eslint-config-next": "^15.5.27",
+    "prisma": "^7.10.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"

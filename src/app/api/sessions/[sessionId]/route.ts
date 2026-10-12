@@ -4,7 +4,7 @@ import { getSession } from "@/services/session";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {

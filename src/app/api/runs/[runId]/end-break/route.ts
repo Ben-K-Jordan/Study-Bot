@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { runId: string } }
+  { params }: { params: Promise<{ runId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {

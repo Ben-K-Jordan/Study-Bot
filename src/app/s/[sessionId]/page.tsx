@@ -5,7 +5,7 @@ import { SessionRunner } from "./session-runner";
 import { getDeckPreview } from "@/services/run";
 
 interface SessionPageProps {
-  params: { sessionId: string };
+  params: Promise<{ sessionId: string }>;
 }
 
 export default async function SessionPage({ params }: SessionPageProps) {

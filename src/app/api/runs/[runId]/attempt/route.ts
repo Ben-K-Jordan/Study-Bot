@@ -7,7 +7,7 @@ import { z } from "zod/v4";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { runId: string } }
+  { params }: { params: Promise<{ runId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {

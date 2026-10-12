@@ -27,7 +27,7 @@ function makeRequest(userId: string | null = "user-1"): NextRequest {
   }) as unknown as NextRequest;
 }
 
-const PARAMS = { params: { attemptId: "attempt-1" } };
+const PARAMS = { params: Promise.resolve({ attemptId: "attempt-1" }) };
 
 describe("GET /api/attempts/[attemptId]/feedback", () => {
   beforeEach(() => {
