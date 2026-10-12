@@ -2,7 +2,9 @@ import { createHash } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import { join, dirname, resolve } from "path";
 
-const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR || "./data/uploads");
+// Uploads are runtime data, so the turbopackIgnore comments keep the build from
+// tracing them (and with them the whole project) into the server output.
+const UPLOAD_DIR = resolve(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR || "./data/uploads");
 
 /**
  * Compute SHA-256 hash of a buffer.
@@ -33,7 +35,7 @@ export async function saveFile(
   data: Buffer
 ): Promise<string> {
   const key = buildStorageKey(userId, documentId, filename);
-  const fullPath = resolve(join(UPLOAD_DIR, key));
+  const fullPath = resolve(join(/*turbopackIgnore: true*/ UPLOAD_DIR, key));
   if (!fullPath.startsWith(UPLOAD_DIR)) {
     throw new Error("Invalid storage path");
   }
@@ -46,7 +48,7 @@ export async function saveFile(
  * Resolve absolute path from storage key.
  */
 export function resolveStoragePath(storageKey: string): string {
-  const fullPath = resolve(join(UPLOAD_DIR, storageKey));
+  const fullPath = resolve(join(/*turbopackIgnore: true*/ UPLOAD_DIR, storageKey));
   if (!fullPath.startsWith(UPLOAD_DIR)) {
     throw new Error("Invalid storage path");
   }
