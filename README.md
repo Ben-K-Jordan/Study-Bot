@@ -179,7 +179,7 @@ One warning: `ALLOW_TEST_AUTH` makes the app trust a header as the authenticated
 
 Integration and e2e tests read `DATABASE_URL`; point it at a dedicated test database rather than your dev one.
 
-Layout, briefly: `src/app` holds pages and API routes, `src/services` holds domain logic, `src/lib` holds the science (prompt generation, spacing, mastery) and infrastructure (AI gateway, jobs, search), `src/ui` holds shared components, `prisma` holds schema and migrations, `e2e` holds Playwright specs, `scripts` holds setup and the worker, and `docs` holds the learning science foundation with the source papers in `research-papers/`.
+Layout, briefly: `src/app` holds pages and API routes, `src/services` holds domain logic, `src/lib` holds the science (prompt generation, spacing, mastery) and infrastructure (AI gateway, jobs, search), `src/ui` holds shared components, `prisma` holds schema and migrations, `e2e` holds Playwright specs, `scripts` holds setup and the worker, and `docs` holds the learning science foundation, with DOI links to every paper it cites.
 
 ## Architecture notes
 
