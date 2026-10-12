@@ -11,7 +11,8 @@ const userId = "e2e_ui_gcal_user";
 
 // ── Publish flow ───────────────────────────────────────────────────────
 
-test.describe("Google Calendar - Publish flow with a connected account", () => {
+// Serial: each test builds on the previous one, so a retry reruns the group
+test.describe.serial("Google Calendar - Publish flow with a connected account", () => {
   test.use({ extraHTTPHeaders: { "X-User-Id": userId } });
 
   let planId: string;
@@ -103,13 +104,13 @@ test.describe("Google Calendar - Publish flow with a connected account", () => {
     expect(unpubRes.status()).toBe(200);
     const unpubBody = await unpubRes.json();
 
-    expect(unpubBody.status).toBe("OK");
+    expect(unpubBody.status).toBe("UNPUBLISHED");
     expect(unpubBody.duration_ms).toBeGreaterThanOrEqual(0);
 
-    // Verify status is now unpublished
+    // The publication record stays, marked UNPUBLISHED, with no event mappings
     const statusRes = await request.get(`${BASE}/api/plans/${planId}/publish/google`);
     const status = await statusRes.json();
-    expect(status.publication).toBeNull();
+    expect(status.publication.status).toBe("UNPUBLISHED");
     expect(status.items).toEqual([]);
   });
 });

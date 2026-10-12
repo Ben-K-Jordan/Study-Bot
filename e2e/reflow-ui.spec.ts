@@ -17,7 +17,8 @@ import { test, expect } from "@playwright/test";
 const BASE = process.env.BASE_URL || "http://localhost:3000";
 const userId = "e2e_reflow_user";
 
-test.describe("Reflow UI Workflow", () => {
+// Serial: each test builds on the previous one, so a retry reruns the group
+test.describe.serial("Reflow UI Workflow", () => {
   test.use({ extraHTTPHeaders: { "X-User-Id": userId } });
 
   let planId: string;
@@ -47,7 +48,11 @@ test.describe("Reflow UI Workflow", () => {
     expect(planRes.status()).toBe(201);
     const plan = await planRes.json();
     planId = plan.plan_id;
-    planItems = plan.items;
+
+    // The create response omits item IDs, so read them back from the plan
+    const loadedRes = await request.get(`${BASE}/api/plans/${planId}`);
+    expect(loadedRes.status()).toBe(200);
+    planItems = (await loadedRes.json()).items;
     expect(planItems.length).toBeGreaterThan(2);
 
     // Publish to Google Calendar
