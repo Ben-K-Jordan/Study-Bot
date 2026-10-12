@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { decrypt } from "@/lib/crypto";
+import { decryptToken } from "@/lib/crypto/token-vault";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   // Best-effort revoke token at Google
   try {
     if (integration.accessTokenEncrypted) {
-      const token = decrypt(integration.accessTokenEncrypted);
+      const token = decryptToken(integration.accessTokenEncrypted);
       // Send the token in the POST body — never in the URL, where it would
       // leak into proxy/APM logs
       await fetch("https://oauth2.googleapis.com/revoke", {

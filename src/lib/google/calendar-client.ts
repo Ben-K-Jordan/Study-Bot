@@ -13,7 +13,7 @@
  * FakeGoogleCalendarClient — in-memory for tests.
  */
 import { prisma } from "@/lib/db";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encryptToken, decryptToken } from "@/lib/crypto/token-vault";
 import { logger } from "@/lib/logger";
 
 // ---- Types ----
@@ -191,11 +191,11 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
       return this.refreshAccessToken(integration.id, integration.refreshTokenEncrypted!);
     }
 
-    return decrypt(integration.accessTokenEncrypted);
+    return decryptToken(integration.accessTokenEncrypted);
   }
 
   private async refreshAccessToken(integrationId: string, refreshTokenEncrypted: string): Promise<string> {
-    const refreshToken = decrypt(refreshTokenEncrypted);
+    const refreshToken = decryptToken(refreshTokenEncrypted);
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     if (!clientId || !clientSecret) throw new Error("Google OAuth credentials not configured");
@@ -239,7 +239,7 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     await prisma.googleIntegration.update({
       where: { id: integrationId },
       data: {
-        accessTokenEncrypted: encrypt(newAccessToken),
+        accessTokenEncrypted: encryptToken(newAccessToken),
         tokenExpiryMs: BigInt(Date.now() + expiresIn * 1000),
         lastRefreshAt: new Date(),
         lastErrorCode: null,

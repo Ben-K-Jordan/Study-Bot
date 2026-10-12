@@ -27,7 +27,7 @@ describe("token encryption", () => {
     // Dynamic import to get fresh module
     vi.resetModules();
     try {
-      const { encrypt } = await import("@/lib/crypto");
+      const { encryptToken: encrypt } = await import("@/lib/crypto/token-vault");
       expect(() => encrypt("test")).toThrow("TOKEN_ENC_KEY");
     } finally {
       vi.unstubAllEnvs();
@@ -43,7 +43,7 @@ describe("token encryption", () => {
 
     vi.resetModules();
     try {
-      const { encrypt, decrypt } = await import("@/lib/crypto");
+      const { encryptToken: encrypt, decryptToken: decrypt } = await import("@/lib/crypto/token-vault");
       const enc = encrypt("hello");
       expect(decrypt(enc)).toBe("hello");
     } finally {

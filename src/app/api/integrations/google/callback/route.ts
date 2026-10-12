@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { encrypt } from "@/lib/crypto";
+import { encryptToken } from "@/lib/crypto/token-vault";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
 
@@ -97,8 +97,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Encrypt and store tokens
-    const accessTokenEncrypted = encrypt(accessToken);
-    const refreshTokenEncrypted = encrypt(refreshToken);
+    const accessTokenEncrypted = encryptToken(accessToken);
+    const refreshTokenEncrypted = encryptToken(refreshToken);
     const tokenExpiryMs = BigInt(Date.now() + expiresIn * 1000);
 
     await prisma.googleIntegration.upsert({
