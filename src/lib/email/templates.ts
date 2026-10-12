@@ -3,7 +3,7 @@
 // All HTML uses inline styles (email-safe) with the app's dark green theme.
 // ---------------------------------------------------------------------------
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+import { getBaseUrl } from "@/lib/config";
 
 /** Escape user-supplied strings before embedding in HTML */
 function esc(str: string): string {
@@ -44,7 +44,7 @@ ${body}
 <tr><td style="padding:16px 28px;text-align:center;">
 <p style="margin:0;font-size:12px;color:${TEXT_MUTED};">
 You&rsquo;re receiving this because you have email reminders enabled in Study Bot.<br/>
-<a href="${APP_URL}/settings#notifications" style="color:${TEXT_MUTED};text-decoration:underline;">Unsubscribe or change notification preferences</a>
+<a href="${getBaseUrl()}/settings#notifications" style="color:${TEXT_MUTED};text-decoration:underline;">Unsubscribe or change notification preferences</a>
 </p>
 </td></tr>
 </table>

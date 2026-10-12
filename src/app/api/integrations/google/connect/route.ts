@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
+import { getBaseUrl } from "@/lib/config";
 
 const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI
-    || `${process.env.BASE_URL || "http://localhost:3000"}/api/integrations/google/callback`;
+    || `${getBaseUrl()}/api/integrations/google/callback`;
 
   if (!clientId) {
     return NextResponse.json({ error: "Google OAuth not configured" }, { status: 503 });

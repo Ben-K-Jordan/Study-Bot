@@ -5,6 +5,7 @@ import { createEmailVerificationToken } from "@/lib/tokens";
 import { emailProvider } from "@/lib/email/provider";
 import { emailVerification } from "@/lib/email/templates";
 import { logger } from "@/lib/logger";
+import { getBaseUrl } from "@/lib/config";
 
 /**
  * POST /api/auth/resend-verification
@@ -30,8 +31,7 @@ export async function POST(request: Request) {
     }
 
     const token = await createEmailVerificationToken(user.id);
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const verifyUrl = `${appUrl}/api/auth/verify-email?token=${token}`;
+    const verifyUrl = `${getBaseUrl()}/api/auth/verify-email?token=${token}`;
     const { subject, html } = emailVerification(user.name || "there", verifyUrl);
     await emailProvider.send(user.email, subject, html);
     logger.info("resend_verification.sent", { userId: user.id });

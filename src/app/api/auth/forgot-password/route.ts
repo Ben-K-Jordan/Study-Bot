@@ -6,6 +6,7 @@ import { emailProvider } from "@/lib/email/provider";
 import { passwordReset } from "@/lib/email/templates";
 import { authLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { getBaseUrl } from "@/lib/config";
 
 const schema = z.object({
   email: z.string().email(),
@@ -39,8 +40,7 @@ export async function POST(request: NextRequest) {
     if (!user) return genericResponse;
 
     const token = await createPasswordResetToken(user.id);
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const resetUrl = `${appUrl}/auth/reset-password?token=${token}`;
+    const resetUrl = `${getBaseUrl()}/auth/reset-password?token=${token}`;
     const { subject, html } = passwordReset(user.name || "there", resetUrl);
 
     await emailProvider.send(user.email, subject, html);
