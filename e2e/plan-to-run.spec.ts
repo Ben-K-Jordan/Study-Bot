@@ -227,6 +227,18 @@ test.describe("E2E: Plan security", () => {
     expect(intruder.status()).toBe(404);
   });
 
+  test("cross-site API writes are rejected (403)", async ({ request }) => {
+    const res = await request.post(`${BASE_URL}/api/plans`, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Id": "plan_owner_sec",
+        Origin: "https://evil.example",
+      },
+      data: PLAN_PAYLOAD,
+    });
+    expect(res.status()).toBe(403);
+  });
+
   test("other user cannot view plan (403)", async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/plans/${planId}`, {
       headers: { "X-User-Id": "intruder" },

@@ -22,9 +22,47 @@ const PUBLIC_PATHS = [
 // Matched by extension outside /api only, so an API path can never skip auth.
 const STATIC_FILE = /\.(?:avif|css|gif|ico|jpe?g|js|json|map|png|svg|txt|webmanifest|webp|woff2?|xml)$/i;
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reject state-changing API requests sent by another site (CSRF defense on
+ * top of the SameSite=Lax session cookie). Browsers send Origin on every
+ * cross-origin POST/PUT/PATCH/DELETE; requests without it (curl, server to
+ * server, the e2e request client) fall back to Sec-Fetch-Site and are
+ * otherwise allowed, since they carry no ambient browser cookies.
+ */
+function isCrossSiteWrite(request: NextRequest): boolean {
+  if (SAFE_METHODS.has(request.method)) return false;
+
+  const origin = request.headers.get("origin");
+  if (!origin) return request.headers.get("sec-fetch-site") === "cross-site";
+
+  const originUrl = originOf(origin);
+  if (!originUrl) return true; // "null" or garbage
+
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (host && new URL(originUrl).host === host) return false;
+
+  const allowed = [request.nextUrl.origin, originOf(process.env.BASE_URL), originOf(process.env.NEXTAUTH_URL)];
+  return !allowed.includes(originUrl);
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isApi = pathname.startsWith("/api/");
+
+  if (isApi && isCrossSiteWrite(request)) {
+    return NextResponse.json({ error: "Cross-site request rejected" }, { status: 403 });
+  }
 
   // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
