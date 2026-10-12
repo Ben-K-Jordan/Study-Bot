@@ -13,6 +13,8 @@ import {
   SettingsIcon,
 } from "lucide-react"
 
+import { formatPercent, formatTimeRange } from "@/lib/format"
+
 import { Block, ColorPair, ShowcaseSection } from "./helpers"
 
 const SHELL_PAIRS: { name: string; bg: string; fg: string; min?: number }[] = [
@@ -198,7 +200,10 @@ export function Foundations() {
             Links
           </a>{" "}
           underline, and code such as <code className="rounded-sm bg-surface-container px-1 font-mono text-sm">useActiveCourse()</code>{" "}
-          uses Google Sans Code. Times and scores use tabular figures: <span className="tabular-nums">2:00 – 2:30 PM, 83%</span>.
+          uses Google Sans Code. Times and scores use tabular figures: <span className="tabular-nums">
+            {formatTimeRange("2026-10-12T18:00:00Z", "2026-10-12T18:30:00Z", { timeZone: "America/New_York" })},{" "}
+            {formatPercent(0.83)}
+          </span>.
         </p>
       </Block>
 

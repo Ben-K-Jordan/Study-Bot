@@ -72,14 +72,16 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
+import { formatDateWeekday, formatTimeRange } from "@/lib/format"
 
 import { Block, ShowcaseSection } from "./helpers"
 
+const ZONE = { timeZone: "America/New_York" }
 const SESSIONS = [
-  { day: "Mon, Oct 12", time: "2:00 – 2:30 PM", mode: "Retrieval", topic: "Recursion" },
-  { day: "Wed, Oct 14", time: "9:00 – 9:30 AM", mode: "Interleaved practice", topic: "Stacks, queues, and lists" },
-  { day: "Thu, Oct 15", time: "4:30 – 5:00 PM", mode: "Error repair", topic: "Big-O" },
-]
+  { start: "2026-10-12T18:00:00Z", end: "2026-10-12T18:30:00Z", mode: "Retrieval", topic: "Recursion" },
+  { start: "2026-10-14T13:00:00Z", end: "2026-10-14T13:30:00Z", mode: "Interleaved practice", topic: "Stacks, queues, and lists" },
+  { start: "2026-10-15T20:30:00Z", end: "2026-10-15T21:00:00Z", mode: "Error repair", topic: "Big-O" },
+].map((s) => ({ ...s, day: formatDateWeekday(s.start, ZONE), time: formatTimeRange(s.start, s.end, ZONE) }))
 
 export function Navigation() {
   return (
@@ -150,7 +152,7 @@ export function DataDisplay() {
         <Card>
           <CardHeader>
             <CardTitle>Today</CardTitle>
-            <CardDescription>Retrieval on Recursion, 2:00 – 2:30 PM</CardDescription>
+            <CardDescription>Retrieval on Recursion, {SESSIONS[0].time}</CardDescription>
             <CardAction>
               <Button variant="ghost" size="icon-sm" aria-label="More actions for this session">
                 <MoreVerticalIcon aria-hidden="true" />

@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/app/error-state"
 import { MasteryBar } from "@/components/app/mastery-bar"
 import { SectionHeader } from "@/components/app/section-header"
 import { StatLine } from "@/components/app/stat-line"
+import { formatTimeRange, plural } from "@/lib/format"
 
 import { ShowcaseSection } from "./helpers"
 
@@ -152,7 +153,8 @@ export function HomeRecipe() {
               <CardHeader>
                 <CardTitle>Retrieval: Recursion</CardTitle>
                 <CardDescription className="tabular-nums">
-                  2:00 – 2:30 PM <span aria-hidden="true">·</span> 10 questions
+                  {formatTimeRange("2026-10-12T18:00:00Z", "2026-10-12T18:30:00Z", { timeZone: ZONE })}{" "}
+                  <span aria-hidden="true">·</span> {plural(10, { one: "# question", other: "# questions" })}
                 </CardDescription>
               </CardHeader>
               <CardContent className="type-body-m text-on-surface-variant">

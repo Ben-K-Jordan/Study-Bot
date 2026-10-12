@@ -40,7 +40,7 @@ export function formatTime(value: DateInput, { timeZone }: ZoneOptions = {}): st
   return dateTimeFormat({ hour: "numeric", minute: "2-digit", timeZone }).format(toDate(value));
 }
 
-/** 2:00 – 2:30 PM (Intl inserts thin spaces around the dash; match with \s*) */
+/** A time range such as "2:00 to 2:30 PM" written the Intl way, with a dash between thin spaces (match it with \s* in tests). */
 export function formatTimeRange(
   start: DateInput,
   end: DateInput,
