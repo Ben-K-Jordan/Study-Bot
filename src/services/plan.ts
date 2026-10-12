@@ -23,26 +23,46 @@ import {
   type SessionMode as IntelMode,
 } from "@/lib/schedule-intelligence";
 import { getBaseUrl } from "@/lib/config";
+import {
+  addDays,
+  dayKey,
+  daysBetween,
+  getUserTimezone,
+  isValidTimezone,
+  zonedTimeToUtc,
+} from "@/lib/timezone";
 
+/** Used when neither the request nor the user's settings name a timezone. */
+const DEFAULT_PLAN_TIMEZONE = "America/New_York";
+
+/**
+ * Availability windows ("09:00") are wall-clock times in the plan's timezone.
+ * Day 0 is the calendar day the plan starts on, in that same zone.
+ */
 function computeStartTime(
-  startDate: Date,
+  startDay: string,
   dayIndex: number,
   timeStr: string,
+  timeZone: string,
 ): Date {
-  const d = new Date(startDate);
-  d.setDate(d.getDate() + dayIndex);
-  const [h, m] = timeStr.split(":").map(Number);
-  d.setHours(h, m, 0, 0);
-  return d;
+  return zonedTimeToUtc(addDays(startDay, dayIndex), timeStr, timeZone);
 }
 
 export async function createPlan(userId: string, input: unknown) {
   const parsed = createPlanSchema.parse(input);
 
+  // The plan's timezone: the one sent with the request, else the user's
+  // setting, else the default. Invalid names are skipped.
+  const timeZone =
+    [parsed.timezone, await getUserTimezone(userId)].find(
+      (tz): tz is string => !!tz && isValidTimezone(tz),
+    ) ?? DEFAULT_PLAN_TIMEZONE;
+
   const planId = generateSessionId();
   const startDate = new Date();
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() + 6);
+  const startDay = dayKey(startDate, timeZone);
+  // The plan covers 7 calendar days: through the end of day 6
+  const endDate = zonedTimeToUtc(addDays(startDay, 6), "23:59", timeZone);
 
   // Build AI gateway context (null if mock — will use deterministic fallback)
   let gatewayCtx: GatewayContext | null = null;
@@ -114,11 +134,9 @@ export async function createPlan(userId: string, input: unknown) {
   // --- Schedule Intelligence: taper + dynamic duration ---
 
   // 1. Apply pre-exam taper (reduce volume in final 48h before exam)
-  // Parse exam_date (YYYY-MM-DD) as LOCAL midnight — new Date(string) parses
-  // it as UTC midnight, which is the previous local day in behind-UTC timezones
-  const [examYear, examMonth, examDay] = parsed.exam_date.split("-").map(Number);
-  const examDateObj = new Date(examYear, examMonth - 1, examDay);
-  let blocks = applyPreExamTaper(planResult.blocks, examDateObj, startDate);
+  // exam_date (YYYY-MM-DD) is a calendar day in the plan's timezone
+  const examDateObj = zonedTimeToUtc(parsed.exam_date, "00:00", timeZone);
+  let blocks = applyPreExamTaper(planResult.blocks, examDateObj, startDate, timeZone);
 
   // 2. Apply dynamic session duration caps by cognitive load
   blocks = blocks.map((b) => ({
@@ -163,11 +181,9 @@ export async function createPlan(userId: string, input: unknown) {
         allCalendarIds = [...new Set([calendarId, ...busyCalendarIds])];
       }
 
-      // Query 7-day window
+      // Query the 7-day window, from now until midnight after day 6
       const timeMin = startDate.toISOString();
-      const windowEnd = new Date(startDate);
-      windowEnd.setDate(windowEnd.getDate() + 7);
-      const timeMax = windowEnd.toISOString();
+      const timeMax = zonedTimeToUtc(addDays(startDay, 7), "00:00", timeZone).toISOString();
 
       try {
         // Fetch events from ALL calendars (for exercise/meeting/fatigue detection)
@@ -202,13 +218,12 @@ export async function createPlan(userId: string, input: unknown) {
           }));
 
         // Estimate bedtime from event patterns
-        inferredBedtime = estimateBedtime(allEvents);
+        inferredBedtime = estimateBedtime(allEvents, timeZone);
 
         // Group events by day index
         googleEventsByDay = new Map();
         for (const event of allEvents) {
-          const eventDate = new Date(event.start);
-          const dayIdx = Math.floor((eventDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+          const dayIdx = daysBetween(startDay, dayKey(new Date(event.start), timeZone));
           if (dayIdx < 0 || dayIdx >= 7) continue;
           if (!googleEventsByDay.has(dayIdx)) googleEventsByDay.set(dayIdx, []);
           googleEventsByDay.get(dayIdx)!.push(event);
@@ -218,8 +233,8 @@ export async function createPlan(userId: string, input: unknown) {
         googleFreeSlotsByDay = new Map();
         for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
           const dayAvail = parsed.availability[dayIdx];
-          const dayStart = computeStartTime(startDate, dayIdx, dayAvail.start);
-          const dayEnd = computeStartTime(startDate, dayIdx, dayAvail.end);
+          const dayStart = computeStartTime(startDay, dayIdx, dayAvail.start, timeZone);
+          const dayEnd = computeStartTime(startDay, dayIdx, dayAvail.end, timeZone);
           const freeSlots = computeFreeSlots(dayStart.getTime(), dayEnd.getTime(), busyIntervals);
           googleFreeSlotsByDay.set(dayIdx, freeSlots);
         }
@@ -278,6 +293,7 @@ export async function createPlan(userId: string, input: unknown) {
             bedtimeHour: inferredBedtime,
             courseName: parsed.course_name,
             blockTopicScopes: dayBlocks.map((b) => b.topicScope),
+            timeZone,
           })
         : fitBlocksIntoSlots(durations, freeSlots);
 
@@ -335,7 +351,7 @@ export async function createPlan(userId: string, input: unknown) {
       // Compute start/end times
       const dayAvail = parsed.availability[block.dayIndex];
       const offsetMinutes = dayOffsets[block.dayIndex] || 0;
-      const baseStart = computeStartTime(startDate, block.dayIndex, dayAvail.start);
+      const baseStart = computeStartTime(startDay, block.dayIndex, dayAvail.start, timeZone);
       const startTime = new Date(baseStart.getTime() + offsetMinutes * 60000);
       const endTime = new Date(startTime.getTime() + block.plannedMinutes * 60000);
       dayOffsets[block.dayIndex] = offsetMinutes + block.plannedMinutes;
@@ -381,7 +397,7 @@ export async function createPlan(userId: string, input: unknown) {
         examId: parsed.exam_id ?? "",
         examName: parsed.exam_name,
         examDate: new Date(parsed.exam_date),
-        timezone: parsed.timezone,
+        timezone: timeZone,
         startDate,
         endDate,
         config: {
@@ -522,8 +538,8 @@ export async function getPlan(userId: string, planId: string) {
       exam_name: plan.examName,
       exam_date: plan.examDate.toISOString().split("T")[0],
       timezone: plan.timezone,
-      start_date: plan.startDate.toISOString().split("T")[0],
-      end_date: plan.endDate.toISOString().split("T")[0],
+      start_date: dayKey(plan.startDate, plan.timezone),
+      end_date: dayKey(plan.endDate, plan.timezone),
       config: plan.config,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {

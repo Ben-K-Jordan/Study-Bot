@@ -11,9 +11,14 @@
  * 4. Sort movable items by phase priority (RETRIEVAL first, then INTERLEAVED, etc.)
  * 5. Greedy first-fit placement into free slots
  * 6. Items that don't fit → DROPPED warning
+ *
+ * Day boundaries and availability windows are wall-clock times in the plan's
+ * timezone, never the server's, so the result does not depend on where the
+ * server runs.
  */
 
 import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/google/free-slots";
+import { addDays, dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 
 // ---- Types ----
 
@@ -77,24 +82,24 @@ export interface ReflowResult {
 
 // ---- Helpers ----
 
-function computeStartOfDay(planStartDate: Date, dayIndex: number, timeStr: string): Date {
-  const d = new Date(planStartDate);
-  d.setDate(d.getDate() + dayIndex);
-  const [h, m] = timeStr.split(":").map(Number);
-  d.setHours(h, m, 0, 0);
-  return d;
+/** The instant of a wall-clock time ("HH:MM") on plan day `dayIndex` in the plan's timezone. */
+function computeStartOfDay(
+  planStartDate: Date,
+  dayIndex: number,
+  timeStr: string,
+  timeZone: string | null,
+): Date {
+  const day = addDays(dayKey(planStartDate, timeZone), dayIndex);
+  return zonedTimeToUtc(day, timeStr, timeZone);
 }
 
 function getModePriority(mode: string): number {
   return MODE_PRIORITY[mode] ?? 99;
 }
 
-function dayIndexFromTime(planStartDate: Date, time: Date): number {
-  const planStart = new Date(planStartDate);
-  planStart.setHours(0, 0, 0, 0);
-  const target = new Date(time);
-  target.setHours(0, 0, 0, 0);
-  return Math.round((target.getTime() - planStart.getTime()) / (24 * 60 * 60 * 1000));
+/** Plan day index of an instant, counting calendar days in the plan's timezone. */
+function dayIndexFromTime(planStartDate: Date, time: Date, timeZone: string | null): number {
+  return daysBetween(dayKey(planStartDate, timeZone), dayKey(time, timeZone));
 }
 
 // ---- Core Algorithm ----
@@ -109,6 +114,7 @@ export const ALGORITHM_VERSION = "v1";
  * @param planStartDate - The plan's start date
  * @param now - Current time (for determining past items)
  * @param busyIntervals - Optional external busy intervals (Google Calendar)
+ * @param timeZone - IANA timezone of the plan; null means UTC
  */
 export function computeReflow(
   items: ReflowItem[],
@@ -116,6 +122,7 @@ export function computeReflow(
   planStartDate: Date,
   now: Date = new Date(),
   busyIntervals: TimeInterval[] = [],
+  timeZone: string | null = null,
 ): ReflowResult {
   const changes: ReflowChange[] = [];
   const warnings: ReflowWarning[] = [];
@@ -168,8 +175,8 @@ export function computeReflow(
 
   for (let dayIdx = 0; dayIdx < totalDays; dayIdx++) {
     const avail = config.availability[dayIdx];
-    const windowStart = computeStartOfDay(planStartDate, dayIdx, avail.start);
-    const windowEnd = computeStartOfDay(planStartDate, dayIdx, avail.end);
+    const windowStart = computeStartOfDay(planStartDate, dayIdx, avail.start, timeZone);
+    const windowEnd = computeStartOfDay(planStartDate, dayIdx, avail.end, timeZone);
 
     // Skip days entirely in the past
     if (windowEnd.getTime() <= now.getTime()) {
@@ -184,7 +191,7 @@ export function computeReflow(
 
     // Enforce daily study cap: sum fixed items on this day, limit remaining
     const fixedOnDay = fixed.filter((item) => {
-      const itemDay = dayIndexFromTime(planStartDate, item.startTime);
+      const itemDay = dayIndexFromTime(planStartDate, item.startTime, timeZone);
       return itemDay === dayIdx;
     });
     const fixedMs = fixedOnDay.reduce((sum, item) => {
@@ -244,7 +251,7 @@ export function computeReflow(
 
     const newStart = new Date(placement.start);
     const newEnd = new Date(placement.end);
-    const newDayIndex = dayIndexFromTime(planStartDate, newStart);
+    const newDayIndex = dayIndexFromTime(planStartDate, newStart, timeZone);
 
     // Check if position actually changed
     const startChanged = Math.abs(item.startTime.getTime() - newStart.getTime()) > 1000;

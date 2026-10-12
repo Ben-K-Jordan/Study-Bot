@@ -133,11 +133,11 @@ describe("computeFollowupSchedule", () => {
     expect(planned[0].start_time.toISOString()).toBe("2026-03-08T13:00:00.000Z");
   });
 
-  it("falls back to server-local wall time for an invalid timezone", () => {
+  it("falls back to UTC wall time for an invalid timezone", () => {
     const { planned } = computeFollowupSchedule(baseInput({ timezone: "Not/AZone" }));
     expect(planned).toHaveLength(2);
     const d = planned[0].start_time;
-    expect(d.getHours()).toBe(9);
-    expect(d.getMinutes()).toBe(0);
+    expect(d.getUTCHours()).toBe(9);
+    expect(d.getUTCMinutes()).toBe(0);
   });
 });

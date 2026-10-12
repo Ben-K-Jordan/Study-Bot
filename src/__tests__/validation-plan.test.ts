@@ -23,7 +23,8 @@ describe("createPlanSchema", () => {
     const result = createPlanSchema.parse(rest);
     expect(result.daily_study_cap_minutes).toBe(180);
     expect(result.break_protocol_default).toBe("50_10");
-    expect(result.timezone).toBe("America/New_York");
+    // No default here: createPlan falls back to the user's timezone setting
+    expect(result.timezone).toBeUndefined();
   });
 
   it("rejects fewer than 3 objectives", () => {

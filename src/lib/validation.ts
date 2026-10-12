@@ -217,7 +217,8 @@ export const createPlanSchema = z
     exam_name: z.string().min(1, "exam_name is required"),
     exam_id: z.string().optional(),
     exam_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
-    timezone: z.string().optional().default("America/New_York"),
+    // IANA timezone; createPlan falls back to the user's setting, then a default
+    timezone: z.string().optional(),
     objectives: z
       .array(z.string().min(1))
       .optional()

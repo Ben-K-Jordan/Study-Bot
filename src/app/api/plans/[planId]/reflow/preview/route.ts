@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeReflow, ReflowItem, ReflowConfig } from "@/services/reflow";
+import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone";
 import { z } from "zod/v4";
 import { getGoogleClient, GoogleReconnectError, type BusyInterval } from "@/lib/google/calendar-client";
 import { type TimeInterval } from "@/lib/google/free-slots";
@@ -100,8 +101,12 @@ export async function POST(
           : integration.busyCalendarIds.split(",").filter(Boolean);
 
         // Query busy for the plan's date range
-        const planEndDate = new Date(plan.startDate);
-        planEndDate.setDate(planEndDate.getDate() + reflowConfig.availability.length);
+        // Midnight after the plan's last day, in the plan's timezone
+        const planEndDate = zonedTimeToUtc(
+          addDays(dayKey(plan.startDate, plan.timezone), reflowConfig.availability.length),
+          "00:00",
+          plan.timezone,
+        );
 
         const busy: BusyInterval[] = await client.freebusyQuery({
           timeMin: now.toISOString(),
@@ -136,7 +141,14 @@ export async function POST(
     }
   }
 
-  const result = computeReflow(reflowItems, reflowConfig, plan.startDate, now, busyIntervals);
+  const result = computeReflow(
+    reflowItems,
+    reflowConfig,
+    plan.startDate,
+    now,
+    busyIntervals,
+    plan.timezone,
+  );
 
   return NextResponse.json({
     plan_id: planId,

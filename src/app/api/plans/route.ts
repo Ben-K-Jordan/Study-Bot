@@ -4,6 +4,7 @@ import { createPlan } from "@/services/plan";
 import { prisma } from "@/lib/db";
 import { z } from "zod/v4";
 import { logger } from "@/lib/logger";
+import { dayKey } from "@/lib/timezone";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
@@ -36,8 +37,8 @@ export async function GET(request: NextRequest) {
       course_name: plan.courseName,
       exam_name: plan.examName,
       exam_date: plan.examDate.toISOString().split("T")[0],
-      start_date: plan.startDate.toISOString().split("T")[0],
-      end_date: plan.endDate.toISOString().split("T")[0],
+      start_date: dayKey(plan.startDate, plan.timezone),
+      end_date: dayKey(plan.endDate, plan.timezone),
       timezone: plan.timezone,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {

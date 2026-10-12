@@ -424,4 +424,83 @@ describe("computeReflow", () => {
         .toBeGreaterThanOrEqual(new Date("2025-06-02T12:00:00Z").getTime());
     });
   });
+
+  describe("plan timezone", () => {
+    it("reads availability windows as wall-clock times in the plan's timezone", () => {
+      // Plan day 0 is 2025-06-02 in New York (EDT, UTC-4), so the 09:00-17:00
+      // window is 13:00-21:00 UTC wherever the server runs.
+      const items: ReflowItem[] = [
+        makeItem({
+          id: "1",
+          sessionId: "s1",
+          dayIndex: 0,
+          startTime: new Date("2025-06-02T22:00:00Z"),
+          endTime: new Date("2025-06-02T23:00:00Z"),
+          plannedMinutes: 60,
+        }),
+      ];
+
+      const result = computeReflow(
+        items,
+        defaultConfig,
+        new Date("2025-06-02T12:00:00Z"),
+        earlyNow,
+        [],
+        "America/New_York",
+      );
+
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].action).toBe("MOVED");
+      expect(result.changes[0].after).toEqual({
+        dayIndex: 0,
+        startTime: "2025-06-02T13:00:00.000Z",
+        endTime: "2025-06-02T14:00:00.000Z",
+      });
+    });
+
+    it("counts day indices by calendar day in the plan's timezone", () => {
+      // 01:00 UTC on 06-03 is still 06-02 (21:00) in New York, so a fixed item
+      // there uses day 0's cap, not day 1's.
+      const config: ReflowConfig = {
+        availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "23:00" })),
+        daily_study_cap_minutes: 60,
+      };
+      const items: ReflowItem[] = [
+        makeItem({
+          id: "fixed",
+          sessionId: "s-fixed",
+          dayIndex: 0,
+          startTime: new Date("2025-06-03T01:00:00Z"),
+          endTime: new Date("2025-06-03T02:00:00Z"),
+          status: "DONE",
+        }),
+        makeItem({
+          id: "1",
+          sessionId: "s1",
+          dayIndex: 0,
+          startTime: new Date("2025-06-02T14:00:00Z"),
+          endTime: new Date("2025-06-02T15:00:00Z"),
+          plannedMinutes: 60,
+        }),
+      ];
+
+      const result = computeReflow(
+        items,
+        config,
+        new Date("2025-06-02T12:00:00Z"),
+        earlyNow,
+        [],
+        "America/New_York",
+      );
+
+      const moved = result.changes.find((c) => c.itemId === "1");
+      expect(moved?.action).toBe("MOVED");
+      // Day 0's 60 minute cap is used up, so the item moves to day 1 at 09:00 EDT
+      expect(moved?.after).toEqual({
+        dayIndex: 1,
+        startTime: "2025-06-03T13:00:00.000Z",
+        endTime: "2025-06-03T14:00:00.000Z",
+      });
+    });
+  });
 });

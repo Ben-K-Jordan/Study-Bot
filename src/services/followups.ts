@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
 import { computeFollowups } from "@/lib/spacing";
-import { dayKey } from "@/lib/timezone";
+import { dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 import { getBaseUrl } from "@/lib/config";
 import { logger } from "@/lib/logger";
 
@@ -62,51 +62,6 @@ export interface FollowupScheduleInput {
   availability?: { start: string; end: string }[] | null;
 }
 
-/** Difference in calendar days between two YYYY-MM-DD strings. */
-function daysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
-}
-
-/**
- * Convert a wall-clock time in an IANA timezone to a UTC instant.
- * Two-pass correction handles DST transitions; an invalid timezone falls
- * back to the server's local clock (same behavior as dayKey).
- */
-function wallTimeToUtc(dateStr: string, timeStr: string, timeZone: string): Date {
-  const [y, mo, d] = dateStr.split("-").map(Number);
-  const [h, mi] = timeStr.split(":").map(Number);
-  const target = Date.UTC(y, mo - 1, d, h, mi, 0);
-  try {
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    let ts = target;
-    for (let i = 0; i < 2; i++) {
-      const parts: Record<string, string> = {};
-      for (const p of dtf.formatToParts(new Date(ts))) parts[p.type] = p.value;
-      const wall = Date.UTC(
-        Number(parts.year),
-        Number(parts.month) - 1,
-        Number(parts.day),
-        parts.hour === "24" ? 0 : Number(parts.hour),
-        Number(parts.minute),
-      );
-      const diff = wall - target;
-      if (diff === 0) break;
-      ts -= diff;
-    }
-    return new Date(ts);
-  } catch {
-    return new Date(y, mo - 1, d, h, mi, 0, 0);
-  }
-}
-
 /**
  * Pure scheduling core: map a run's accuracy + end time onto concrete plan
  * dates. Deterministic — the same run always yields the same schedule.
@@ -136,7 +91,7 @@ export function computeFollowupSchedule(input: FollowupScheduleInput): {
     const avail =
       input.availability?.[dayIndex] ??
       input.availability?.[((dayIndex % 7) + 7) % 7];
-    const startTime = wallTimeToUtc(date, avail?.start ?? DEFAULT_START_TIME, input.timezone);
+    const startTime = zonedTimeToUtc(date, avail?.start ?? DEFAULT_START_TIME, input.timezone);
 
     planned.push({
       days_from_now: rec.days_from_now,
@@ -190,7 +145,7 @@ export async function scheduleFollowups(userId: string, runId: string) {
     endedAt: run.endedAt ?? new Date(),
     timezone: plan.timezone,
     examDate: plan.examDate.toISOString().split("T")[0],
-    planStartDate: plan.startDate.toISOString().split("T")[0],
+    planStartDate: dayKey(plan.startDate, plan.timezone),
     availability: (plan.config as { availability?: { start: string; end: string }[] } | null)
       ?.availability,
   });
