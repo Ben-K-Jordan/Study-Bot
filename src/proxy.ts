@@ -18,7 +18,7 @@ const PUBLIC_PATHS = [
   "/s/", // Session links are shareable; API-level auth guards operations
 ];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public paths
@@ -52,7 +52,7 @@ export async function middleware(request: NextRequest) {
       !warnedTestAuthInProduction
     ) {
       warnedTestAuthInProduction = true;
-      // Middleware runs on the edge runtime; console.warn instead of the structured logger
+      // Proxy runs apart from the route code, so it logs with console.warn instead of the structured logger
       console.warn(
         "auth.test_auth_active_in_production: X-User-Id header is being trusted as identity because ALLOW_TEST_AUTH=true. This must never be enabled in a real deployment.",
       );
