@@ -2,6 +2,9 @@
  * Test-only endpoint to seed a GoogleIntegration record.
  * Only available with GOOGLE_PROVIDER=fake and test auth enabled
  * (see lib/test-auth); otherwise it answers 404.
+ *
+ * The folder name must not start with an underscore: the App Router treats
+ * _folders as private and never routes them.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";

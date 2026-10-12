@@ -25,11 +25,11 @@ test.describe("Reflow UI Workflow", () => {
 
   test.beforeAll(async ({ request }) => {
     // Seed Google integration
-    const seedRes = await request.post(`${BASE}/api/integrations/google/__test-seed`, {
+    const seedRes = await request.post(`${BASE}/api/integrations/google/test-seed`, {
       data: { connected_email: "reflow-e2e@example.com" },
     });
     if (seedRes.status() === 404) {
-      test.skip(true, "GOOGLE_PROVIDER is not fake — skipping reflow E2E");
+      test.skip(true, "test-seed unavailable (needs GOOGLE_PROVIDER=fake and ALLOW_TEST_AUTH), skipping reflow E2E");
     }
 
     // Create a plan via API
@@ -69,7 +69,7 @@ test.describe("Reflow UI Workflow", () => {
   });
 
   test.afterAll(async ({ request }) => {
-    await request.delete(`${BASE}/api/integrations/google/__test-seed`);
+    await request.delete(`${BASE}/api/integrations/google/test-seed`);
   });
 
   test("preview reflow shows moved items after marking one MISSED", async ({ request }) => {

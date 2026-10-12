@@ -2,7 +2,7 @@
  * Playwright E2E tests for publishing a plan to Google Calendar.
  *
  * Requires GOOGLE_PROVIDER=fake so the server uses FakeGoogleCalendarClient.
- * Uses the __test-seed endpoint to create/cleanup GoogleIntegration records.
+ * Uses the test-seed endpoint to create/cleanup GoogleIntegration records.
  */
 import { test, expect } from "@playwright/test";
 
@@ -18,11 +18,11 @@ test.describe("Google Calendar - Publish flow with a connected account", () => {
 
   test.beforeAll(async ({ request }) => {
     // Seed Google integration
-    const seedRes = await request.post(`${BASE}/api/integrations/google/__test-seed`, {
+    const seedRes = await request.post(`${BASE}/api/integrations/google/test-seed`, {
       data: { connected_email: "e2e@example.com" },
     });
     if (seedRes.status() === 404) {
-      test.skip(true, "GOOGLE_PROVIDER is not fake — skipping UI E2E");
+      test.skip(true, "test-seed unavailable (needs GOOGLE_PROVIDER=fake and ALLOW_TEST_AUTH), skipping publish E2E");
     }
 
     // Create a plan via API
@@ -43,7 +43,7 @@ test.describe("Google Calendar - Publish flow with a connected account", () => {
   });
 
   test.afterAll(async ({ request }) => {
-    await request.delete(`${BASE}/api/integrations/google/__test-seed`);
+    await request.delete(`${BASE}/api/integrations/google/test-seed`);
   });
 
   test("publish to Google Calendar shows success counts", async ({ request }) => {
