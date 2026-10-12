@@ -12,12 +12,15 @@
  * Robust: handles 404 (manual deletion), rate limits, partial failure.
  */
 import { prisma } from "@/lib/db";
-import { getGoogleClient, GoogleApiError, GoogleReconnectError } from "@/lib/google/calendar-client";
+import {
+  getGoogleClient,
+  GoogleApiError,
+  GoogleReconnectError,
+  SYNC_CONCURRENCY,
+} from "@/lib/google/calendar-client";
 import { buildEventPayload } from "@/lib/google/event-builder";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
-
-const CONCURRENCY_LIMIT = parseInt(process.env.GOOGLE_CALENDAR_SYNC_CONCURRENCY || "5", 10);
 
 // ---- Types ----
 
@@ -384,7 +387,7 @@ export async function publishPlanToGoogle(
   });
 
   try {
-    await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+    await runWithConcurrency(tasks, SYNC_CONCURRENCY);
   } catch (err) {
     if (err instanceof GoogleReconnectError) {
       return { error: "GOOGLE_RECONNECT_REQUIRED", status: 409 };
@@ -536,7 +539,7 @@ export async function unpublishPlanFromGoogle(
     deleted++;
   });
 
-  await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+  await runWithConcurrency(tasks, SYNC_CONCURRENCY);
 
   // Update publication status
   const status: UnpublishResult["status"] = failedItems!.length === 0 ? "UNPUBLISHED" : "PARTIAL";

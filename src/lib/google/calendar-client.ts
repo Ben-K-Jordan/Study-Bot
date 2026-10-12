@@ -154,7 +154,8 @@ const CALENDAR_LIST_FIELDS = "items(id,summary,primary,accessRole,timeZone)";
 
 // ---- Concurrency ----
 
-const SYNC_CONCURRENCY = parseInt(process.env.GOOGLE_SYNC_CONCURRENCY || "3", 10);
+/** Max concurrent Google Calendar calls while publishing or unpublishing a plan. */
+const SYNC_CONCURRENCY = Math.max(1, parseInt(process.env.GOOGLE_SYNC_CONCURRENCY || "", 10) || 3);
 export { SYNC_CONCURRENCY };
 
 // ---- Real Implementation ----
