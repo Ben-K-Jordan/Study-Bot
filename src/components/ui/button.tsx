@@ -4,21 +4,22 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 
 // Material 3 buttons: pill shape, label-l type, a state layer in the content
-// colour, and a 48px touch target around the 40px default.
+// colour, and a 48px touch target around the 40px default. A disabled button
+// holding a Spinner is busy, not unavailable, so it keeps its colours.
 const buttonVariants = cva(
-  "group/button state-layer relative isolate inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-sm font-medium tracking-[0.1px] whitespace-nowrap transition-[background-color,border-color,color,box-shadow] duration-150 ease-standard outline-none select-none disabled:pointer-events-none disabled:text-on-surface/38 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
+  "group/button state-layer relative isolate inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-sm font-medium tracking-[0.1px] whitespace-nowrap transition-[background-color,border-color,color,box-shadow] duration-150 ease-standard outline-none select-none disabled:pointer-events-none disabled:not-has-data-[slot=spinner]:text-on-surface/38 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
   {
     variants: {
       variant: {
         // Filled: the one primary action in a group.
         default:
-          "bg-primary text-primary-foreground hover:shadow-sm disabled:bg-on-surface/12 disabled:shadow-none",
+          "bg-primary text-primary-foreground hover:shadow-sm disabled:shadow-none disabled:not-has-data-[slot=spinner]:bg-on-surface/12",
         // Outlined: secondary actions beside a filled button.
         outline:
-          "border-outline bg-transparent text-primary aria-expanded:bg-primary/10 disabled:border-on-surface/12",
+          "border-outline bg-transparent text-primary aria-expanded:bg-primary/10 disabled:not-has-data-[slot=spinner]:border-on-surface/12",
         // Tonal: a softer alternative to filled.
         secondary:
-          "bg-secondary text-secondary-foreground hover:shadow-sm disabled:bg-on-surface/12 disabled:shadow-none",
+          "bg-secondary text-secondary-foreground hover:shadow-sm disabled:shadow-none disabled:not-has-data-[slot=spinner]:bg-on-surface/12",
         // Neutral: icon buttons and quiet actions in toolbars.
         ghost:
           "text-on-surface-variant hover:text-on-surface aria-expanded:bg-on-surface/10 aria-expanded:text-on-surface",
@@ -26,7 +27,7 @@ const buttonVariants = cva(
         text: "text-primary",
         // Filled error: confirms a destructive action.
         destructive:
-          "bg-destructive text-destructive-foreground hover:shadow-sm disabled:bg-on-surface/12 disabled:shadow-none",
+          "bg-destructive text-destructive-foreground hover:shadow-sm disabled:shadow-none disabled:not-has-data-[slot=spinner]:bg-on-surface/12",
         link: "h-auto! px-0! text-primary underline-offset-4 before:hidden after:hidden hover:underline",
       },
       size: {

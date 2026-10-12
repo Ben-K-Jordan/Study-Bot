@@ -54,7 +54,8 @@ export function AnswerOption({
   pending = false,
   className,
   children,
-}: {
+  ...props
+}: Omit<React.ComponentProps<"label">, "onSelect"> & {
   /** Shared by every option in the question. */
   name: string
   value: string
@@ -95,6 +96,7 @@ export function AnswerOption({
         "has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-[6px] has-[input:focus-visible]:outline-ring data-[preview~=focus]:outline-2 data-[preview~=focus]:outline-offset-[6px] data-[preview~=focus]:outline-ring",
         className
       )}
+      {...props}
     >
       <input
         id={id}

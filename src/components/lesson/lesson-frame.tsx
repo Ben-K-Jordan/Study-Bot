@@ -67,6 +67,7 @@ export function LessonFrame({
   closeLabel = "Leave session",
   question,
   questionId,
+  headingLevel = "h1",
   children,
   footer,
   feedback,
@@ -87,6 +88,8 @@ export function LessonFrame({
   question?: React.ReactNode
   /** Id for the h1, so AnswerOptionGroup can point at it with labelledBy. */
   questionId?: string
+  /** h2 only when the frame is embedded in another page (the design page). */
+  headingLevel?: "h1" | "h2"
   /** The answer area: options, a recall box, a confidence picker. */
   children: React.ReactNode
   /** Actions before checking: Skip (neutral) on the left, Check on the right. */
@@ -96,6 +99,7 @@ export function LessonFrame({
   className?: string
 }) {
   const shown = Math.min(questionNumber ?? current + 1, total)
+  const Heading = headingLevel
 
   const closeButton = <XIcon className="size-6" strokeWidth={2.5} aria-hidden="true" />
   const closeClasses =
@@ -135,12 +139,12 @@ export function LessonFrame({
 
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 pt-4 pb-10 sm:px-8 sm:pt-8">
           {question ? (
-            <h1
+            <Heading
               id={questionId}
               className="type-headline-s font-bold text-pretty text-lesson-on-surface sm:type-headline-m sm:font-bold"
             >
               {question}
-            </h1>
+            </Heading>
           ) : null}
           {children}
         </div>

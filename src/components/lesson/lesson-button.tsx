@@ -17,9 +17,10 @@ import { Spinner } from "@/components/ui/spinner"
 export const lessonButtonVariants = cva(
   [
     "lesson-lip relative inline-flex min-h-12 min-w-32 shrink-0 items-center justify-center gap-2 rounded-2xl border-2 px-6 py-2 text-base leading-6 font-bold tracking-[0.2px] whitespace-nowrap select-none outline-none",
-    "[--focus-ring-offset:6px] hover:brightness-[1.04]",
+    "[--focus-ring-offset:6px] hover:brightness-[1.08]",
     "disabled:pointer-events-none disabled:border-lesson-disabled disabled:bg-lesson-disabled disabled:text-lesson-on-disabled disabled:[--lip:var(--lesson-disabled)]",
-    "aria-disabled:pointer-events-none",
+    // Busy keeps its colours: the spinner and label say what is happening.
+    "aria-busy:pointer-events-none aria-busy:cursor-progress",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5",
   ],
   {
@@ -54,11 +55,12 @@ export function LessonButton({
   kbd,
   asChild = false,
   disabled,
+  onClick,
   children,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof lessonButtonVariants> & {
-    /** Shows a spinner, disables the button, and swaps in `loadingLabel`. */
+    /** Shows a spinner, ignores presses, and swaps in `loadingLabel`. */
     loading?: boolean
     /** In-progress label that reuses the verb: "Checking…". */
     loadingLabel?: string
@@ -72,8 +74,16 @@ export function LessonButton({
       data-slot="lesson-button"
       data-variant={variant ?? "check"}
       className={cn(lessonButtonVariants({ variant, width }), className)}
-      disabled={asChild ? undefined : disabled || loading}
+      disabled={asChild ? undefined : disabled}
       aria-busy={loading || undefined}
+      aria-disabled={loading || undefined}
+      onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+        if (loading) {
+          event.preventDefault()
+          return
+        }
+        onClick?.(event)
+      }}
       {...props}
     >
       {asChild ? (
