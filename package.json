@@ -26,7 +26,9 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:seed-research": "tsx scripts/seed-research.ts"
+    "db:seed-research": "tsx scripts/seed-research.ts",
+    "db:seed-demo": "tsx scripts/seed-demo.ts",
+    "screenshots": "tsx scripts/screenshots.ts"
   },
   "dependencies": {
     "@fontsource-variable/google-sans-code": "^5.3.2",

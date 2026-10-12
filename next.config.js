@@ -9,6 +9,8 @@ const nextConfig = {
   serverExternalPackages: ["pdf-parse"],
   // Keep `next dev` from writing an AGENTS.md file into the project root.
   agentRules: false,
+  // The dev-mode badge overlaps the navigation rail in screenshots.
+  devIndicators: false,
   headers: async () => [
     {
       source: "/:path*",
