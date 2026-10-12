@@ -33,9 +33,18 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: isCI
-      ? "npm run build && ALLOW_TEST_AUTH=true NEXTAUTH_SECRET=e2e-test-secret npm run start"
-      : "ALLOW_TEST_AUTH=true npm run dev",
+    command: isCI ? "npm run build && npm run start" : "npm run dev",
+    // Set here rather than inline in the command so it also works in
+    // PowerShell and cmd. Playwright merges these over process.env.
+    env: {
+      // Trust the X-User-Id header sent by the specs (test-only auth)
+      ALLOW_TEST_AUTH: "true",
+      NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "e2e-test-secret",
+      // Keep test runs offline: in-memory Google client, canned AI, logged email
+      GOOGLE_PROVIDER: "fake",
+      AI_PROVIDER: "mock",
+      EMAIL_PROVIDER: "console",
+    },
     url: "http://localhost:3000",
     reuseExistingServer: !isCI,
     timeout: isCI ? 120_000 : 30_000,
