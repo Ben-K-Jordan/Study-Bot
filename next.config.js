@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: process.env.NO_STANDALONE ? undefined : "standalone",
+  // pdf-parse v1 reads a bundled test PDF at import time when it thinks it is
+  // the entry module, which is always the case once it is bundled. Loading it
+  // from node_modules at runtime keeps that check working.
+  serverExternalPackages: ["pdf-parse"],
   headers: async () => [
     {
       source: "/:path*",
