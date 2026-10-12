@@ -37,14 +37,14 @@ Then open http://localhost:3000. The defaults need no API keys or external accou
 
 To be blunt about the default: mock mode exists for tests. With `AI_PROVIDER` set to `mock`, sessions get canned questions and canned feedback, which exercises the machinery but teaches you nothing. To actually study, set `AI_PROVIDER` to `openai` and add an `OPENAI_API_KEY` in `.env`. The settings page tells you which provider is active.
 
-What `npm run setup` does: copies `.env.example` to `.env`, generates `NEXTAUTH_SECRET` and `TOKEN_ENC_KEY`, starts PostgreSQL through Docker, and applies all migrations. It is idempotent and never overwrites a value you set yourself.
+What `npm run setup` does: copies `.env.example` to `.env`, generates `NEXTAUTH_SECRET` and `TOKEN_ENC_KEY`, starts PostgreSQL through Docker, applies all migrations, and runs `prisma/manual-scripts/001_pgvector.sql` to add the embedding column. It is idempotent and never overwrites a value you set yourself.
 
 Notes:
 
 * No Docker? Setup says so and keeps going. Point `DATABASE_URL` in `.env` at your own PostgreSQL and run `npx prisma migrate deploy`.
 * The Docker database listens on host port 5433 to avoid clashing with a local PostgreSQL on 5432. Start it with `npm run db:up`, watch it with `npm run db:logs`, and stop the compose stack with `npm run db:down`.
-* Optional: `npm run worker` starts the background job worker for document embedding.
-* Full stack alternative: `docker compose up` builds and runs the app and database together. It reads `NEXTAUTH_SECRET` from `.env`, so run `npm run setup` first.
+* Optional: `npm run worker` starts the background job worker for document embedding. It needs the pgvector extension, which the Docker database includes. On your own PostgreSQL, install pgvector and run `npx prisma db execute --file prisma/manual-scripts/001_pgvector.sql`.
+* Docker runs only the database. The app runs on your machine with `npm run dev`, or `npm run build` then `npm start`.
 
 ## What it looks like
 

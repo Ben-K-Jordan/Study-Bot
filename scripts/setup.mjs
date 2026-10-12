@@ -10,7 +10,8 @@
  *      are empty (user-set values are never touched).
  *   3. Starts the Postgres container via Docker Compose (if Docker is
  *      available) and waits for its healthcheck.
- *   4. Applies Prisma migrations and generates the Prisma client.
+ *   4. Applies Prisma migrations, then prisma/manual-scripts/001_pgvector.sql
+ *      (safe to re-run), and generates the Prisma client.
  *
  * Cross-platform (macOS / Linux / Windows), no dependencies beyond Node.
  */
@@ -225,6 +226,26 @@ if (migrated) {
   warn("database not reachable — start Postgres and run: npx prisma migrate deploy");
 }
 
+// The embedding column and its index live outside the Prisma schema because
+// Prisma cannot model the vector type. Every statement in the script uses
+// IF NOT EXISTS, so re-running setup is safe. Without pgvector the app still
+// works; only embedding jobs and hybrid search stay unavailable.
+const PGVECTOR_SCRIPT = "prisma/manual-scripts/001_pgvector.sql";
+let vectorReady = false;
+if (migrated) {
+  step("pgvector extension and embedding column");
+  const vector = run("npx", ["prisma", "db", "execute", "--file", PGVECTOR_SCRIPT], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  vectorReady = vector.status === 0;
+  if (vectorReady) {
+    ok(`applied ${PGVECTOR_SCRIPT}`);
+  } else {
+    warn(`could not apply ${PGVECTOR_SCRIPT}; is the pgvector extension installed?`);
+    warn("the Docker database (npm run db:up) ships with pgvector");
+  }
+}
+
 step("Prisma client (prisma generate)");
 const generate = run("npx", ["prisma", "generate"], { stdio: "inherit" });
 const generated = generate.status === 0;
@@ -248,6 +269,11 @@ if (!migrated || !generated) {
     log("    DATABASE_URL in .env), then: npx prisma migrate deploy");
   }
   if (!generated) log("  - npx prisma generate");
+}
+if (migrated && !vectorReady) {
+  log("");
+  log("Optional, for npm run worker and embedding search: install pgvector,");
+  log(`then run: npx prisma db execute --file ${PGVECTOR_SCRIPT}`);
 }
 if (parsedEnv.AI_PROVIDER === "mock") {
   log("");
