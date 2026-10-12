@@ -1,8 +1,11 @@
+// next dev needs eval for fast refresh; production builds do not.
+const isDev = process.env.NODE_ENV !== "production"
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // pdf-parse v1 reads a bundled test PDF at import time when it thinks it is
-  // the entry module, which is always the case once it is bundled. Loading it
-  // from node_modules at runtime keeps that check working.
+  poweredByHeader: false,
+  // pdf-parse v1 picks its pdf.js build with a dynamic require, which a bundler
+  // cannot follow, so it is loaded from node_modules at runtime instead.
   serverExternalPackages: ["pdf-parse"],
   // Keep `next dev` from writing an AGENTS.md file into the project root.
   agentRules: false,
@@ -20,7 +23,8 @@ const nextConfig = {
           key: "Content-Security-Policy",
           value: [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+            // Google Fonts stay until the layout switches to next/font
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: blob:",
