@@ -31,12 +31,18 @@ describe("times", () => {
 
   it("formats a range with one meridiem", () => {
     const end = new Date("2026-10-14T18:30:00Z");
-    expect(formatTimeRange(WED_2PM, end, NY)).toMatch(/^2:00\s*–\s*2:30\sPM$/);
+    expect(formatTimeRange(WED_2PM, end, NY)).toMatch(/^2:00\s*\u2013\s*2:30\sPM$/);
+  });
+
+  it("writes the same spaces on every runtime", () => {
+    const end = new Date("2026-10-14T18:30:00Z");
+    expect(formatTimeRange(WED_2PM, end, NY)).toBe("2:00\u2009\u2013\u20092:30\u00a0PM");
+    expect(formatTime(WED_2PM, NY)).toBe("2:00\u00a0PM");
   });
 
   it("keeps both meridiems when the range crosses noon", () => {
     const start = new Date("2026-10-14T15:30:00Z");
-    expect(formatTimeRange(start, WED_2PM, NY)).toMatch(/^11:30\sAM\s*–\s*2:00\sPM$/);
+    expect(formatTimeRange(start, WED_2PM, NY)).toMatch(/^11:30\sAM\s*\u2013\s*2:00\sPM$/);
   });
 });
 

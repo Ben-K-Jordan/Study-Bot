@@ -35,20 +35,37 @@ function dateTimeFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeForma
   return format;
 }
 
-/** 2:00 PM */
-export function formatTime(value: DateInput, { timeZone }: ZoneOptions = {}): string {
-  return dateTimeFormat({ hour: "numeric", minute: "2-digit", timeZone }).format(toDate(value));
+/**
+ * ICU versions disagree on the spaces inside times: Node writes thin and
+ * narrow no-break spaces in a range where Chrome writes plain ones. Pinning
+ * them keeps server and browser output identical (no hydration mismatch):
+ * a thin space either side of the range dash, and a no-break space before
+ * AM or PM so the period never wraps onto its own line.
+ */
+function pinTimeSpaces(text: string): string {
+  return text
+    .replace(/\s*\u2013\s*/g, "\u2009\u2013\u2009")
+    .replace(/\s+(AM|PM)/g, "\u00a0$1");
 }
 
-/** A time range such as "2:00 to 2:30 PM" written the Intl way, with a dash between thin spaces (match it with \s* in tests). */
+/** 2:00 PM */
+export function formatTime(value: DateInput, { timeZone }: ZoneOptions = {}): string {
+  return pinTimeSpaces(
+    dateTimeFormat({ hour: "numeric", minute: "2-digit", timeZone }).format(toDate(value))
+  );
+}
+
+/** A time range such as "2:00 to 2:30 PM", written with Intl's range dash. Match it with \s in tests. */
 export function formatTimeRange(
   start: DateInput,
   end: DateInput,
   { timeZone }: ZoneOptions = {}
 ): string {
-  return dateTimeFormat({ hour: "numeric", minute: "2-digit", timeZone }).formatRange(
-    toDate(start),
-    toDate(end)
+  return pinTimeSpaces(
+    dateTimeFormat({ hour: "numeric", minute: "2-digit", timeZone }).formatRange(
+      toDate(start),
+      toDate(end)
+    )
   );
 }
 
