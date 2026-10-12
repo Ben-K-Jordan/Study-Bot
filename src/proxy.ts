@@ -1,9 +1,10 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { testAuthUserId } from "@/lib/test-auth";
 
-// One-time flag: warn loudly if the test-auth header path is exercised in a
-// production build (ALLOW_TEST_AUTH=true) so it can't be silently left on.
+// One-time flag: warn loudly if the test-auth header is trusted in a
+// production build (only possible with CI=true) so it can't go unnoticed.
 let warnedTestAuthInProduction = false;
 
 const PUBLIC_PATHS = [
@@ -40,21 +41,13 @@ export async function proxy(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Allow requests with X-User-Id header — ONLY in non-production or explicit test mode
-  if (
-    !token &&
-    (process.env.ALLOW_TEST_AUTH === "true") &&
-    request.headers.get("x-user-id")
-  ) {
-    if (
-      process.env.NODE_ENV === "production" &&
-      process.env.ALLOW_TEST_AUTH === "true" &&
-      !warnedTestAuthInProduction
-    ) {
+  // X-User-Id header stands in for a session only when test auth is enabled
+  if (!token && testAuthUserId(request.headers)) {
+    if (process.env.NODE_ENV === "production" && !warnedTestAuthInProduction) {
       warnedTestAuthInProduction = true;
       // Proxy runs apart from the route code, so it logs with console.warn instead of the structured logger
       console.warn(
-        "auth.test_auth_active_in_production: X-User-Id header is being trusted as identity because ALLOW_TEST_AUTH=true. This must never be enabled in a real deployment.",
+        "auth.test_auth_active_in_production: X-User-Id header is being trusted as identity because ALLOW_TEST_AUTH=true and CI=true. This must never be enabled in a real deployment.",
       );
     }
     return NextResponse.next();

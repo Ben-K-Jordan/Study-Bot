@@ -1,13 +1,19 @@
 /**
  * Test-only endpoint to seed a GoogleIntegration record.
- * Only available when GOOGLE_PROVIDER=fake.
+ * Only available with GOOGLE_PROVIDER=fake and test auth enabled
+ * (see lib/test-auth); otherwise it answers 404.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { isTestAuthEnabled } from "@/lib/test-auth";
+
+function available(): boolean {
+  return process.env.GOOGLE_PROVIDER === "fake" && isTestAuthEnabled();
+}
 
 export async function POST(request: NextRequest) {
-  if (process.env.GOOGLE_PROVIDER !== "fake") {
+  if (!available()) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
 
@@ -49,7 +55,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (process.env.GOOGLE_PROVIDER !== "fake") {
+  if (!available()) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
 
