@@ -78,6 +78,9 @@
   --lesson-selected-border: #1a73e8;
   --lesson-selected-lip: #185abc;
   --lesson-on-selected: #174ea6;
+  --lesson-primary: #1a73e8;
+  --lesson-primary-lip: #185abc;
+  --lesson-on-primary: #ffffff;
   --lesson-check: #188038;
   --lesson-check-lip: #0d652d;
   --lesson-on-check: #ffffff;
@@ -191,6 +194,9 @@
   --lesson-selected-border: #8ab4f8;
   --lesson-selected-lip: #669df6;
   --lesson-on-selected: #d2e3fc;
+  --lesson-primary: #8ab4f8;
+  --lesson-primary-lip: #5e97f6;
+  --lesson-on-primary: #062e6f;
   --lesson-check: #81c995;
   --lesson-check-lip: #4ca866;
   --lesson-on-check: #0d3a1f;
@@ -290,6 +296,9 @@
   --color-lesson-selected-border: var(--lesson-selected-border);
   --color-lesson-selected-lip: var(--lesson-selected-lip);
   --color-lesson-on-selected: var(--lesson-on-selected);
+  --color-lesson-primary: var(--lesson-primary);
+  --color-lesson-primary-lip: var(--lesson-primary-lip);
+  --color-lesson-on-primary: var(--lesson-on-primary);
   --color-lesson-check: var(--lesson-check);
   --color-lesson-check-lip: var(--lesson-check-lip);
   --color-lesson-on-check: var(--lesson-on-check);
@@ -488,8 +497,10 @@
     background-color var(--duration-short) var(--ease-standard),
     border-color var(--duration-short) var(--ease-standard);
   @variant active {
-    transform: translateY(2px);
-    box-shadow: 0 2px 0 var(--lip, var(--lesson-option-border));
+    &:not(:disabled, [data-disabled], [aria-disabled="true"]) {
+      transform: translateY(2px);
+      box-shadow: 0 2px 0 var(--lip, var(--lesson-option-border));
+    }
   }
 }
 
