@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { logger } from "@/lib/logger";
+import { getBaseUrl } from "@/lib/config";
+
+// The OAuth flow starts from the settings page, so every outcome lands back
+// there: ?google=connected on success, ?google=error&reason=<code> otherwise.
+function settingsRedirect(outcome: { connected: true } | { error: string }) {
+  const params = new URLSearchParams(
+    "error" in outcome
+      ? { google: "error", reason: outcome.error }
+      : { google: "connected" },
+  );
+  return NextResponse.redirect(`${getBaseUrl()}/settings?${params.toString()}`, 302);
+}
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -9,14 +21,14 @@ export async function GET(request: NextRequest) {
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
-  const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+  const baseUrl = getBaseUrl();
 
   if (error) {
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=${error}`, 302);
+    return settingsRedirect({ error });
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=missing_params`, 302);
+    return settingsRedirect({ error: "missing_params" });
   }
 
   // Validate state
@@ -24,7 +36,7 @@ export async function GET(request: NextRequest) {
   if (!oauthState || oauthState.expiresAt < new Date()) {
     // Clean up expired state
     if (oauthState) await prisma.oAuthState.delete({ where: { id: oauthState.id } });
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=invalid_state`, 302);
+    return settingsRedirect({ error: "invalid_state" });
   }
 
   const userId = oauthState.userId;
@@ -38,7 +50,7 @@ export async function GET(request: NextRequest) {
     || `${baseUrl}/api/integrations/google/callback`;
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=not_configured`, 302);
+    return settingsRedirect({ error: "not_configured" });
   }
 
   try {
@@ -57,7 +69,7 @@ export async function GET(request: NextRequest) {
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
       logger.error("google_token_exchange_failed", { error: String(errBody) });
-      return NextResponse.redirect(`${baseUrl}/settings/calendar?error=token_exchange_failed`, 302);
+      return settingsRedirect({ error: "token_exchange_failed" });
     }
 
     const tokens = await tokenRes.json();
@@ -67,7 +79,7 @@ export async function GET(request: NextRequest) {
     const scope = (tokens.scope as string) || "";
 
     if (!refreshToken) {
-      return NextResponse.redirect(`${baseUrl}/settings/calendar?error=no_refresh_token`, 302);
+      return settingsRedirect({ error: "no_refresh_token" });
     }
 
     // Fetch connected email via userinfo
@@ -114,9 +126,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?connected=1`, 302);
+    return settingsRedirect({ connected: true });
   } catch (err) {
     logger.error("google_oauth_callback_failed", { error: String(err) });
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=internal`, 302);
+    return settingsRedirect({ error: "internal" });
   }
 }

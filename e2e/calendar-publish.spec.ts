@@ -1,5 +1,5 @@
 /**
- * Playwright E2E tests for Google Calendar UI flows.
+ * Playwright E2E tests for publishing a plan to Google Calendar.
  *
  * Requires GOOGLE_PROVIDER=fake so the server uses FakeGoogleCalendarClient.
  * Uses the __test-seed endpoint to create/cleanup GoogleIntegration records.
@@ -9,97 +9,9 @@ import { test, expect } from "@playwright/test";
 const BASE = process.env.BASE_URL || "http://localhost:3000";
 const userId = "e2e_ui_gcal_user";
 
-// ── Settings Page ──────────────────────────────────────────────────────
+// ── Publish flow ───────────────────────────────────────────────────────
 
-test.describe("Settings Page - Calendar UI", () => {
-  test.use({ extraHTTPHeaders: { "X-User-Id": userId } });
-
-  test.beforeEach(async ({ request }) => {
-    // Seed a connected GoogleIntegration
-    const res = await request.post(`${BASE}/api/integrations/google/__test-seed`, {
-      data: { connected_email: "e2e@example.com" },
-    });
-    // If seed endpoint not available (GOOGLE_PROVIDER != fake), skip
-    if (res.status() === 404) {
-      test.skip(true, "GOOGLE_PROVIDER is not fake — skipping UI E2E");
-    }
-    expect(res.status()).toBe(200);
-  });
-
-  test.afterEach(async ({ request }) => {
-    await request.delete(`${BASE}/api/integrations/google/__test-seed`);
-  });
-
-  test("shows connected status and account email", async ({ page }) => {
-    await page.goto(`${BASE}/settings/calendar`);
-
-    // Wait for status to load
-    await expect(page.locator("text=Connected")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("text=e2e@example.com")).toBeVisible();
-
-    // Test Connection and Disconnect buttons should be visible
-    await expect(page.locator("button", { hasText: "Test Connection" })).toBeVisible();
-    await expect(page.locator("button", { hasText: "Disconnect" })).toBeVisible();
-  });
-
-  test("displays calendar preferences when connected", async ({ page }) => {
-    await page.goto(`${BASE}/settings/calendar`);
-
-    // Wait for calendars to load (fake client returns "Primary" calendar)
-    await expect(page.locator("text=Calendar Preferences")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("text=Default calendar")).toBeVisible();
-    await expect(page.locator("text=Busy calendars")).toBeVisible();
-  });
-
-  test("save preferences updates successfully", async ({ page }) => {
-    await page.goto(`${BASE}/settings/calendar`);
-
-    // Wait for preferences to appear
-    await expect(page.locator("text=Calendar Preferences")).toBeVisible({ timeout: 10_000 });
-
-    // Click Save Preferences
-    await page.locator("button", { hasText: "Save Preferences" }).click();
-
-    // Should show success message
-    await expect(page.locator("text=Preferences saved")).toBeVisible({ timeout: 5_000 });
-  });
-
-  test("test connection shows success message", async ({ page }) => {
-    await page.goto(`${BASE}/settings/calendar`);
-
-    await expect(page.locator("button", { hasText: "Test Connection" })).toBeVisible({ timeout: 10_000 });
-    await page.locator("button", { hasText: "Test Connection" }).click();
-
-    // Should show success
-    await expect(page.locator("text=Connection test passed")).toBeVisible({ timeout: 10_000 });
-  });
-
-  test("disconnect removes connection", async ({ page }) => {
-    await page.goto(`${BASE}/settings/calendar`);
-
-    await expect(page.locator("button", { hasText: "Disconnect" })).toBeVisible({ timeout: 10_000 });
-    await page.locator("button", { hasText: "Disconnect" }).click();
-
-    // Status should switch to "Not connected"
-    await expect(page.locator("text=Not connected")).toBeVisible({ timeout: 5_000 });
-
-    // Connect button should now appear
-    await expect(page.locator("button", { hasText: "Connect Google Calendar" })).toBeVisible();
-  });
-
-  test("shows not connected state for unknown user", async ({ page, context }) => {
-    // Use a different user ID that has no integration
-    await context.setExtraHTTPHeaders({ "X-User-Id": "e2e_unknown_user_no_gcal" });
-    await page.goto(`${BASE}/settings/calendar`);
-
-    await expect(page.locator("text=Not connected")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator("button", { hasText: "Connect Google Calendar" })).toBeVisible();
-  });
-});
-
-// ── Plan Page: Publish Flow ────────────────────────────────────────────
-
-test.describe("Plan Page - Publish Flow", () => {
+test.describe("Google Calendar - Publish flow with a connected account", () => {
   test.use({ extraHTTPHeaders: { "X-User-Id": userId } });
 
   let planId: string;
