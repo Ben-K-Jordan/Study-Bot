@@ -8,7 +8,6 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   queryEvidenceCards,
-  listEvidenceTags,
   buildResearchContext,
 } from "@/services/research";
 
@@ -138,23 +137,6 @@ describe("queryEvidenceCards", () => {
     expect(testCard!.paper.title).toBe("Test Paper for Research Service");
     expect(testCard!.paper.authors).toBe("Test Author");
     expect(testCard!.paper.year).toBe(2024);
-  });
-});
-
-describe("listEvidenceTags", () => {
-  it("returns sorted unique tags", async () => {
-    const tags = await listEvidenceTags();
-    expect(tags.length).toBeGreaterThanOrEqual(1);
-    // Check sorted
-    for (let i = 1; i < tags.length; i++) {
-      expect(tags[i] >= tags[i - 1]).toBe(true);
-    }
-  });
-
-  it("includes tags from test data", async () => {
-    const tags = await listEvidenceTags();
-    expect(tags).toContain("spacing");
-    expect(tags).toContain("test-tag");
   });
 });
 

@@ -90,31 +90,6 @@ export function checkBreakNeeded(state: BreakState, now: Date = new Date()): Bre
 }
 
 /**
- * Check if the current break has ended.
- * If so, advance to the next work cycle.
- */
-export function checkBreakEnded(state: BreakState, now: Date = new Date()): BreakState {
-  if (!state.on_break || !state.break_started_at) return state;
-
-  const breakStart = new Date(state.break_started_at);
-  const elapsedSeconds = (now.getTime() - breakStart.getTime()) / 1000;
-  const breakDuration = state.break_duration_seconds ?? 600;
-
-  if (elapsedSeconds >= breakDuration) {
-    return {
-      ...state,
-      on_break: false,
-      break_started_at: undefined,
-      current_cycle: state.current_cycle + 1,
-      work_started_at: now.toISOString(),
-      completed_breaks: [...state.completed_breaks, state.break_started_at],
-    };
-  }
-
-  return state;
-}
-
-/**
  * Force-end a break early (user chose to skip remaining break time).
  */
 export function endBreakEarly(state: BreakState, now: Date = new Date()): BreakState {
@@ -128,26 +103,4 @@ export function endBreakEarly(state: BreakState, now: Date = new Date()): BreakS
     work_started_at: now.toISOString(),
     completed_breaks: [...state.completed_breaks, state.break_started_at],
   };
-}
-
-/**
- * Compute remaining seconds in the current break.
- */
-export function breakRemainingSeconds(state: BreakState, now: Date = new Date()): number {
-  if (!state.on_break || !state.break_started_at) return 0;
-  const breakStart = new Date(state.break_started_at);
-  const elapsed = (now.getTime() - breakStart.getTime()) / 1000;
-  const remaining = (state.break_duration_seconds ?? 600) - elapsed;
-  return Math.max(0, Math.ceil(remaining));
-}
-
-/**
- * Compute remaining seconds in the current work block.
- */
-export function workRemainingSeconds(state: BreakState, now: Date = new Date()): number {
-  if (state.on_break) return 0;
-  const workStart = new Date(state.work_started_at);
-  const elapsed = (now.getTime() - workStart.getTime()) / 1000;
-  const remaining = state.work_duration_seconds - elapsed;
-  return Math.max(0, Math.ceil(remaining));
 }

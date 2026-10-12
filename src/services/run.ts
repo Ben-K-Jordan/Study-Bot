@@ -14,7 +14,7 @@ import { generateFeedbackEager } from "@/services/feedback";
 import { followupsFromDueDates } from "@/lib/spacing";
 import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
-import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
+import { initBreakState, checkBreakNeeded, endBreakEarly, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
 import { updateMastery, getDueObjectives } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
@@ -2142,15 +2142,7 @@ export async function endBreak(userId: string, runId: string) {
   const breakState = run.breakState as unknown as BreakState;
   if (!breakState.on_break) return { error: "not_on_break" as const };
 
-  const now = new Date();
-  const newState: BreakState = {
-    ...breakState,
-    on_break: false,
-    break_started_at: undefined,
-    current_cycle: breakState.current_cycle + 1,
-    work_started_at: now.toISOString(),
-    completed_breaks: [...breakState.completed_breaks, breakState.break_started_at!],
-  };
+  const newState = endBreakEarly(breakState);
 
   await prisma.sessionRun.update({
     where: { id: run.id },

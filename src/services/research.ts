@@ -73,19 +73,6 @@ export async function queryEvidenceCards(
 }
 
 /**
- * Get all unique tags across all evidence cards.
- */
-export async function listEvidenceTags(): Promise<string[]> {
-  const rows = await prisma.$queryRaw<{ tag: string }[]>`
-    SELECT DISTINCT jsonb_array_elements_text(tags) AS tag
-    FROM evidence_cards
-    WHERE tags IS NOT NULL
-    ORDER BY tag
-  `;
-  return rows.map((r) => r.tag);
-}
-
-/**
  * Build a research context string for the plan generator prompt.
  * Retrieves evidence cards relevant to the given scheduling concerns
  * and formats them into a concise prompt section.

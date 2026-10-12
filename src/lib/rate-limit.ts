@@ -112,12 +112,6 @@ export const aiLimiter = createRateLimiter("ai", {
   windowMs: 60 * 1000,
 });
 
-/** Push subscribe: 10 per hour per user */
-export const pushLimiter = createRateLimiter("push", {
-  maxRequests: 10,
-  windowMs: 60 * 60 * 1000,
-});
-
 /** General API: 120 requests per minute per user */
 export const generalLimiter = createRateLimiter("general", {
   maxRequests: 120,

@@ -31,8 +31,6 @@ export const ITEM_STATUSES = [
   "RESCHEDULED",
 ] as const;
 
-export type ItemStatus = (typeof ITEM_STATUSES)[number];
-
 /** Phase priority: lower number = higher priority (scheduled first) */
 const MODE_PRIORITY: Record<string, number> = {
   RETRIEVAL: 0,

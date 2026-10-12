@@ -36,7 +36,6 @@ export const BADGE_MAP: Record<string, BadgeDefinition> = Object.fromEntries(
   ALL_BADGES.map((b) => [b.key, b]),
 );
 
-export const BADGE_KEYS = ALL_BADGES.map((b) => b.key);
 export const TOTAL_BADGES = ALL_BADGES.length;
 
 export const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {

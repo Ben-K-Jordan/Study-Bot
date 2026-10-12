@@ -2,8 +2,8 @@
  * Schedule Intelligence Module
  *
  * Applies cognitive science research to optimize WHEN study sessions are scheduled,
- * not just WHERE they fit. Provides slot scoring, pre-exam tapering, intraday
- * spacing enforcement, and dynamic session duration adjustment.
+ * not just WHERE they fit. Provides slot scoring, pre-exam tapering, and
+ * dynamic session duration adjustment.
  *
  * Research basis:
  * - Circadian task alignment: Wieth & Zacks 2011, Schmidt et al. 2007
@@ -11,7 +11,6 @@
  * - Post-exercise cognitive boost: Roig et al. 2013, Blomstrand & Engvall 2021
  * - Cognitive fatigue: Linder et al. 2014, Hockey 2013
  * - Pre-exam taper: Mujika & Padilla 2003 (adapted from athletic tapering)
- * - Intraday spacing: Cepeda et al. 2008
  * - Session duration by cognitive load: Cognitive Research 2020
  * - Post-class consolidation timing: Dewar et al. 2012, Wixted 2004
  * - Retroactive interference avoidance: Underwood 1957
@@ -427,12 +426,6 @@ function isCognitiveEvent(summaryLower: string): boolean {
 
 // ---- Pre-Exam Taper ----
 
-export interface TaperInput {
-  blocks: { dayIndex: number; mode: string; plannedMinutes: number }[];
-  examDate: Date;
-  planStartDate: Date;
-}
-
 /**
  * Apply pre-exam taper: reduce study volume in the final 48h before the exam.
  * Based on athletic taper research (Mujika & Padilla 2003) adapted for cognition:
@@ -517,58 +510,6 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
   }
 
   return tapered;
-}
-
-// ---- Intraday Spacing ----
-
-/**
- * Enforce minimum spacing between same-topic sessions on the same day.
- * If two sessions covering the same objectives are scheduled less than
- * minGapMinutes apart, the second one is shifted or flagged.
- *
- * Returns indices of blocks that violate spacing (caller should reschedule).
- */
-export function findIntradaySpacingViolations(
-  blocks: { dayIndex: number; topicScope: string; startMinuteOfDay?: number }[],
-  minGapMinutes: number = 60,
-): number[] {
-  // Pre-compute word sets once to avoid recreating in O(n²) pair comparisons
-  const wordSets = blocks.map((b) =>
-    new Set(b.topicScope.toLowerCase().split(/[,\s]+/).filter((w) => w.length > 3)),
-  );
-
-  const violations: number[] = [];
-  const dayGroups = new Map<number, number[]>();
-
-  for (let i = 0; i < blocks.length; i++) {
-    const day = blocks[i].dayIndex;
-    if (!dayGroups.has(day)) dayGroups.set(day, []);
-    dayGroups.get(day)!.push(i);
-  }
-
-  for (const indices of dayGroups.values()) {
-    for (let i = 0; i < indices.length; i++) {
-      for (let j = i + 1; j < indices.length; j++) {
-        const idxA = indices[i];
-        const idxB = indices[j];
-
-        // Check topic overlap using pre-computed sets
-        let hasOverlap = false;
-        for (const w of wordSets[idxA]) {
-          if (wordSets[idxB].has(w)) { hasOverlap = true; break; }
-        }
-        if (!hasOverlap) continue;
-
-        const startA = blocks[idxA].startMinuteOfDay ?? 0;
-        const startB = blocks[idxB].startMinuteOfDay ?? 0;
-        if (Math.abs(startB - startA) < minGapMinutes) {
-          violations.push(idxB);
-        }
-      }
-    }
-  }
-
-  return violations;
 }
 
 // ---- Dynamic Session Duration ----

@@ -174,8 +174,6 @@ export const updateAttemptMetaSchema = z
     { message: "Provide self_explanation, generated_example, or socratic_answer" }
   );
 
-export type UpdateAttemptMetaInput = z.infer<typeof updateAttemptMetaSchema>;
-
 /**
  * Unified attempt schema: accepts legacy (no kind) or new (kind=ANSWER|SCORE).
  * Use parseAttemptPayload() to normalize.

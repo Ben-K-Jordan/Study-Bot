@@ -3,7 +3,6 @@ import { prisma } from "@/lib/db";
 import { sha256, saveFile, resolveStoragePath } from "@/lib/storage";
 import { extractDocumentText } from "@/lib/extractor";
 import { chunkText } from "@/lib/chunker";
-import { searchChunks, buildFeedbackQuery, type SearchResult } from "@/lib/search";
 import { enqueueJob } from "@/lib/jobs/queue";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
@@ -251,53 +250,6 @@ export interface FeedbackExcerpt {
   rank: number;
 }
 
-/**
- * Fetch post-score feedback excerpts from the user's course materials.
- * Only called for PARTIAL/INCORRECT scores.
- * Search + citation storage happens OUTSIDE the attempt transaction.
- */
-export async function fetchFeedbackExcerpts(
-  userId: string,
-  attemptId: string,
-  promptText: string,
-  courseName: string,
-  examName: string,
-  correctionRule?: string,
-  objectiveTitle?: string
-): Promise<FeedbackExcerpt[]> {
-  try {
-    const query = buildFeedbackQuery(promptText, correctionRule, objectiveTitle);
-
-    const results: SearchResult[] = await searchChunks({
-      userId,
-      q: query,
-      namespace: "COURSE",
-      courseName,
-      examName,
-      topK: 5,
-    });
-
-    if (results.length === 0) {
-      // Try without exam_name filter for broader results
-      const broaderResults = await searchChunks({
-        userId,
-        q: query,
-        namespace: "COURSE",
-        courseName,
-        topK: 5,
-      });
-      if (broaderResults.length === 0) return [];
-      return await storeCitations(attemptId, broaderResults);
-    }
-
-    return await storeCitations(attemptId, results);
-  } catch (err: unknown) {
-    // Feedback failure must not fail the attempt
-    captureException(err, { user_id: userId, attempt_id: attemptId, action: "fetchFeedback" });
-    logger.error("feedback.failed", { user_id: userId, attempt_id: attemptId, error: String(err) });
-    return [];
-  }
-}
 
 // ---- Document Summary Generation ----
 
@@ -354,38 +306,4 @@ async function generateDocumentSummary(
       questions_count: result.output.suggested_questions.length,
     });
   }
-}
-
-async function storeCitations(
-  attemptId: string,
-  results: SearchResult[]
-): Promise<FeedbackExcerpt[]> {
-  // Run all upserts in parallel
-  await Promise.all(
-    results.map((r, i) =>
-      prisma.attemptCitation.upsert({
-        where: {
-          attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
-        },
-        create: {
-          attemptId,
-          chunkId: r.chunk_id,
-          rank: i + 1,
-          snippet: r.snippet,
-        },
-        update: {
-          rank: i + 1,
-          snippet: r.snippet,
-        },
-      })
-    )
-  );
-
-  return results.map((r, i) => ({
-    chunk_id: r.chunk_id,
-    doc_title: r.doc_title,
-    page_number: r.page_number,
-    snippet: r.snippet,
-    rank: i + 1,
-  }));
 }

@@ -12,8 +12,6 @@ export const XP_AMOUNTS: Record<string, number> = {
   STREAK_MILESTONE: 0,
 };
 
-export type BadgeType = string;
-
 export async function awardXp(
   userId: string,
   action: string,
