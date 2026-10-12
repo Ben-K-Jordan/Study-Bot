@@ -328,6 +328,8 @@ test.describe.serial("E2E: Exam Sim runner", () => {
 
 test.describe.serial("E2E: Error Repair runner", () => {
   const USER_ID = "e2e_errorrepair_user";
+  // Session pages are owner-only, so the browser must act as this user too
+  test.use({ extraHTTPHeaders: { "X-User-Id": USER_ID } });
   let retrievalSessionId: string;
   let retrievalRunId: string;
   let repairSessionId: string;
