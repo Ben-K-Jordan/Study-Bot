@@ -110,12 +110,22 @@ test.describe.serial("Knowledge Layer — Leak Prevention", () => {
     const textareas = page.locator("textarea");
     await textareas.nth(0).fill("Dijkstra uses a priority queue not plain BFS");
 
-    // Submit error log
+    // Submit error log, and wait for the attempt to be saved. Without the
+    // wait the test ended (and closed the page) while the POST was still in
+    // flight, so the attempt was never recorded.
+    const attemptSaved = page.waitForResponse(
+      (res) => res.request().method() === "POST" && /\/api\/runs\/[^/]+\/attempt$/.test(res.url())
+    );
     await page.getByRole("button", { name: /save/i }).click();
+    expect((await attemptSaved).status()).toBe(200);
 
-    // The review panel should appear with deferred feedback loading
+    // The review panel should appear with deferred feedback loading.
+    // isVisible() does not wait, so wait for it explicitly.
     const reviewPanel = page.locator('[data-testid="review-panel"]');
-    const visible = await reviewPanel.isVisible({ timeout: 8000 }).catch(() => false);
+    const visible = await reviewPanel
+      .waitFor({ state: "visible", timeout: 8000 })
+      .then(() => true)
+      .catch(() => false);
 
     if (visible) {
       // Phase 1: deferred feedback — check for loading state or excerpts
