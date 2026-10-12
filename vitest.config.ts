@@ -10,5 +10,10 @@ export default defineConfig({
   test: {
     environment: "node",
     exclude: ["e2e/**", "node_modules/**"],
+    env: {
+      // Run in UTC by default so results match CI on any machine. An explicit
+      // TZ still wins, which is how the suite is checked in other zones.
+      TZ: process.env.TZ || "UTC",
+    },
   },
 });
