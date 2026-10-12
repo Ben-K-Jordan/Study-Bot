@@ -3,6 +3,7 @@ import { MODE_LABELS } from "@/lib/calendar";
 import { notFound } from "next/navigation";
 import { SessionRunner } from "./session-runner";
 import { getDeckPreview } from "@/services/run";
+import { getCurrentUserId } from "@/lib/auth";
 
 interface SessionPageProps {
   params: Promise<{ sessionId: string }>;
@@ -22,7 +23,10 @@ export default async function SessionPage({ params }: SessionPageProps) {
     },
   });
 
-  if (!session) {
+  // Only the owner may open a session; anyone else gets the same 404 as a
+  // missing session, so session IDs can't be probed.
+  const userId = await getCurrentUserId();
+  if (!session || session.userId !== userId) {
     notFound();
   }
 

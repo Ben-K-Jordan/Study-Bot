@@ -32,6 +32,8 @@ async function cleanupMastery(userId: string) {
 
 test.describe.serial("E2E: Interleaved Practice runner", () => {
   const USER_ID = "e2e_interleaved_user";
+  // Session pages are owner-only, so the browser must act as this user too
+  test.use({ extraHTTPHeaders: { "X-User-Id": USER_ID } });
   let sessionId: string;
   let runId: string;
   let promptCount: number;
@@ -148,6 +150,8 @@ test.describe.serial("E2E: Interleaved Practice runner", () => {
 
 test.describe.serial("E2E: Exam Sim runner", () => {
   const USER_ID = "e2e_examsim_user";
+  // Session pages are owner-only, so the browser must act as this user too
+  test.use({ extraHTTPHeaders: { "X-User-Id": USER_ID } });
   let sessionId: string;
   let runId: string;
 

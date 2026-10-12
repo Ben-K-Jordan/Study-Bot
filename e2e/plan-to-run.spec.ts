@@ -26,6 +26,9 @@ let planId: string;
 let firstSessionId: string;
 
 test.describe.serial("E2E: Plan → Session → Run continuity", () => {
+  // Session pages are owner-only, so the browser must act as this user too
+  test.use({ extraHTTPHeaders: { "X-User-Id": USER_ID } });
+
   test("create plan via API", async ({ request }) => {
     const response = await request.post(`${BASE_URL}/api/plans`, {
       headers: {
@@ -194,6 +197,7 @@ test.describe.serial("E2E: Plan → Session → Run continuity", () => {
 test.describe("E2E: Plan security", () => {
   test.use({ extraHTTPHeaders: {} });
   let planId: string;
+  let sessionId: string;
 
   test.beforeAll(async ({ request }) => {
     const res = await request.post(`${BASE_URL}/api/plans`, {
@@ -208,6 +212,19 @@ test.describe("E2E: Plan security", () => {
     });
     const body = await res.json();
     planId = body.plan_id;
+    sessionId = body.items[0].session_id;
+  });
+
+  test("session page is owner-only (404 for others)", async ({ request }) => {
+    const owner = await request.get(`${BASE_URL}/s/${sessionId}`, {
+      headers: { "X-User-Id": "plan_owner_sec" },
+    });
+    expect(owner.status()).toBe(200);
+
+    const intruder = await request.get(`${BASE_URL}/s/${sessionId}`, {
+      headers: { "X-User-Id": "intruder" },
+    });
+    expect(intruder.status()).toBe(404);
   });
 
   test("other user cannot view plan (403)", async ({ request }) => {

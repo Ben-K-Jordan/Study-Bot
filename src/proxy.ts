@@ -16,22 +16,26 @@ const PUBLIC_PATHS = [
   "/api/auth",
   "/api/config", // non-secret runtime flags; signup reads it before a session exists
   "/api/health",
-  "/s/", // Session links are shareable; API-level auth guards operations
 ];
+
+// Files served from public/ and app metadata routes (icon.svg, manifest.json).
+// Matched by extension outside /api only, so an API path can never skip auth.
+const STATIC_FILE = /\.(?:avif|css|gif|ico|jpe?g|js|json|map|png|svg|txt|webmanifest|webp|woff2?|xml)$/i;
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const isApi = pathname.startsWith("/api/");
 
   // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
 
   // Allow static assets and Next.js internals
   if (
-    pathname.startsWith("/_next") ||
+    pathname.startsWith("/_next/") ||
     pathname.startsWith("/favicon") ||
-    pathname.includes(".")
+    (!isApi && STATIC_FILE.test(pathname))
   ) {
     return NextResponse.next();
   }
@@ -55,7 +59,7 @@ export async function proxy(request: NextRequest) {
 
   if (!token) {
     // API routes get 401 JSON instead of redirect
-    if (pathname.startsWith("/api/")) {
+    if (isApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const signInUrl = new URL("/auth/signin", request.url);
