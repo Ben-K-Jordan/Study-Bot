@@ -641,6 +641,16 @@
   }
 }
 
+/* Indeterminate linear progress: the bar sweeps across the track */
+@keyframes progress-indeterminate {
+  from {
+    left: -40%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
 /* The feedback sheet slides up from the bottom after each answer */
 @keyframes feedback-sheet-in {
   from {

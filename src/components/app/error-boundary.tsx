@@ -1,29 +1,34 @@
 "use client";
 
 import React from "react";
+import { ErrorState } from "@/components/app/error-state";
 
 interface Props {
   children: React.ReactNode;
+  /** Replaces the default ErrorState. Pass null to render nothing. */
   fallback?: React.ReactNode;
+  /** What failed, as a sentence: "This message didn't load." */
+  title?: string;
 }
 
 interface State {
   hasError: boolean;
-  error: Error | null;
+  /** Bumped on retry so the children remount instead of rethrowing at once. */
+  attempt: number;
 }
 
 /**
- * React error boundary — catches render errors in child components
- * and displays a fallback UI instead of crashing the entire page.
+ * Catches render errors in part of a page and shows ErrorState with Retry
+ * instead of taking the whole page down.
  */
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, attempt: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  static getDerivedStateFromError(): Partial<State> {
+    return { hasError: true };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
@@ -32,41 +37,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback;
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
-        <div style={{
-          padding: "1.5rem",
-          margin: "1rem 0",
-          background: "var(--sb-bg-card)",
-          border: "1px solid var(--sb-border-subtle)",
-          borderRadius: "var(--sb-radius-lg)",
-          boxShadow: "var(--sb-shadow-card)",
-          color: "var(--sb-text-secondary)",
-          textAlign: "center",
-        }}>
-          <p style={{ margin: 0, fontSize: "0.95rem" }}>
-            Something went wrong. Try refreshing the page.
-          </p>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            style={{
-              marginTop: "0.75rem",
-              padding: "0.4rem 1rem",
-              background: "var(--sb-bg-input)",
-              color: "var(--sb-text)",
-              border: "1px solid var(--sb-border)",
-              borderRadius: "var(--sb-radius-sm)",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontSize: "0.85rem",
-            }}
-          >
-            Try Again
-          </button>
-        </div>
+        <ErrorState
+          title={this.props.title ?? "This part of the page didn't load."}
+          onRetry={() => this.setState((s) => ({ hasError: false, attempt: s.attempt + 1 }))}
+        />
       );
     }
 
-    return this.props.children;
+    return <React.Fragment key={this.state.attempt}>{this.props.children}</React.Fragment>;
   }
 }
