@@ -5,6 +5,8 @@ const nextConfig = {
   // the entry module, which is always the case once it is bundled. Loading it
   // from node_modules at runtime keeps that check working.
   serverExternalPackages: ["pdf-parse"],
+  // Keep `next dev` from writing an AGENTS.md file into the project root.
+  agentRules: false,
   headers: async () => [
     {
       source: "/:path*",
