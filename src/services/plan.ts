@@ -460,16 +460,12 @@ export async function createPlan(userId: string, input: unknown) {
   }
 
   const baseUrl = getBaseUrl();
-  const feedUrl = `${baseUrl}/api/plans/${planId}/feed`;
-  const webcalUrl = feedUrl.replace(/^https?:\/\//, "webcal://");
 
   return {
     plan_id: planId,
     ai_generated: planResult.aiGenerated,
     reasoning: planResult.reasoning ?? null,
     ics_download_url: `${baseUrl}/api/plans/${planId}/ics`,
-    feed_url: feedUrl,
-    webcal_url: webcalUrl,
     items: items.map((item) => ({
       day_index: item.dayIndex,
       start_time: item.startTime.toISOString(),
@@ -507,7 +503,6 @@ export async function getPlan(userId: string, planId: string) {
   const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
 
   const base = getBaseUrl();
-  const feedUrl = `${base}/api/plans/${plan.planId}/feed`;
 
   // Pre-compute calendar title + description per session (avoids recomputing in the item loop)
   const calendarMeta = new Map<string, { title: string; description: string }>();
@@ -532,8 +527,6 @@ export async function getPlan(userId: string, planId: string) {
       plan_id: plan.planId,
       user_id: plan.userId,
       ics_download_url: `${base}/api/plans/${plan.planId}/ics`,
-      feed_url: feedUrl,
-      webcal_url: feedUrl.replace(/^https?:\/\//, "webcal://"),
       course_name: plan.courseName,
       exam_name: plan.examName,
       exam_date: plan.examDate.toISOString().split("T")[0],

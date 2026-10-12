@@ -94,15 +94,6 @@ export async function getGameState(userId: string): Promise<{
   };
 }
 
-export async function setDailyXpGoal(userId: string, goal: number): Promise<void> {
-  const clamped = Math.max(10, Math.min(500, goal));
-  await prisma.userGameState.upsert({
-    where: { userId },
-    create: { userId, dailyXpGoal: clamped },
-    update: { dailyXpGoal: clamped },
-  });
-}
-
 export async function consumeStreakFreeze(userId: string): Promise<{ success: boolean; freezesRemaining: number }> {
   // "Today" follows the user's clock (null timezone = UTC, the old behavior)
   const timezone = await getUserTimezone(userId);

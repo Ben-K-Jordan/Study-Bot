@@ -1,7 +1,7 @@
 /**
  * E2E tests for Google Calendar integration.
  *
- * Tests API-level flows: status, freebusy, calendars, publish/unpublish.
+ * Tests API-level flows: status, calendars, disconnect, publish/unpublish.
  * Uses FakeGoogleCalendarClient injected at server level.
  */
 import { test, expect } from "@playwright/test";
@@ -21,20 +21,6 @@ test.describe("Google Calendar API", () => {
     const body = await res.json();
     expect(body.connected).toBe(false);
     expect(body.scopes).toEqual([]);
-  });
-
-  test("POST /api/integrations/google/freebusy returns 400 when not connected", async ({
-    request,
-  }) => {
-    const res = await request.post(`${BASE}/api/integrations/google/freebusy`, {
-      data: {
-        timeMin: "2026-04-01T00:00:00Z",
-        timeMax: "2026-04-01T23:59:59Z",
-      },
-    });
-    expect(res.status()).toBe(400);
-    const body = await res.json();
-    expect(body.error).toContain("not connected");
   });
 
   test("GET /api/integrations/google/calendars returns 400 when not connected", async ({
