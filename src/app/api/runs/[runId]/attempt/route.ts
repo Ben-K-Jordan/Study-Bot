@@ -3,7 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { submitAttempt } from "@/services/run";
 import { parseAttemptPayload } from "@/lib/validation";
 import { logger } from "@/lib/logger";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export async function POST(
   request: NextRequest,

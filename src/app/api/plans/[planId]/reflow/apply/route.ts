@@ -3,7 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeReflow, ReflowItem, ReflowConfig } from "@/services/reflow";
 import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { getGoogleClient, GoogleReconnectError, type BusyInterval } from "@/lib/google/calendar-client";
 import { type TimeInterval } from "@/lib/google/free-slots";
 import { logger } from "@/lib/logger";

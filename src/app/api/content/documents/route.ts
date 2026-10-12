@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { uploadDocument, listDocuments } from "@/services/content";
 import { uploadDocumentSchema, listDocumentsSchema } from "@/lib/validation-content";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 

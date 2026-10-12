@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { createPlan } from "@/services/plan";
 import { prisma } from "@/lib/db";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { dayKey } from "@/lib/timezone";
 

@@ -6,7 +6,7 @@
  * 3. Return answer with citations
  */
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { hybridSearch } from "@/lib/search";
 import { runTask, embed, GatewayError, type GatewayContext } from "@/lib/ai/gateway";

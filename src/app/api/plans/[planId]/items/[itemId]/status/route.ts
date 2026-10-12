@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { ITEM_STATUSES } from "@/services/reflow";
 
 const updateStatusSchema = z.object({

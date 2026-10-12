@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { createSession } from "@/services/session";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 

@@ -3,7 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { scheduleFollowups } from "@/services/followups";
 import { logger } from "@/lib/logger";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const bodySchema = z.object({ run_id: z.string().min(1) });
 

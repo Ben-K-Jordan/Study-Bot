@@ -3,7 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { updateAttemptMeta } from "@/services/run";
 import { updateAttemptMetaSchema } from "@/lib/validation";
 import { logger } from "@/lib/logger";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 /**
  * PATCH /api/attempts/:attemptId/meta

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { reviewCard, isDeckPerfect } from "@/services/spaced-repetition";

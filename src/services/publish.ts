@@ -101,7 +101,7 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
 
 // ---- Zod schemas for request validation ----
 
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const publishRequestSchema = z.object({
   calendar_id: z.string().optional(),

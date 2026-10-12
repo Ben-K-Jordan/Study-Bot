@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { generateStudyGuide, listStudyGuides } from "@/services/study-guides";
 import { GatewayError } from "@/lib/ai/gateway";
