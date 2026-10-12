@@ -7,10 +7,12 @@
   },
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "postinstall": "prisma generate",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:unit": "vitest run --exclude 'src/__tests__/integration/**'",
     "test:integration": "vitest run src/__tests__/integration/",
