@@ -11,7 +11,7 @@
 import { createHash } from "crypto";
 import { prisma } from "../db";
 import type { AiProvider } from "./provider";
-import type { AiTask, AiUsage, AiCallMeta, TaskSpec, RunTaskResult } from "./types";
+import type { AiUsage, AiCallMeta, TaskSpec, RunTaskResult } from "./types";
 import { getPrompt } from "./prompt-registry";
 
 // ---------------------------------------------------------------------------

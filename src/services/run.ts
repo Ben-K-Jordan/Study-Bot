@@ -16,7 +16,7 @@ import { createProvider } from "@/lib/ai/provider-factory";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { initBreakState, checkBreakNeeded, type BreakState } from "@/lib/breaks";
 import { computeFollowups } from "@/lib/spacing";
-import { updateMastery, getDueObjectives, accuracyToQuality, confidenceAdjustedQuality } from "@/lib/mastery";
+import { updateMastery, getDueObjectives } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
 import type {

@@ -5,7 +5,7 @@
  * Includes hash-based change detection for skip-on-unchanged.
  */
 import { createHash } from "crypto";
-import { buildCalendarTitle, buildCalendarDescription, MODE_LABELS } from "@/lib/calendar";
+import { buildCalendarTitle, MODE_LABELS } from "@/lib/calendar";
 import { hashUserId } from "@/lib/calendar/hash";
 import { type SessionMode } from "@/lib/validation";
 import { type CalendarEventInput } from "./calendar-client";

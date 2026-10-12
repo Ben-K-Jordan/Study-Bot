@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
       embedding_status: statusMap,
       pending_embed_jobs: pendingJobs,
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       { error: "Health check failed" },
       { status: 500 },

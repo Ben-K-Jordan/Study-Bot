@@ -12,7 +12,7 @@
  * Robust: handles 404 (manual deletion), rate limits, partial failure.
  */
 import { prisma } from "@/lib/db";
-import { getGoogleClient, GoogleApiError, GoogleReconnectError, type CalendarEventInput } from "@/lib/google/calendar-client";
+import { getGoogleClient, GoogleApiError, GoogleReconnectError } from "@/lib/google/calendar-client";
 import { buildEventPayload } from "@/lib/google/event-builder";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";

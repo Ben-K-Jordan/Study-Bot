@@ -85,12 +85,6 @@ function computeStartOfDay(planStartDate: Date, dayIndex: number, timeStr: strin
   return d;
 }
 
-function availableMinutes(avail: { start: string; end: string }): number {
-  const [sh, sm] = avail.start.split(":").map(Number);
-  const [eh, em] = avail.end.split(":").map(Number);
-  return (eh * 60 + em) - (sh * 60 + sm);
-}
-
 function getModePriority(mode: string): number {
   return MODE_PRIORITY[mode] ?? 99;
 }

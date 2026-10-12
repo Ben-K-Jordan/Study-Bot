@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
 import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
 import { createPlanSchema, SessionMode } from "@/lib/validation";
-import { generatePlan, PlanBlock } from "@/lib/plan-generator";
+import type { PlanBlock } from "@/lib/plan-generator";
 import { generatePlanWithResearch, StudyPreferences } from "@/lib/research-plan-generator";
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
