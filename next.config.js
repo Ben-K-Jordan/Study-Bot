@@ -24,9 +24,9 @@ const nextConfig = {
           value: [
             "default-src 'self'",
             `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-            // Google Fonts stay until the layout switches to next/font
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "font-src 'self' https://fonts.gstatic.com",
+            // Fonts are self-hosted from @fontsource packages
+            "style-src 'self' 'unsafe-inline'",
+            "font-src 'self'",
             "img-src 'self' data: blob:",
             "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com",
             "frame-ancestors 'none'",

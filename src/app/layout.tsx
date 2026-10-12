@@ -1,11 +1,26 @@
-import type { Metadata } from "next";
-import { NavBar, NAV_HEIGHT } from "@/ui/components/NavBar";
-import { SessionProviderWrapper } from "@/ui/components/SessionProviderWrapper";
+import type { Metadata, Viewport } from "next";
+import "@fontsource-variable/google-sans-flex/rond.css";
+import "@fontsource-variable/google-sans-code/wght.css";
 import "./globals.css";
+import { NavBar, NAV_HEIGHT } from "@/ui/components/NavBar";
+import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "Study Bot",
-  description: "Research-based study planner",
+  title: {
+    default: "Study Bot",
+    template: "%s · Study Bot",
+  },
+  description: "Plan for your exams and practice from your own course files.",
+  applicationName: "Study Bot",
+  manifest: "/manifest.json",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8fafd" },
+    { media: "(prefers-color-scheme: dark)", color: "#131314" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({
@@ -14,27 +29,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="manifest" href="/manifest.json" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <SessionProviderWrapper>
-          <a href="#main-content" className="skip-to-content">
-            Skip to content
-          </a>
+        <Providers>
           <NavBar />
-          <main id="main-content" style={{ paddingTop: NAV_HEIGHT }}>
+          <main id="main-content" tabIndex={-1} style={{ paddingTop: NAV_HEIGHT }}>
             {children}
           </main>
-        </SessionProviderWrapper>
+        </Providers>
       </body>
     </html>
   );
