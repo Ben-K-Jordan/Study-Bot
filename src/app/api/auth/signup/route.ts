@@ -22,7 +22,7 @@ const signupSchema = z.object({
  * is newly created.
  */
 export async function POST(request: Request) {
-  const rl = signupLimiter.check(getClientIp(request as any));
+  const rl = signupLimiter.check(getClientIp(request));
   if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   try {

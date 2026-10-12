@@ -40,47 +40,46 @@ export async function POST(
     const result = await submitAttempt(userId, runId, parsed);
 
     if ("error" in result) {
-      const err = result.error;
-      if (err === "not_found") {
+      if (result.error === "not_found") {
         return NextResponse.json({ error: "Run not found" }, { status: 404 });
       }
-      if (err === "forbidden") {
+      if (result.error === "forbidden") {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-      if (err === "run_completed") {
+      if (result.error === "run_completed") {
         return NextResponse.json({ error: "Run is already completed" }, { status: 409 });
       }
-      if (err === "on_break") {
+      if (result.error === "on_break") {
         return NextResponse.json(
-          { error: "Cannot submit during break", break_state: (result as any).break_state },
+          { error: "Cannot submit during break", break_state: result.break_state },
           { status: 409 }
         );
       }
-      if (err === "wrong_index") {
+      if (result.error === "wrong_index") {
         return NextResponse.json(
-          { error: "Wrong prompt index", expected: (result as any).expected },
+          { error: "Wrong prompt index", expected: result.expected },
           { status: 409 }
         );
       }
-      if (err === "invalid_index") {
+      if (result.error === "invalid_index") {
         return NextResponse.json({ error: "Invalid prompt index" }, { status: 400 });
       }
-      if (err === "duplicate_attempt") {
+      if (result.error === "duplicate_attempt") {
         return NextResponse.json({ error: "Attempt already submitted for this prompt" }, { status: 409 });
       }
-      if (err === "wrong_phase") {
+      if (result.error === "wrong_phase") {
         return NextResponse.json(
-          { error: (result as any).message || "Invalid operation for current phase" },
+          { error: result.message || "Invalid operation for current phase" },
           { status: 409 }
         );
       }
-      if (err === "no_attempt_to_score") {
+      if (result.error === "no_attempt_to_score") {
         return NextResponse.json({ error: "No attempt found to score at this index" }, { status: 409 });
       }
-      if (err === "already_scored") {
+      if (result.error === "already_scored") {
         return NextResponse.json({ error: "This attempt has already been scored" }, { status: 409 });
       }
-      if (err === "missing_score") {
+      if (result.error === "missing_score") {
         return NextResponse.json({ error: "self_score is required for SCORE kind" }, { status: 400 });
       }
     }

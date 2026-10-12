@@ -126,10 +126,10 @@ export const generalLimiter = createRateLimiter("general", {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 /** Extract a rate-limit key from a request (IP or forwarded-for) */
-export function getClientIp(request: NextRequest): string {
+export function getClientIp(request: Pick<Request, "headers">): string {
   // X-Forwarded-For: use the RIGHTMOST entry — it's the one appended by the
   // nearest trusted proxy. Leftmost entries are client-supplied, so an attacker
   // could prepend arbitrary values to rotate rate-limit buckets on every request.

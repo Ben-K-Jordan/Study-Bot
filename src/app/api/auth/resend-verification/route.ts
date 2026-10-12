@@ -11,7 +11,7 @@ import { logger } from "@/lib/logger";
  * Resends the email verification link. Always returns 200 to prevent enumeration.
  */
 export async function POST(request: Request) {
-  const rl = authLimiter.check(getClientIp(request as any));
+  const rl = authLimiter.check(getClientIp(request));
   if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   try {

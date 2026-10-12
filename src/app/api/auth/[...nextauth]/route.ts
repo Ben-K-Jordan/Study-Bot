@@ -9,7 +9,10 @@ const nextAuth = NextAuth(authOptions);
 export { nextAuth as GET };
 
 // POST is rate-limited (handles login attempts)
-export async function POST(request: NextRequest, context: any) {
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ nextauth: string[] }> },
+) {
   const rl = authLimiter.check(getClientIp(request));
   if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
   return nextAuth(request, context);
