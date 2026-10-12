@@ -330,6 +330,16 @@
   --font-mono: "Google Sans Code Variable", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
 }
 
+/* Breakpoints follow M3 window size classes: compact under 600px (bottom
+   navigation), medium from 600px (navigation rail), expanded from 840px,
+   large from 1200px and extra large from 1600px. */
+@theme {
+  --breakpoint-sm: 37.5rem;
+  --breakpoint-md: 52.5rem;
+  --breakpoint-lg: 75rem;
+  --breakpoint-xl: 100rem;
+}
+
 /* Elevation: tonal by default. Shadows only for menus, popovers, dialogs and
    a hovered card (M3 levels 1 to 3). Inputs stay flat. */
 @theme {

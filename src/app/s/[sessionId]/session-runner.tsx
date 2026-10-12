@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import Link from "next/link";
+import { XIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PreflightScreen } from "./screens/preflight";
 import { RunnerScreen } from "./screens/runner";
 import { BreakScreen } from "./screens/break-screen";
@@ -455,7 +458,7 @@ export function SessionRunner({ session }: Props) {
   }, []);
 
   return (
-    <main
+    <div
       style={{
         maxWidth: 900,
         margin: "0 auto",
@@ -467,6 +470,16 @@ export function SessionRunner({ session }: Props) {
         minHeight: "100vh",
       }}
     >
+      {/* The app navigation stays out of sessions; this is the way back
+          until the screens move to LessonFrame. */}
+      <div className="mb-2 flex justify-end">
+        <Button asChild variant="ghost">
+          <Link href="/">
+            <XIcon data-icon="inline-start" aria-hidden="true" />
+            Leave session
+          </Link>
+        </Button>
+      </div>
       {error && (
         <div
           style={{
@@ -514,6 +527,6 @@ export function SessionRunner({ session }: Props) {
           onNewRun={handleNewRun}
         />
       )}
-    </main>
+    </div>
   );
 }

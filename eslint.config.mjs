@@ -34,12 +34,12 @@ const eslintConfig = defineConfig([
     // and are due to be rewritten by the UI redesign. Keep the findings visible as
     // warnings until then, and delete this block once the new screens land.
     files: [
-      "src/app/page.tsx",
-      "src/app/chat/page.tsx",
-      "src/app/flashcards/page.tsx",
-      "src/app/guides/page.tsx",
-      "src/app/learn/page.tsx",
-      "src/app/plan/page.tsx",
+      "src/app/(app)/page.tsx",
+      "src/app/(app)/chat/page.tsx",
+      "src/app/(app)/flashcards/page.tsx",
+      "src/app/(app)/guides/page.tsx",
+      "src/app/(app)/learn/page.tsx",
+      "src/app/(app)/plan/page.tsx",
       "src/app/s/*/screens/runner.tsx",
     ],
     rules: {

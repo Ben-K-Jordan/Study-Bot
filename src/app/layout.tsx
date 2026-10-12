@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/google-sans-flex/rond.css";
 import "@fontsource-variable/google-sans-code/wght.css";
 import "./globals.css";
-import { NavBar, NAV_HEIGHT } from "@/ui/components/NavBar";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
@@ -31,12 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <Providers>
-          <NavBar />
-          <main id="main-content" tabIndex={-1} style={{ paddingTop: NAV_HEIGHT }}>
-            {children}
-          </main>
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
