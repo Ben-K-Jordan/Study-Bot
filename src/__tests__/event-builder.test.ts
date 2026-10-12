@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildEventPayload, computeEventHash, _hashUserIdForTest } from "@/lib/google/event-builder";
+import { buildEventPayload, computeEventHash, hashUserId } from "@/lib/google/event-builder";
 import type { CalendarEventInput } from "@/lib/google/calendar-client";
 
 const baseInput = {
@@ -73,7 +73,7 @@ describe("buildEventPayload", () => {
     expect(ext.sb_plan).toBe("plan_abc123");
     expect(ext.sb_item).toBe("item_def456");
     expect(ext.sb_sess).toBe("sess_ghi789");
-    expect(ext.sb_uid).toBe(_hashUserIdForTest("user_42"));
+    expect(ext.sb_uid).toBe(hashUserId("user_42"));
     // sb_uid should be 16 hex chars
     expect(ext.sb_uid).toHaveLength(16);
     expect(ext.sb_uid).toMatch(/^[0-9a-f]+$/);
@@ -152,5 +152,17 @@ describe("computeEventHash", () => {
     };
     const modified = { ...base, calendarId: "secondary" };
     expect(computeEventHash(base)).toBe(computeEventHash(modified));
+  });
+});
+
+describe("hashUserId", () => {
+  it("produces a consistent 16-char hex string", () => {
+    const hash = hashUserId("user-123");
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hashUserId("user-123")).toBe(hash);
+  });
+
+  it("gives different users different hashes", () => {
+    expect(hashUserId("user-1")).not.toBe(hashUserId("user-2"));
   });
 });
