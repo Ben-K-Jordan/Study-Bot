@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,20 +17,29 @@ concurrency:
 env:
   NEXT_TELEMETRY_DISABLED: "1"
 
+# npm ci runs `prisma generate` through the postinstall script, so no job
+# needs a separate generate step.
+
 jobs:
   lint-and-build:
-    name: Lint & Build
+    name: Lint, Typecheck & Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
+      - uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'next.config.js', 'tsconfig.json') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+
       - run: npm ci
-      - run: npx prisma generate
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
@@ -35,15 +48,14 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
-      - run: npx prisma generate
       - run: npm run test:unit
 
   integration-tests:
@@ -70,19 +82,18 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studybot_test?schema=public
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
-      - run: npx prisma generate
       - name: Apply migration history to test DB
         run: npx prisma migrate deploy
       - name: Apply pgvector migration
-        run: psql "${DATABASE_URL%%\?*}" -f prisma/manual-scripts/001_pgvector.sql
+        run: npx prisma db execute --file prisma/manual-scripts/001_pgvector.sql
       - run: npm run test:integration
 
   e2e-tests:
@@ -105,28 +116,41 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    # playwright.config.ts builds the app and starts `next start` with
+    # ALLOW_TEST_AUTH=true. GitHub sets CI=true, which is what lets the
+    # production build trust the specs' X-User-Id header.
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studybot_e2e?schema=public
       BASE_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3000
+      GOOGLE_PROVIDER: fake
+      AI_PROVIDER: mock
+      EMAIL_PROVIDER: console
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
+      - uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'next.config.js', 'tsconfig.json') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+
       - run: npm ci
-      - run: npx prisma generate
       - name: Apply migration history to test DB
         run: npx prisma migrate deploy
       - name: Apply pgvector migration
-        run: psql "${DATABASE_URL%%\?*}" -f prisma/manual-scripts/001_pgvector.sql
+        run: npx prisma db execute --file prisma/manual-scripts/001_pgvector.sql
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
