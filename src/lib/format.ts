@@ -220,6 +220,22 @@ export function plural(count: number, forms: PluralForms): string {
 }
 
 /**
+ * How long to wait after a 429, from its Retry-After seconds: "Retry in 30
+ * seconds.", "Retry in 12 minutes.", or "Retry in a few minutes." when unknown.
+ */
+export function retryAfterText(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) {
+    return "Retry in a few minutes.";
+  }
+  const whole = Math.ceil(seconds);
+  if (whole < 60) {
+    return plural(whole, { one: "Retry in # second.", other: "Retry in # seconds." });
+  }
+  const minutes = Math.ceil(whole / 60);
+  return plural(minutes, { one: "Retry in # minute.", other: "Retry in # minutes." });
+}
+
+/**
  * The exam countdown as one whole message: "Prelim 1 is today",
  * "Prelim 1 is tomorrow", "Prelim 1 is in 9 days", "Prelim 1 was 2 days ago".
  */

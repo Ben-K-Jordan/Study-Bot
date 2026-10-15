@@ -88,15 +88,39 @@ export function createRateLimiter(name: string, config: RateLimitConfig) {
 
 // ── Pre-configured limiters ──────────────────────────────────────────────────
 
-/** Auth endpoints: 10 attempts per 15 minutes per IP */
+// A development server sees every browser, test run and screenshot harness on
+// the machine as one client ("unknown" IP), so the auth limits there are
+// loose enough not to lock the developer out. Production keeps the real ones.
+const isProduction = process.env.NODE_ENV === "production";
+
+/**
+ * Sign-in: 10 attempts per 15 minutes per IP (every next-auth POST, which
+ * includes sign-out). Used by /api/auth/[...nextauth].
+ */
 export const authLimiter = createRateLimiter("auth", {
-  maxRequests: 10,
+  maxRequests: isProduction ? 10 : 100,
+  windowMs: 15 * 60 * 1000,
+});
+
+/**
+ * Auth emails (password reset links, verification links): 10 per 15 minutes
+ * per IP. Kept apart from sign-in so asking for a link doesn't use up
+ * sign-in attempts.
+ */
+export const authEmailLimiter = createRateLimiter("auth-email", {
+  maxRequests: isProduction ? 10 : 100,
+  windowMs: 15 * 60 * 1000,
+});
+
+/** Using an emailed link (reset password, verify email): 10 per 15 minutes per IP. */
+export const authTokenLimiter = createRateLimiter("auth-token", {
+  maxRequests: isProduction ? 10 : 100,
   windowMs: 15 * 60 * 1000,
 });
 
 /** Signup: 3 accounts per hour per IP */
 export const signupLimiter = createRateLimiter("signup", {
-  maxRequests: 3,
+  maxRequests: isProduction ? 3 : 30,
   windowMs: 60 * 60 * 1000,
 });
 
@@ -121,6 +145,7 @@ export const generalLimiter = createRateLimiter("general", {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 import { NextResponse } from "next/server";
+import { retryAfterText } from "@/lib/format";
 
 /** Extract a rate-limit key from a request (IP or forwarded-for) */
 export function getClientIp(request: Pick<Request, "headers">): string {
@@ -136,11 +161,15 @@ export function getClientIp(request: Pick<Request, "headers">): string {
   return request.headers.get("x-real-ip") || "unknown";
 }
 
-/** Return a 429 response with Retry-After header */
-export function tooManyRequests(retryAfterMs: number): NextResponse {
-  const retryAfterSec = Math.ceil(retryAfterMs / 1000);
+/**
+ * Return a 429 response with a Retry-After header. The default text says how
+ * long to wait; `message` replaces it for callers that can say which action
+ * was limited.
+ */
+export function tooManyRequests(retryAfterMs: number, message?: string): NextResponse {
+  const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000));
   return NextResponse.json(
-    { error: "Too many requests. Please try again later." },
+    { error: message ?? `Too many requests. ${retryAfterText(retryAfterSec)}`, code: "RATE_LIMITED" },
     {
       status: 429,
       headers: { "Retry-After": String(retryAfterSec) },
