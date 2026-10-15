@@ -7,7 +7,7 @@ import { logger } from "@/lib/logger";
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
   }
 
   const integration = await prisma.googleIntegration.findUnique({
@@ -35,17 +35,25 @@ export async function POST(request: NextRequest) {
   }
 
   // Mark DISCONNECTED and clear tokens (leave row for reconnect)
-  await prisma.googleIntegration.update({
-    where: { id: integration.id },
-    data: {
-      status: "DISCONNECTED",
-      accessTokenEncrypted: null,
-      refreshTokenEncrypted: null,
-      tokenExpiryMs: BigInt(0),
-      lastErrorCode: null,
-      lastErrorMessage: null,
-    },
-  });
+  try {
+    await prisma.googleIntegration.update({
+      where: { id: integration.id },
+      data: {
+        status: "DISCONNECTED",
+        accessTokenEncrypted: null,
+        refreshTokenEncrypted: null,
+        tokenExpiryMs: BigInt(0),
+        lastErrorCode: null,
+        lastErrorMessage: null,
+      },
+    });
+  } catch (err) {
+    logger.error("google.integration.disconnect_failed", { user_id: userId, error: String(err) });
+    return NextResponse.json(
+      { error: "Google Calendar not disconnected. Check your connection and retry." },
+      { status: 500 },
+    );
+  }
 
   logger.info("google.integration.disconnected", { user_id: userId });
 

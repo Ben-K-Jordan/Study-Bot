@@ -1,107 +1,87 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { getUserId } from "@/lib/auth";
-import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { isValidTimezone } from "@/lib/timezone";
+import { publicConfig } from "@/app/api/config/flags";
+import { readSettings, writeSettings } from "./data";
+import {
+  SETTINGS_INVALID_MESSAGE,
+  fieldErrorsFromIssues,
+  mergeSettings,
+  settingsUpdateSchema,
+  validateSettings,
+} from "./schema";
+
+const SIGNED_OUT = "Your sign-in expired. Sign in again.";
 
 /**
- * GET /api/settings — fetch user preferences (synced to backend).
+ * GET /api/settings: the student's study settings. Students who never saved
+ * any get the defaults (nothing is written on read).
  */
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
   }
 
-  let state = await prisma.userGameState.findUnique({ where: { userId } });
-  if (!state) {
-    state = await prisma.userGameState.create({ data: { userId } });
+  try {
+    const settings = await readSettings(userId);
+    return NextResponse.json({
+      ...settings,
+      google_configured: publicConfig().google_configured,
+    });
+  } catch (err) {
+    logger.error("settings.read_failed", { user_id: userId, error: String(err) });
+    return NextResponse.json({ error: "Settings didn't load. Retry." }, { status: 500 });
   }
-
-  return NextResponse.json({
-    studyStart: state.studyStartTime,
-    studyEnd: state.studyEndTime,
-    dailyCap: state.dailyStudyCap,
-    dailyXpGoal: state.dailyXpGoal,
-    timezone: state.timezone,
-    google_configured: Boolean(process.env.GOOGLE_CLIENT_ID),
-  });
 }
 
-const updateSchema = z.object({
-  studyStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
-  studyEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
-  dailyCap: z.number().int().min(30).max(480).optional(),
-  dailyXpGoal: z.number().int().min(10).max(500).optional(),
-  // IANA timezone for streak day boundaries; empty string or null clears it (= UTC)
-  timezone: z.string().max(100).nullable().optional(),
-});
-
 /**
- * PUT /api/settings — update user preferences.
+ * PUT /api/settings: update some or all study settings. The update is
+ * merged onto the saved values and checked as a whole, so an end time
+ * before the start time is rejected even when only one of them changes.
+ * Rejections carry `fields`, one instruction per field.
  */
 export async function PUT(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Settings not saved. Retry." }, { status: 400 });
   }
 
-  const parsed = updateSchema.safeParse(body);
+  const parsed = settingsUpdateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", issues: parsed.error.issues },
+      {
+        error: SETTINGS_INVALID_MESSAGE,
+        fields: fieldErrorsFromIssues(parsed.error.issues),
+        issues: parsed.error.issues,
+      },
       { status: 400 },
     );
   }
 
-  const data = parsed.data;
-  const updateData: Record<string, unknown> = {};
-  if (data.studyStart !== undefined) updateData.studyStartTime = data.studyStart;
-  if (data.studyEnd !== undefined) updateData.studyEndTime = data.studyEnd;
-  if (data.dailyCap !== undefined) updateData.dailyStudyCap = data.dailyCap;
-  if (data.dailyXpGoal !== undefined) updateData.dailyXpGoal = data.dailyXpGoal;
-  if (data.timezone !== undefined) {
-    if (data.timezone === null || data.timezone === "") {
-      updateData.timezone = null;
-    } else if (isValidTimezone(data.timezone)) {
-      updateData.timezone = data.timezone;
-    } else {
-      return NextResponse.json(
-        { error: `Invalid timezone: ${data.timezone}` },
-        { status: 400 },
-      );
-    }
-  }
-
   try {
-    const state = await prisma.userGameState.upsert({
-      where: { userId },
-      update: updateData,
-      create: {
-        userId,
-        ...updateData,
-      },
-    });
+    const current = await readSettings(userId);
+    const next = mergeSettings(current, parsed.data);
+    const fields = validateSettings(next);
+    if (Object.keys(fields).length > 0) {
+      return NextResponse.json({ error: SETTINGS_INVALID_MESSAGE, fields }, { status: 400 });
+    }
 
-    logger.info("settings.updated", { user_id: userId, fields: Object.keys(updateData) });
-
-    return NextResponse.json({
-      studyStart: state.studyStartTime,
-      studyEnd: state.studyEndTime,
-      dailyCap: state.dailyStudyCap,
-      dailyXpGoal: state.dailyXpGoal,
-      timezone: state.timezone,
-    });
+    const saved = await writeSettings(userId, next);
+    logger.info("settings.updated", { user_id: userId, fields: Object.keys(parsed.data) });
+    return NextResponse.json(saved);
   } catch (err) {
-    logger.error("settings.update_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    logger.error("settings.update_failed", { user_id: userId, error: String(err) });
+    return NextResponse.json(
+      { error: "Settings not saved. Check your connection and retry." },
+      { status: 500 },
+    );
   }
 }

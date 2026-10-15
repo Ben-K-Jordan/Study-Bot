@@ -1,37 +1,65 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
+import { decryptToken } from "@/lib/crypto/token-vault";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { DELETE_ACCOUNT_PHRASE } from "./phrase";
 
 const deleteSchema = z.object({
-  confirm: z.literal("DELETE MY ACCOUNT"),
+  confirm: z.literal(DELETE_ACCOUNT_PHRASE),
 });
 
+const NOT_DELETED = "Account not deleted. Confirm in the dialog and retry.";
+
 /**
- * DELETE /api/account/delete
- * GDPR account deletion: permanently deletes the user and all associated data.
+ * Best effort: revoke Study Bot's Google access before the tokens are
+ * deleted, so the account doesn't keep a live grant at Google.
+ */
+async function revokeGoogleAccess(userId: string): Promise<void> {
+  try {
+    const integration = await prisma.googleIntegration.findUnique({
+      where: { userId },
+      select: { accessTokenEncrypted: true, refreshTokenEncrypted: true },
+    });
+    const encrypted = integration?.refreshTokenEncrypted ?? integration?.accessTokenEncrypted;
+    if (!encrypted) return;
+    const token = decryptToken(encrypted);
+    await fetch("https://oauth2.googleapis.com/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // Ignore: the tokens are deleted below either way.
+  }
+}
+
+/**
+ * DELETE /api/account/delete with body { confirm: "DELETE MY ACCOUNT" }.
+ * Permanently deletes the student and everything they own. The client
+ * signs out afterwards, since the session token outlives the account.
  */
 export async function DELETE(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: NOT_DELETED }, { status: 400 });
   }
 
   const parsed = deleteSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed. Body must include { confirm: \"DELETE MY ACCOUNT\" }.", issues: parsed.error.issues },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: NOT_DELETED, issues: parsed.error.issues }, { status: 400 });
   }
+
+  await revokeGoogleAccess(userId);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -84,6 +112,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ deleted: true });
   } catch (err) {
     logger.error("account.delete.failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Account not deleted. Check your connection and retry." },
+      { status: 500 },
+    );
   }
 }
