@@ -31,6 +31,7 @@ import { generateVariantQuestion, MAX_VARIANTS_PER_SESSION } from "@/lib/variant
 import { createFlashcardsFromErrors } from "@/lib/auto-flashcards";
 import { dayKey, getUserTimezone } from "@/lib/timezone";
 import { awardXp } from "@/services/gamification";
+import { plural } from "@/lib/format";
 
 // ---- Sentinel errors for transaction control flow ----
 
@@ -81,8 +82,31 @@ export interface PromptView {
     distractorRationales?: string[];
     /** Deck-pack marker (PRE_TEST, WORKED_EXAMPLE, WE_*) — drives UI framing. */
     pack?: string;
+    /** Worked-example completion problems: how many steps the full solution has. */
+    step_count?: number;
     [key: string]: unknown;
   };
+}
+
+/**
+ * Turns a stored objective key ("photosynthesis_light_reactions") into a
+ * readable topic name ("Photosynthesis light reactions") for the rare case
+ * where no session lists a title for it.
+ */
+export function humanizeObjectiveKey(key: string): string {
+  const words = key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  if (!words) return key;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** How long ago something happened, as a whole phrase: "today", "1 day ago". */
+function daysAgoPhrase(days: number): string {
+  return plural(Math.max(0, days), { zero: "today", one: "# day ago", other: "# days ago" });
 }
 
 function emptyMetrics(): RunMetrics {
@@ -165,6 +189,49 @@ function toPromptView(prompt: Prompt, index: number, includeAnswer = false): Pro
   // Pack marker (PRE_TEST etc.) drives client framing; not sensitive.
   if (prompt.meta?.pack) {
     view.meta = { ...(view.meta ?? {}), pack: prompt.meta.pack };
+  }
+  if (typeof prompt.meta?.step_count === "number") {
+    view.meta = { ...(view.meta ?? {}), step_count: prompt.meta.step_count };
+  }
+  return view;
+}
+
+/**
+ * PromptView for a normalized SessionRunPrompt row. The MCQ answer key is
+ * withheld unless `includeAnswer` (EXAM_SIM REVIEW only); framing fields
+ * (pack, original question, worked-example step count) always pass through.
+ */
+function rowToPromptView(
+  row: { promptIndex: number; text: string; objectiveId: string | null; difficulty: number; sourceType: string; meta: unknown },
+  index: number,
+  includeAnswer: boolean,
+): PromptView {
+  const meta = row.meta as Record<string, unknown> | null;
+  const view: PromptView = {
+    prompt_index: index,
+    text: row.text,
+    objective_id: row.objectiveId ?? undefined,
+    difficulty: row.difficulty,
+    source_type: row.sourceType,
+  };
+  if (meta?.format === "MCQ" && Array.isArray(meta.choices)) {
+    view.format = "MCQ";
+    view.choices = meta.choices as string[];
+    if (includeAnswer && meta.correctIndex != null) {
+      view.correctIndex = meta.correctIndex as number;
+      if (Array.isArray(meta.distractorRationales)) {
+        view.meta = { distractorRationales: meta.distractorRationales as string[] };
+      }
+    }
+  }
+  if (typeof meta?.original_prompt_text === "string") {
+    view.meta = { ...(view.meta ?? {}), original_prompt_text: meta.original_prompt_text };
+  }
+  if (typeof meta?.pack === "string") {
+    view.meta = { ...(view.meta ?? {}), pack: meta.pack };
+  }
+  if (typeof meta?.step_count === "number") {
+    view.meta = { ...(view.meta ?? {}), step_count: meta.step_count };
   }
   return view;
 }
@@ -682,33 +749,8 @@ async function getPromptAt(
     where: { runId_promptIndex: { runId, promptIndex: index } },
   });
   if (row) {
-    const meta = row.meta as Record<string, unknown> | null;
-    const view: PromptView = {
-      prompt_index: row.promptIndex,
-      text: row.text,
-      objective_id: row.objectiveId ?? undefined,
-      difficulty: row.difficulty,
-      source_type: row.sourceType,
-    };
-    // Extract MCQ fields stored in meta JSON; withhold the answer key
-    // unless explicitly requested (EXAM_SIM REVIEW phase).
-    if (meta?.format === "MCQ" && Array.isArray(meta.choices)) {
-      view.format = "MCQ";
-      view.choices = meta.choices as string[];
-      if (includeAnswer && meta.correctIndex != null) {
-        view.correctIndex = meta.correctIndex as number;
-        if (Array.isArray(meta.distractorRationales)) {
-          view.meta = { distractorRationales: meta.distractorRationales as string[] };
-        }
-      }
-    }
-    if (typeof meta?.original_prompt_text === "string") {
-      view.meta = { ...(view.meta ?? {}), original_prompt_text: meta.original_prompt_text };
-    }
-    if (typeof meta?.pack === "string") {
-      view.meta = { ...(view.meta ?? {}), pack: meta.pack };
-    }
-    return view;
+    // MCQ answer key withheld unless explicitly requested (EXAM_SIM REVIEW).
+    return rowToPromptView(row, row.promptIndex, includeAnswer);
   }
   // Fallback to JSONB for runs created before migration
   const p = fallbackPrompts[index];
@@ -844,20 +886,10 @@ async function adaptPromptDifficulty(
     target_range: `${targetMin}-${targetMax}`,
   });
 
-  // Answer key deliberately omitted — this view is served pre-answer.
-  const swapMeta = betterFit.meta as Record<string, unknown> | null;
-  const swapView: PromptView = {
-    prompt_index: currentIndex,
-    text: betterFit.text,
-    objective_id: betterFit.objectiveId ?? undefined,
-    difficulty: betterFit.difficulty,
-    source_type: betterFit.sourceType,
-  };
-  if (swapMeta?.format === "MCQ" && Array.isArray(swapMeta.choices)) {
-    swapView.format = "MCQ";
-    swapView.choices = swapMeta.choices as string[];
-  }
-  return swapView;
+  // Answer key deliberately omitted: this view is served pre-answer. The
+  // framing fields (pack, original question) travel with the swapped row so
+  // a moved pretest still reads as a pretest.
+  return rowToPromptView(betterFit, currentIndex, false);
 }
 
 // ---- Get Run ----
@@ -938,10 +970,10 @@ export async function submitAttempt(userId: string, runId: string, input: Attemp
   // Phase compatibility
   if (mode === "EXAM_SIM") {
     if (phase === "EXAM" && kind === "SCORE") {
-      return { error: "wrong_phase" as const, message: "Cannot score during EXAM phase" };
+      return { error: "wrong_phase" as const, message: "Scoring starts after the last question of the exam simulation. Reload to continue." };
     }
     if (phase === "REVIEW" && (kind === "ANSWER" || kind === "LEGACY")) {
-      return { error: "wrong_phase" as const, message: "Cannot answer during REVIEW phase" };
+      return { error: "wrong_phase" as const, message: "This exam simulation is in scoring now. Reload to continue." };
     }
   }
 
@@ -1000,6 +1032,32 @@ export async function submitAttempt(userId: string, runId: string, input: Attemp
 
 // ---- Immediate scoring (RETRIEVAL / INTERLEAVED / ERROR_REPAIR) ----
 
+/** The answer a student committed to see a free-recall model answer, if any. */
+export function committedAnswerOf(meta: unknown): string | null {
+  const value = (meta as { committed_answer?: unknown } | null | undefined)?.committed_answer;
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+/**
+ * The question a repair variant retests. A repair prompt carries the
+ * question it repairs in meta.original_prompt_text, so a missed repair is
+ * retested against that question instead of quoting the repair's own
+ * wording inside a new repair. An MCQ stem says "which of the following",
+ * so its choices come along (never which one is right: the variant is a
+ * retest, not a reveal).
+ */
+export function variantSourceFor(prompt: Pick<Prompt, "text" | "format" | "choices" | "meta">): string {
+  const original = prompt.meta?.original_prompt_text?.trim();
+  if (original) return original;
+  if (prompt.format === "MCQ" && prompt.choices && prompt.choices.length > 0) {
+    const choices = prompt.choices
+      .map((choice, i) => `${String.fromCharCode(65 + i)}. ${choice}`)
+      .join("; ");
+    return `${prompt.text} (Choices: ${choices})`;
+  }
+  return prompt.text;
+}
+
 async function handleImmediateScoring(
   run: { id: string; runId: string; userId: string; sessionId: string; currentIndex: number; promptCount: number; mode: string; metrics: unknown; breakState: unknown; prompts: unknown },
   prompt: Prompt,
@@ -1050,6 +1108,11 @@ async function handleImmediateScoring(
   if (!effectiveScore) return { error: "missing_score" as const };
   const finalScoreValue = effectiveScore;
   const finalErrorLog = effectiveErrorLog;
+
+  // A free-recall answer committed to see the model answer is the one that
+  // gets recorded: seeing the standard must not let the answer change.
+  const committedAnswer = mcqResult ? null : committedAnswerOf(prompt.meta);
+  const recordedAnswer = committedAnswer ?? input.user_answer;
 
   // The relearning criterion compares calendar days in the student's
   // timezone (null = UTC). Fetched outside the transaction; single indexed
@@ -1124,7 +1187,7 @@ async function handleImmediateScoring(
           promptIndex: input.prompt_index,
           promptId: prompt.id,
           promptText: prompt.text,
-          userAnswer: input.user_answer,
+          userAnswer: recordedAnswer,
           selfScore: finalScoreValue,
           timeToAnswerSeconds: input.time_to_answer_seconds ?? null,
           confidenceRating: input.confidence_rating ?? null,
@@ -1222,11 +1285,7 @@ async function handleImmediateScoring(
         });
 
         if (existingVariants < MAX_VARIANTS_PER_SESSION) {
-          // MCQ stems say "which of the following" — the free-recall variant
-          // must carry the answer context or the reference is incoherent.
-          const variantSourceText = mcqResult && prompt.choices
-            ? `${prompt.text} (Correct answer: "${mcqResult.correct_choice}"; you chose "${prompt.choices[mcqResult.selected_index]}")`
-            : prompt.text;
+          const variantSourceText = variantSourceFor(prompt);
           const variantPrompt = generateVariantQuestion(
             promptCount, // append at end of current deck
             variantSourceText,
@@ -1615,6 +1674,42 @@ async function handleExamScore(
 
 // ---- Pre-test Prompt Generator ----
 
+/** A pretest question for a topic the student hasn't studied yet. */
+export function pretestQuestionText(topic: string): string {
+  return `Pretest: what do you already know about ${topic}? Explain as much as you can from memory.`;
+}
+
+/**
+ * A cross-session repair question. The student's own similar question is
+ * the retest when there is one; otherwise the missed question comes back
+ * with a request for the rule. Keeps "From memory" (repair templates share
+ * it across modes).
+ */
+export function crossSessionRepairText(params: {
+  daysSince: number;
+  variantQuestion?: string | null;
+  originalText?: string | null;
+}): string {
+  const variant = params.variantQuestion?.trim();
+  const original = params.originalText?.trim();
+  const when = params.daysSince <= 0 ? "earlier today" : daysAgoPhrase(params.daysSince);
+  // The question to answer comes first (the screen shows it largest); the
+  // instruction follows as its own paragraph.
+  if (variant) {
+    return `${variant}\n\nFrom memory: answer this similar question you wrote ${when}, then state the correction rule.`;
+  }
+  if (original) {
+    return `${original}\n\nYou missed this question ${when}. From memory: state the correct rule, say why the mistake happens, and give a new example where the rule applies.`;
+  }
+  return "From memory: state the correction rule for an error you made earlier, say why the mistake happens, and give a new example where the rule applies.";
+}
+
+/** A spaced review question for a due topic. */
+export function reviewQuestionText(topic: string, daysSince: number | null): string {
+  const last = daysSince === null ? "" : ` You last studied it ${daysSince === 0 ? "earlier today" : daysAgoPhrase(daysSince)}.`;
+  return `From memory: explain ${topic} and what matters most to remember about it.${last}`;
+}
+
 /**
  * Generate diagnostic pre-test questions for objectives the student has never studied.
  * Research (Richland et al. 2009): testing BEFORE studying enhances subsequent learning
@@ -1650,7 +1745,7 @@ async function generatePretestPrompts(
       pretests.push({
         id: `pretest_${i}`,
         objective_id: obj.id,
-        text: `Diagnostic: Before we dive in — what do you already know about "${obj.title}"? Explain as much as you can from memory.`,
+        text: pretestQuestionText(obj.title),
         difficulty: 2,
         meta: { pack: "PRE_TEST" },
       });
@@ -1732,15 +1827,16 @@ async function generateCrossSessionRepairs(
 
     for (let i = 0; i < maxRepairs; i++) {
       const err = unresolvedErrors[i];
-      const originalText = attemptMap.get(`${err.runId}:${err.promptIndex}`) || "a previous question";
+      const originalText = attemptMap.get(`${err.runId}:${err.promptIndex}`)?.trim() || undefined;
       const daysSince = Math.floor(
         (Date.now() - err.createdAt.getTime()) / (1000 * 60 * 60 * 24),
       );
 
-      const variant = err.variantQuestion?.trim();
-      const text = variant
-        ? `Error repair (from ${daysSince}d ago): You previously made a ${err.errorType.toLowerCase()} error. Try this variant:\n\n${variant}\n\nAnswer from memory, then state the correction rule.`
-        : `Error repair (from ${daysSince}d ago): You made a ${err.errorType.toLowerCase()} error on: "${originalText}"\n\nFrom memory, state the correct rule and explain why the common mistake happens. Then give a new example where this rule applies.`;
+      const text = crossSessionRepairText({
+        daysSince,
+        variantQuestion: err.variantQuestion,
+        originalText,
+      });
 
       repairs.push({
         id: `repair_${i}`,
@@ -1782,28 +1878,42 @@ async function generateWarmupPrompts(
     const dueObjectives = await getDueObjectives(userId, courseName, 5);
     if (dueObjectives.length === 0) return [];
 
-    // Match due objectives to session objectives for titles
-    const objMap = new Map((objectives || []).map((o) => [o.id, o.title]));
+    const maxWarmups = Math.min(3, dueObjectives.length);
+    const due = dueObjectives.slice(0, maxWarmups);
+
+    // Topic names: this session's objectives first, then any earlier session
+    // in the course that listed the key, and only then the key made readable.
+    // Never the raw snake_case key.
+    const titles = new Map((objectives || []).map((o) => [o.id, o.title]));
+    if (due.some((d) => !titles.has(d.objectiveKey))) {
+      const earlier = await prisma.session.findMany({
+        where: { userId, courseName },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: { objectives: true },
+      });
+      for (const s of earlier) {
+        for (const o of (s.objectives as { id?: unknown; title?: unknown }[] | null) ?? []) {
+          if (typeof o?.id === "string" && typeof o.title === "string" && !titles.has(o.id)) {
+            titles.set(o.id, o.title);
+          }
+        }
+      }
+    }
 
     const warmups: Prompt[] = [];
-    const maxWarmups = Math.min(3, dueObjectives.length);
-
-    for (let i = 0; i < maxWarmups; i++) {
-      const due = dueObjectives[i];
-      const title = objMap.get(due.objectiveKey) || due.objectiveKey;
-      const daysSince = due.lastStudiedAt
-        ? Math.floor((Date.now() - due.lastStudiedAt.getTime()) / (1000 * 60 * 60 * 24))
+    for (let i = 0; i < due.length; i++) {
+      const item = due[i];
+      const title = titles.get(item.objectiveKey) ?? humanizeObjectiveKey(item.objectiveKey);
+      const daysSince = item.lastStudiedAt
+        ? Math.floor((Date.now() - item.lastStudiedAt.getTime()) / (1000 * 60 * 60 * 24))
         : null;
-
-      const timeContext = daysSince !== null
-        ? ` (last studied ${daysSince} day${daysSince !== 1 ? "s" : ""} ago)`
-        : "";
 
       warmups.push({
         id: `warmup_${i}`,
-        objective_id: due.objectiveKey,
-        text: `Quick review${timeContext}: From memory, explain the key concept behind "${title}". What are the most important things to remember?`,
-        difficulty: Math.min(due.repetitions + 1, 3), // easier for less-practiced items
+        objective_id: item.objectiveKey,
+        text: reviewQuestionText(title, daysSince),
+        difficulty: Math.min(item.repetitions + 1, 3), // easier for less-practiced items
         meta: { pack: "WARMUP" },
       });
     }
@@ -2046,56 +2156,130 @@ export async function getDeckPreview(
 
 // ---- Answer standard reveal ----
 
+export type RevealGate =
+  | { kind: "reveal"; commit: string | null }
+  | { kind: "withhold" }
+  | { kind: "wrong_phase" }
+  | { kind: "wrong_index"; expected: number }
+  | { kind: "answer_required" };
+
 /**
- * Reveal the model answer / key points for the CURRENT prompt so the student
- * can self-score against an explicit standard instead of a feeling
- * (calibration: self-assessment without a reference answer is unreliable).
+ * Whether the model answer for a question may be shown. Pure, so the rule
+ * is unit-tested on its own:
+ * - never during the EXAM phase of an exam simulation;
+ * - only for the run's current question;
+ * - an answered question (attempt recorded) always reveals;
+ * - an unanswered MCQ never reveals: the model answer names the right
+ *   choice and MCQ grading happens on the server;
+ * - an unanswered free-recall question reveals only against a committed
+ *   answer: either one sent now (`commit` records it, first answer wins) or
+ *   one committed earlier. Without one, the answer stays hidden, so no
+ *   prefetch or stray request can leak it before the student answers.
+ */
+export function revealGate(input: {
+  phase: string;
+  currentIndex: number;
+  index: number;
+  isMcq: boolean;
+  answered: boolean;
+  committedAnswer: string | null;
+  userAnswer?: string | null;
+}): RevealGate {
+  if (input.phase === "EXAM") return { kind: "wrong_phase" };
+  if (input.index !== input.currentIndex) return { kind: "wrong_index", expected: input.currentIndex };
+  if (input.answered) return { kind: "reveal", commit: null };
+  if (input.isMcq) return { kind: "withhold" };
+  if (input.committedAnswer) return { kind: "reveal", commit: null };
+  const answer = input.userAnswer?.trim();
+  if (answer) return { kind: "reveal", commit: answer };
+  return { kind: "answer_required" };
+}
+
+/**
+ * Reveal the model answer and points to check for the CURRENT question so
+ * the student self-scores against an explicit standard instead of a
+ * feeling (calibration: self-assessment without a reference answer is
+ * unreliable).
  *
- * Withheld during the EXAM phase of EXAM_SIM (delayed feedback is the point
- * of an exam simulation). For repair prompts the expected correction rule
+ * Free recall is scored after the reveal, so the attempt does not exist yet
+ * when the model answer is shown. The student's answer therefore travels
+ * with the request (`userAnswer`) and is committed on the question: the
+ * first committed answer is the one later recorded with the score, and it
+ * comes back as `committed_answer`. Without an answer or an attempt the
+ * model answer is never returned (see revealGate). Withheld during the EXAM
+ * phase of EXAM_SIM. For repair questions the expected correction rule
  * serves as the standard.
  */
-export async function getAnswerReveal(userId: string, runId: string, index: number) {
+export async function getAnswerReveal(
+  userId: string,
+  runId: string,
+  index: number,
+  options: { userAnswer?: string | null } = {},
+) {
   const run = await prisma.sessionRun.findUnique({
     where: { runId },
     select: { userId: true, currentIndex: true, phase: true, status: true, promptCount: true },
   });
   if (!run) return { error: "not_found" as const };
   if (run.userId !== userId) return { error: "forbidden" as const };
-  if (run.phase === "EXAM") {
-    return { error: "wrong_phase" as const, message: "Answers are revealed after the exam phase" };
-  }
-  if (index !== run.currentIndex) {
-    return { error: "wrong_index" as const, expected: run.currentIndex };
-  }
 
-  const row = await prisma.sessionRunPrompt.findUnique({
-    where: { runId_promptIndex: { runId, promptIndex: index } },
-  });
+  const [row, attempt] = await Promise.all([
+    prisma.sessionRunPrompt.findUnique({
+      where: { runId_promptIndex: { runId, promptIndex: index } },
+    }),
+    prisma.sessionAttempt.findUnique({
+      where: { runId_promptIndex: { runId, promptIndex: index } },
+      select: { id: true, userAnswer: true },
+    }),
+  ]);
   const meta = (row?.meta ?? null) as {
     format?: string;
     model_answer?: string;
     key_points?: string[];
     expected_correction_rule?: string;
+    committed_answer?: string;
   } | null;
+  const committed = committedAnswerOf(meta);
 
-  // Never reveal for an UNANSWERED MCQ — the model answer names the correct
-  // choice, which would defeat server-side grading. MCQ correctness arrives
-  // in the attempt response instead.
-  if (meta?.format === "MCQ") {
-    const answered = await prisma.sessionAttempt.findUnique({
-      where: { runId_promptIndex: { runId, promptIndex: index } },
-      select: { id: true },
+  const gate = revealGate({
+    phase: run.phase,
+    currentIndex: run.currentIndex,
+    index,
+    isMcq: meta?.format === "MCQ",
+    answered: attempt !== null,
+    committedAnswer: committed,
+    userAnswer: options.userAnswer,
+  });
+
+  switch (gate.kind) {
+    case "wrong_phase":
+      return { error: "wrong_phase" as const, message: "Model answers appear after the last question of an exam simulation." };
+    case "wrong_index":
+      return { error: "wrong_index" as const, expected: gate.expected };
+    case "answer_required":
+      return { error: "answer_required" as const };
+    case "withhold":
+      return { data: { model_answer: null, key_points: null, committed_answer: null } };
+  }
+
+  if (gate.commit && row) {
+    await prisma.sessionRunPrompt.update({
+      where: { id: row.id },
+      data: {
+        meta: {
+          ...((row.meta as Record<string, unknown> | null) ?? {}),
+          committed_answer: gate.commit,
+          committed_at: new Date().toISOString(),
+        } as object,
+      },
     });
-    if (!answered) {
-      return { data: { model_answer: null, key_points: null } };
-    }
   }
 
   return {
     data: {
       model_answer: meta?.model_answer ?? meta?.expected_correction_rule ?? null,
       key_points: Array.isArray(meta?.key_points) ? meta.key_points : null,
+      committed_answer: attempt?.userAnswer ?? committed ?? gate.commit,
     },
   };
 }
@@ -2172,7 +2356,8 @@ async function completePlanItemsForSession(
   const result = await prisma.studyPlanItem.updateMany({
     where: {
       sessionId,
-      status: { in: ["SCHEDULED", "IN_PROGRESS"] },
+      // Moved sessions (RESCHEDULED) are still to do, so finishing one marks it done too
+      status: { in: ["SCHEDULED", "IN_PROGRESS", "RESCHEDULED"] },
     },
     data: {
       status: "DONE",

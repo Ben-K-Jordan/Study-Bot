@@ -77,6 +77,6 @@ describe("GET /api/attempts/[attemptId]/feedback", () => {
     const res = await GET(makeRequest(), PARAMS);
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Internal server error" });
+    expect(await res.json()).toEqual({ error: "Feedback didn't load. Retry." });
   });
 });

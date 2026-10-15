@@ -35,6 +35,17 @@ export interface Prompt {
     model_answer?: string;
     /** Bullet points a correct answer must contain (self-scoring standard). */
     key_points?: string[];
+    /**
+     * Worked-example completion problems: steps in the full solution, so the
+     * session can show how many are given and how many are missing.
+     */
+    step_count?: number;
+    /**
+     * Free recall: the answer the student committed to see the model answer.
+     * Stored on the question row by the reveal endpoint; the attempt records
+     * this answer, never a later edit.
+     */
+    committed_answer?: string;
   };
 }
 
@@ -46,7 +57,7 @@ interface Objective {
 // ---- Shared helpers ----
 
 const RETRIEVAL_VARIANTS = [
-  (title: string) => `From memory: explain ${title} in 3–5 bullets.`,
+  (title: string) => `From memory: explain ${title} in 3 to 5 bullets.`,
   (title: string) => `Define ${title} and give one concrete example.`,
   (title: string) => `List the key steps involved in ${title}.`,
   (title: string) => `What are the most common pitfalls when applying ${title}?`,
@@ -308,11 +319,13 @@ export function generateErrorRepairPrompts(
     // prompt renders as the same generic sentence and the student cannot
     // tell which error is being repaired.
     const original = log.prompt_text?.trim();
+    // The question to answer comes first; the instruction follows as its own
+    // paragraph. Every form keeps "From memory".
     const text = variant
-      ? `From memory: state the correct rule and answer the variant: ${variant}`
+      ? `${variant}\n\nFrom memory: answer this similar question you wrote, then state the correction rule.`
       : original
-        ? `You previously missed: "${original}" — From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`
-        : `From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`;
+        ? `${original}\n\nYou missed this question before. From memory: state the correct rule and give a new example where it applies.`
+        : `From memory: state the correction rule for this error and give a new example where it applies.`;
 
     return {
       id: `p_${i}`,

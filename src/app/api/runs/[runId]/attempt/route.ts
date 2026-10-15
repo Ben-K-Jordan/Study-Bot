@@ -11,7 +11,7 @@ export async function POST(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
   }
 
   const { runId } = await params;
@@ -20,7 +20,7 @@ export async function POST(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Answer not saved. Reload and retry." }, { status: 400 });
   }
 
   let parsed;
@@ -29,7 +29,7 @@ export async function POST(
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", issues: err.issues },
+        { error: "Answer not saved. Check your answer and retry.", issues: err.issues },
         { status: 400 }
       );
     }
@@ -41,46 +41,47 @@ export async function POST(
 
     if ("error" in result) {
       if (result.error === "not_found") {
-        return NextResponse.json({ error: "Run not found" }, { status: 404 });
+        return NextResponse.json({ error: "Session not found. It may have been deleted." }, { status: 404 });
       }
       if (result.error === "forbidden") {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ error: "This session belongs to another account." }, { status: 403 });
       }
       if (result.error === "run_completed") {
-        return NextResponse.json({ error: "Run is already completed" }, { status: 409 });
+        return NextResponse.json({ error: "This session is already finished. Reload to see your results.", code: "run_completed" }, { status: 409 });
       }
       if (result.error === "on_break") {
         return NextResponse.json(
-          { error: "Cannot submit during break", break_state: result.break_state },
+          // "break" in the message is matched by the session screen; keep it.
+          { error: "Cannot submit during break", code: "on_break", break_state: result.break_state },
           { status: 409 }
         );
       }
       if (result.error === "wrong_index") {
         return NextResponse.json(
-          { error: "Wrong prompt index", expected: result.expected },
+          { error: "This question was answered in another tab. Reload to continue.", code: "wrong_index", expected: result.expected },
           { status: 409 }
         );
       }
       if (result.error === "invalid_index") {
-        return NextResponse.json({ error: "Invalid prompt index" }, { status: 400 });
+        return NextResponse.json({ error: "This question isn't in the session. Reload to continue." }, { status: 400 });
       }
       if (result.error === "duplicate_attempt") {
-        return NextResponse.json({ error: "Attempt already submitted for this prompt" }, { status: 409 });
+        return NextResponse.json({ error: "This question was already answered. Reload to continue.", code: "duplicate_attempt" }, { status: 409 });
       }
       if (result.error === "wrong_phase") {
         return NextResponse.json(
-          { error: result.message || "Invalid operation for current phase" },
+          { error: result.message || "This step doesn't fit where the session is now. Reload to continue.", code: "wrong_phase" },
           { status: 409 }
         );
       }
       if (result.error === "no_attempt_to_score") {
-        return NextResponse.json({ error: "No attempt found to score at this index" }, { status: 409 });
+        return NextResponse.json({ error: "There's no saved answer to score for this question. Reload to continue.", code: "no_attempt_to_score" }, { status: 409 });
       }
       if (result.error === "already_scored") {
-        return NextResponse.json({ error: "This attempt has already been scored" }, { status: 409 });
+        return NextResponse.json({ error: "This answer was already scored. Reload to continue.", code: "already_scored" }, { status: 409 });
       }
       if (result.error === "missing_score") {
-        return NextResponse.json({ error: "self_score is required for SCORE kind" }, { status: 400 });
+        return NextResponse.json({ error: "Score your answer before you save it." }, { status: 400 });
       }
     }
 
@@ -95,6 +96,6 @@ export async function POST(
     });
   } catch (err) {
     logger.error("run_submit_attempt_failed", { error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Answer not saved. Retry." }, { status: 500 });
   }
 }

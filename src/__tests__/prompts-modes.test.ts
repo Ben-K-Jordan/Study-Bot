@@ -100,10 +100,7 @@ describe("generateInterleavedPrompts", () => {
     };
     const a = generateInterleavedPrompts({ ...base, seed: "seed_1" });
     const b = generateInterleavedPrompts({ ...base, seed: "seed_2" });
-    // With different seeds, at least some prompt texts should differ in ordering
-    const aTexts = a.map((p) => p.text).join("|");
-    const bTexts = b.map((p) => p.text).join("|");
-    // They might be different; but at minimum both should have the right length
+    // Different seeds may reorder the prompts; either way both keep the right length
     expect(a).toHaveLength(12);
     expect(b).toHaveLength(12);
   });
@@ -232,7 +229,8 @@ describe("generateErrorRepairPrompts", () => {
 
   it("uses fallback text when no variant_question", () => {
     const prompts = generateErrorRepairPrompts(sampleLogs, 3);
-    expect(prompts[1].text).toContain("near-transfer example");
+    expect(prompts[1].text).toContain("new example where it applies");
+    expect(prompts[1].text).toMatch(/From memory/);
   });
 
   it("references the original question when no variant_question exists", () => {

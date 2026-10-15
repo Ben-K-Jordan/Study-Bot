@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
   }
 
   const { attemptId } = await params;
@@ -17,7 +17,7 @@ export async function GET(
   try {
     const result = await generateFeedback(userId, attemptId);
     if (result.status === "NOT_FOUND") {
-      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+      return NextResponse.json({ error: "Feedback not found for this answer." }, { status: 404 });
     }
     if (result.status === "PENDING") {
       // Another request/worker is generating — clients poll until READY.
@@ -33,6 +33,6 @@ export async function GET(
     return NextResponse.json(result);
   } catch (err) {
     logger.error("generate_feedback_failed", { error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Feedback didn't load. Retry." }, { status: 500 });
   }
 }
