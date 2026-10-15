@@ -687,51 +687,6 @@
   }
 }
 
-/* ==========================================================================
-   Legacy bridge. Screens that still use inline styles read these sb- tokens,
-   which now point at the GM3 roles so they follow both themes. Delete each
-   token once no screen reads it.
-   ========================================================================== */
-:root {
-  --sb-font-display: var(--font-sans);
-  --sb-font-body: var(--font-sans);
-  --sb-font-mono: var(--font-mono);
-
-  --sb-bg-darkest: var(--on-primary);
-  --sb-bg: var(--background);
-  --sb-bg-card: var(--card);
-  --sb-bg-input: var(--surface-container);
-  --sb-bg-done: var(--tertiary-container);
-  --sb-bg-info-tint: var(--primary-container);
-  --sb-bg-success-tint: var(--tertiary-container);
-  --sb-bg-warning-tint: var(--warning-container);
-  --sb-bg-error-tint: var(--error-container);
-  --sb-bg-review-tint: var(--surface-container-high);
-  --sb-bg-selected: var(--secondary-container);
-
-  --sb-border: var(--outline-variant);
-  --sb-border-subtle: var(--outline-variant);
-  --sb-border-done: var(--outline-variant);
-
-  --sb-text: var(--on-surface);
-  --sb-text-secondary: var(--on-surface-variant);
-  --sb-text-muted: var(--on-surface-variant);
-  --sb-text-faint: var(--on-surface-variant);
-  --sb-text-dim: var(--on-surface-variant);
-
-  --sb-primary: var(--primary);
-  --sb-info: var(--primary);
-  --sb-success: var(--tertiary);
-  --sb-warning: var(--warning);
-  --sb-error: var(--error);
-  --sb-review: var(--primary);
-
-  --sb-radius-sm: 8px;
-  --sb-radius: 12px;
-  --sb-radius-lg: 16px;
-  --sb-shadow-card: none;
-}
-
 @media print {
   body {
     background: #ffffff;

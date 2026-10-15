@@ -29,26 +29,6 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
-  {
-    // These screens predate the React Compiler rules in eslint-plugin-react-hooks 7
-    // and are due to be rewritten by the UI redesign. Keep the findings visible as
-    // warnings until then, and delete this block once the new screens land.
-    files: [
-      "src/app/(app)/page.tsx",
-      "src/app/(app)/chat/page.tsx",
-      "src/app/(app)/flashcards/page.tsx",
-      "src/app/(app)/guides/page.tsx",
-      "src/app/(app)/learn/page.tsx",
-      "src/app/(app)/plan/page.tsx",
-      "src/app/s/*/screens/runner.tsx",
-    ],
-    rules: {
-      "react-hooks/purity": "warn",
-      "react-hooks/refs": "warn",
-      "react-hooks/set-state-in-effect": "warn",
-      "@typescript-eslint/no-explicit-any": "warn",
-    },
-  },
   globalIgnores([
     // Defaults of eslint-config-next, restated because globalIgnores replaces them
     ".next/**",
