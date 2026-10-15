@@ -1,12 +1,7 @@
+import { MODE_LABELS } from "./modes";
 import { SessionMode } from "./validation";
 
-export const MODE_LABELS: Record<string, string> = {
-  RETRIEVAL: "Retrieval",
-  INTERLEAVED_PRACTICE: "Interleaved Practice",
-  ERROR_REPAIR: "Error Repair",
-  EXAM_SIM: "Exam Sim",
-  WORKED_EXAMPLES: "Worked Examples",
-};
+export { MODE_LABELS };
 
 export function buildCalendarTitle(params: {
   courseName: string;

@@ -88,7 +88,7 @@ export function buildEventPayload(params: EventBuildInput): BuiltEvent {
     const bpType = bp.type as string | undefined;
     if (bpType) {
       const label = bpType === "50_10" ? "50/10" : bpType === "25_5" ? "25/5" : bpType === "90_15" ? "90/15" : bpType;
-      descriptionParts.push(`Protocol: ${label} — phone away`);
+      descriptionParts.push(`Protocol: ${label}, phone away`);
     }
   }
 

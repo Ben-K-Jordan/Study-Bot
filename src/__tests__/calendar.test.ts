@@ -20,15 +20,15 @@ describe("buildCalendarTitle", () => {
       topicScope: "Buffers + Titrations",
     });
     expect(title).toBe(
-      "CHEM 2070 | Prelim 2 | Interleaved Practice: Buffers + Titrations"
+      "CHEM 2070 | Prelim 2 | Interleaved practice: Buffers + Titrations"
     );
   });
 
   it("formats all mode labels correctly", () => {
     const modes = [
-      ["ERROR_REPAIR", "Error Repair"],
-      ["EXAM_SIM", "Exam Sim"],
-      ["WORKED_EXAMPLES", "Worked Examples"],
+      ["ERROR_REPAIR", "Error repair"],
+      ["EXAM_SIM", "Exam simulation"],
+      ["WORKED_EXAMPLES", "Worked examples"],
     ] as const;
 
     for (const [mode, label] of modes) {
