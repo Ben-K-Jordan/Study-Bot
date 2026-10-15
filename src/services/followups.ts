@@ -3,6 +3,7 @@ import { generateSessionId } from "@/lib/session-id";
 import { computeFollowups } from "@/lib/spacing";
 import { dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 import { getBaseUrl } from "@/lib/config";
+import { dateColumnKey } from "@/lib/plan-dates";
 import { logger } from "@/lib/logger";
 
 /**
@@ -144,8 +145,8 @@ export async function scheduleFollowups(userId: string, runId: string) {
     accuracy: metrics?.accuracy ?? 0,
     endedAt: run.endedAt ?? new Date(),
     timezone: plan.timezone,
-    examDate: plan.examDate.toISOString().split("T")[0],
-    planStartDate: dayKey(plan.startDate, plan.timezone),
+    examDate: dateColumnKey(plan.examDate),
+    planStartDate: dateColumnKey(plan.startDate),
     availability: (plan.config as { availability?: { start: string; end: string }[] } | null)
       ?.availability,
   });

@@ -38,6 +38,48 @@ export interface ContentAwareMeta {
 }
 
 // ---------------------------------------------------------------------------
+// Which documents a plan reads
+// ---------------------------------------------------------------------------
+
+/**
+ * The processed documents a plan should read. The files picked for the plan
+ * (`documentIds`) win, so a file first uploaded under another course still
+ * counts. Without them: the course's files for this exam, else all of the
+ * course's files, since many students tag files with the course only.
+ */
+async function findPlanDocuments(
+  userId: string,
+  courseName: string,
+  examName: string | undefined,
+  documentIds: string[] | undefined,
+): Promise<{ id: string; title: string }[]> {
+  const select = { id: true, title: true } as const;
+  if (documentIds && documentIds.length > 0) {
+    const picked = await prisma.contentDocument.findMany({
+      where: { userId, id: { in: documentIds }, status: "PROCESSED" },
+      orderBy: { createdAt: "desc" },
+      select,
+    });
+    if (picked.length > 0) return picked;
+  }
+
+  const base = { userId, namespace: "COURSE", courseName, status: "PROCESSED" };
+  if (examName) {
+    const forExam = await prisma.contentDocument.findMany({
+      where: { ...base, examName },
+      orderBy: { createdAt: "desc" },
+      select,
+    });
+    if (forExam.length > 0) return forExam;
+  }
+  return prisma.contentDocument.findMany({
+    where: base,
+    orderBy: { createdAt: "desc" },
+    select,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 1. extractObjectivesFromContent
 // ---------------------------------------------------------------------------
 
@@ -50,21 +92,9 @@ export async function extractObjectivesFromContent(
   userId: string,
   courseName: string,
   examName?: string,
+  documentIds?: string[],
 ): Promise<SuggestedObjective[]> {
-  // Find processed documents for this user + course
-  const where: Record<string, unknown> = {
-    userId,
-    namespace: "COURSE",
-    courseName,
-    status: "PROCESSED",
-  };
-  if (examName) where.examName = examName;
-
-  const documents = await prisma.contentDocument.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    select: { id: true },
-  });
+  const documents = await findPlanDocuments(userId, courseName, examName, documentIds);
 
   if (documents.length === 0) return [];
 
@@ -190,20 +220,9 @@ export async function buildContentAwarePlanInput(
   userId: string,
   courseName: string,
   examName?: string,
+  documentIds?: string[],
 ): Promise<ContentAwareMeta> {
-  // Find processed documents
-  const where: Record<string, unknown> = {
-    userId,
-    namespace: "COURSE",
-    courseName,
-    status: "PROCESSED",
-  };
-  if (examName) where.examName = examName;
-
-  const documents = await prisma.contentDocument.findMany({
-    where,
-    select: { id: true, title: true },
-  });
+  const documents = await findPlanDocuments(userId, courseName, examName, documentIds);
 
   if (documents.length === 0) {
     return {

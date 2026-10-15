@@ -8,7 +8,10 @@ export async function GET(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { documentId } = await params;
@@ -25,11 +28,12 @@ export async function GET(
     },
   });
 
-  if (!doc) {
-    return NextResponse.json({ error: "Document not found" }, { status: 404 });
-  }
-  if (doc.userId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!doc || doc.userId !== userId) {
+    // Another account's file reads as missing, so ids can't be probed
+    return NextResponse.json(
+      { error: "This file isn't in your materials anymore.", code: "not_found" },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json({

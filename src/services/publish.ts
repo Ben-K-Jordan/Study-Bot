@@ -99,6 +99,24 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
   return results;
 }
 
+// ---- Student-facing messages for the error codes above ----
+
+const CALENDAR_ERROR_MESSAGES: Record<string, string> = {
+  GOOGLE_NOT_CONNECTED: "Connect Google Calendar to add sessions to it.",
+  GOOGLE_RECONNECT_REQUIRED: "Google Calendar needs you to sign in again.",
+  ALREADY_PUBLISHED_DIFFERENT_CALENDAR: "This plan is already in a different Google calendar.",
+  not_found: "This plan doesn't exist anymore.",
+  forbidden: "This plan belongs to another account.",
+};
+
+/**
+ * The sentence to show for a publish or unpublish error code. Routes send it
+ * as `message` next to the code, so no raw code reaches the screen.
+ */
+export function calendarErrorMessage(code: string): string {
+  return CALENDAR_ERROR_MESSAGES[code] ?? "Google Calendar didn't respond. Retry in a minute.";
+}
+
 // ---- Zod schemas for request validation ----
 
 import { z } from "zod";

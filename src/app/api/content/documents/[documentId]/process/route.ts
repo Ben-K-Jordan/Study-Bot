@@ -3,29 +3,44 @@ import { getUserId } from "@/lib/auth";
 import { processDocument } from "@/services/content";
 import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 
+/**
+ * POST /api/content/documents/{id}/process: read the file into sections.
+ * Responds with `status` PROCESSED or FAILED. Limited like other AI work;
+ * a 429 carries Retry-After, and the screen retries after it.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ documentId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const rl = aiLimiter.check(userId);
-  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+  if (!rl.allowed) {
+    const seconds = Math.ceil(rl.retryAfterMs / 1000);
+    return tooManyRequests(rl.retryAfterMs, `Too many files at once. Retry in ${seconds} seconds.`);
+  }
 
   const { documentId } = await params;
 
   const result = await processDocument(userId, documentId);
 
   if ("error" in result) {
-    if (result.error === "not_found") {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
-    }
     if (result.error === "forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json(
+        { error: "This file belongs to another account.", code: "forbidden" },
+        { status: 403 },
+      );
     }
+    return NextResponse.json(
+      { error: "This file isn't in your materials anymore.", code: "not_found" },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json(result.data);

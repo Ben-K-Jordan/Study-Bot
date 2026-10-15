@@ -8,7 +8,10 @@ export async function GET(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { planId } = await params;
@@ -16,16 +19,23 @@ export async function GET(
 
   if ("error" in result) {
     if (result.error === "not_found") {
-      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "This plan doesn't exist anymore.", code: "not_found" },
+        { status: 404 },
+      );
     }
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.json(
+      { error: "This plan belongs to another account.", code: "forbidden" },
+      { status: 403 },
+    );
   }
 
   return new NextResponse(result.data as string, {
     status: 200,
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Content-Disposition": `attachment; filename="study-plan-${planId}.ics"`,
+      "Content-Disposition": `attachment; filename="${result.filename}"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

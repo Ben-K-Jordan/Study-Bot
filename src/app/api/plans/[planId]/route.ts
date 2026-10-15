@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { getPlan } from "@/services/plan";
-import { prisma } from "@/lib/db";
+import { deletePlan, getPlan } from "@/services/plan";
 import { logger } from "@/lib/logger";
+
+function unauthorized() {
+  return NextResponse.json(
+    { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+    { status: 401 },
+  );
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ planId: string }> }
 ) {
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return unauthorized();
 
   const { planId } = await params;
 
@@ -20,51 +24,70 @@ export async function GET(
 
     if ("error" in result) {
       if (result.error === "not_found") {
-        return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "This plan doesn't exist anymore.", code: "not_found" },
+          { status: 404 },
+        );
       }
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json(
+        { error: "This plan belongs to another account.", code: "forbidden" },
+        { status: 403 },
+      );
     }
 
     return NextResponse.json(result.data);
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (err) {
+    logger.error("get_plan_failed", { plan_id: planId, error: String(err) });
+    return NextResponse.json(
+      { error: "The plan didn't load. Retry in a minute.", code: "internal" },
+      { status: 500 },
+    );
   }
 }
 
+/**
+ * DELETE /api/plans/{planId}[?calendar=remove]
+ *
+ * Deletes the plan and its items; sessions, answers and progress stay. With
+ * `calendar=remove`, the plan's Google Calendar events are removed first and
+ * the plan is kept (409) when any of them can't be.
+ */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ planId: string }> }
 ) {
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return unauthorized();
 
   const { planId } = await params;
+  const removeCalendarEvents = request.nextUrl.searchParams.get("calendar") === "remove";
 
   try {
-    const plan = await prisma.studyPlan.findUnique({
-      where: { planId },
-      select: { userId: true },
-    });
+    const result = await deletePlan(userId, planId, { removeCalendarEvents });
 
-    if (!plan || plan.userId !== userId) {
-      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+    if ("data" in result) {
+      return NextResponse.json({ success: true, ...result.data });
     }
-
-    // Delete in correct order to respect FK constraints
-    await prisma.$transaction([
-      prisma.planItemExternalEvent.deleteMany({ where: { planId } }),
-      prisma.planCalendarPublication.deleteMany({ where: { planId } }),
-      prisma.planReflowAudit.deleteMany({ where: { planId } }),
-      prisma.studyPlanItem.deleteMany({ where: { planId } }),
-      prisma.studyPlan.delete({ where: { planId } }),
-    ]);
-
-    logger.info("plan.deleted", { user_id: userId, plan_id: planId });
-
-    return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    if (result.error === "not_found") {
+      return NextResponse.json(
+        { error: "This plan doesn't exist anymore.", code: "not_found" },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json(
+      {
+        error: result.message,
+        code: result.code,
+        removed: result.removed,
+        failed: result.failed,
+      },
+      { status: 409 },
+    );
+  } catch (err) {
+    logger.error("delete_plan_failed", { plan_id: planId, error: String(err) });
+    return NextResponse.json(
+      { error: "Plan not deleted. Retry in a minute.", code: "internal" },
+      { status: 500 },
+    );
   }
 }

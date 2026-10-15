@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
-import { join, dirname, resolve } from "path";
+import { mkdir, rm, writeFile } from "fs/promises";
+import { basename, join, dirname, resolve, sep } from "path";
 
 // Uploads are runtime data, so the turbopackIgnore comments keep the build from
 // tracing them (and with them the whole project) into the server output.
@@ -53,4 +53,20 @@ export function resolveStoragePath(storageKey: string): string {
     throw new Error("Invalid storage path");
   }
   return fullPath;
+}
+
+/**
+ * Delete a stored document's folder (UPLOAD_DIR/<user>/<document>/). Missing
+ * files are fine: the database row is what the app reads. Refuses any key
+ * whose folder isn't that document's own folder, so a malformed key can never
+ * remove a user's other files.
+ */
+export async function deleteStoredFile(storageKey: string, documentId: string): Promise<void> {
+  if (!storageKey || !documentId) return;
+  const filePath = resolveStoragePath(storageKey);
+  const folder = dirname(filePath);
+  if (!folder.startsWith(UPLOAD_DIR + sep) || basename(folder) !== documentId) {
+    throw new Error("Invalid storage path");
+  }
+  await rm(folder, { recursive: true, force: true });
 }

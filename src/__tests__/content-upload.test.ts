@@ -70,6 +70,24 @@ describe("uploadDocument", () => {
     expect(createMock).not.toHaveBeenCalled();
   });
 
+  it("says which course an existing file belongs to on a dedupe hit", async () => {
+    findUniqueMock.mockResolvedValueOnce({
+      id: "doc-existing",
+      status: "PROCESSED",
+      courseName: "AEM 2210",
+      examName: "Prelim 1",
+    });
+
+    const result = await upload();
+
+    expect(result).toMatchObject({
+      document_id: "doc-existing",
+      deduped: true,
+      course_name: "AEM 2210",
+      exam_name: "Prelim 1",
+    });
+  });
+
   it("saves the file before creating the row and stores the real storage key", async () => {
     findUniqueMock.mockResolvedValueOnce(null);
 

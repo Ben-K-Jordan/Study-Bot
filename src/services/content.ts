@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
-import { sha256, saveFile, resolveStoragePath } from "@/lib/storage";
+import { sha256, saveFile, resolveStoragePath, deleteStoredFile } from "@/lib/storage";
 import { extractDocumentText } from "@/lib/extractor";
 import { chunkText } from "@/lib/chunker";
 import { enqueueJob } from "@/lib/jobs/queue";
@@ -17,6 +17,12 @@ export interface UploadResult {
   document_id: string;
   status: string;
   deduped: boolean;
+  /**
+   * On a dedupe hit, the course and exam the existing file belongs to, so
+   * the screen can say "already in your AEM 2210 materials".
+   */
+  course_name?: string | null;
+  exam_name?: string | null;
 }
 
 export async function uploadDocument(
@@ -41,6 +47,8 @@ export async function uploadDocument(
       document_id: existing.id,
       status: existing.status,
       deduped: true,
+      course_name: existing.courseName,
+      exam_name: existing.examName,
     };
   }
 
@@ -85,6 +93,8 @@ export async function uploadDocument(
           document_id: winner.id,
           status: winner.status,
           deduped: true,
+          course_name: winner.courseName,
+          exam_name: winner.examName,
         };
       }
     }
@@ -206,6 +216,38 @@ export async function processDocument(userId: string, documentId: string) {
   }
 }
 
+// ---- Delete Document ----
+
+/**
+ * Delete one of the student's course files: its row, its sections (chunks,
+ * with their anchors and citations, by cascade) and the stored file. Decks
+ * made from it stay and lose the link. Research papers can't be deleted here.
+ */
+export async function deleteDocument(userId: string, documentId: string) {
+  const doc = await prisma.contentDocument.findUnique({
+    where: { id: documentId },
+    select: { id: true, userId: true, namespace: true, storageKey: true, title: true },
+  });
+
+  if (!doc) return { error: "not_found" as const };
+  if (doc.userId !== userId) return { error: "forbidden" as const };
+  if (doc.namespace !== "COURSE") return { error: "not_course_material" as const };
+
+  const chunkCount = await prisma.contentChunk.count({ where: { documentId } });
+  await prisma.contentDocument.delete({ where: { id: documentId } });
+
+  try {
+    await deleteStoredFile(doc.storageKey, doc.id);
+  } catch (err) {
+    // The row is gone, so nothing reads the file; log and move on
+    logger.warn("document.file_delete_failed", { document_id: documentId, error: String(err) });
+  }
+
+  logger.info("document.deleted", { user_id: userId, document_id: documentId, chunk_count: chunkCount });
+
+  return { data: { document_id: documentId, deleted: true, chunk_count: chunkCount } };
+}
+
 // ---- List Documents ----
 
 export async function listDocuments(
@@ -232,6 +274,7 @@ export async function listDocuments(
     exam_name: d.examName,
     title: d.title,
     original_filename: d.originalFilename,
+    mime_type: d.mimeType,
     status: d.status,
     chunk_count: d._count.chunks,
     summary: d.summary ?? null,

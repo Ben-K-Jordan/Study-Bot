@@ -16,21 +16,30 @@ export async function POST(
 ) {
   const userId = await getUserId(req);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { planId, itemId } = await params;
 
   // Verify plan ownership
   const plan = await prisma.studyPlan.findUnique({ where: { planId } });
-  if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
-  if (plan.userId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!plan) {
+    return NextResponse.json({ error: "This plan doesn't exist anymore.", code: "not_found" }, { status: 404 });
+  }
+  if (plan.userId !== userId) {
+    return NextResponse.json({ error: "This plan belongs to another account.", code: "forbidden" }, { status: 403 });
+  }
 
   // Verify item belongs to plan
   const item = await prisma.studyPlanItem.findFirst({
     where: { id: itemId, planId },
   });
-  if (!item) return NextResponse.json({ error: "Item not found" }, { status: 404 });
+  if (!item) {
+    return NextResponse.json({ error: "This session isn't in the plan anymore.", code: "item_not_found" }, { status: 404 });
+  }
 
   // Parse body
   let body: z.infer<typeof updateStatusSchema>;
@@ -38,9 +47,12 @@ export async function POST(
     body = updateStatusSchema.parse(await req.json());
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: "Validation error", details: err.issues }, { status: 400 });
+      return NextResponse.json(
+        { error: "That session status isn't valid.", code: "validation_failed", details: err.issues },
+        { status: 400 },
+      );
     }
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return NextResponse.json({ error: "The request wasn't valid JSON.", code: "invalid_json" }, { status: 400 });
   }
 
   // Build update data

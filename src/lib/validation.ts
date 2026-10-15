@@ -200,25 +200,28 @@ export function parseAttemptPayload(body: unknown): AttemptPayload {
 }
 
 // --- Plan validation ---
+//
+// Messages are written for the student: the New plan form shows them next to
+// the field named by each issue's path.
 
 const PLAN_BREAK_TYPES = ["25_5", "50_10", "90_15"] as const;
 
 const dayAvailabilitySchema = z.object({
-  start: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
-  end: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
+  start: z.string().regex(/^\d{2}:\d{2}$/, "Choose a start time."),
+  end: z.string().regex(/^\d{2}:\d{2}$/, "Choose an end time."),
 });
 
 export const createPlanSchema = z
   .object({
-    course_name: z.string().min(1, "course_name is required"),
+    course_name: z.string().trim().min(1, "Enter a course name.").max(120, "Use 120 characters or fewer."),
     course_id: z.string().optional(),
-    exam_name: z.string().min(1, "exam_name is required"),
+    exam_name: z.string().trim().min(1, "Enter an exam name.").max(120, "Use 120 characters or fewer."),
     exam_id: z.string().optional(),
-    exam_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
+    exam_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the exam date."),
     // IANA timezone; createPlan falls back to the user's setting, then a default
-    timezone: z.string().optional(),
+    timezone: z.string().max(100).optional(),
     objectives: z
-      .array(z.string().min(1))
+      .array(z.string().trim().min(1))
       .optional()
       .default([]),
     document_ids: z
@@ -255,16 +258,23 @@ export const createPlanSchema = z
       .enum(["intensive", "balanced", "relaxed"])
       .optional()
       .default("balanced"),
+    /**
+     * The plan this one replaces (same course and exam). It is deleted only
+     * after the new plan is created, so a failed create never loses it.
+     */
+    replace_plan_id: z.string().min(1).max(100).optional(),
+    /** Also remove the replaced plan's events from Google Calendar. */
+    remove_replaced_calendar_events: z.boolean().optional().default(false),
   })
   .refine(
     (data) => {
       return data.availability.every((day) => day.start < day.end);
     },
-    { message: "Each day's end time must be after start time" }
+    { message: "Choose an end time after the start time.", path: ["availability"] }
   )
   .refine(
     (data) => {
       return data.objectives.length >= 3 || data.document_ids.length > 0;
     },
-    { message: "Provide at least 3 objectives or upload course content" }
+    { message: "Upload materials or type at least 3 topics, one per line.", path: ["objectives"] }
   );

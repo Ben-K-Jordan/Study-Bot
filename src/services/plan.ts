@@ -31,9 +31,15 @@ import {
   isValidTimezone,
   zonedTimeToUtc,
 } from "@/lib/timezone";
+import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
+import { classifyPlanItem, countPlanItems, runStateFromStatuses, type PlanItemCounts, type PlanItemState, type RunState } from "@/lib/plan-status";
+import { calendarErrorMessage, unpublishPlanFromGoogle } from "@/services/publish";
 
 /** Used when neither the request nor the user's settings name a timezone. */
 const DEFAULT_PLAN_TIMEZONE = "America/New_York";
+
+/** Where a new plan's topics came from. */
+export type TopicsSource = "typed" | "materials" | "fallback";
 
 /**
  * Availability windows ("09:00") are wall-clock times in the plan's timezone.
@@ -61,8 +67,11 @@ export async function createPlan(userId: string, input: unknown) {
   const planId = generateSessionId();
   const startDate = new Date();
   const startDay = dayKey(startDate, timeZone);
-  // The plan covers 7 calendar days: through the end of day 6
-  const endDate = zonedTimeToUtc(addDays(startDay, 6), "23:59", timeZone);
+  // The plan covers 7 calendar days: day 0 through day 6. Both are DATE
+  // columns, so write the calendar day itself, never an instant (an evening
+  // instant is already tomorrow in UTC).
+  const startDateColumn = dateColumnValue(startDay);
+  const endDateColumn = dateColumnValue(addDays(startDay, 6));
 
   // Build AI gateway context (null if mock — will use deterministic fallback)
   let gatewayCtx: GatewayContext | null = null;
@@ -77,14 +86,24 @@ export async function createPlan(userId: string, input: unknown) {
     studyStyle: parsed.study_style,
   };
 
-  // If no manual objectives, extract them from uploaded content via AI
+  // If no manual objectives, extract them from uploaded content via AI.
+  // topicsSource tells the screen whether the materials supplied the topics
+  // or general review topics stood in (it must say so).
   let objectives = parsed.objectives;
+  let topicsSource: TopicsSource = "typed";
   if (objectives.length === 0 && parsed.document_ids.length > 0) {
+    topicsSource = "materials";
     try {
-      const suggested = await extractObjectivesFromContent(userId, parsed.course_name, parsed.exam_name);
-      objectives = suggested.map((s) => s.title);
+      const suggested = await extractObjectivesFromContent(
+        userId,
+        parsed.course_name,
+        parsed.exam_name,
+        parsed.document_ids,
+      );
+      objectives = suggested.map((s) => s.title).filter(Boolean);
       if (objectives.length < 3) {
         // Pad with generic fallbacks so the plan generator has enough to work with
+        topicsSource = "fallback";
         const fallbacks = ["Review key concepts", "Practice problem solving", "Consolidate understanding"];
         while (objectives.length < 3) {
           objectives.push(fallbacks[objectives.length] || `Study topic ${objectives.length + 1}`);
@@ -98,13 +117,19 @@ export async function createPlan(userId: string, input: unknown) {
     } catch (err) {
       logger.warn("plan.objectives_extraction_failed", { user_id: userId, error: String(err) });
       objectives = ["Review key concepts", "Practice problem solving", "Consolidate understanding"];
+      topicsSource = "fallback";
     }
   }
 
   // Check if the user has uploaded content for this course and enrich the plan input
   let contentContext: string | undefined;
   try {
-    const contentMeta = await buildContentAwarePlanInput(userId, parsed.course_name, parsed.exam_name);
+    const contentMeta = await buildContentAwarePlanInput(
+      userId,
+      parsed.course_name,
+      parsed.exam_name,
+      parsed.document_ids,
+    );
     if (contentMeta.hasContent) {
       contentContext = contentMeta.contentContext;
       logger.info("plan.content_aware", {
@@ -300,7 +325,7 @@ export async function createPlan(userId: string, input: unknown) {
       for (let i = 0; i < dayBlocks.length; i++) {
         const block = dayBlocks[i];
         const slot = scheduled[i];
-        if (!slot) continue; // Block doesn't fit — skip it
+        if (!slot) continue; // Block doesn't fit: skip it
 
         const sessionId = generateSessionId();
         const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
@@ -396,10 +421,10 @@ export async function createPlan(userId: string, input: unknown) {
         courseName: parsed.course_name,
         examId: parsed.exam_id ?? "",
         examName: parsed.exam_name,
-        examDate: new Date(parsed.exam_date),
+        examDate: dateColumnValue(parsed.exam_date),
         timezone: timeZone,
-        startDate,
-        endDate,
+        startDate: startDateColumn,
+        endDate: endDateColumn,
         config: {
           objectives: parsed.objectives,
           availability: parsed.availability,
@@ -463,8 +488,14 @@ export async function createPlan(userId: string, input: unknown) {
 
   return {
     plan_id: planId,
+    course_name: parsed.course_name,
+    exam_name: parsed.exam_name,
+    exam_date: parsed.exam_date,
+    timezone: timeZone,
     ai_generated: planResult.aiGenerated,
     reasoning: planResult.reasoning ?? null,
+    /** "typed", "materials", or "fallback" (general review topics stood in). */
+    topics_source: topicsSource,
     ics_download_url: `${baseUrl}/api/plans/${planId}/ics`,
     items: items.map((item) => ({
       day_index: item.dayIndex,
@@ -529,10 +560,10 @@ export async function getPlan(userId: string, planId: string) {
       ics_download_url: `${base}/api/plans/${plan.planId}/ics`,
       course_name: plan.courseName,
       exam_name: plan.examName,
-      exam_date: plan.examDate.toISOString().split("T")[0],
+      exam_date: dateColumnKey(plan.examDate),
       timezone: plan.timezone,
-      start_date: dayKey(plan.startDate, plan.timezone),
-      end_date: dayKey(plan.endDate, plan.timezone),
+      start_date: dateColumnKey(plan.startDate),
+      end_date: dateColumnKey(plan.endDate),
       config: plan.config,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {
@@ -572,9 +603,12 @@ export async function getPlan(userId: string, planId: string) {
   };
 }
 
-export async function generatePlanIcs(userId: string, planId: string) {
+export async function generatePlanIcs(
+  userId: string,
+  planId: string,
+): Promise<{ data: string; filename: string } | { error: "not_found" | "forbidden" }> {
   const result = await getPlan(userId, planId);
-  if ("error" in result) return result;
+  if (!result.data) return { error: result.error ?? "not_found" };
 
   const events: IcsEvent[] = result.data.items.map((item) => ({
     uid: `${planId}-${item.session_id}-${item.start_time}`,
@@ -584,5 +618,324 @@ export async function generatePlanIcs(userId: string, planId: string) {
     dtend: new Date(item.end_time),
   }));
 
-  return { data: generateIcs(events) };
+  const slug = `${result.data.course_name} ${result.data.exam_name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
+  return { data: generateIcs(events), filename: `${slug || "study-plan"}-plan.ics` };
+}
+
+// ---------------------------------------------------------------------------
+// Plan screen reads and writes
+// ---------------------------------------------------------------------------
+
+/** Topic titles of a session: its objectives, else its comma-joined scope. */
+function sessionTopics(objectives: unknown, topicScope: string): string[] {
+  if (Array.isArray(objectives)) {
+    const titles = objectives
+      .map((o) =>
+        typeof o === "string"
+          ? o
+          : o && typeof o === "object" && "title" in o
+            ? String((o as { title: unknown }).title ?? "")
+            : "",
+      )
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (titles.length > 0) return titles;
+  }
+  return topicScope
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/** Run state per session id, from the sessions' run statuses. */
+async function runStatesFor(sessionIds: string[]): Promise<Map<string, RunState>> {
+  if (sessionIds.length === 0) return new Map();
+  const runs = await prisma.sessionRun.findMany({
+    where: { sessionId: { in: sessionIds } },
+    select: { sessionId: true, status: true },
+  });
+  const bySession = new Map<string, string[]>();
+  for (const run of runs) {
+    const list = bySession.get(run.sessionId) ?? [];
+    list.push(run.status);
+    bySession.set(run.sessionId, list);
+  }
+  return new Map([...bySession].map(([id, statuses]) => [id, runStateFromStatuses(statuses)]));
+}
+
+export interface PlanSummary {
+  plan_id: string;
+  course_name: string;
+  exam_name: string;
+  /** YYYY-MM-DD */
+  exam_date: string;
+  timezone: string;
+  created_at: string;
+  counts: PlanItemCounts;
+  /** Whether the plan has events in Google Calendar. */
+  in_google_calendar: boolean;
+}
+
+/**
+ * The student's plans with session counts, newest first. Light: no session
+ * payloads, one query for plans and items and one for run states.
+ */
+export async function listPlanSummaries(userId: string, now: Date = new Date()): Promise<PlanSummary[]> {
+  const plans = await prisma.studyPlan.findMany({
+    where: { userId },
+    select: {
+      planId: true,
+      courseName: true,
+      examName: true,
+      examDate: true,
+      timezone: true,
+      createdAt: true,
+      items: { select: { sessionId: true, status: true, endTime: true } },
+      publications: { select: { status: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const runStates = await runStatesFor(plans.flatMap((p) => p.items.map((i) => i.sessionId)));
+
+  return plans.map((plan) => ({
+    plan_id: plan.planId,
+    course_name: plan.courseName,
+    exam_name: plan.examName,
+    exam_date: dateColumnKey(plan.examDate),
+    timezone: plan.timezone,
+    created_at: plan.createdAt.toISOString(),
+    counts: countPlanItems(
+      plan.items.map((item) =>
+        classifyPlanItem(item, runStates.get(item.sessionId) ?? "none", now, plan.timezone),
+      ),
+    ),
+    in_google_calendar: plan.publications.some(
+      (p) => p.status === "PUBLISHED" || p.status === "PARTIAL",
+    ),
+  }));
+}
+
+export interface PlanViewItem {
+  id: string;
+  session_id: string;
+  start_time: string;
+  end_time: string;
+  /** Derived state: done, in_progress, missed, skipped, or scheduled. */
+  state: PlanItemState;
+  /** The stored status (SCHEDULED, RESCHEDULED, ...). */
+  status: string;
+  locked: boolean;
+  mode: string;
+  topics: string[];
+  planned_minutes: number;
+  /** Where the session was before a reschedule moved it, else null. */
+  original_start_time: string | null;
+}
+
+export interface PlanView {
+  plan_id: string;
+  course_name: string;
+  exam_name: string;
+  exam_date: string;
+  timezone: string;
+  start_date: string;
+  created_at: string;
+  items: PlanViewItem[];
+  counts: PlanItemCounts;
+}
+
+/** One plan for the Plan screen, items in time order with derived states. */
+export async function getPlanView(
+  userId: string,
+  planId: string,
+  now: Date = new Date(),
+): Promise<{ data: PlanView } | { error: "not_found" | "forbidden" }> {
+  const plan = await prisma.studyPlan.findUnique({
+    where: { planId },
+    include: { items: { orderBy: [{ startTime: "asc" }, { dayIndex: "asc" }] } },
+  });
+  if (!plan) return { error: "not_found" };
+  if (plan.userId !== userId) return { error: "forbidden" };
+
+  const sessionIds = plan.items.map((i) => i.sessionId);
+  const [sessions, runStates] = await Promise.all([
+    prisma.session.findMany({
+      where: { sessionId: { in: sessionIds } },
+      select: { sessionId: true, mode: true, topicScope: true, objectives: true, plannedMinutes: true },
+    }),
+    runStatesFor(sessionIds),
+  ]);
+  const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
+
+  const items: PlanViewItem[] = plan.items.map((item) => {
+    const session = sessionMap.get(item.sessionId);
+    return {
+      id: item.id,
+      session_id: item.sessionId,
+      start_time: item.startTime.toISOString(),
+      end_time: item.endTime.toISOString(),
+      state: classifyPlanItem(item, runStates.get(item.sessionId) ?? "none", now, plan.timezone),
+      status: item.status,
+      locked: item.locked,
+      mode: session?.mode ?? "",
+      topics: session ? sessionTopics(session.objectives, session.topicScope) : [],
+      planned_minutes: session?.plannedMinutes ?? 0,
+      original_start_time: item.originalStartAt?.toISOString() ?? null,
+    };
+  });
+
+  return {
+    data: {
+      plan_id: plan.planId,
+      course_name: plan.courseName,
+      exam_name: plan.examName,
+      exam_date: dateColumnKey(plan.examDate),
+      timezone: plan.timezone,
+      start_date: dateColumnKey(plan.startDate),
+      created_at: plan.createdAt.toISOString(),
+      items,
+      counts: countPlanItems(items.map((i) => i.state)),
+    },
+  };
+}
+
+export type DeletePlanResult =
+  | { data: { plan_id: string; calendar_events_removed: number | null } }
+  | { error: "not_found" }
+  | {
+      error: "calendar_failed";
+      code: string;
+      message: string;
+      removed?: number;
+      failed?: number;
+    };
+
+/**
+ * Delete a plan and its items. Sessions, answers and progress stay. With
+ * removeCalendarEvents, its Google Calendar events are removed first, and
+ * the plan is kept when any of them can't be removed (so the student can
+ * retry instead of losing track of them).
+ */
+export async function deletePlan(
+  userId: string,
+  planId: string,
+  options: { removeCalendarEvents?: boolean } = {},
+): Promise<DeletePlanResult> {
+  const plan = await prisma.studyPlan.findUnique({
+    where: { planId },
+    select: { userId: true },
+  });
+  if (!plan || plan.userId !== userId) return { error: "not_found" };
+
+  let calendarEventsRemoved: number | null = null;
+  if (options.removeCalendarEvents) {
+    const mappings = await prisma.planItemExternalEvent.count({
+      where: { provider: "GOOGLE", planId },
+    });
+    if (mappings > 0) {
+      const result = await unpublishPlanFromGoogle(userId, planId);
+      if ("error" in result) {
+        return {
+          error: "calendar_failed",
+          code: result.error,
+          message: calendarErrorMessage(result.error),
+        };
+      }
+      if (result.data.failed > 0) {
+        const total = result.data.deleted + result.data.failed;
+        return {
+          error: "calendar_failed",
+          code: "partial",
+          message: `${result.data.failed} of ${total} Google Calendar events weren't removed, so the plan was kept. Retry.`,
+          removed: result.data.deleted,
+          failed: result.data.failed,
+        };
+      }
+      calendarEventsRemoved = result.data.deleted;
+    } else {
+      calendarEventsRemoved = 0;
+    }
+  }
+
+  // Delete in an order that respects the foreign keys
+  await prisma.$transaction([
+    prisma.planItemExternalEvent.deleteMany({ where: { planId } }),
+    prisma.planCalendarPublication.deleteMany({ where: { planId } }),
+    prisma.planReflowAudit.deleteMany({ where: { planId } }),
+    prisma.studyPlanItem.deleteMany({ where: { planId } }),
+    prisma.studyPlan.delete({ where: { planId } }),
+  ]);
+
+  logger.info("plan.deleted", {
+    user_id: userId,
+    plan_id: planId,
+    calendar_events_removed: calendarEventsRemoved,
+  });
+
+  return { data: { plan_id: planId, calendar_events_removed: calendarEventsRemoved } };
+}
+
+export type ReplacedPlan =
+  | { plan_id: string; deleted: true; calendar_events_removed: number | null }
+  | { plan_id: string; deleted: false; message: string };
+
+/**
+ * Create a plan, then delete the plan it replaces (same course and exam).
+ * The old plan is deleted only after the new one exists, so a failed create
+ * never loses it; a failed delete leaves both and says so in `replaced`.
+ */
+export async function createPlanWithReplace(userId: string, input: unknown) {
+  const parsed = createPlanSchema.parse(input);
+
+  // Check the plan being replaced before doing any work. A missing plan (or
+  // another account's) means there is nothing to replace.
+  const target = parsed.replace_plan_id
+    ? await prisma.studyPlan.findUnique({
+        where: { planId: parsed.replace_plan_id },
+        select: { planId: true, userId: true },
+      })
+    : null;
+  const replaceId = target && target.userId === userId ? target.planId : null;
+
+  const created = await createPlan(userId, input);
+  let replaced: ReplacedPlan | null = null;
+
+  if (replaceId) {
+    try {
+      const deletion = await deletePlan(userId, replaceId, {
+        removeCalendarEvents: parsed.remove_replaced_calendar_events,
+      });
+      replaced =
+        "data" in deletion
+          ? {
+              plan_id: replaceId,
+              deleted: true,
+              calendar_events_removed: deletion.data.calendar_events_removed,
+            }
+          : {
+              plan_id: replaceId,
+              deleted: false,
+              message:
+                deletion.error === "calendar_failed"
+                  ? deletion.message
+                  : "The old plan wasn't deleted.",
+            };
+    } catch (err) {
+      logger.error("plan.replace_delete_failed", {
+        user_id: userId,
+        plan_id: replaceId,
+        error: String(err),
+      });
+      replaced = { plan_id: replaceId, deleted: false, message: "The old plan wasn't deleted." };
+    }
+  }
+
+  return { ...created, replaced };
 }

@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { createPlan } from "@/services/plan";
+import { createPlanWithReplace } from "@/services/plan";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { dayKey } from "@/lib/timezone";
+import { dateColumnKey } from "@/lib/plan-dates";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   try {
@@ -36,9 +39,9 @@ export async function GET(request: NextRequest) {
       plan_id: plan.planId,
       course_name: plan.courseName,
       exam_name: plan.examName,
-      exam_date: plan.examDate.toISOString().split("T")[0],
-      start_date: dayKey(plan.startDate, plan.timezone),
-      end_date: dayKey(plan.endDate, plan.timezone),
+      exam_date: dateColumnKey(plan.examDate),
+      start_date: dateColumnKey(plan.startDate),
+      end_date: dateColumnKey(plan.endDate),
       timezone: plan.timezone,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {
@@ -68,16 +71,25 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     logger.error("list_plans_failed", { error: String(err) });
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Plans didn't load. Retry in a minute.", code: "internal" },
       { status: 500 },
     );
   }
 }
 
+/**
+ * POST /api/plans: create a plan. With `replace_plan_id`, the replaced plan
+ * is deleted only after the new one is created (see createPlanWithReplace).
+ * Validation errors return `issues` whose paths name the fields
+ * (course_name, exam_name, exam_date, availability, objectives).
+ */
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   let body: unknown;
@@ -85,24 +97,24 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Invalid JSON body" },
+      { error: "The request wasn't valid JSON.", code: "invalid_json" },
       { status: 400 }
     );
   }
 
   try {
-    const result = await createPlan(userId, body);
+    const result = await createPlanWithReplace(userId, body);
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", issues: err.issues },
+        { error: "Check the highlighted fields.", code: "validation_failed", issues: err.issues },
         { status: 400 }
       );
     }
     logger.error("create_plan_failed", { error: String(err) });
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Plan not created. Retry in a minute.", code: "internal" },
       { status: 500 }
     );
   }
