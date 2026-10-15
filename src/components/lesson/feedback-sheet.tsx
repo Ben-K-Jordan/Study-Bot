@@ -45,6 +45,7 @@ export function FeedbackSheet({
   continueLoading = false,
   secondaryAction,
   autoFocusContinue = true,
+  scrollBody = false,
   className,
 }: {
   tone: FeedbackTone
@@ -59,6 +60,11 @@ export function FeedbackSheet({
   /** One quieter action on the left, such as "Log the error". */
   secondaryAction?: React.ReactNode
   autoFocusContinue?: boolean
+  /**
+   * The children hold their own scroll region, so the sheet itself never
+   * scrolls and Continue stays in reach however long the body is.
+   */
+  scrollBody?: boolean
   className?: string
 }) {
   const styles = toneStyles[tone]
@@ -86,7 +92,12 @@ export function FeedbackSheet({
         className
       )}
     >
-      <div className="mx-auto flex max-h-[60dvh] w-full max-w-4xl flex-col gap-4 overflow-y-auto px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-8 md:flex-row md:items-end md:gap-8 md:pt-6 md:pb-6">
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-8 md:flex-row md:items-end md:gap-8 md:pt-6 md:pb-6",
+          !scrollBody && "max-h-[60dvh] overflow-y-auto"
+        )}
+      >
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="flex items-center gap-3">
             <span

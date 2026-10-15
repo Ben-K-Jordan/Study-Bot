@@ -26,7 +26,7 @@ export function MasteryBar({
   return (
     <div data-slot="mastery-bar" className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="min-w-0 truncate type-body-m text-on-surface">{label}</span>
+        <span className="min-w-0 break-words type-body-m text-on-surface">{label}</span>
         <span className="shrink-0 type-label-m text-on-surface-variant tabular-nums">
           {status ? `${status}, ${percent}` : percent}
         </span>
