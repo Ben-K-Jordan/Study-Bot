@@ -1,34 +1,38 @@
+/**
+ * DELETE /api/guides/{guideId}: deletes a guide the user owns.
+ */
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getUserId } from "@/lib/auth";
-import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { deleteStudyGuide } from "@/services/study-guides";
+import { unauthorized } from "@/app/api/learn/responses";
+
+const paramsSchema = z.object({ guideId: z.string().trim().min(1).max(64) });
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ guideId: string }> },
 ) {
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!userId) return unauthorized();
+
+  const parsed = paramsSchema.safeParse(await params);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "This guide doesn't exist.", code: "NOT_FOUND" }, { status: 404 });
   }
 
-  const { guideId } = await params;
-
   try {
-    const guide = await prisma.studyGuide.findUnique({
-      where: { id: guideId },
-      select: { userId: true },
-    });
-
-    if (!guide || guide.userId !== userId) {
-      return NextResponse.json({ error: "Guide not found" }, { status: 404 });
+    const deleted = await deleteStudyGuide(userId, parsed.data.guideId);
+    if (!deleted) {
+      return NextResponse.json(
+        { error: "This guide was already deleted or belongs to another account.", code: "NOT_FOUND" },
+        { status: 404 },
+      );
     }
-
-    await prisma.studyGuide.delete({ where: { id: guideId } });
-    logger.info("guide.deleted", { user_id: userId, guide_id: guideId });
-
     return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (err) {
+    logger.error("guides.delete_failed", { userId, error: String(err) });
+    return NextResponse.json({ error: "Guide not deleted. Retry.", code: "INTERNAL" }, { status: 500 });
   }
 }

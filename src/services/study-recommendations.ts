@@ -1,35 +1,57 @@
 /**
- * Mastery-driven study recommendations service.
+ * Study recommendations: what the student should run next for a course,
+ * and why.
  *
- * Synthesizes SM-2 mastery data, error logs, active study plans, and
- * session history to produce a single actionable recommendation for
- * what a student should study next — and why.
+ * Synthesizes SM-2 mastery, the error log, the active plan and session
+ * history into one recommended session. Every string this file returns is
+ * shown on screen, so it follows VOICE.md: topic titles instead of mastery
+ * keys, mode labels instead of enums, and plain reasons with no citations.
  */
 
 import { prisma } from "@/lib/db";
 import { getDueObjectives, getMasterySummary } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
-import { dayKey, getUserTimezone } from "@/lib/timezone";
+import { dayKey, daysBetween, getUserTimezone } from "@/lib/timezone";
+import { buildObjectiveIdMap } from "@/lib/plan-generator";
+import { formatList, formatTime, plural } from "@/lib/format";
+import { getStreak } from "@/services/gamification";
+import { createSession } from "@/services/session";
+import {
+  breakProtocolFor,
+  questionCountFor,
+  studyModeLabel,
+  type SessionLength,
+  type StudyModeKey,
+} from "@/components/study/study-modes";
+import { examCountdown } from "@/components/study/study-copy";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type SessionMode =
-  | "ERROR_REPAIR"
-  | "RETRIEVAL"
-  | "INTERLEAVED_PRACTICE"
-  | "EXAM_SIM";
+type RecommendedMode = Exclude<StudyModeKey, "WORKED_EXAMPLES">;
+
+/** A topic (learning objective) with the title the student knows it by. */
+export interface StudyTopic {
+  key: string;
+  title: string;
+}
 
 interface RecommendedSession {
-  mode: SessionMode;
+  mode: RecommendedMode;
+  /** Mastery keys, in priority order. */
   objectives: string[];
+  /** The same topics with readable titles. */
+  topics: StudyTopic[];
+  /** Titles as one line: "Specificity, Box sizing, and 2 more". */
   topic_scope: string;
+  /** Why this mode, in one or two plain sentences. Rule-based, not AI. */
   reason: string;
 }
 
 interface OverdueObjective {
   objective_key: string;
+  title: string;
   next_due_at: string | null;
   last_accuracy: number | null;
   days_overdue: number;
@@ -37,6 +59,7 @@ interface OverdueObjective {
 
 interface WeakObjective {
   objective_key: string;
+  title: string;
   last_accuracy: number | null;
   ease_factor: number;
   repetitions: number;
@@ -47,264 +70,311 @@ interface UnresolvedErrorsSummary {
   recent_error_types: string[];
 }
 
+export interface PlannedSessionRef {
+  session_id: string;
+  start_time: string;
+  end_time: string;
+  /** SCHEDULED, or IN_PROGRESS once a run has started. */
+  status: string;
+  mode: string;
+  mode_label: string;
+  topic_scope: string;
+  /** "Today at 2:30 PM: Retrieval on Photosynthesis light reactions" */
+  message: string;
+}
+
 interface PlanNudge {
   plan_id: string;
-  items: {
-    session_id: string;
-    start_time: string;
-    end_time: string;
-    message: string;
-  }[];
+  items: PlannedSessionRef[];
+}
+
+export interface ExamRef {
+  name: string;
+  /** Calendar date of the exam, YYYY-MM-DD. */
+  date: string;
+  /** Whole days from today in the student's time zone (0 = today). */
+  days_until: number;
 }
 
 export interface StudyRecommendations {
+  course_name: string;
   next_session: RecommendedSession;
   overdue_objectives: OverdueObjective[];
   weak_objectives: WeakObjective[];
   unresolved_errors: UnresolvedErrorsSummary;
   streak: number;
+  /** Sessions planned for today that haven't been done. */
   plan_nudge: PlanNudge | null;
+  /** The next planned session after today, when nothing is planned today. */
+  next_planned: PlannedSessionRef | null;
+  /** The exam of the course's active plan. */
+  exam: ExamRef | null;
+  /** The zone used for "today" and the times above. */
+  time_zone: string | null;
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Topic titles
 // ---------------------------------------------------------------------------
 
-function buildTopicScope(objectiveKeys: string[]): string {
-  if (objectiveKeys.length === 0) return "General review";
-  if (objectiveKeys.length === 1) return objectiveKeys[0];
-  // Join the first few objectives into a readable scope
-  const display = objectiveKeys.slice(0, 3).join(", ");
-  if (objectiveKeys.length > 3) {
-    return `${display} (+${objectiveKeys.length - 3} more)`;
-  }
-  return display;
+const KEY_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/;
+
+/** "photosynthesis_light_reactions" -> "Photosynthesis light reactions" */
+export function humanizeTopicKey(key: string): string {
+  const words = key.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!words) return "Untitled topic";
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**
- * Compute the student's current study streak from session run completions.
- * A streak day counts when at least one SessionRun was completed on that calendar day.
- *
- * Calendar days follow the user's timezone (UserGameState.timezone); a null
- * timezone means UTC day keys — identical to the historical behavior.
+ * Titles for mastery keys, from the plan's objective list (whose ids are
+ * slugs of the titles) and from the objectives stored on recent sessions.
  */
-async function computeStudyStreak(userId: string): Promise<number> {
-  // Fetch the last 365 completed run dates (should be plenty) and the user's
-  // timezone in parallel
-  const [completedRuns, tz] = await Promise.all([
-    prisma.sessionRun.findMany({
-      where: {
-        userId,
-        status: "COMPLETED",
-        endedAt: { not: null },
-      },
-      select: { endedAt: true },
-      orderBy: { endedAt: "desc" },
-      take: 365,
-    }),
-    getUserTimezone(userId),
-  ]);
+export function buildTopicTitleMap(
+  planConfig: unknown,
+  sessions: readonly { objectives: unknown }[],
+): Map<string, string> {
+  const titles = new Map<string, string>();
 
-  if (completedRuns.length === 0) return 0;
+  const planObjectives = (planConfig as { objectives?: unknown } | null)?.objectives;
+  if (Array.isArray(planObjectives)) {
+    const planTitles = planObjectives.filter((t): t is string => typeof t === "string" && t.trim() !== "");
+    for (const [title, id] of buildObjectiveIdMap(planTitles)) titles.set(id, title);
+  }
 
-  // Collect unique calendar days (keyed in the user's timezone; UTC when null)
-  const activeDays = new Set<string>();
-  for (const run of completedRuns) {
-    if (run.endedAt) {
-      activeDays.add(dayKey(run.endedAt, tz));
+  for (const session of sessions) {
+    if (!Array.isArray(session.objectives)) continue;
+    for (const entry of session.objectives) {
+      const id = (entry as { id?: unknown })?.id;
+      const title = (entry as { title?: unknown })?.title;
+      if (typeof id !== "string" || typeof title !== "string" || !title.trim()) continue;
+      // A title that is itself a key carries no information.
+      if (title === id && KEY_PATTERN.test(title)) continue;
+      if (!titles.has(id)) titles.set(id, title.trim());
     }
   }
 
-  // Walk backward from today counting consecutive days, using the SAME day
-  // keys as activeDays: subtract 24h from a timestamp and re-key with dayKey.
-  // Local-midnight arithmetic would start the walk on the wrong day on
-  // servers with a non-zero UTC offset, dropping today's activity.
-  const DAY_MS = 86_400_000;
-  const now = new Date();
-  const todayKey = dayKey(now, tz);
-  const [year, month, day] = todayKey.split("-").map(Number);
-  // Anchor the cursor mid-day (12:00 UTC of today's key) so 24h steps never
-  // skip or repeat a key across DST transitions. For extreme offsets
-  // (UTC+13/+14) 12:00 UTC already keys to tomorrow — step back once.
-  let cursor = Date.UTC(year, month - 1, day, 12);
-  if (dayKey(new Date(cursor), tz) !== todayKey) cursor -= DAY_MS / 2;
-  const yesterdayKey = dayKey(new Date(cursor - DAY_MS), tz);
-
-  // Streak starts from today or yesterday
-  if (!activeDays.has(todayKey) && !activeDays.has(yesterdayKey)) return 0;
-
-  // If no activity today, start counting from yesterday
-  if (!activeDays.has(todayKey)) {
-    cursor -= DAY_MS;
-  }
-
-  let streak = 0;
-  while (activeDays.has(dayKey(new Date(cursor), tz))) {
-    streak++;
-    cursor -= DAY_MS;
-  }
-
-  return streak;
+  return titles;
 }
+
+function topicFor(key: string, titles: Map<string, string>): StudyTopic {
+  return { key, title: titles.get(key) ?? humanizeTopicKey(key) };
+}
+
+/** "General review", "A", "A and B", "A, B, and C", "A, B, C, and 2 more". */
+export function buildTopicScope(titles: readonly string[]): string {
+  if (titles.length === 0) return "General review";
+  if (titles.length <= 3) return formatList(titles);
+  const more = plural(titles.length - 3, { one: "# more", other: "# more" });
+  return formatList([...titles.slice(0, 3), more]);
+}
+
+/**
+ * A stored topic scope in readable form. Sessions created before titles
+ * were mapped hold raw keys ("photosynthesis_light_reactions, cell_cycle"),
+ * possibly with a "(+2 more)" tail.
+ */
+export function readableTopicScope(scope: string, titles: Map<string, string>): string {
+  const trimmed = scope.trim();
+  if (!trimmed) return "General review";
+  const tail = trimmed.match(/\s*\(\+(\d+) more\)$/);
+  const body = tail ? trimmed.slice(0, tail.index) : trimmed;
+  const parts = body.split(/,\s*/).filter(Boolean);
+  const looksLikeKeys = parts.every((p) => titles.has(p) || (KEY_PATTERN.test(p) && /[_-]/.test(p)));
+  if (!looksLikeKeys) return trimmed;
+  const readable = parts.map((p) => titles.get(p) ?? humanizeTopicKey(p));
+  if (tail) readable.push(plural(Number(tail[1]), { one: "# more", other: "# more" }));
+  return formatList(readable);
+}
+
+// ---------------------------------------------------------------------------
+// Reasons (VOICE.md, "Dashboard and Learn")
+// ---------------------------------------------------------------------------
+
+const ERROR_TYPE_PLURALS: Record<string, string> = {
+  MISCONCEPTION: "misconceptions",
+  PROCEDURE: "wrong steps",
+  CARELESS: "careless slips",
+  MEMORY: "memory gaps",
+};
+
+/** "mostly misconceptions" when one type is more than half; "all wrong steps" when it is every one. */
+export function dominantErrorPhrase(types: readonly string[]): string | null {
+  if (types.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const t of types) counts.set(t, (counts.get(t) ?? 0) + 1);
+  let top: string | null = null;
+  let topCount = 0;
+  for (const [type, count] of counts) {
+    if (count > topCount) {
+      top = type;
+      topCount = count;
+    }
+  }
+  const label = top ? ERROR_TYPE_PLURALS[top] : undefined;
+  if (!label || topCount * 2 <= types.length) return null;
+  return topCount === types.length ? `all ${label}` : `mostly ${label}`;
+}
+
+export function errorRepairReason(errorTypes: readonly string[]): string {
+  const count = plural(errorTypes.length, {
+    one: "# unresolved error",
+    other: "# unresolved errors",
+  });
+  const phrase = dominantErrorPhrase(errorTypes);
+  return `${count}${phrase ? `, ${phrase}` : ""}. An error is resolved after you answer it correctly on 2 different days.`;
+}
+
+export function overdueReason(overdueCount: number, maxDaysOverdue: number): string {
+  const due = plural(overdueCount, {
+    one: "# topic is due for review",
+    other: "# topics are due for review",
+  });
+  if (maxDaysOverdue <= 0) return `${due} today.`;
+  const oldest = plural(maxDaysOverdue, { one: "# day", other: "# days" });
+  return overdueCount === 1 ? `${due}, ${oldest} late.` : `${due}, the oldest by ${oldest}.`;
+}
+
+export function examSimReason(examName: string, daysUntil: number): string {
+  return `${examCountdown(examName, daysUntil)}. A full practice exam now shows what you still miss while there's time to fix it.`;
+}
+
+export const INTERLEAVED_REASON =
+  "You've practiced every topic at least once. Mixing topics helps you tell similar problems apart.";
+
+export const LOWEST_MASTERY_REASON =
+  "Starting with your lowest-mastery topics. Answering from memory builds recall better than rereading.";
+
+export function firstSessionReason(courseName: string): string {
+  return `You haven't practiced ${courseName} yet. A first session from memory shows where you stand.`;
+}
+
+// ---------------------------------------------------------------------------
+// Streak
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Main function
 // ---------------------------------------------------------------------------
+
+const OPEN_ITEM_STATUSES = new Set(["SCHEDULED", "IN_PROGRESS"]);
 
 export async function getStudyRecommendations(
   userId: string,
   courseName: string,
 ): Promise<StudyRecommendations> {
   const now = new Date();
+  const tzPromise = getUserTimezone(userId);
 
-  // Fetch all data in parallel
-  const [
-    dueObjectives,
-    masterySummary,
-    unresolvedErrors,
-    activePlan,
-    streak,
-  ] = await Promise.all([
-    getDueObjectives(userId, courseName, 50, now),
-    getMasterySummary(userId, courseName),
-    prisma.sessionErrorLog.findMany({
-      where: { userId, resolvedAt: null },
-      orderBy: { createdAt: "desc" },
-      include: {
-        run: {
-          select: {
-            session: { select: { courseName: true } },
-          },
-        },
-      },
-    }),
-    prisma.studyPlan.findFirst({
-      where: { userId, courseName, endDate: { gte: now } },
-      include: { items: { orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }] } },
-      orderBy: { createdAt: "desc" },
-    }),
-    computeStudyStreak(userId),
-  ]);
+  const [dueObjectives, masterySummary, courseErrors, activePlan, recentSessions, userTz, streak] =
+    await Promise.all([
+      getDueObjectives(userId, courseName, 200, now),
+      getMasterySummary(userId, courseName),
+      // Same order as the Error repair deck: confident errors first, then newest.
+      prisma.sessionErrorLog.findMany({
+        where: { userId, resolvedAt: null, run: { session: { courseName } } },
+        orderBy: [{ confidenceRating: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+        select: { runId: true, promptIndex: true, errorType: true },
+      }),
+      prisma.studyPlan.findFirst({
+        where: { userId, courseName, endDate: { gte: now } },
+        include: { items: { orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }] } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.session.findMany({
+        where: { userId, courseName },
+        select: { objectives: true },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      }),
+      tzPromise,
+      // The same streak Home and Progress show
+      getStreak(userId),
+    ]);
 
-  // Filter unresolved errors to this course
-  const courseErrors = unresolvedErrors.filter(
-    (e) => e.run.session.courseName === courseName,
-  );
+  const zone = userTz ?? activePlan?.timezone ?? null;
+  const todayKey = dayKey(now, zone);
+  const titles = buildTopicTitleMap(activePlan?.config ?? null, recentSessions);
 
-  // ── Overdue objectives ──────────────────────────────────────────
+  // ── Overdue topics ─────────────────────────────────────────────
   const overdueObjectives: OverdueObjective[] = dueObjectives.map((o) => {
     const daysOverdue = o.nextDueAt
-      ? Math.max(0, Math.floor((now.getTime() - o.nextDueAt.getTime()) / (1000 * 60 * 60 * 24)))
+      ? Math.max(0, Math.floor((now.getTime() - o.nextDueAt.getTime()) / 86_400_000))
       : 0;
     return {
       objective_key: o.objectiveKey,
+      title: topicFor(o.objectiveKey, titles).title,
       next_due_at: o.nextDueAt?.toISOString() ?? null,
       last_accuracy: o.lastAccuracy,
       days_overdue: daysOverdue,
     };
   });
 
-  // ── Weak objectives (lastAccuracy < 0.7, worst first) ──────────
+  // ── Weak topics (accuracy under 70%, worst first) ──────────────
   const weakObjectives: WeakObjective[] = masterySummary.objectives
     .filter((o) => o.last_accuracy !== null && o.last_accuracy < 0.7)
     .sort((a, b) => (a.last_accuracy ?? 0) - (b.last_accuracy ?? 0))
     .map((o) => ({
       objective_key: o.objective_key,
+      title: topicFor(o.objective_key, titles).title,
       last_accuracy: o.last_accuracy,
       ease_factor: o.ease_factor,
       repetitions: o.repetitions,
     }));
 
-  // ── Unresolved errors summary ──────────────────────────────────
-  const recentErrorTypes = [
-    ...new Set(courseErrors.slice(0, 10).map((e) => e.errorType)),
-  ];
+  // ── Unresolved errors ──────────────────────────────────────────
   const unresolvedErrorsSummary: UnresolvedErrorsSummary = {
     count: courseErrors.length,
-    recent_error_types: recentErrorTypes,
+    recent_error_types: [...new Set(courseErrors.slice(0, 10).map((e) => e.errorType))],
   };
 
-  // ── Check for upcoming exam ────────────────────────────────────
-  const examWithinThreeDays = activePlan
-    ? (activePlan.examDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24) <= 3
-    : false;
+  // ── Exam of the active plan ────────────────────────────────────
+  let exam: ExamRef | null = null;
+  if (activePlan) {
+    // examDate is a calendar date stored at UTC midnight.
+    const examKey = activePlan.examDate.toISOString().slice(0, 10);
+    exam = { name: activePlan.examName, date: examKey, days_until: daysBetween(todayKey, examKey) };
+  }
+  const examSoon = exam !== null && exam.days_until >= 0 && exam.days_until <= 3;
 
-  // ── Determine whether all objectives have been studied at least once
   const allStudiedOnce =
-    masterySummary.total > 0 &&
-    masterySummary.objectives.every((o) => o.repetitions >= 1);
+    masterySummary.total > 0 && masterySummary.objectives.every((o) => o.repetitions >= 1);
 
-  // ── Build next_session recommendation ──────────────────────────
-  let nextSession: RecommendedSession;
+  // ── Recommended session ────────────────────────────────────────
+  let mode: RecommendedMode;
+  let keys: string[];
+  let reason: string;
 
   if (courseErrors.length >= 3) {
-    // ERROR_REPAIR: 3+ unresolved errors
-    const errorObjectives = [
-      ...new Set(
-        courseErrors
-          .slice(0, 5)
-          .map((e) => e.correctionRule)
-          .filter(Boolean),
-      ),
-    ].slice(0, 5);
-    const objectives =
-      errorObjectives.length > 0
-        ? errorObjectives
-        : overdueObjectives.slice(0, 5).map((o) => o.objective_key);
-
-    nextSession = {
-      mode: "ERROR_REPAIR",
-      objectives,
-      topic_scope: buildTopicScope(objectives),
-      reason: `You have ${courseErrors.length} unresolved error${courseErrors.length === 1 ? "" : "s"} (types: ${recentErrorTypes.join(", ")}). Targeted error repair closes knowledge gaps faster than re-studying — research on deliberate practice shows correcting specific mistakes strengthens long-term retention.`,
-    };
+    mode = "ERROR_REPAIR";
+    keys = await errorTopicKeys(courseErrors.slice(0, 10));
+    if (keys.length === 0) keys = overdueObjectives.slice(0, 5).map((o) => o.objective_key);
+    reason = errorRepairReason(courseErrors.map((e) => e.errorType));
   } else if (overdueObjectives.length >= 5) {
-    // RETRIEVAL on most overdue
-    const targets = overdueObjectives.slice(0, 5).map((o) => o.objective_key);
-    const maxOverdue = overdueObjectives[0]?.days_overdue ?? 0;
-
-    nextSession = {
-      mode: "RETRIEVAL",
-      objectives: targets,
-      topic_scope: buildTopicScope(targets),
-      reason: `${overdueObjectives.length} objective${overdueObjectives.length === 1 ? " is" : "s are"} overdue for review (up to ${maxOverdue} day${maxOverdue === 1 ? "" : "s"} overdue) — spaced repetition research shows reviewing at optimal intervals maximizes long-term retention.`,
-    };
-  } else if (examWithinThreeDays) {
-    // EXAM_SIM: exam within 3 days
-    const targets = weakObjectives.length > 0
-      ? weakObjectives.slice(0, 5).map((o) => o.objective_key)
-      : overdueObjectives.length > 0
-        ? overdueObjectives.slice(0, 5).map((o) => o.objective_key)
-        : masterySummary.objectives.slice(0, 5).map((o) => o.objective_key);
-
-    nextSession = {
-      mode: "EXAM_SIM",
-      objectives: targets,
-      topic_scope: buildTopicScope(targets),
-      reason: `Your exam is within 3 days. A timed exam simulation under test-like conditions activates retrieval under pressure — research on testing effect shows practice tests improve exam performance more than additional study.`,
-    };
+    mode = "RETRIEVAL";
+    keys = overdueObjectives.slice(0, 5).map((o) => o.objective_key);
+    reason = overdueReason(overdueObjectives.length, overdueObjectives[0]?.days_overdue ?? 0);
+  } else if (examSoon && exam) {
+    mode = "EXAM_SIM";
+    keys =
+      weakObjectives.length > 0
+        ? weakObjectives.slice(0, 5).map((o) => o.objective_key)
+        : overdueObjectives.length > 0
+          ? overdueObjectives.slice(0, 5).map((o) => o.objective_key)
+          : masterySummary.objectives.slice(0, 5).map((o) => o.objective_key);
+    reason = examSimReason(exam.name, exam.days_until);
   } else if (allStudiedOnce) {
-    // INTERLEAVED_PRACTICE: all objectives studied at least once
-    // Mix weak + due objectives for interleaving
-    const dueKeys = overdueObjectives.slice(0, 3).map((o) => o.objective_key);
+    mode = "INTERLEAVED_PRACTICE";
     const weakKeys = weakObjectives.slice(0, 3).map((o) => o.objective_key);
-    const targets = [...new Set([...weakKeys, ...dueKeys])].slice(0, 5);
-    const fallbackTargets =
-      targets.length > 0
-        ? targets
-        : masterySummary.objectives.slice(0, 5).map((o) => o.objective_key);
-
-    nextSession = {
-      mode: "INTERLEAVED_PRACTICE",
-      objectives: fallbackTargets,
-      topic_scope: buildTopicScope(fallbackTargets),
-      reason: `You've studied all objectives at least once. Interleaved practice — mixing different topics in one session — produces stronger discrimination between concepts and better long-term retention than blocked practice (Rohrer & Taylor, 2007).`,
-    };
+    const dueKeys = overdueObjectives.slice(0, 3).map((o) => o.objective_key);
+    keys = [...new Set([...weakKeys, ...dueKeys])].slice(0, 5);
+    if (keys.length === 0) keys = masterySummary.objectives.slice(0, 5).map((o) => o.objective_key);
+    reason = INTERLEAVED_REASON;
   } else {
-    // Default: RETRIEVAL on least-mastered objectives
-    const leastMastered = masterySummary.objectives
+    mode = "RETRIEVAL";
+    keys = [...masterySummary.objectives]
       .sort((a, b) => {
-        // Unstudied first, then by accuracy ascending, then repetitions ascending
+        // Unpracticed first, then by accuracy, then by repetitions.
         if (a.repetitions === 0 && b.repetitions !== 0) return -1;
         if (a.repetitions !== 0 && b.repetitions === 0) return 1;
         const accA = a.last_accuracy ?? 0;
@@ -314,65 +384,66 @@ export async function getStudyRecommendations(
       })
       .slice(0, 5)
       .map((o) => o.objective_key);
-
-    const targets = leastMastered.length > 0
-      ? leastMastered
-      : overdueObjectives.slice(0, 5).map((o) => o.objective_key);
-
-    nextSession = {
-      mode: "RETRIEVAL",
-      objectives: targets,
-      topic_scope: buildTopicScope(targets),
-      reason:
-        targets.length > 0
-          ? `Focusing on your least-mastered objectives first. Active retrieval practice strengthens memory traces more effectively than passive review — the testing effect is one of the most robust findings in learning science.`
-          : `No mastery data yet. Start with retrieval practice to build initial memory traces — even a single retrieval attempt significantly improves later recall.`,
-    };
+    if (keys.length === 0) keys = overdueObjectives.slice(0, 5).map((o) => o.objective_key);
+    reason = keys.length > 0 ? LOWEST_MASTERY_REASON : firstSessionReason(courseName);
   }
 
-  // ── Plan nudge ─────────────────────────────────────────────────
+  const topics = keys.map((key) => topicFor(key, titles));
+  const nextSession: RecommendedSession = {
+    mode,
+    objectives: keys,
+    topics,
+    topic_scope: buildTopicScope(topics.map((t) => t.title)),
+    reason,
+  };
+
+  // ── Planned sessions: today's, else the next one ───────────────
   let planNudge: PlanNudge | null = null;
+  let nextPlanned: PlannedSessionRef | null = null;
 
   if (activePlan) {
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(now);
-    todayEnd.setHours(23, 59, 59, 999);
+    const open = activePlan.items.filter((item) => OPEN_ITEM_STATUSES.has(item.status));
+    const todayItems = open
+      .filter((item) => dayKey(item.startTime, zone) === todayKey)
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    const laterItem =
+      todayItems.length === 0
+        ? open
+            .filter((item) => item.status === "SCHEDULED" && dayKey(item.startTime, zone) > todayKey)
+            .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0]
+        : undefined;
 
-    const todayItems = activePlan.items.filter((item) => {
-      const itemDate = new Date(item.startTime);
-      return (
-        item.status === "SCHEDULED" &&
-        itemDate >= todayStart &&
-        itemDate <= todayEnd
-      );
-    });
-
-    if (todayItems.length > 0) {
-      // Fetch linked sessions to get mode and topic info for nudge messages
-      const todaySessionIds = todayItems.map((item) => item.sessionId);
-      const todaySessions = await prisma.session.findMany({
-        where: { sessionId: { in: todaySessionIds } },
+    const wanted = laterItem ? [...todayItems, laterItem] : todayItems;
+    if (wanted.length > 0) {
+      const sessions = await prisma.session.findMany({
+        where: { userId, sessionId: { in: wanted.map((item) => item.sessionId) } },
         select: { sessionId: true, mode: true, topicScope: true },
       });
-      const sessionMap = new Map(
-        todaySessions.map((s) => [s.sessionId, s]),
-      );
+      const bySessionId = new Map(sessions.map((s) => [s.sessionId, s]));
+      const timeZone = zone ?? "UTC";
 
-      planNudge = {
-        plan_id: activePlan.planId,
-        items: todayItems.map((item) => {
-          const session = sessionMap.get(item.sessionId);
-          const mode = session?.mode ?? "study";
-          const topic = session?.topicScope ?? "your course material";
-          return {
-            session_id: item.sessionId,
-            start_time: item.startTime.toISOString(),
-            end_time: item.endTime.toISOString(),
-            message: `You have a planned session: ${mode} on ${topic}`,
-          };
-        }),
+      const toRef = (item: (typeof wanted)[number], when: "today" | "later"): PlannedSessionRef => {
+        const session = bySessionId.get(item.sessionId);
+        const modeLabel = session ? studyModeLabel(session.mode) : "Session";
+        const scope = session ? readableTopicScope(session.topicScope, titles) : "";
+        const time = formatTime(item.startTime, { timeZone });
+        const what = scope ? `${modeLabel} on ${scope}` : modeLabel;
+        return {
+          session_id: item.sessionId,
+          start_time: item.startTime.toISOString(),
+          end_time: item.endTime.toISOString(),
+          status: item.status,
+          mode: session?.mode ?? "RETRIEVAL",
+          mode_label: modeLabel,
+          topic_scope: scope,
+          message: when === "today" ? `Today at ${time}: ${what}` : what,
+        };
       };
+
+      if (todayItems.length > 0) {
+        planNudge = { plan_id: activePlan.planId, items: todayItems.map((item) => toRef(item, "today")) };
+      }
+      if (laterItem) nextPlanned = toRef(laterItem, "later");
     }
   }
 
@@ -388,11 +459,250 @@ export async function getStudyRecommendations(
   });
 
   return {
+    course_name: courseName,
     next_session: nextSession,
     overdue_objectives: overdueObjectives,
     weak_objectives: weakObjectives,
     unresolved_errors: unresolvedErrorsSummary,
     streak,
     plan_nudge: planNudge,
+    next_planned: nextPlanned,
+    exam,
+    time_zone: zone,
   };
+}
+
+/** The topics the given errors came from, in error priority order, up to 5. */
+async function errorTopicKeys(
+  errors: readonly { runId: string; promptIndex: number }[],
+): Promise<string[]> {
+  if (errors.length === 0) return [];
+  const prompts = await prisma.sessionRunPrompt.findMany({
+    where: { OR: errors.map((e) => ({ runId: e.runId, promptIndex: e.promptIndex })) },
+    select: { runId: true, promptIndex: true, objectiveId: true },
+  });
+  const objectiveByPrompt = new Map(prompts.map((p) => [`${p.runId}:${p.promptIndex}`, p.objectiveId]));
+  const keys: string[] = [];
+  for (const e of errors) {
+    const key = objectiveByPrompt.get(`${e.runId}:${e.promptIndex}`);
+    if (key && !keys.includes(key)) keys.push(key);
+    if (keys.length === 5) break;
+  }
+  return keys;
+}
+
+// ---------------------------------------------------------------------------
+// Courses on the Study screen
+// ---------------------------------------------------------------------------
+
+export interface StudyCourseSummary {
+  courseName: string;
+  examNames: string[];
+  docCount: number;
+  processedDocCount: number;
+  processingDocCount: number;
+  failedDocCount: number;
+  deckCount: number;
+  /** Cards due for review now. */
+  dueReviewCount: number;
+  /** Cards never reviewed. */
+  newCardCount: number;
+  /** dueReviewCount + newCardCount (the older single count). */
+  dueCardCount: number;
+  guideCount: number;
+}
+
+/** Per-course counts for the Study screen's course tools. */
+export async function getStudyCourses(userId: string): Promise<StudyCourseSummary[]> {
+  const docs = await prisma.contentDocument.findMany({
+    where: { userId, namespace: "COURSE", courseName: { not: null } },
+    select: { courseName: true, examName: true, status: true },
+  });
+
+  const byCourse = new Map<
+    string,
+    { examNames: Set<string>; docCount: number; processed: number; failed: number }
+  >();
+  for (const doc of docs) {
+    if (!doc.courseName) continue;
+    const entry = byCourse.get(doc.courseName) ?? { examNames: new Set(), docCount: 0, processed: 0, failed: 0 };
+    entry.docCount++;
+    if (doc.status === "PROCESSED") entry.processed++;
+    if (doc.status === "FAILED") entry.failed++;
+    if (doc.examName) entry.examNames.add(doc.examName);
+    byCourse.set(doc.courseName, entry);
+  }
+  if (byCourse.size === 0) return [];
+
+  const courseNames = [...byCourse.keys()];
+  const now = new Date();
+  const [decks, newCards, dueCards, guides] = await Promise.all([
+    prisma.flashcardDeck.findMany({
+      where: { userId, courseName: { in: courseNames } },
+      select: { id: true, courseName: true },
+    }),
+    prisma.flashcard.groupBy({
+      by: ["deckId"],
+      where: { deck: { userId, courseName: { in: courseNames } }, nextDueAt: null, repetitions: 0 },
+      _count: { id: true },
+    }),
+    prisma.flashcard.groupBy({
+      by: ["deckId"],
+      where: { deck: { userId, courseName: { in: courseNames } }, nextDueAt: { lte: now } },
+      _count: { id: true },
+    }),
+    prisma.studyGuide.groupBy({
+      by: ["courseName"],
+      where: { userId, courseName: { in: courseNames } },
+      _count: { id: true },
+    }),
+  ]);
+
+  const courseByDeck = new Map(decks.map((d) => [d.id, d.courseName]));
+  const deckCount = new Map<string, number>();
+  for (const d of decks) deckCount.set(d.courseName, (deckCount.get(d.courseName) ?? 0) + 1);
+  const tally = (rows: { deckId: string; _count: { id: number } }[]) => {
+    const totals = new Map<string, number>();
+    for (const row of rows) {
+      const course = courseByDeck.get(row.deckId);
+      if (course) totals.set(course, (totals.get(course) ?? 0) + row._count.id);
+    }
+    return totals;
+  };
+  const newByCourse = tally(newCards);
+  const dueByCourse = tally(dueCards);
+  const guideCount = new Map(guides.map((g) => [g.courseName, g._count.id]));
+
+  return courseNames
+    .map((name) => {
+      const info = byCourse.get(name)!;
+      const dueReviewCount = dueByCourse.get(name) ?? 0;
+      const newCardCount = newByCourse.get(name) ?? 0;
+      return {
+        courseName: name,
+        examNames: [...info.examNames].sort((a, b) => a.localeCompare(b)),
+        docCount: info.docCount,
+        processedDocCount: info.processed,
+        processingDocCount: info.docCount - info.processed - info.failed,
+        failedDocCount: info.failed,
+        deckCount: deckCount.get(name) ?? 0,
+        dueReviewCount,
+        newCardCount,
+        dueCardCount: dueReviewCount + newCardCount,
+        guideCount: guideCount.get(name) ?? 0,
+      };
+    })
+    .sort((a, b) => a.courseName.localeCompare(b.courseName));
+}
+
+// ---------------------------------------------------------------------------
+// Starting a session from the Study screen
+// ---------------------------------------------------------------------------
+
+export type StudyStartErrorCode = "COURSE_NOT_FOUND" | "NO_MATERIALS";
+
+export class StudyStartError extends Error {
+  constructor(
+    readonly code: StudyStartErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "StudyStartError";
+  }
+}
+
+export interface StartStudySessionInput {
+  courseName: string;
+  examName?: string;
+  mode: StudyModeKey;
+  minutes: SessionLength;
+}
+
+export interface StartStudySessionResult {
+  session_id: string;
+  /** Relative, so it always stays on the current origin. */
+  url: string;
+  /** True when an identical session from the last few hours that was never started is reused. */
+  reused: boolean;
+}
+
+/** An unstarted session this recent, with the same settings, is reused instead of duplicated. */
+const REUSE_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+export async function startStudySession(
+  userId: string,
+  input: StartStudySessionInput,
+): Promise<StartStudySessionResult> {
+  const { courseName, mode, minutes } = input;
+
+  const [docs, recs] = await Promise.all([
+    prisma.contentDocument.findMany({
+      where: { userId, namespace: "COURSE", courseName },
+      select: { examName: true, status: true },
+    }),
+    getStudyRecommendations(userId, courseName),
+  ]);
+
+  if (docs.length === 0) {
+    throw new StudyStartError(
+      "COURSE_NOT_FOUND",
+      `${courseName} has no materials. Upload them on Plan, then start a session.`,
+    );
+  }
+  if (!docs.some((d) => d.status === "PROCESSED")) {
+    throw new StudyStartError(
+      "NO_MATERIALS",
+      `Your ${courseName} files are still processing. Start a session once one is ready.`,
+    );
+  }
+
+  const docExams = docs
+    .map((d) => d.examName)
+    .filter((name): name is string => !!name)
+    .sort((a, b) => a.localeCompare(b));
+  const examName = input.examName?.trim() || recs.exam?.name || docExams[0] || "General";
+
+  const { topics, topic_scope: topicScope } = recs.next_session;
+
+  const existing = await prisma.session.findFirst({
+    where: {
+      userId,
+      courseName,
+      examName,
+      mode,
+      plannedMinutes: minutes,
+      topicScope,
+      createdAt: { gte: new Date(Date.now() - REUSE_WINDOW_MS) },
+      runs: { none: {} },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { sessionId: true },
+  });
+  if (existing) {
+    // Planned sessions belong to the plan; never hand one out as a fresh start.
+    const planned = await prisma.studyPlanItem.findFirst({
+      where: { sessionId: existing.sessionId },
+      select: { id: true },
+    });
+    if (!planned) {
+      return { session_id: existing.sessionId, url: `/s/${existing.sessionId}`, reused: true };
+    }
+  }
+
+  const created = await createSession(userId, {
+    course_name: courseName,
+    exam_name: examName,
+    mode,
+    topic_scope: topicScope,
+    planned_minutes: minutes,
+    // Ids reuse the mastery keys so spaced repetition, warm-ups and pretest
+    // gating stay continuous with earlier sessions.
+    objectives: topics.length > 0 ? topics.map((t) => ({ id: t.key, title: t.title })) : undefined,
+    target_outcome: { prompt_count: questionCountFor(minutes) },
+    break_protocol: breakProtocolFor(minutes),
+  });
+
+  logger.info("study.session_started", { user_id: userId, session_id: created.session_id, mode, minutes });
+
+  return { session_id: created.session_id, url: `/s/${created.session_id}`, reused: false };
 }
