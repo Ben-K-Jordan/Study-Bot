@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
+import { EMAIL_NOT_VERIFIED } from "@/components/auth/messages";
 
 // Secure cookies must follow the actual serving protocol, not the build
 // mode: a production build served over plain http (e.g. `npm start` on
@@ -31,6 +32,9 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/auth/signin",
     newUser: "/auth/signup",
+    // next-auth's own error page is unstyled; the sign-in page reads the
+    // ?error= code and shows it in plain words instead.
+    error: "/auth/signin",
   },
   providers: [
     CredentialsProvider({
@@ -58,8 +62,11 @@ export const authOptions: NextAuthOptions = {
         // Single-user app: verifying your own email to yourself protects
         // nothing, and this gate once locked the owner out of a local
         // production build. Opt in only when real SMTP can deliver links.
+        // Throwing (instead of returning null) sends the code to the sign-in
+        // form, which then offers a new verification link instead of saying
+        // the password is wrong. It only fires after the password matched.
         if (process.env.REQUIRE_EMAIL_VERIFICATION === "true" && !user.emailVerified) {
-          return null;
+          throw new Error(EMAIL_NOT_VERIFIED);
         }
 
         return { id: user.id, email: user.email, name: user.name };

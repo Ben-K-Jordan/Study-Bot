@@ -2,48 +2,65 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { consumeToken } from "@/lib/tokens";
-import { authLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
+import { redeemToken, type TokenState } from "@/lib/tokens";
+import { authTokenLimiter, getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { REQUEST_FAILED } from "@/components/auth/messages";
+import { invalidFields, newPasswordField, rateLimited, readJson, unreadableBody } from "../_lib/responses";
 
 const schema = z.object({
-  token: z.string().min(1),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  token: z.string().catch(""),
+  password: newPasswordField,
 });
+
+/** Why a reset link didn't work, as a code the reset form turns into its own screen. */
+const TOKEN_ERRORS: Record<Exclude<TokenState["status"], "valid">, { code: string; error: string }> = {
+  expired: {
+    code: "TOKEN_EXPIRED",
+    error: "This reset link expired. Request a new link to reset your password.",
+  },
+  used: {
+    code: "TOKEN_USED",
+    error: "This reset link was already used. Request a new link to reset your password.",
+  },
+  invalid: {
+    code: "TOKEN_INVALID",
+    error: "This reset link doesn't work. Request a new link to reset your password.",
+  },
+};
 
 /**
  * POST /api/auth/reset-password
- * Resets the user's password using a valid reset token.
+ * Sets a new password with a reset token from the email link.
+ *
+ * 400 bodies carry either `issues` (the password field) or a `code` of
+ * TOKEN_EXPIRED, TOKEN_USED or TOKEN_INVALID.
  */
 export async function POST(request: NextRequest) {
-  const rl = authLimiter.check(getClientIp(request));
-  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+  const rl = authTokenLimiter.check(getClientIp(request));
+  if (!rl.allowed) return rateLimited(rl.retryAfterMs, "Too many attempts.");
 
-  let body: z.infer<typeof schema>;
+  const body = await readJson(request);
+  if (body === null) return unreadableBody();
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) return invalidFields(parsed.error);
+
   try {
-    body = schema.parse(await request.json());
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues[0].message }, { status: 400 });
+    const state = await redeemToken(parsed.data.token, "PASSWORD_RESET");
+    if (state.status !== "valid") {
+      return NextResponse.json(TOKEN_ERRORS[state.status], { status: 400 });
     }
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    await prisma.user.update({
+      where: { id: state.userId },
+      data: { passwordHash },
+    });
+
+    logger.info("password_reset.completed", { userId: state.userId });
+    return NextResponse.json({ message: "Password updated. Sign in with your new password." });
+  } catch (err) {
+    logger.error("password_reset.update_failed", { error: String(err) });
+    return NextResponse.json({ error: REQUEST_FAILED.resetPassword }, { status: 500 });
   }
-
-  const userId = await consumeToken(body.token, "PASSWORD_RESET");
-  if (!userId) {
-    return NextResponse.json(
-      { error: "Invalid or expired reset link. Please request a new one." },
-      { status: 400 },
-    );
-  }
-
-  const passwordHash = await bcrypt.hash(body.password, 12);
-  await prisma.user.update({
-    where: { id: userId },
-    data: { passwordHash },
-  });
-
-  logger.info("password_reset.completed", { userId });
-
-  return NextResponse.json({ message: "Password reset successfully. You can now sign in." });
 }
