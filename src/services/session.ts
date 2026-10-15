@@ -200,6 +200,18 @@ function examDayInstant(examDate: Date, timeZone: string | null): string {
   return zonedTimeToUtc(key, "12:00", timeZone).toISOString();
 }
 
+/**
+ * Whether the session exists and belongs to this user: one indexed lookup,
+ * so the page can answer 404 before it starts streaming.
+ */
+export async function isSessionOwner(userId: string, sessionId: string): Promise<boolean> {
+  const session = await prisma.session.findUnique({
+    where: { sessionId },
+    select: { userId: true },
+  });
+  return session?.userId === userId;
+}
+
 export interface SessionScreenData {
   session: SessionData;
   /** Streams to the preflight; never rejects. */
