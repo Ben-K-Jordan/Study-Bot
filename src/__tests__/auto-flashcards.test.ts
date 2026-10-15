@@ -141,7 +141,7 @@ describe("createFlashcardsFromErrors", () => {
       data: Record<string, unknown>;
     };
     expect(updateArg.where).toEqual({ id: "card-q1" });
-    expect(updateArg.data.back).toContain("Correction: Newest correction for Q1");
+    expect(updateArg.data.back).toContain("Correction rule: Newest correction for Q1");
     expect(updateArg.data).not.toHaveProperty("ordinal");
   });
 
@@ -166,7 +166,8 @@ describe("createFlashcardsFromErrors", () => {
 
     expect(created).toBe(1);
     const data = tx.flashcard.create.mock.calls[0][0].data;
-    expect(data.back).toContain("Correction: Osmosis moves water");
+    expect(data.back).toContain("Correction rule: Osmosis moves water");
+    expect(data.back).toContain("Error type: Concept");
     expect(data.tags).toEqual(["concept", "auto-repair"]);
   });
 
@@ -187,11 +188,9 @@ describe("createFlashcardsFromErrors", () => {
 
     expect(created).toBe(1);
     const data = tx.flashcard.create.mock.calls[0][0].data;
-    expect(data.front).toBe(
-      `From memory: state the correct answer to — "${stem}" (answer without options)`,
-    );
+    expect(data.front).toBe(`From memory, with no options shown, give the correct answer to "${stem}"`);
     // The correction (with the actual answer) leads the back
-    expect((data.back as string).startsWith("Correction: The correct answer is")).toBe(true);
+    expect((data.back as string).startsWith("Correction rule: The correct answer is")).toBe(true);
   });
 
   it("leaves an MCQ stem untouched when the correction lacks the correct-answer marker", async () => {
@@ -225,7 +224,7 @@ describe("createFlashcardsFromErrors", () => {
 
   it("matches recurring MCQ errors against the transformed front and refreshes them", async () => {
     const stem = "Which of the following best describes osmosis?";
-    const wrapped = `From memory: state the correct answer to — "${stem}" (answer without options)`;
+    const wrapped = `From memory, with no options shown, give the correct answer to "${stem}"`;
     attemptsMock.mockResolvedValue([makeAttempt(0, stem)]);
     errorLogsMock.mockResolvedValue([
       {
@@ -264,11 +263,10 @@ describe("createFlashcardsFromErrors", () => {
 
     const back = tx.flashcard.create.mock.calls[0][0].data.back as string;
     const lines = back.split("\n");
-    expect(lines[0]).toBe("Correction: Osmosis moves water");
-    expect(lines[lines.length - 1]).toBe("Previously confused with: the wrong thing");
+    expect(lines[0]).toBe("Correction rule: Osmosis moves water");
+    expect(lines[lines.length - 1]).toBe("Your earlier answer: the wrong thing");
     // The wrong answer never appears before the correction
-    expect(back.indexOf("Correction:")).toBeLessThan(back.indexOf("Previously confused with:"));
-    expect(back).not.toContain("Your answer:");
+    expect(back.indexOf("Correction rule:")).toBeLessThan(back.indexOf("Your earlier answer:"));
   });
 
   it("omits the wrong-answer line when the attempt has no recorded answer", async () => {
@@ -289,7 +287,7 @@ describe("createFlashcardsFromErrors", () => {
     await createFlashcardsFromErrors("user-1", "run-1", "Biology");
 
     const back = tx.flashcard.create.mock.calls[0][0].data.back as string;
-    expect(back).not.toContain("Previously confused with:");
+    expect(back).not.toContain("Your earlier answer:");
   });
 
   it("recovers from a P2002 on deck creation by re-fetching the deck", async () => {
@@ -322,10 +320,10 @@ describe("createFlashcardsFromErrors", () => {
       data: {
         userId: "user-1",
         courseName: "Biology",
-        title: "Error Repair — Biology",
+        title: "Session errors",
         cardCount: 0,
       },
-      select: { id: true },
+      select: { id: true, title: true },
     });
     expect(tx.flashcard.create.mock.calls[0][0].data.ordinal).toBe(0);
   });
@@ -337,5 +335,56 @@ describe("createFlashcardsFromErrors", () => {
     const created = await createFlashcardsFromErrors("user-1", "run-1", "Biology");
 
     expect(created).toBe(0);
+  });
+  it("finds a recurring MCQ card saved with the earlier wording and rewrites its front", async () => {
+    const stem = "Which of the following best describes osmosis?";
+    const legacy = `From memory: state the correct answer to \u2014 "${stem}" (answer without options)`;
+    attemptsMock.mockResolvedValue([makeAttempt(0, stem)]);
+    errorLogsMock.mockResolvedValue([
+      { promptIndex: 0, errorType: "MISCONCEPTION", correctionRule: 'The correct answer is "Passive water movement".' },
+    ]);
+    tx.flashcard.findMany.mockResolvedValue([{ id: "card-old", front: legacy }]);
+
+    const created = await createFlashcardsFromErrors("user-1", "run-1", "Biology");
+
+    expect(created).toBe(0);
+    expect(tx.flashcard.create).not.toHaveBeenCalled();
+    const update = tx.flashcard.update.mock.calls[0][0] as { where: { id: string }; data: Record<string, string> };
+    expect(update.where).toEqual({ id: "card-old" });
+    expect(update.data.front).toBe(`From memory, with no options shown, give the correct answer to "${stem}"`);
+    expect(update.data.back).toContain("Error type: Misconception");
+  });
+
+  it("reuses and renames a deck with the earlier title", async () => {
+    attemptsMock.mockResolvedValue([makeAttempt(0, "Q1")]);
+    tx.flashcardDeck.findFirst.mockResolvedValue({ id: "deck-legacy", title: "Error Repair \u2014 Biology" });
+    tx.flashcard.count.mockResolvedValue(1);
+
+    const created = await createFlashcardsFromErrors("user-1", "run-1", "Biology");
+
+    expect(created).toBe(1);
+    expect(tx.flashcardDeck.findFirst.mock.calls[0][0]).toEqual({
+      where: { userId: "user-1", courseName: "Biology", title: { in: ["Session errors", "Error Repair \u2014 Biology"] } },
+      select: { id: true, title: true },
+    });
+    expect(tx.flashcardDeck.update).toHaveBeenCalledWith({
+      where: { id: "deck-legacy" },
+      data: { title: "Session errors" },
+    });
+    expect(tx.flashcard.create.mock.calls[0][0].data.deckId).toBe("deck-legacy");
+  });
+
+  it("names error types in the app's words", async () => {
+    attemptsMock.mockResolvedValue([makeAttempt(0, "Q1"), makeAttempt(1, "Q2")]);
+    errorLogsMock.mockResolvedValue([
+      { promptIndex: 0, errorType: "PROCEDURE", correctionRule: "Rule A" },
+      { promptIndex: 1, errorType: "CARELESS", correctionRule: "Rule B" },
+    ]);
+    tx.flashcard.count.mockResolvedValue(2);
+
+    await createFlashcardsFromErrors("user-1", "run-1", "Biology");
+
+    expect(tx.flashcard.create.mock.calls[0][0].data.back).toContain("Error type: Wrong steps");
+    expect(tx.flashcard.create.mock.calls[1][0].data.back).toContain("Error type: Careless slip");
   });
 });

@@ -5,6 +5,18 @@ import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
 import { sampleEvenly } from "@/lib/config";
+import { getUserTimezone } from "@/lib/timezone";
+import { deckKind, displayDeckTitle, type DeckKind } from "@/services/deck-titles";
+import {
+  cardStatus,
+  deckStats,
+  endOfToday,
+  findUpcomingExam,
+  isDueToday,
+  nextDueAfterToday,
+  type CardStatus,
+  type StudyStats,
+} from "@/services/spaced-repetition";
 
 interface FlashcardGenerated {
   front: string;
@@ -32,7 +44,94 @@ export interface FlashcardDeckData {
   created_at: string;
 }
 
+export interface DeckSummaryData extends FlashcardDeckData {
+  kind: DeckKind;
+  /** Title of the file the deck was generated from, if one. */
+  source_title: string | null;
+  counts: StudyStats;
+  /** Earliest review after today, when nothing is due. */
+  next_due_at: string | null;
+}
+
+/** Limits for a card's two sides, shared with the API validation. */
+export const CARD_FRONT_MAX = 1000;
+export const CARD_BACK_MAX = 4000;
+/** Cards kept from one generation. */
+const MAX_GENERATED_CARDS = 40;
+
+export type FlashcardErrorCode =
+  | "NO_MATERIALS"
+  | "MATERIALS_PROCESSING"
+  | "NO_CARDS"
+  | "DOC_NOT_FOUND"
+  | "DOC_NOT_READY"
+  | "DECK_NOT_FOUND"
+  | "CARD_NOT_FOUND"
+  | "FORBIDDEN";
+
+/** A failure the API maps to a status and a sentence for the student. */
+export class FlashcardError extends Error {
+  constructor(
+    public readonly code: FlashcardErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "FlashcardError";
+  }
+}
+
 const FLASHCARD_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
+
+// ---------------------------------------------------------------------------
+// Titles
+// ---------------------------------------------------------------------------
+
+export { deckKind, displayDeckTitle, type DeckKind } from "@/services/deck-titles";
+
+/** The base title plus " (2)", " (3)" when the course already has it (titles are unique per course). */
+async function uniqueDeckTitle(
+  tx: Pick<typeof prisma, "flashcardDeck">,
+  userId: string,
+  courseName: string,
+  base: string,
+): Promise<string> {
+  const existing = await tx.flashcardDeck.findMany({
+    where: { userId, courseName, title: { startsWith: base } },
+    select: { title: true },
+  });
+  const taken = new Set(existing.map((d) => d.title));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${base} (${n})`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base} (${Date.now()})`;
+}
+
+/** Drops malformed AI cards and trims the rest to the field limits. */
+export function cleanGeneratedCards(raw: unknown): FlashcardGenerated[] {
+  if (!Array.isArray(raw)) return [];
+  const cards: FlashcardGenerated[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const { front, back, tags } = item as Record<string, unknown>;
+    if (typeof front !== "string" || typeof back !== "string") continue;
+    const f = front.trim();
+    const b = back.trim();
+    if (!f || !b) continue;
+    cards.push({
+      front: f.slice(0, CARD_FRONT_MAX),
+      back: b.slice(0, CARD_BACK_MAX),
+      tags: Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string").slice(0, 6) : undefined,
+    });
+    if (cards.length >= MAX_GENERATED_CARDS) break;
+  }
+  return cards;
+}
+
+// ---------------------------------------------------------------------------
+// Generation
+// ---------------------------------------------------------------------------
 
 /**
  * Compute mastery context for adaptive flashcard generation.
@@ -42,7 +141,6 @@ async function computeMasteryContext(
   userId: string,
   courseName: string,
 ): Promise<string | undefined> {
-  // Get all cards in this course with their review stats
   const decks = await prisma.flashcardDeck.findMany({
     where: { userId, courseName },
     include: {
@@ -114,6 +212,83 @@ async function computeMasteryContext(
   return lines.length > 1 ? lines.join("\n") : undefined;
 }
 
+async function runGeneration(
+  userId: string,
+  input: { title: string; courseName: string; examName?: string; chunkTexts: string[] },
+): Promise<FlashcardGenerated[]> {
+  const masteryContext = await computeMasteryContext(userId, input.courseName);
+  const ctx: GatewayContext = { userId, provider: createProvider() };
+  const prompt = getPrompt(AiTask.GENERATE_FLASHCARDS);
+
+  const result = await runTask<{ cards: FlashcardGenerated[] }>(ctx, {
+    task: AiTask.GENERATE_FLASHCARDS,
+    promptVersion: prompt.version,
+    model: FLASHCARD_MODEL,
+    input: { ...input, masteryContext },
+    parseOutput: (raw: unknown) => ({ cards: cleanGeneratedCards((raw as Record<string, unknown> | null)?.cards) }),
+  });
+
+  if (result.output.cards.length === 0) {
+    throw new FlashcardError("NO_CARDS", "The materials produced no cards.");
+  }
+  return result.output.cards;
+}
+
+async function saveGeneratedDeck(
+  userId: string,
+  deck: { courseName: string; examName: string | null; documentId: string | null; baseTitle: string },
+  cards: FlashcardGenerated[],
+) {
+  return prisma.$transaction(async (tx) => {
+    const title = await uniqueDeckTitle(tx, userId, deck.courseName, deck.baseTitle);
+    const newDeck = await tx.flashcardDeck.create({
+      data: {
+        userId,
+        courseName: deck.courseName,
+        examName: deck.examName,
+        documentId: deck.documentId,
+        title,
+        cardCount: cards.length,
+      },
+    });
+
+    await tx.flashcard.createMany({
+      data: cards.map((card, i) => ({
+        deckId: newDeck.id,
+        front: card.front,
+        back: card.back,
+        tags: card.tags && card.tags.length > 0 ? card.tags : undefined,
+        ordinal: i,
+      })),
+    });
+
+    return newDeck;
+  });
+}
+
+function toDeckData(
+  deck: { id: string; userId: string; courseName: string; examName: string | null; documentId: string | null; title: string; cardCount: number; createdAt: Date },
+  cards: FlashcardGenerated[],
+): FlashcardDeckData {
+  return {
+    id: deck.id,
+    user_id: deck.userId,
+    course_name: deck.courseName,
+    exam_name: deck.examName,
+    document_id: deck.documentId,
+    title: deck.title,
+    card_count: deck.cardCount,
+    cards: cards.map((card, i) => ({
+      id: `pending-${i}`,
+      front: card.front,
+      back: card.back,
+      tags: card.tags || null,
+      ordinal: i,
+    })),
+    created_at: deck.createdAt.toISOString(),
+  };
+}
+
 /**
  * Generate flashcards from a specific document's chunks.
  */
@@ -133,12 +308,12 @@ export async function generateFlashcardsFromDocument(
     },
   });
 
-  if (!doc) throw new Error("Document not found");
-  if (doc.userId !== userId) throw new Error("Forbidden");
-  if (doc.status !== "PROCESSED") throw new Error("Document not yet processed");
-  if (!doc.courseName) throw new Error("Document has no course name");
+  if (!doc) throw new FlashcardError("DOC_NOT_FOUND", "Document not found");
+  if (doc.userId !== userId) throw new FlashcardError("FORBIDDEN", "Forbidden");
+  if (doc.status !== "PROCESSED" || !doc.courseName) {
+    throw new FlashcardError("DOC_NOT_READY", "Document not yet processed");
+  }
 
-  // Fetch chunks from this document
   const allChunks = await prisma.contentChunk.findMany({
     where: { documentId },
     orderBy: { ordinal: "asc" },
@@ -146,91 +321,34 @@ export async function generateFlashcardsFromDocument(
   });
 
   if (allChunks.length === 0) {
-    throw new Error("No content chunks found for this document");
+    throw new FlashcardError("DOC_NOT_READY", "No content chunks found for this document");
   }
 
-  const chunkTexts = sampleEvenly(allChunks, 12).map((c) => c.text);
-
-  // Compute mastery context for adaptive difficulty
-  const masteryContext = await computeMasteryContext(userId, doc.courseName!);
-
-  const ctx: GatewayContext = { userId, provider: createProvider() };
-  const prompt = getPrompt(AiTask.GENERATE_FLASHCARDS);
-
-  const result = await runTask<{ cards: FlashcardGenerated[] }>(ctx, {
-    task: AiTask.GENERATE_FLASHCARDS,
-    promptVersion: prompt.version,
-    model: FLASHCARD_MODEL,
-    input: {
-      title: doc.title,
-      courseName: doc.courseName,
-      examName: doc.examName || undefined,
-      chunkTexts,
-      masteryContext,
-    },
-    parseOutput: (raw: unknown) => {
-      const data = raw as Record<string, unknown>;
-      const cards = (data.cards as FlashcardGenerated[]) || [];
-      return { cards };
-    },
+  const cards = await runGeneration(userId, {
+    title: doc.title,
+    courseName: doc.courseName,
+    examName: doc.examName || undefined,
+    chunkTexts: sampleEvenly(allChunks, 12).map((c) => c.text),
   });
 
-  // Persist the deck and cards in a transaction
-  const deck = await prisma.$transaction(async (tx) => {
-    const newDeck = await tx.flashcardDeck.create({
-      data: {
-        userId,
-        courseName: doc.courseName!,
-        examName: doc.examName || null,
-        documentId,
-        title: `${doc.title} — Flashcards`,
-        cardCount: result.output.cards.length,
-      },
-    });
-
-    if (result.output.cards.length > 0) {
-      await tx.flashcard.createMany({
-        data: result.output.cards.map((card, i) => ({
-          deckId: newDeck.id,
-          front: card.front,
-          back: card.back,
-          tags: card.tags ? JSON.parse(JSON.stringify(card.tags)) : null,
-          ordinal: i,
-        })),
-      });
-    }
-
-    return newDeck;
-  });
+  const deck = await saveGeneratedDeck(
+    userId,
+    { courseName: doc.courseName, examName: doc.examName || null, documentId, baseTitle: doc.title },
+    cards,
+  );
 
   logger.info("flashcards.generated", {
     user_id: userId,
     deck_id: deck.id,
     document_id: documentId,
-    card_count: result.output.cards.length,
+    card_count: cards.length,
   });
 
-  return {
-    id: deck.id,
-    user_id: deck.userId,
-    course_name: deck.courseName,
-    exam_name: deck.examName,
-    document_id: deck.documentId,
-    title: deck.title,
-    card_count: deck.cardCount,
-    cards: result.output.cards.map((card, i) => ({
-      id: `pending-${i}`,
-      front: card.front,
-      back: card.back,
-      tags: card.tags || null,
-      ordinal: i,
-    })),
-    created_at: deck.createdAt.toISOString(),
-  };
+  return toDeckData(deck, cards);
 }
 
 /**
- * Generate flashcards from all documents in a course.
+ * Generate flashcards from all processed documents in a course (and exam).
  */
 export async function generateFlashcardsFromCourse(
   userId: string,
@@ -254,118 +372,253 @@ export async function generateFlashcardsFromCourse(
   });
 
   if (allChunks.length === 0) {
-    throw new Error("No course materials found. Upload documents first.");
+    // Tell "nothing uploaded" apart from "uploaded, still processing".
+    const uploaded = await prisma.contentDocument.count({
+      where: { userId, namespace: "COURSE", courseName, ...(examName ? { examName } : {}) },
+    });
+    throw uploaded > 0
+      ? new FlashcardError("MATERIALS_PROCESSING", "Course materials are still processing")
+      : new FlashcardError("NO_MATERIALS", "No course materials found");
   }
 
-  const chunkTexts = sampleEvenly(allChunks, 15).map((c) => c.text);
+  const cards = await runGeneration(userId, {
+    title: courseName,
+    courseName,
+    examName,
+    chunkTexts: sampleEvenly(allChunks, 15).map((c) => c.text),
+  });
 
-  // Compute mastery context for adaptive difficulty
-  const masteryContext = await computeMasteryContext(userId, courseName);
-
-  const ctx: GatewayContext = { userId, provider: createProvider() };
-  const prompt = getPrompt(AiTask.GENERATE_FLASHCARDS);
-
-  const result = await runTask<{ cards: FlashcardGenerated[] }>(ctx, {
-    task: AiTask.GENERATE_FLASHCARDS,
-    promptVersion: prompt.version,
-    model: FLASHCARD_MODEL,
-    input: {
-      title: courseName,
+  const deck = await saveGeneratedDeck(
+    userId,
+    {
       courseName,
-      examName,
-      chunkTexts,
-      masteryContext,
+      examName: examName || null,
+      documentId: null,
+      baseTitle: `All ${examName || courseName} materials`,
     },
-    parseOutput: (raw: unknown) => {
-      const data = raw as Record<string, unknown>;
-      return { cards: (data.cards as FlashcardGenerated[]) || [] };
-    },
-  });
-
-  const deck = await prisma.$transaction(async (tx) => {
-    const deckTitle = examName
-      ? `${courseName} — ${examName} Flashcards`
-      : `${courseName} Flashcards`;
-
-    const newDeck = await tx.flashcardDeck.create({
-      data: {
-        userId,
-        courseName,
-        examName: examName || null,
-        title: deckTitle,
-        cardCount: result.output.cards.length,
-      },
-    });
-
-    if (result.output.cards.length > 0) {
-      await tx.flashcard.createMany({
-        data: result.output.cards.map((card, i) => ({
-          deckId: newDeck.id,
-          front: card.front,
-          back: card.back,
-          tags: card.tags ? JSON.parse(JSON.stringify(card.tags)) : null,
-          ordinal: i,
-        })),
-      });
-    }
-
-    return newDeck;
-  });
+    cards,
+  );
 
   logger.info("flashcards.generated_from_course", {
     user_id: userId,
     deck_id: deck.id,
     course_name: courseName,
-    card_count: result.output.cards.length,
+    card_count: cards.length,
   });
 
-  return {
-    id: deck.id,
-    user_id: deck.userId,
-    course_name: deck.courseName,
-    exam_name: deck.examName,
-    document_id: deck.documentId,
-    title: deck.title,
-    card_count: deck.cardCount,
-    cards: result.output.cards.map((card, i) => ({
-      id: `pending-${i}`,
-      front: card.front,
-      back: card.back,
-      tags: card.tags || null,
-      ordinal: i,
-    })),
-    created_at: deck.createdAt.toISOString(),
-  };
+  return toDeckData(deck, cards);
 }
 
-/**
- * List flashcard decks for a user, optionally filtered by course.
- */
-export async function listFlashcardDecks(
-  userId: string,
-  courseName?: string,
-  examName?: string,
-): Promise<FlashcardDeckData[]> {
-  const where: Record<string, unknown> = { userId };
-  if (courseName) where.courseName = courseName;
-  if (examName) where.examName = examName;
+// ---------------------------------------------------------------------------
+// Reading decks
+// ---------------------------------------------------------------------------
 
-  const decks = await prisma.flashcardDeck.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { cards: true } } },
-  });
+type DeckWithCards = {
+  id: string;
+  userId: string;
+  courseName: string;
+  examName: string | null;
+  documentId: string | null;
+  title: string;
+  createdAt: Date;
+  document: { title: string } | null;
+  cards: { repetitions: number; intervalDays: number; nextDueAt: Date | null }[];
+};
 
-  return decks.map((d) => ({
+function summarizeDeck(d: DeckWithCards, todayEnds: Date): DeckSummaryData {
+  return {
     id: d.id,
     user_id: d.userId,
     course_name: d.courseName,
     exam_name: d.examName,
     document_id: d.documentId,
-    title: d.title,
-    card_count: d._count.cards,
+    title: displayDeckTitle(d.title, d.courseName),
+    card_count: d.cards.length,
     created_at: d.createdAt.toISOString(),
-  }));
+    kind: deckKind(d.title),
+    source_title: d.document?.title ?? null,
+    counts: deckStats(d.cards, todayEnds),
+    next_due_at: nextDueAfterToday(d.cards, todayEnds),
+  };
+}
+
+const DECK_SUMMARY_INCLUDE = {
+  document: { select: { title: true } },
+  cards: { select: { repetitions: true, intervalDays: true, nextDueAt: true } },
+} as const;
+
+/**
+ * List flashcard decks for a user, optionally filtered by course, with
+ * counts per status and due today (on the student's clock).
+ */
+export async function listFlashcardDecks(
+  userId: string,
+  courseName?: string,
+  examName?: string,
+): Promise<DeckSummaryData[]> {
+  const where: Record<string, unknown> = { userId };
+  if (courseName) where.courseName = courseName;
+  if (examName) where.examName = examName;
+
+  const [decks, timeZone] = await Promise.all([
+    prisma.flashcardDeck.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: DECK_SUMMARY_INCLUDE,
+    }),
+    getUserTimezone(userId),
+  ]);
+
+  const todayEnds = endOfToday(timeZone);
+  return decks.map((d) => summarizeDeck(d, todayEnds));
+}
+
+export interface CourseDecks {
+  courseName: string;
+  /** The exam to generate for: the only exam among the course's materials, else null (all of them). */
+  generateExamName: string | null;
+  /** Files uploaded for the course, and how many finished processing. */
+  materialCount: number;
+  readyMaterialCount: number;
+  /** Nearest upcoming exam from the course's plans. */
+  exam: { name: string; date: string } | null;
+  decks: DeckSummaryData[];
+}
+
+export interface DeckLibrary {
+  courses: CourseDecks[];
+  timeZone: string;
+}
+
+/**
+ * Every course with materials or decks, nearest exam first, with its decks
+ * and their counts. Feeds the /flashcards page.
+ */
+export async function getDeckLibrary(userId: string, now: Date = new Date()): Promise<DeckLibrary> {
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const [decks, documents, plans, timeZone] = await Promise.all([
+    prisma.flashcardDeck.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: DECK_SUMMARY_INCLUDE,
+    }),
+    prisma.contentDocument.findMany({
+      where: { userId, namespace: "COURSE", courseName: { not: null } },
+      select: { courseName: true, examName: true, status: true },
+    }),
+    prisma.studyPlan.findMany({
+      where: { userId, examDate: { gte: today } },
+      orderBy: { examDate: "asc" },
+      select: { courseName: true, examName: true, examDate: true },
+    }),
+    getUserTimezone(userId),
+  ]);
+
+  const todayEnds = endOfToday(timeZone, now);
+  const byCourse = new Map<string, CourseDecks & { exams: Set<string> }>();
+  const entry = (courseName: string) => {
+    let course = byCourse.get(courseName);
+    if (!course) {
+      course = {
+        courseName,
+        generateExamName: null,
+        materialCount: 0,
+        readyMaterialCount: 0,
+        exam: null,
+        decks: [],
+        exams: new Set(),
+      };
+      byCourse.set(courseName, course);
+    }
+    return course;
+  };
+
+  for (const doc of documents) {
+    if (!doc.courseName) continue;
+    const course = entry(doc.courseName);
+    course.materialCount++;
+    if (doc.status === "PROCESSED") course.readyMaterialCount++;
+    course.exams.add(doc.examName ?? "");
+  }
+  for (const deck of decks) entry(deck.courseName).decks.push(summarizeDeck(deck, todayEnds));
+  for (const plan of plans) {
+    const course = byCourse.get(plan.courseName);
+    if (course && !course.exam) {
+      course.exam = { name: plan.examName, date: plan.examDate.toISOString().slice(0, 10) };
+    }
+  }
+
+  const courses = [...byCourse.values()].map(({ exams, ...course }) => {
+    const examNames = [...exams];
+    return {
+      ...course,
+      generateExamName: examNames.length === 1 && examNames[0] ? examNames[0] : null,
+    };
+  });
+
+  courses.sort((a, b) => {
+    if (a.exam && b.exam) return a.exam.date.localeCompare(b.exam.date) || a.courseName.localeCompare(b.courseName);
+    if (a.exam) return -1;
+    if (b.exam) return 1;
+    return a.courseName.localeCompare(b.courseName);
+  });
+
+  return { courses, timeZone: timeZone ?? "UTC" };
+}
+
+export interface DeckCardDetail {
+  id: string;
+  front: string;
+  back: string;
+  tags: string[] | null;
+  ordinal: number;
+  status: CardStatus;
+  nextDueAt: string | null;
+  due: boolean;
+}
+
+export interface DeckDetail extends DeckSummaryData {
+  cards: DeckCardDetail[];
+  exam: { name: string; date: string } | null;
+  timeZone: string;
+}
+
+/**
+ * One deck with every card, its status and next review, for the deck page.
+ * Returns null for a missing deck or another user's deck.
+ */
+export async function getDeckDetail(userId: string, deckId: string): Promise<DeckDetail | null> {
+  const [deck, timeZone] = await Promise.all([
+    prisma.flashcardDeck.findUnique({
+      where: { id: deckId },
+      include: {
+        document: { select: { title: true } },
+        cards: { orderBy: { ordinal: "asc" } },
+      },
+    }),
+    getUserTimezone(userId),
+  ]);
+  if (!deck || deck.userId !== userId) return null;
+
+  const now = new Date();
+  const todayEnds = endOfToday(timeZone, now);
+  const exam = await findUpcomingExam(userId, deck.courseName, deck.examName, now);
+
+  return {
+    ...summarizeDeck(deck, todayEnds),
+    exam: exam ? { name: exam.examName, date: exam.examDate.toISOString().slice(0, 10) } : null,
+    timeZone: timeZone ?? "UTC",
+    cards: deck.cards.map((c) => ({
+      id: c.id,
+      front: c.front,
+      back: c.back,
+      tags: Array.isArray(c.tags) ? (c.tags as unknown[]).filter((t): t is string => typeof t === "string") : null,
+      ordinal: c.ordinal,
+      status: cardStatus(c),
+      nextDueAt: c.nextDueAt?.toISOString() ?? null,
+      due: isDueToday(c, todayEnds),
+    })),
+  };
 }
 
 /**
@@ -387,7 +640,7 @@ export async function deleteFlashcardDeck(
 }
 
 /**
- * Get a deck with all its cards for studying.
+ * Get a deck with all its cards.
  */
 export async function getFlashcardDeck(
   userId: string,
@@ -408,7 +661,7 @@ export async function getFlashcardDeck(
     course_name: deck.courseName,
     exam_name: deck.examName,
     document_id: deck.documentId,
-    title: deck.title,
+    title: displayDeckTitle(deck.title, deck.courseName),
     card_count: deck.cards.length,
     cards: deck.cards.map((c) => ({
       id: c.id,
@@ -419,4 +672,91 @@ export async function getFlashcardDeck(
     })),
     created_at: deck.createdAt.toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Editing cards
+// ---------------------------------------------------------------------------
+
+async function assertDeckOwner(userId: string, deckId: string) {
+  const deck = await prisma.flashcardDeck.findUnique({ where: { id: deckId }, select: { userId: true } });
+  if (!deck || deck.userId !== userId) throw new FlashcardError("DECK_NOT_FOUND", "Deck not found");
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "P2002";
+}
+
+/** Adds a card at the end of the deck. New cards start unreviewed. */
+export async function addFlashcard(
+  userId: string,
+  deckId: string,
+  input: { front: string; back: string },
+): Promise<FlashcardData> {
+  await assertDeckOwner(userId, deckId);
+
+  const create = () =>
+    prisma.$transaction(async (tx) => {
+      const { _max } = await tx.flashcard.aggregate({ where: { deckId }, _max: { ordinal: true } });
+      const card = await tx.flashcard.create({
+        data: { deckId, front: input.front, back: input.back, ordinal: (_max.ordinal ?? -1) + 1 },
+      });
+      const total = await tx.flashcard.count({ where: { deckId } });
+      await tx.flashcardDeck.update({ where: { id: deckId }, data: { cardCount: total } });
+      return card;
+    });
+
+  let card;
+  try {
+    card = await create();
+  } catch (err) {
+    // Two cards added at once can race for the same ordinal: retry once.
+    if (!isUniqueViolation(err)) throw err;
+    card = await create();
+  }
+
+  logger.info("flashcards.card_added", { user_id: userId, deck_id: deckId, card_id: card.id });
+  return { id: card.id, front: card.front, back: card.back, tags: null, ordinal: card.ordinal };
+}
+
+/** Edits a card's text. Its schedule and review history stay. */
+export async function updateFlashcard(
+  userId: string,
+  deckId: string,
+  cardId: string,
+  input: { front?: string; back?: string },
+): Promise<FlashcardData> {
+  await assertDeckOwner(userId, deckId);
+  const existing = await prisma.flashcard.findUnique({ where: { id: cardId }, select: { deckId: true } });
+  if (!existing || existing.deckId !== deckId) throw new FlashcardError("CARD_NOT_FOUND", "Card not found");
+
+  const card = await prisma.flashcard.update({
+    where: { id: cardId },
+    data: {
+      ...(input.front !== undefined ? { front: input.front } : {}),
+      ...(input.back !== undefined ? { back: input.back } : {}),
+    },
+  });
+  logger.info("flashcards.card_updated", { user_id: userId, deck_id: deckId, card_id: cardId });
+  return {
+    id: card.id,
+    front: card.front,
+    back: card.back,
+    tags: Array.isArray(card.tags) ? (card.tags as string[]) : null,
+    ordinal: card.ordinal,
+  };
+}
+
+/** Deletes a card and its review history. */
+export async function deleteFlashcard(userId: string, deckId: string, cardId: string): Promise<void> {
+  await assertDeckOwner(userId, deckId);
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.flashcard.findUnique({ where: { id: cardId }, select: { deckId: true } });
+    if (!existing || existing.deckId !== deckId) throw new FlashcardError("CARD_NOT_FOUND", "Card not found");
+    await tx.cardReview.deleteMany({ where: { cardId } });
+    await tx.flashcard.delete({ where: { id: cardId } });
+    const total = await tx.flashcard.count({ where: { deckId } });
+    await tx.flashcardDeck.update({ where: { id: deckId }, data: { cardCount: total } });
+  });
+  logger.info("flashcards.card_deleted", { user_id: userId, deck_id: deckId, card_id: cardId });
 }

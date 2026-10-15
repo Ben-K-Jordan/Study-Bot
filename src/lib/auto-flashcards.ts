@@ -7,10 +7,9 @@
  * the moment they're identified.
  *
  * Called after a run completes. Creates one flashcard per
- * PARTIAL/INCORRECT attempt, added to an auto-generated "Error Repair"
- * deck for the course. When a card with the same front already exists,
- * its back is refreshed with the newest correction (the newest
- * correction supersedes older ones).
+ * PARTIAL/INCORRECT attempt, added to the course's "Session errors" deck.
+ * When a card with the same front already exists, its back is refreshed
+ * with the newest correction (the newest correction supersedes older ones).
  *
  * Errorful-learning hygiene (Karpicke & Roediger retrieval specificity):
  * a card must present a retrievable question on the front and the
@@ -22,13 +21,38 @@
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 
-const AUTO_DECK_TITLE_PREFIX = "Error Repair";
+/** Title of each course's deck of cards built from session errors. */
+export const ERRORS_DECK_TITLE = "Session errors";
+/** Earlier builds titled the deck "Error Repair", an em dash, then the course; those decks are reused and renamed. */
+export const LEGACY_ERRORS_DECK_PREFIX = "Error Repair \u2014 ";
 
 /** MCQ-stem fronts are unanswerable without their options. */
 const MCQ_STEM_PATTERN = /which of the following/i;
 
 /** Marker emitted by MCQ-sourced correction rules: The correct answer is "X". */
 const CORRECT_ANSWER_MARKER = /the correct answer is\s*"[^"]+"/i;
+
+/** Error types in the words the session's error log uses. */
+const ERROR_TYPE_LABELS: Record<string, string> = {
+  MISCONCEPTION: "Misconception",
+  PROCEDURE: "Wrong steps",
+  CARELESS: "Careless slip",
+  MEMORY: "Memory gap",
+  UNKNOWN: "Not sure",
+};
+
+function errorTypeLabel(errorType: string): string {
+  const known = ERROR_TYPE_LABELS[errorType.toUpperCase()];
+  if (known) return known;
+  const words = errorType.replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function isWrappable(promptText: string, correctionRule: string | undefined): boolean {
+  return Boolean(
+    correctionRule && MCQ_STEM_PATTERN.test(promptText) && CORRECT_ANSWER_MARKER.test(correctionRule),
+  );
+}
 
 /**
  * Build an answerable card front. If the prompt is an MCQ stem (its
@@ -37,15 +61,17 @@ const CORRECT_ANSWER_MARKER = /the correct answer is\s*"[^"]+"/i;
  * question. Wrapping (rather than rewriting) is deliberate: no heuristic
  * can corrupt the stem's meaning.
  */
-function buildFront(promptText: string, correctionRule: string | undefined): string {
-  if (
-    correctionRule &&
-    MCQ_STEM_PATTERN.test(promptText) &&
-    CORRECT_ANSWER_MARKER.test(correctionRule)
-  ) {
-    return `From memory: state the correct answer to — "${promptText}" (answer without options)`;
+export function buildFront(promptText: string, correctionRule: string | undefined): string {
+  if (isWrappable(promptText, correctionRule)) {
+    return `From memory, with no options shown, give the correct answer to "${promptText}"`;
   }
   return promptText;
+}
+
+/** The wrapped front earlier builds wrote, so recurring errors still find their card. */
+function legacyFront(promptText: string, correctionRule: string | undefined): string | null {
+  if (!isWrappable(promptText, correctionRule)) return null;
+  return `From memory: state the correct answer to \u2014 "${promptText}" (answer without options)`;
 }
 
 /**
@@ -53,25 +79,36 @@ function buildFront(promptText: string, correctionRule: string | undefined): str
  * full weight at the top; any reference to the student's wrong answer
  * is a final de-emphasized line so the error is not re-encoded.
  */
-function buildBack(
+export function buildBack(
   error: { errorType: string; correctionRule: string } | undefined,
   userAnswer: string | null,
 ): string {
   const backParts: string[] = [];
 
   if (error) {
-    backParts.push(`Correction: ${error.correctionRule}`);
-    backParts.push(`Error type: ${error.errorType}`);
+    backParts.push(`Correction rule: ${error.correctionRule}`);
+    backParts.push(`Error type: ${errorTypeLabel(error.errorType)}`);
   } else {
-    backParts.push("Review this concept and write the correct answer from memory.");
+    backParts.push(
+      "No correction rule was saved for this error. Look up the answer in your materials and edit this card.",
+    );
   }
 
   if (userAnswer) {
     backParts.push("");
-    backParts.push(`Previously confused with: ${userAnswer}`);
+    backParts.push(`Your earlier answer: ${userAnswer}`);
   }
 
   return backParts.join("\n");
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2002"
+  );
 }
 
 /**
@@ -109,18 +146,29 @@ export async function createFlashcardsFromErrors(
     });
     const errorByIndex = new Map(errorLogs.map((e) => [e.promptIndex, e]));
 
-    const deckTitle = `${AUTO_DECK_TITLE_PREFIX} — ${courseName}`;
+    const legacyDeckTitle = `${LEGACY_ERRORS_DECK_PREFIX}${courseName}`;
+    const titles = [ERRORS_DECK_TITLE, legacyDeckTitle];
 
     // Deck lookup/creation, card inserts/refreshes, and the cardCount update
     // all run in one transaction so concurrent run completions can't
     // interleave and leave the deck with colliding ordinals or a stale
     // cardCount.
     const { deckId, created, refreshed } = await prisma.$transaction(async (tx) => {
-      // Find or create the auto-repair deck for this course
+      // Find or create the session-errors deck for this course. A deck with
+      // the earlier title is reused and renamed.
       let deck = await tx.flashcardDeck.findFirst({
-        where: { userId, courseName, title: deckTitle },
-        select: { id: true },
+        where: { userId, courseName, title: { in: titles } },
+        select: { id: true, title: true },
       });
+
+      if (deck && deck.title === legacyDeckTitle) {
+        try {
+          await tx.flashcardDeck.update({ where: { id: deck.id }, data: { title: ERRORS_DECK_TITLE } });
+        } catch (err: unknown) {
+          // A deck with the new title already exists: keep using this one as is.
+          if (!isUniqueViolation(err)) throw err;
+        }
+      }
 
       if (!deck) {
         try {
@@ -128,23 +176,18 @@ export async function createFlashcardsFromErrors(
             data: {
               userId,
               courseName,
-              title: deckTitle,
+              title: ERRORS_DECK_TITLE,
               cardCount: 0,
             },
-            select: { id: true },
+            select: { id: true, title: true },
           });
         } catch (err: unknown) {
-          // Unique constraint violation (P2002) — a concurrent completion
+          // Unique constraint violation (P2002): a concurrent completion
           // created the deck first; re-fetch it and proceed.
-          if (
-            typeof err === "object" &&
-            err !== null &&
-            "code" in err &&
-            (err as { code: string }).code === "P2002"
-          ) {
+          if (isUniqueViolation(err)) {
             deck = await tx.flashcardDeck.findFirst({
-              where: { userId, courseName, title: deckTitle },
-              select: { id: true },
+              where: { userId, courseName, title: { in: titles } },
+              select: { id: true, title: true },
             });
           }
           if (!deck) throw err;
@@ -160,7 +203,7 @@ export async function createFlashcardsFromErrors(
       });
       const cardIdByFront = new Map(existingCards.map((c) => [c.front, c.id]));
 
-      // Derive the next ordinal from the deck's actual cards — the cached
+      // Derive the next ordinal from the deck's actual cards: the cached
       // cardCount can go stale if a previous invocation failed midway.
       const { _max } = await tx.flashcard.aggregate({
         where: { deckId: deck.id },
@@ -176,15 +219,19 @@ export async function createFlashcardsFromErrors(
         const error = errorByIndex.get(attempt.promptIndex);
         const front = buildFront(attempt.promptText, error?.correctionRule);
         const back = buildBack(error, attempt.userAnswer);
+        const oldFront = legacyFront(attempt.promptText, error?.correctionRule);
 
-        const existingCardId = cardIdByFront.get(front);
+        const existingCardId =
+          cardIdByFront.get(front) ?? (oldFront !== null ? cardIdByFront.get(oldFront) : undefined);
         if (existingCardId !== undefined) {
-          // Recurring error: the newest correction supersedes the old back.
-          // The card's ordinal is deliberately untouched.
+          // Recurring error: the newest correction supersedes the old back,
+          // and a front in the earlier wording takes the current one. The
+          // card's ordinal is deliberately untouched.
           await tx.flashcard.update({
             where: { id: existingCardId },
-            data: { back },
+            data: { front, back },
           });
+          cardIdByFront.set(front, existingCardId);
           refreshedCount++;
           continue;
         }
