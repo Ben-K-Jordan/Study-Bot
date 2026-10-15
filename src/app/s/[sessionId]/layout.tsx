@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { TITLE_TEMPLATE } from "@/lib/metadata";
 import { SkipLink } from "@/components/shell/skip-link";
 
 export const metadata: Metadata = {
-  title: "Session",
+  // Pages below set their own titles, so pass the template on
+  title: { default: "Session", template: TITLE_TEMPLATE },
 };
 
 /**

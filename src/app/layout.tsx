@@ -3,11 +3,12 @@ import "@fontsource-variable/google-sans-flex/rond.css";
 import "@fontsource-variable/google-sans-code/wght.css";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { TITLE_TEMPLATE } from "@/lib/metadata";
 
 export const metadata: Metadata = {
   title: {
     default: "Study Bot",
-    template: "%s · Study Bot",
+    template: TITLE_TEMPLATE,
   },
   description: "Plan for your exams and practice from your own course files.",
   applicationName: "Study Bot",
