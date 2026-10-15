@@ -67,6 +67,12 @@ describe("proxy auth", () => {
     expect(res.headers.get("location")).toContain("/auth/signin?callbackUrl=%2Fplan");
   });
 
+  it("keeps the query string in the callback URL", async () => {
+    const res = await proxy(req("/plan?plan=abc&reschedule=1"));
+    const location = new URL(res.headers.get("location")!);
+    expect(location.searchParams.get("callbackUrl")).toBe("/plan?plan=abc&reschedule=1");
+  });
+
   it("requires sign-in for session pages", async () => {
     expect(await outcome(req("/s/abc123"))).toBe(307);
   });

@@ -98,10 +98,14 @@ export async function proxy(request: NextRequest) {
   if (!token) {
     // API routes get 401 JSON instead of redirect
     if (isApi) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Your sign-in expired. Sign in again.", code: "UNAUTHORIZED" },
+        { status: 401 },
+      );
     }
     const signInUrl = new URL("/auth/signin", request.url);
-    signInUrl.searchParams.set("callbackUrl", pathname);
+    // Keep the query (/plan?plan=abc) so sign-in returns to the same view
+    signInUrl.searchParams.set("callbackUrl", pathname + request.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }
 
