@@ -72,7 +72,7 @@ export function CourseSwitcher({
       <div className={cn("flex flex-wrap items-center gap-2 type-body-m text-on-surface-variant", className)}>
         No courses yet.
         <Button asChild variant="text" size="sm">
-          <Link href="/plan">Upload materials</Link>
+          <Link href="/plan/materials">Upload materials</Link>
         </Button>
       </div>
     )
