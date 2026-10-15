@@ -4,12 +4,11 @@ import { createSession } from "@/services/session";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { internalError, sessionError } from "./session-errors";
 
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return sessionError("unauthorized");
 
   const rl = generalLimiter.check(userId);
   if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
@@ -18,10 +17,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 }
-    );
+    return sessionError("invalid_json");
   }
 
   try {
@@ -30,14 +26,11 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", issues: err.issues },
+        { error: "Check the highlighted fields.", code: "validation_failed", issues: err.issues },
         { status: 400 }
       );
     }
     logger.error("create_session_failed", { error: String(err) });
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return internalError("Session not created.");
   }
 }

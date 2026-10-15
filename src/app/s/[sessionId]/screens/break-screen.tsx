@@ -1,117 +1,177 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { BreakState } from "../session-runner";
+import { useEffect, useRef, useState } from "react";
+
+import { breakEndsAt, breakRemainingSeconds } from "@/lib/breaks";
+import { formatTime } from "@/lib/format";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ErrorState } from "@/components/app/error-state";
+import { LessonButton } from "@/components/lesson/lesson-button";
+import { LessonFrame } from "@/components/lesson/lesson-frame";
+import { useLessonAnnounce } from "@/components/lesson/lesson-announcer";
+import type { SessionErrorCopy } from "@/components/session/errors";
+import type { RunData } from "@/components/session/types";
+import { useZone } from "@/components/session/use-zone";
 
 interface Props {
-  breakState: BreakState;
-  onBreakEnd: () => void;
+  run: RunData;
+  timezone: string | null;
+  /** The break started while an answer was on its way, so that answer wasn't saved. */
+  interrupted: boolean;
+  ending: boolean;
+  error: SessionErrorCopy | null;
+  onEndBreak: () => void;
 }
 
-export function BreakScreen({ breakState, onBreakEnd }: Props) {
-  const [remaining, setRemaining] = useState(() => computeRemaining(breakState));
+const HEADING_ID = "break-title";
 
+function formatClock(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * The rest between work blocks: a countdown, what comes next, and End
+ * break. The timer reads server timestamps, so it survives a refresh; it is
+ * not announced every second (role="timer" is silent by default), only at
+ * the start and with one minute left.
+ */
+export function BreakScreen({ run, timezone, interrupted, ending, error, onEndBreak }: Props) {
+  const state = run.break_state;
+  const [remaining, setRemaining] = useState(() => breakRemainingSeconds(state));
+  const endedRef = useRef(false);
+  const { timeZone, ready } = useZone(timezone);
+  const endsAt = breakEndsAt(state);
+  const canEndEarly = run.policies?.allowEndBreakEarly !== false;
+
+  // Tick once a second against the server's start time.
   useEffect(() => {
-    const interval = setInterval(() => {
-      const r = computeRemaining(breakState);
-      setRemaining(r);
-      if (r <= 0) {
-        clearInterval(interval);
-        onBreakEnd();
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [breakState, onBreakEnd]);
+    const tick = () => setRemaining(breakRemainingSeconds(state));
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [state]);
 
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
+  // When time is up, end the break once (also when the break was already over on arrival).
+  useEffect(() => {
+    if (remaining > 0 || endedRef.current) return;
+    endedRef.current = true;
+    onEndBreak();
+  }, [remaining, onEndBreak]);
+
+  // A failed end lets the timer path try again on the next press.
+  useEffect(() => {
+    if (error) endedRef.current = false;
+  }, [error]);
+
+  // Focus the heading so screen readers start here.
+  useEffect(() => {
+    const heading = document.getElementById(HEADING_ID);
+    if (!heading) return;
+    heading.setAttribute("tabindex", "-1");
+    heading.focus({ preventScroll: true });
+  }, []);
+
+  const nextBlock = state.current_cycle + 2;
+  const answered = run.answered_count ?? run.current_index;
 
   return (
-    <div style={{ textAlign: "center", padding: "4rem 0" }}>
-      <div
-        style={{
-          fontSize: "1rem",
-          letterSpacing: "0.12em",
-          color: "var(--sb-warning)",
-          marginBottom: "1.25rem",
-          fontFamily: "var(--sb-font-display)",
-        }}
-      >
-        BREAK TIME
-      </div>
+    <LessonFrame
+      current={answered}
+      total={run.prompt_count}
+      questionNumber={Math.min(run.current_index + 1, run.prompt_count)}
+      question="Break"
+      questionId={HEADING_ID}
+      footer={
+        <>
+          <p className="type-body-m text-lesson-muted">Your answers are saved.</p>
+          <LessonButton
+            variant="check"
+            width="full"
+            className="sm:w-auto"
+            loading={ending}
+            loadingLabel="Ending break…"
+            disabled={!canEndEarly && remaining > 0}
+            onClick={onEndBreak}
+          >
+            End break
+          </LessonButton>
+        </>
+      }
+    >
+      <BreakAnnouncements remaining={remaining} interrupted={interrupted} />
 
-      <div
-        style={{
-          fontSize: "5rem",
-          fontWeight: 700,
-          fontVariantNumeric: "tabular-nums",
-          marginBottom: "2rem",
-          color: "var(--sb-warning)",
-          fontFamily: "var(--sb-font-display)",
-          lineHeight: 1,
-        }}
-      >
-        {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
-      </div>
-
-      {/* Checklist stays a comfortable reading column, centered on the
-          wider stage rather than stretched across it. */}
-      <div
-        style={{
-          background: "var(--sb-bg-card)",
-          border: "1px solid var(--sb-border)",
-          borderRadius: "var(--sb-radius)",
-          padding: "1.5rem 1.75rem",
-          margin: "0 auto 2rem",
-          maxWidth: 560,
-          textAlign: "left",
-        }}
-      >
-        <p
-          style={{
-            margin: "0 0 0.75rem",
-            fontSize: "0.95rem",
-            fontWeight: 600,
-            color: "var(--sb-info)",
-          }}
-        >
-          DO THIS NOW:
+      <div className="flex flex-col items-start gap-2">
+        <p className="type-label-l font-bold text-lesson-muted" id="break-timer-label">
+          Time left
         </p>
-        <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "1.05rem", lineHeight: 1.9 }}>
+        <p
+          role="timer"
+          aria-live="off"
+          aria-atomic="true"
+          aria-labelledby="break-timer-label"
+          className="type-display-l font-bold text-lesson-on-surface tabular-nums"
+        >
+          {formatClock(remaining)}
+        </p>
+        <p className="type-body-l text-lesson-muted">
+          {endsAt && ready ? `Ends at ${formatTime(endsAt, { timeZone })}. ` : ""}
+          {nextBlock <= state.total_cycles ? `Next: block ${nextBlock} of ${state.total_cycles}.` : ""}
+        </p>
+        {!canEndEarly && remaining > 0 ? (
+          <p className="type-body-m text-lesson-muted">You can end the break when the timer runs out.</p>
+        ) : null}
+      </div>
+
+      {interrupted ? (
+        <Alert variant="info" role="note">
+          <AlertDescription>
+            Your last answer wasn&apos;t submitted because the break started. Submit it after the break.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <section aria-labelledby="during-break" className="flex flex-col gap-3">
+        <h2 id="during-break" className="type-title-l font-bold text-lesson-on-surface">
+          During the break
+        </h2>
+        <ul className="flex list-disc flex-col gap-2 pl-6 type-body-l text-lesson-on-surface marker:text-lesson-muted">
           <li>Stand up and stretch</li>
           <li>Get water</li>
-          <li>Look at something far away (20-20-20 rule)</li>
-          <li>Do NOT check your phone</li>
+          <li>Look at something far away for 20 seconds</li>
+          <li>Leave your phone alone</li>
         </ul>
-      </div>
+      </section>
 
-      <p style={{ fontSize: "0.95rem", color: "var(--sb-text-dim)", marginBottom: "1.25rem" }}>
-        Cycle {breakState.current_cycle + 1} of {breakState.total_cycles}
-      </p>
-
-      <button
-        onClick={onBreakEnd}
-        style={{
-          padding: "0.6rem 1.75rem",
-          fontSize: "0.95rem",
-          fontFamily: "var(--sb-font-body)",
-          background: "transparent",
-          color: "var(--sb-text-dim)",
-          border: "1px solid var(--sb-border)",
-          borderRadius: "var(--sb-radius)",
-          cursor: "pointer",
-        }}
-      >
-        End break early
-      </button>
-    </div>
+      {error ? (
+        <ErrorState
+          title={error.title}
+          description={error.description}
+          onRetry={error.reload ? () => window.location.reload() : onEndBreak}
+          retryLabel={error.reload ? "Reload" : "Retry"}
+          retrying={ending}
+        />
+      ) : null}
+    </LessonFrame>
   );
 }
 
-function computeRemaining(state: BreakState): number {
-  if (!state.on_break || !state.break_started_at) return 0;
-  const breakStart = new Date(state.break_started_at).getTime();
-  const elapsed = (Date.now() - breakStart) / 1000;
-  const duration = state.break_duration_seconds ?? 600;
-  return Math.max(0, Math.ceil(duration - elapsed));
+/** Says when the break starts and when one minute is left; never each second. */
+function BreakAnnouncements({ remaining, interrupted }: { remaining: number; interrupted: boolean }) {
+  const announce = useLessonAnnounce();
+  const saidMinute = useRef(false);
+
+  useEffect(() => {
+    announce?.(interrupted ? "Break started before your answer was submitted." : "Break started.");
+  }, [announce, interrupted]);
+
+  useEffect(() => {
+    if (remaining <= 60 && remaining > 55 && !saidMinute.current) {
+      saidMinute.current = true;
+      announce?.("1 minute left in the break.");
+    }
+  }, [announce, remaining]);
+
+  return null;
 }

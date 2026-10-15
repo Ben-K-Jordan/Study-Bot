@@ -25,7 +25,7 @@ export function getBreakConfig(type: string): BreakConfig {
   return BREAK_MAP[type] ?? DEFAULT_BREAK;
 }
 
-interface BreakProtocol {
+export interface BreakProtocol {
   type?: string;
   cycles?: number;
 }
@@ -78,15 +78,73 @@ export function checkBreakNeeded(state: BreakState, now: Date = new Date()): Bre
   const workStart = new Date(state.work_started_at);
   const elapsedSeconds = (now.getTime() - workStart.getTime()) / 1000;
 
-  if (elapsedSeconds >= state.work_duration_seconds) {
+  if (elapsedSeconds < state.work_duration_seconds) return state;
+
+  // Away long enough for a break and a whole second block to have passed (a
+  // student resuming the next day, say): that time away was the break, so
+  // start the next block now instead of making them sit out another one.
+  // The margin keeps a long question that runs past the block end from
+  // skipping the break.
+  const breakSeconds = state.break_duration_seconds ?? 0;
+  if (elapsedSeconds >= 2 * state.work_duration_seconds + breakSeconds) {
+    const breakStartedAt = new Date(workStart.getTime() + state.work_duration_seconds * 1000);
     return {
       ...state,
-      on_break: true,
-      break_started_at: now.toISOString(),
+      on_break: false,
+      break_started_at: undefined,
+      current_cycle: state.current_cycle + 1,
+      work_started_at: now.toISOString(),
+      completed_breaks: [...state.completed_breaks, breakStartedAt.toISOString()],
     };
   }
 
-  return state;
+  return {
+    ...state,
+    on_break: true,
+    break_started_at: now.toISOString(),
+  };
+}
+
+/** Whether a protocol has a break at all: one work block never breaks. */
+export function hasBreaks(protocol: BreakProtocol | null | undefined): boolean {
+  return (protocol?.cycles ?? 1) >= 2;
+}
+
+export interface BreakSchedule {
+  /** Work blocks in the session. */
+  blocks: number;
+  workMinutes: number;
+  breakMinutes: number;
+}
+
+/**
+ * The protocol in whole minutes for the preflight ("2 blocks of 25 min with
+ * a 5 min break"), or null when the session has a single block.
+ */
+export function breakSchedule(protocol: BreakProtocol | null | undefined): BreakSchedule | null {
+  if (!protocol || !hasBreaks(protocol)) return null;
+  const config = getBreakConfig(protocol.type ?? "50_10");
+  return {
+    blocks: protocol.cycles ?? 1,
+    workMinutes: Math.max(1, Math.round(config.workMinutes)),
+    breakMinutes: Math.max(1, Math.round(config.breakMinutes)),
+  };
+}
+
+/** When the current break ends, or null when not on a break. */
+export function breakEndsAt(state: BreakState): Date | null {
+  if (!state.on_break || !state.break_started_at) return null;
+  const start = Date.parse(state.break_started_at);
+  if (Number.isNaN(start)) return null;
+  const duration = state.break_duration_seconds ?? getBreakConfig("50_10").breakMinutes * 60;
+  return new Date(start + duration * 1000);
+}
+
+/** Whole seconds left in the current break (0 when it is over or not running). */
+export function breakRemainingSeconds(state: BreakState, now: Date = new Date()): number {
+  const end = breakEndsAt(state);
+  if (!end) return 0;
+  return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 1000));
 }
 
 /**

@@ -1,359 +1,275 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { computeFollowups } from "@/lib/spacing";
-import type { RunData, RunMetrics, SessionData } from "../session-runner";
+import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { CheckIcon, ClipboardListIcon } from "lucide-react";
+
+import { useApi } from "@/lib/swr";
+import { formatDateTime, formatDuration, formatList, formatNumber, formatPercent, plural } from "@/lib/format";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/app/error-state";
+import { LoadingRegion } from "@/components/app/skeletons";
+import { LessonButton } from "@/components/lesson/lesson-button";
+import { resultsUrl } from "@/components/session/api";
+import { CalibrationSection } from "@/components/session/calibration-section";
+import { sessionErrorCopy, type SessionErrorCopy } from "@/components/session/errors";
+import { FollowupsSection } from "@/components/session/followups-section";
+import { SessionScreen } from "@/components/session/session-screen";
+import type { FollowupPreview, SessionData, SessionResults } from "@/components/session/types";
+import { useZone } from "@/components/session/use-zone";
 
 interface Props {
-  run: RunData | null;
   session: SessionData;
-  onNewRun: () => void;
+  /** The finished run to show. */
+  runId: string;
+  /** Server-rendered results for this run, when the page opened on them. */
+  initialResults: SessionResults | null;
+  /** Finishing the run failed: the run is still open. */
+  finishError: SessionErrorCopy | null;
+  finishing: boolean;
+  onRetryFinish: () => void;
+  onStartAgain: () => void;
+  /** Move focus to the heading (after the last question). */
+  focusOnMount?: boolean;
 }
 
-type ScheduleResult =
-  | { status: "scheduled" | "already_scheduled"; dates: string[] }
-  | { status: "no_plan" }
-  | { status: "error"; message: string };
-
-interface CalibrationPoint {
-  prompt_index: number;
-  confidence: number;
-  score: number; // 1 = correct, 0.5 = partial, 0 = incorrect
-  label: string;
-}
-
-function buildCalibrationData(attempts?: RunData["attempts"]): CalibrationPoint[] {
-  if (!attempts) return [];
-  return attempts
-    .filter((a) => a.confidence_rating != null && a.self_score != null)
-    .map((a) => ({
-      prompt_index: a.prompt_index,
-      confidence: a.confidence_rating!,
-      score: a.self_score === "CORRECT" ? 1 : a.self_score === "PARTIAL" ? 0.5 : 0,
-      label: `Q${a.prompt_index + 1}`,
-    }));
-}
-
-function computeCalibrationGap(points: CalibrationPoint[]): { gap: number; overconfidentCount: number; underconfidentCount: number } {
-  if (points.length === 0) return { gap: 0, overconfidentCount: 0, underconfidentCount: 0 };
-  let overconfidentCount = 0;
-  let underconfidentCount = 0;
-  let totalGap = 0;
-
-  for (const p of points) {
-    const normalizedConfidence = (p.confidence - 1) / 4; // 1-5 → 0-1
-    const diff = normalizedConfidence - p.score;
-    totalGap += Math.abs(diff);
-    if (diff > 0.25) overconfidentCount++;
-    if (diff < -0.25) underconfidentCount++;
-  }
-
-  return { gap: totalGap / points.length, overconfidentCount, underconfidentCount };
-}
-
-export function EndScreen({ run, session, onNewRun }: Props) {
-  // Use run metrics or fall back to last completed run from server
-  const metrics: RunMetrics | null =
-    (run?.metrics as RunMetrics) ??
-    (session.last_completed_run?.metrics as RunMetrics | undefined) ??
-    null;
-
-  // Follow-ups are ONE deterministic function of the run's results: the
-  // spaced-repetition ladder from accuracy, anchored at the run's end time.
-  // (The stored metrics carry two divergent server-computed lists — the fixed
-  // ladder at completion, later overwritten by mastery due dates — so a page
-  // refresh used to show different numbers. Recomputing here keeps the
-  // display stable across refreshes.)
-  const followupAnchor = useMemo(() => {
-    const last = session.last_completed_run;
-    if (last?.ended_at && (!run || run.run_id === last.run_id)) {
-      return new Date(last.ended_at);
-    }
-    // Fresh completion (no reload yet): the run ended moments ago.
-    return new Date();
-  }, [run, session.last_completed_run]);
-
-  const followups = useMemo(
-    () =>
-      metrics && metrics.attempts_count > 0
-        ? computeFollowups(metrics.accuracy, followupAnchor)
-        : [],
-    [metrics, followupAnchor],
+/**
+ * The lesson-complete screen: honest stats, how confidence compared with
+ * results, follow-up sessions with dates from the scheduler, and the way
+ * out. No XP here (VOICE.md keeps XP on Home, Progress and Settings).
+ */
+export function EndScreen({
+  session,
+  runId,
+  initialResults,
+  finishError,
+  finishing,
+  onRetryFinish,
+  onStartAgain,
+  focusOnMount = false,
+}: Props) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const fallback = initialResults?.run_id === runId ? initialResults : undefined;
+  const { data, error, isLoading, mutate } = useApi<SessionResults>(
+    finishError ? null : resultsUrl(session.session_id, runId),
+    { fallbackData: fallback, revalidateOnMount: !fallback }
   );
 
-  const scheduleRunId = run?.run_id ?? session.last_completed_run?.run_id ?? null;
-  const [scheduling, setScheduling] = useState(false);
-  const [scheduleResult, setScheduleResult] = useState<ScheduleResult | null>(null);
-  const scheduleDone = scheduleResult != null && scheduleResult.status !== "error";
+  useEffect(() => {
+    if (focusOnMount) headingRef.current?.focus();
+  }, [focusOnMount]);
 
-  async function handleScheduleFollowups() {
-    if (!scheduleRunId || scheduling || scheduleDone) return;
-    setScheduling(true);
-    try {
-      const res = await fetch("/api/plans/followups", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ run_id: scheduleRunId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
-      if (data.status === "no_plan") {
-        setScheduleResult({ status: "no_plan" });
-      } else {
-        setScheduleResult({
-          status: data.status,
-          dates: (data.scheduled ?? []).map((s: { date: string }) => s.date),
-        });
-      }
-    } catch (e: unknown) {
-      setScheduleResult({
-        status: "error",
-        message: e instanceof Error ? e.message : "Failed to schedule follow-ups",
-      });
-    } finally {
-      setScheduling(false);
-    }
-  }
+  const footer = (
+    <>
+      <LessonButton variant="neutral" width="full" className="sm:w-auto" onClick={onStartAgain}>
+        Start session again
+      </LessonButton>
+      <LessonButton variant="primary" width="full" className="sm:w-auto" asChild>
+        <Link href="/">Back to Home</Link>
+      </LessonButton>
+    </>
+  );
 
-  if (!metrics || metrics.attempts_count === 0) {
+  if (finishError) {
     return (
-      <div style={{ textAlign: "center", padding: "2rem 0" }}>
-        <h1 style={{ fontSize: "1.6rem", fontFamily: "var(--sb-font-display)" }}>No completed run yet</h1>
-        <p style={{ color: "var(--sb-text-muted)", marginBottom: "1.5rem" }}>
-          Start a session to see your results here.
-        </p>
-        <button onClick={onNewRun} style={primaryBtn}>
-          Practice this session again
-        </button>
-      </div>
+      <SessionScreen
+        footer={
+          <LessonButton variant="primary" width="full" className="sm:ml-auto sm:w-auto" asChild>
+            <Link href="/">Back to Home</Link>
+          </LessonButton>
+        }
+      >
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="type-headline-s font-bold text-lesson-on-surface outline-none sm:type-headline-m sm:font-bold"
+        >
+          Results aren&apos;t ready
+        </h1>
+        <ErrorState
+          title={finishError.title}
+          description={finishError.description}
+          onRetry={finishError.reload ? () => window.location.reload() : onRetryFinish}
+          retryLabel={finishError.reload ? "Reload" : "Retry"}
+          retrying={finishing}
+        />
+      </SessionScreen>
     );
   }
 
-  const accuracyPct = (metrics.accuracy * 100).toFixed(1);
-  const timeMin = Math.round(metrics.time_spent_seconds / 60);
+  const results = data ?? null;
+  const empty = results != null && results.question_count === 0;
 
-  return (
-    <div>
-      <div
-        style={{
-          textAlign: "center",
-          padding: "1.5rem 0",
-          marginBottom: "1.5rem",
-        }}
+  if (empty) {
+    return (
+      <SessionScreen
+        footer={
+          <>
+            <LessonButton variant="neutral" width="full" className="sm:w-auto" asChild>
+              <Link href="/">Back to Home</Link>
+            </LessonButton>
+            <LessonButton variant="primary" width="full" className="sm:w-auto" onClick={onStartAgain}>
+              Start session
+            </LessonButton>
+          </>
+        }
       >
-        <div
-          style={{
-            fontSize: "0.85rem",
-            letterSpacing: "0.1em",
-            color: "var(--sb-info)",
-            marginBottom: "0.5rem",
-            fontFamily: "var(--sb-font-display)",
-          }}
-        >
-          SESSION COMPLETE
-        </div>
-        <h1 style={{ fontSize: "2rem", margin: "0 0 0.35rem", fontFamily: "var(--sb-font-display)", color: "var(--sb-primary)" }}>
-          {session.course_name} | {session.exam_name}
-        </h1>
-        <p style={{ color: "var(--sb-text-muted)", margin: 0, fontSize: "1.05rem" }}>
-          {session.mode_label}: {session.topic_scope}
-        </p>
-      </div>
-
-      {/* EXAM_SIM two-phase indicator */}
-      {session.mode === "EXAM_SIM" && run && (
-        <div
-          style={{
-            background: "var(--sb-bg-review-tint)",
-            border: "1px solid var(--sb-review)",
-            borderRadius: "var(--sb-radius)",
-            padding: "0.75rem 1rem",
-            marginBottom: "1rem",
-            fontSize: "0.9rem",
-            color: "var(--sb-review)",
-            display: "flex",
-            justifyContent: "space-around",
-          }}
-        >
-          <span>Answered: {run.answered_count ?? "\u2014"}</span>
-          <span>Scored: {run.scored_count ?? "\u2014"}</span>
-        </div>
-      )}
-
-      {/* Stats grid: 4-across on desktop, 2x2 on phones (auto-fit grid) */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: "1rem",
-          marginBottom: "1.75rem",
-        }}
-      >
-        <StatCard label="Accuracy" value={`${accuracyPct}%`} color={accuracyColor(metrics.accuracy)} />
-        <StatCard label="Time" value={`${timeMin} min`} color="var(--sb-info)" />
-        <StatCard label="Correct" value={String(metrics.correct_count)} color="var(--sb-success)" />
-        <StatCard
-          label="Partial / Incorrect"
-          value={`${metrics.partial_count} / ${metrics.incorrect_count}`}
-          color="var(--sb-error)"
-        />
-      </div>
-
-      {/* Calibration Dashboard */}
-      <CalibrationDashboard attempts={run?.attempts} />
-
-      {/* Recommendations */}
-      {followups.length > 0 && (
-        <div
-          style={{
-            background: "var(--sb-bg-card)",
-            border: "1px solid var(--sb-border)",
-            borderRadius: "var(--sb-radius)",
-            padding: "1.5rem 1.75rem",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <h2 style={sectionTitle}>RECOMMENDED FOLLOW-UPS</h2>
-          <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "1rem", lineHeight: 1.9 }}>
-            {followups.map((f, i) => (
-              <li key={i}>
-                {f.label} — <span style={{ color: "var(--sb-info)" }}>{f.date}</span>
-              </li>
-            ))}
-          </ul>
-          <p style={{ margin: "0.75rem 0 0", fontSize: "0.8rem", color: "var(--sb-text-dim)" }}>
-            Based on spaced repetition research: lower accuracy → shorter intervals.
+        <div className="flex flex-col items-start gap-4">
+          <span className="flex size-14 items-center justify-center rounded-full bg-lesson-option-hover text-lesson-muted">
+            <ClipboardListIcon className="size-7" aria-hidden="true" />
+          </span>
+          <h1
+            ref={headingRef}
+            tabIndex={-1}
+            className="type-headline-s font-bold text-lesson-on-surface outline-none sm:type-headline-m sm:font-bold"
+          >
+            No results yet
+          </h1>
+          <p className="type-body-l text-lesson-on-surface">
+            Finish this session to see your accuracy and follow-ups.
           </p>
-          {scheduleRunId && (
-            <button
-              onClick={handleScheduleFollowups}
-              disabled={scheduling || scheduleDone}
-              style={{
-                ...secondaryBtn,
-                marginTop: "0.75rem",
-                opacity: scheduling || scheduleDone ? 0.6 : 1,
-                cursor: scheduling || scheduleDone ? "default" : "pointer",
-              }}
-            >
-              {scheduling ? "Scheduling…" : "Schedule follow-ups"}
-            </button>
-          )}
-          {scheduleResult && (
-            <p
-              style={{
-                margin: "0.75rem 0 0",
-                fontSize: "0.9rem",
-                color:
-                  scheduleResult.status === "error"
-                    ? "var(--sb-error)"
-                    : scheduleResult.status === "no_plan"
-                      ? "var(--sb-warning)"
-                      : "var(--sb-success)",
-              }}
-            >
-              {scheduleResult.status === "no_plan"
-                ? "No active plan — create a study plan to schedule follow-ups."
-                : scheduleResult.status === "error"
-                  ? scheduleResult.message
-                  : scheduleResult.dates.length > 0
-                    ? `Added to your plan: ${scheduleResult.dates.join(", ")}`
-                    : "Nothing to schedule — the recommended dates fall after your exam."}
-            </p>
-          )}
         </div>
-      )}
+      </SessionScreen>
+    );
+  }
 
-      <button onClick={onNewRun} style={primaryBtn}>
-        Practice this session again
-      </button>
-    </div>
+  return (
+    <SessionScreen footer={footer} stickyFooter="wide">
+      <ResultsHeader session={session} results={results} headingRef={headingRef} />
+
+      {results ? (
+        <>
+          <ResultsStats session={session} results={results} />
+          <CalibrationSection answers={results.answers} pretestCount={results.pretest_count} />
+          {results.followups ? (
+            <FollowupsSection
+              runId={results.run_id}
+              preview={results.followups}
+              onChange={(next: FollowupPreview) =>
+                mutate({ ...results, followups: next }, { revalidate: true })
+              }
+            />
+          ) : null}
+        </>
+      ) : error ? (
+        <ErrorState
+          title={sessionErrorCopy(error, "results").title}
+          description={sessionErrorCopy(error, "results").description}
+          onRetry={() => void mutate()}
+          retrying={isLoading}
+        />
+      ) : (
+        <ResultsSkeleton />
+      )}
+    </SessionScreen>
   );
 }
 
-function CalibrationDashboard({ attempts }: { attempts?: RunData["attempts"] }) {
-  const calibrationData = buildCalibrationData(attempts);
-  if (calibrationData.length === 0) return null;
-  const { gap, overconfidentCount, underconfidentCount } = computeCalibrationGap(calibrationData);
-  const label = gap < 0.15 ? "Well Calibrated" : gap < 0.3 ? "Slightly Miscalibrated" : "Needs Work";
-  const color = gap < 0.15 ? "var(--sb-success)" : gap < 0.3 ? "var(--sb-warning)" : "var(--sb-error)";
+function ResultsHeader({
+  session,
+  results,
+  headingRef,
+}: {
+  session: SessionData;
+  results: SessionResults | null;
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
+}) {
+  const { timeZone, ready } = useZone(session.timezone);
+  const endedAt = results?.ended_at && ready ? formatDateTime(results.ended_at, { timeZone }) : null;
+  return (
+    <header className="flex flex-col items-start gap-3">
+      <span className="flex size-14 items-center justify-center rounded-full bg-lesson-correct text-lesson-on-correct">
+        <CheckIcon className="size-8" strokeWidth={3} aria-hidden="true" />
+      </span>
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="type-headline-m font-bold text-lesson-on-surface outline-none sm:type-headline-l sm:font-bold"
+      >
+        Session complete
+      </h1>
+      <p className="type-title-m text-pretty text-lesson-on-surface wrap-break-word">
+        {session.mode_label}: {session.topic_scope}
+      </p>
+      <p className="type-body-l text-lesson-muted wrap-break-word">
+        {session.course_name}
+        <span aria-hidden="true"> · </span>
+        <span className="sr-only">, </span>
+        {session.exam_name}
+        {endedAt ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span className="sr-only">, finished </span>
+            {endedAt}
+          </>
+        ) : null}
+      </p>
+    </header>
+  );
+}
+
+function ResultsStats({ session, results }: { session: SessionData; results: SessionResults }) {
+  const m = results.metrics;
+  const counted = m.attempts_count > 0;
+  const stats: { label: string; value: string }[] = [
+    { label: "Accuracy", value: counted ? formatPercent(m.accuracy) : "Not counted" },
+    { label: "Questions", value: formatNumber(results.question_count) },
+    { label: "Time answering", value: formatDuration(m.time_spent_seconds / 60) },
+    { label: "Errors logged", value: formatNumber(results.errors_logged) },
+    { label: "Repair questions", value: formatNumber(results.repair_count) },
+  ];
+  if (session.mode === "EXAM_SIM" && results.answered_count != null) {
+    stats.push({
+      label: "Scored",
+      value: `${formatNumber(results.scored_count ?? 0)} of ${formatNumber(results.answered_count)}`,
+    });
+  }
+
+  const breakdown = formatList([
+    `${formatNumber(m.correct_count)} correct`,
+    `${formatNumber(m.partial_count)} partly correct`,
+    `${formatNumber(m.incorrect_count)} incorrect`,
+  ]);
 
   return (
-    <div style={{ background: "var(--sb-bg-card)", border: "1px solid var(--sb-border)", borderRadius: "var(--sb-radius)", padding: "1.5rem 1.75rem", marginBottom: "1.5rem" }}>
-      <h2 style={sectionTitle}>CONFIDENCE CALIBRATION</h2>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: overconfidentCount > 0 || underconfidentCount > 0 ? "0.5rem" : 0 }}>
-        <span style={{ fontSize: "1.15rem", color, fontWeight: 600 }}>{label}</span>
-        <span style={{ fontSize: "0.85rem", color: "var(--sb-text-dim)" }}>({(gap * 100).toFixed(0)}% gap)</span>
+    <section aria-label="Session stats" className="flex flex-col gap-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-2xl border-2 border-lesson-option-border p-5 sm:grid-cols-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="flex min-w-0 flex-col gap-1">
+            <dt className="type-label-l font-bold text-lesson-muted">{stat.label}</dt>
+            <dd className="type-headline-s font-bold text-lesson-on-surface tabular-nums">{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="type-body-m text-lesson-muted">
+        {counted ? `${breakdown}.` : "No answers counted toward accuracy."}
+        {results.pretest_count > 0
+          ? ` ${plural(results.pretest_count, {
+              one: "The pretest question doesn't count toward accuracy.",
+              other: "# pretest questions don't count toward accuracy.",
+            })}`
+          : ""}
+      </p>
+    </section>
+  );
+}
+
+function ResultsSkeleton() {
+  return (
+    <LoadingRegion label="Loading results…" className="flex flex-col gap-8">
+      <div aria-hidden="true" className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-2xl border-2 border-lesson-option-border p-5 sm:grid-cols-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-7 w-16" />
+          </div>
+        ))}
       </div>
-      {overconfidentCount > 0 && (
-        <p style={{ margin: "0 0 0.25rem", fontSize: "0.9rem", color: "var(--sb-error)" }}>
-          Overconfident on {overconfidentCount} question{overconfidentCount > 1 ? "s" : ""} — blind spots to review.
-        </p>
-      )}
-      {underconfidentCount > 0 && (
-        <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--sb-success)" }}>
-          Underconfident on {underconfidentCount} question{underconfidentCount > 1 ? "s" : ""} — you know more than you think.
-        </p>
-      )}
-    </div>
+      <div aria-hidden="true" className="flex flex-col gap-3">
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-52 w-full rounded-2xl" />
+      </div>
+    </LoadingRegion>
   );
 }
-
-function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div
-      style={{
-        background: "var(--sb-bg-card)",
-        border: "1px solid var(--sb-border)",
-        borderRadius: "var(--sb-radius)",
-        padding: "1.25rem 1rem",
-        textAlign: "center",
-      }}
-    >
-      <div style={{ fontSize: "1.9rem", fontWeight: 700, color, fontFamily: "var(--sb-font-display)" }}>{value}</div>
-      <div style={{ fontSize: "0.85rem", color: "var(--sb-text-muted)", marginTop: "0.35rem" }}>{label}</div>
-    </div>
-  );
-}
-
-function accuracyColor(accuracy: number): string {
-  if (accuracy >= 0.85) return "var(--sb-success)";
-  if (accuracy >= 0.7) return "var(--sb-warning)";
-  return "var(--sb-error)";
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: "0.85rem",
-  letterSpacing: "0.08em",
-  color: "var(--sb-info)",
-  margin: "0 0 0.65rem",
-  fontFamily: "var(--sb-font-display)",
-};
-
-// Quiet outline button attached to the follow-ups list — deliberately not a
-// second full-width primary; "Practice this session again" is the one CTA.
-const secondaryBtn: React.CSSProperties = {
-  padding: "0.45rem 1rem",
-  fontSize: "0.85rem",
-  fontFamily: "var(--sb-font-body)",
-  fontWeight: 600,
-  background: "transparent",
-  color: "var(--sb-info)",
-  border: "1px solid var(--sb-info)",
-  borderRadius: "var(--sb-radius)",
-  cursor: "pointer",
-};
-
-const primaryBtn: React.CSSProperties = {
-  width: "100%",
-  padding: "1rem 1.5rem",
-  fontSize: "1.15rem",
-  fontFamily: "var(--sb-font-body)",
-  fontWeight: 600,
-  background: "var(--sb-primary)",
-  color: "var(--sb-bg-darkest)",
-  border: "none",
-  borderRadius: "var(--sb-radius)",
-  cursor: "pointer",
-};

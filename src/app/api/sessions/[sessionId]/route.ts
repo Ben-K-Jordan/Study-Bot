@@ -1,26 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getSession } from "@/services/session";
+import { idSchema, sessionError } from "../session-errors";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return sessionError("unauthorized");
 
   const { sessionId } = await params;
+  if (!idSchema.safeParse(sessionId).success) return sessionError("session_not_found");
+
   const result = await getSession(userId, sessionId);
 
   if ("error" in result) {
-    if (result.error === "not_found") {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
-    if (result.error === "forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    return sessionError(result.error === "forbidden" ? "forbidden" : "session_not_found");
   }
 
   return NextResponse.json(result.data);

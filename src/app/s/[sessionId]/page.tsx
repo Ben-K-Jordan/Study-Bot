@@ -1,84 +1,48 @@
-import { prisma } from "@/lib/db";
-import { MODE_LABELS } from "@/lib/calendar";
-import { notFound } from "next/navigation";
-import { SessionRunner } from "./session-runner";
-import { getDeckPreview } from "@/services/run";
+import { cache } from "react";
+import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
+
 import { getCurrentUserId } from "@/lib/auth";
+import { getSessionScreen } from "@/services/session";
+import { SessionRunner } from "./session-runner";
 
 interface SessionPageProps {
   params: Promise<{ sessionId: string }>;
 }
 
+/** One lookup per request, shared by the title and the page. */
+const loadSessionScreen = cache(async (sessionId: string) => {
+  const userId = await getCurrentUserId();
+  if (!userId) return { signedOut: true as const };
+  const result = await getSessionScreen(userId, sessionId);
+  return { signedOut: false as const, result };
+});
+
+export async function generateMetadata({ params }: SessionPageProps): Promise<Metadata> {
+  const { sessionId } = await params;
+  const loaded = await loadSessionScreen(sessionId);
+  if (loaded.signedOut || "error" in loaded.result) return { title: "Session not found" };
+  const { session } = loaded.result.data;
+  const opensOnResults = !session.active_run && session.last_completed_run != null;
+  return {
+    title: `${opensOnResults ? "Session complete" : session.mode_label} · ${session.course_name}`,
+  };
+}
+
+/**
+ * /s/[sessionId]: one study session, for its owner only. Anyone else sees
+ * the same "Session not found" as for a missing session, so links can't be
+ * probed. The URL is in calendar events and must not change.
+ */
 export default async function SessionPage({ params }: SessionPageProps) {
   const { sessionId } = await params;
+  const loaded = await loadSessionScreen(sessionId);
 
-  const session = await prisma.session.findUnique({
-    where: { sessionId },
-    include: {
-      runs: {
-        where: { status: { in: ["CREATED", "ACTIVE"] } },
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
-    },
-  });
-
-  // Only the owner may open a session; anyone else gets the same 404 as a
-  // missing session, so session IDs can't be probed.
-  const userId = await getCurrentUserId();
-  if (!session || session.userId !== userId) {
-    notFound();
+  if (loaded.signedOut) {
+    redirect(`/auth/signin?callbackUrl=${encodeURIComponent(`/s/${sessionId}`)}`);
   }
+  if ("error" in loaded.result) notFound();
 
-  const modeLabel = MODE_LABELS[session.mode] ?? session.mode;
-  const outcome = session.targetOutcome as Record<string, unknown> | null;
-  const breaks = session.breakProtocol as Record<string, unknown> | null;
-  const objectives = session.objectives as { id: string; title: string }[] | null;
-
-  // Check for most recent completed run for summary display
-  const lastCompletedRun = await prisma.sessionRun.findFirst({
-    where: { sessionId: session.sessionId, status: "COMPLETED" },
-    orderBy: { endedAt: "desc" },
-  });
-
-  // Deck composition preview for the preflight contract ("7 new · 2 review
-  // · 1 diagnostic"). Only meaningful before a run exists; best effort.
-  let deckPreview = null;
-  if (session.runs.length === 0) {
-    try {
-      deckPreview = await getDeckPreview(session.userId, {
-        courseName: session.courseName,
-        mode: session.mode,
-        objectives,
-        promptCount: (outcome?.prompt_count as number | undefined) ?? 10,
-      });
-    } catch {
-      // Preview is decorative — never block the page on it
-    }
-  }
-
-  const sessionData = {
-    session_id: session.sessionId,
-    course_name: session.courseName,
-    exam_name: session.examName,
-    mode: session.mode,
-    mode_label: modeLabel,
-    topic_scope: session.topicScope,
-    planned_minutes: session.plannedMinutes,
-    target_outcome: outcome,
-    break_protocol: breaks,
-    objectives,
-    deck_preview: deckPreview,
-    has_active_run: session.runs.length > 0,
-    active_run_id: session.runs[0]?.runId ?? null,
-    last_completed_run: lastCompletedRun
-      ? {
-          run_id: lastCompletedRun.runId,
-          metrics: lastCompletedRun.metrics as Record<string, unknown>,
-          ended_at: lastCompletedRun.endedAt?.toISOString() ?? null,
-        }
-      : null,
-  };
-
-  return <SessionRunner session={sessionData} />;
+  const { session, deckPreview, results } = loaded.result.data;
+  return <SessionRunner session={session} deckPreview={deckPreview} initialResults={results} />;
 }
