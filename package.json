@@ -2,6 +2,23 @@
   "name": "study-bot",
   "version": "1.0.0",
   "private": true,
+  "description": "Exam planning and retrieval practice from your own course files, with spaced review scheduled back from each exam date.",
+  "keywords": [
+    "study",
+    "retrieval-practice",
+    "spaced-repetition",
+    "flashcards",
+    "learning-science",
+    "nextjs"
+  ],
+  "homepage": "https://github.com/Ben-K-Jordan/Study-Bot#readme",
+  "bugs": {
+    "url": "https://github.com/Ben-K-Jordan/Study-Bot/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ben-K-Jordan/Study-Bot.git"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=20.19.0"
