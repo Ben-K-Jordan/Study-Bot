@@ -1,7 +1,8 @@
 /**
  * Print stylesheet for Study guides: the guide marked data-guide-print
  * prints alone, black on white, without the app's navigation, top bar,
- * toasts or controls. Rendered as a React 19 hoisted <style>, so it loads
+ * toasts or controls. Borders use the light theme's outline colour, since
+ * paper is always light. Rendered as a React 19 hoisted <style>, so it loads
  * only on the pages that print guides and leaves globals.css alone.
  */
 const GUIDE_PRINT_CSS = `
@@ -23,7 +24,7 @@ const GUIDE_PRINT_CSS = `
   [data-guide-print], [data-guide-print] * {
     color: #000 !important;
     background: transparent !important;
-    border-color: #999 !important;
+    border-color: #747775 !important;
     box-shadow: none !important;
   }
   [data-guide-print] a { text-decoration: underline; }
