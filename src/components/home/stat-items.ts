@@ -1,7 +1,7 @@
 import { ClockIcon, FlameIcon, TargetIcon } from "lucide-react"
 
 import type { StatItem } from "@/components/app/stat-line"
-import type { WeekTotals } from "@/components/progress/study-data"
+import type { WeekTotals } from "@/services/progress-data"
 import { formatDuration, formatPercent, plural } from "@/lib/format"
 
 /** Home's quiet stats row: streak, accuracy and time over the last 7 days. */

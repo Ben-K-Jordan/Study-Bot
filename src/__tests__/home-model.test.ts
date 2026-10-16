@@ -4,7 +4,14 @@
  */
 import { describe, expect, it } from "vitest"
 
-import { examCountdowns, examInstant, missedItems, todayPlan, type PlanLike } from "@/components/home/home-model"
+import {
+  examCountdowns,
+  examInstant,
+  isOpenPlanStatus,
+  missedItems,
+  todayPlan,
+  type PlanLike,
+} from "@/components/home/home-model"
 import { statItems } from "@/components/home/stat-items"
 import { daysUntil } from "@/lib/format"
 
@@ -96,6 +103,15 @@ describe("missedItems", () => {
     })
     expect(missedItems(p, "2026-10-15", ZONE)).toEqual([])
   })
+
+  it("counts a rescheduled session that was missed again on its new day", () => {
+    const p = plan({
+      // Moved on Oct 13 to Oct 14, then not started on Oct 14 either.
+      items: [item("moved", "2026-10-14T18:00:00Z", 30, "RESCHEDULED")],
+      lastRescheduledAt: new Date("2026-10-13T12:00:00Z"),
+    })
+    expect(missedItems(p, "2026-10-15", ZONE).map((i) => i.id)).toEqual(["moved"])
+  })
 })
 
 describe("todayPlan", () => {
@@ -124,6 +140,28 @@ describe("todayPlan", () => {
     const later = item("later", "2026-10-15T23:00:00Z", 30)
     const result = todayPlan([plan({ items: [later, carried] })], ZONE, NOW)
     expect(result.current?.id).toBe("carried")
+  })
+
+  it("offers a session moved to today by Reschedule as the one to start", () => {
+    const done = item("done", "2026-10-15T14:00:00Z", 30, "DONE")
+    const moved = item("moved", "2026-10-15T19:00:00Z", 30, "RESCHEDULED") // 3pm today
+    const result = todayPlan([plan({ items: [moved, done] })], ZONE, NOW)
+    expect(result.current?.id).toBe("moved")
+    expect(result.next).toBeNull()
+  })
+
+  it("offers a session moved to a later day as the next one", () => {
+    const moved = item("moved", "2026-10-17T14:00:00Z", 30, "RESCHEDULED")
+    const result = todayPlan([plan({ items: [moved] })], ZONE, NOW)
+    expect(result.current).toBeNull()
+    expect(result.next?.id).toBe("moved")
+  })
+})
+
+describe("isOpenPlanStatus", () => {
+  it("treats scheduled, rescheduled and in-progress sessions as startable", () => {
+    expect(["SCHEDULED", "RESCHEDULED", "IN_PROGRESS"].every(isOpenPlanStatus)).toBe(true)
+    expect(["DONE", "MISSED", "SKIPPED"].some(isOpenPlanStatus)).toBe(false)
   })
 })
 

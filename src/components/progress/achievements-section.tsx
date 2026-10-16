@@ -10,7 +10,7 @@ import {
   type AchievementView,
 } from "@/components/progress/progress-model"
 import { SectionError } from "@/components/progress/section-error"
-import { loadGameState, loadSafely } from "@/components/progress/study-data"
+import { loadGameState, loadSafely } from "@/services/progress-data"
 import { TOTAL_BADGES } from "@/lib/badge-data"
 import { cn } from "@/lib/utils"
 import { formatDate, formatNumber } from "@/lib/format"

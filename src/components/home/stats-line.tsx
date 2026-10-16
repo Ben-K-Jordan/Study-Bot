@@ -5,7 +5,7 @@ import { StatLine } from "@/components/app/stat-line"
 import { Button } from "@/components/ui/button"
 import { statItems } from "@/components/home/stat-items"
 import { SectionError } from "@/components/progress/section-error"
-import { loadGameState, loadLastSevenDays, loadSafely, loadTimeZone } from "@/components/progress/study-data"
+import { loadGameState, loadLastSevenDays, loadSafely, loadTimeZone } from "@/services/progress-data"
 
 /** Streak, accuracy and time: one quiet line under the work. */
 export async function HomeStats({ userId }: { userId: string }) {

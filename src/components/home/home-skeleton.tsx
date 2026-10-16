@@ -53,9 +53,14 @@ export function HomeSkeleton() {
   return (
     <LoadingRegion label="Loading Home…" className="flex flex-col gap-8">
       <ExamsSkeleton />
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
-        <WeakSpotsSkeleton />
-        <TodaySkeleton />
+      {/* Same grid as the page: Today first on phones, on the right from 840px. */}
+      <div className="grid gap-8 md:grid-cols-[3fr_2fr] md:gap-6">
+        <div className="min-w-0 md:col-start-2 md:row-start-1">
+          <TodaySkeleton />
+        </div>
+        <div className="min-w-0 md:col-start-1 md:row-start-1">
+          <WeakSpotsSkeleton />
+        </div>
       </div>
       <StatsSkeleton />
     </LoadingRegion>

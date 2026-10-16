@@ -40,17 +40,18 @@ function TopicRow({ topic, examName, timeZone }: { topic: Topic; examName: strin
         />
       ) : (
         <div className="col-span-2 flex min-w-0 items-baseline justify-between gap-3 sm:col-span-1">
-          <span className="min-w-0 truncate type-body-m text-on-surface">{topic.title}</span>
+          <span className="min-w-0 text-pretty break-words type-body-m text-on-surface">{topic.title}</span>
           <Badge variant="outline">Not practiced</Badge>
         </div>
       )}
-      <span className="truncate type-body-s text-on-surface-variant sm:col-start-1 sm:row-start-2">
+      {/* Under 400px the date gets the full width and Practice moves to its own row. */}
+      <span className="min-w-0 type-body-s text-on-surface-variant max-[400px]:col-span-2 sm:col-start-1 sm:row-start-2">
         {topic.lastStudiedAt
           ? `Last practiced ${formatDate(topic.lastStudiedAt, { timeZone })}`
           : "No answers yet"}
       </span>
       <StartSessionButton
-        className="sm:col-start-2 sm:row-span-2 sm:row-start-1"
+        className="max-[400px]:col-span-2 max-[400px]:items-start max-[400px]:justify-self-start sm:col-start-2 sm:row-span-2 sm:row-start-1"
         kind="practice"
         accessibleLabel={`Practice ${topic.title}`}
         request={practiceRequest(topic.courseName, examName, topic)}

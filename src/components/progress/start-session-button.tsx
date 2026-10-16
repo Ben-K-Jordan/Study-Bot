@@ -15,7 +15,7 @@ function failureMessage(error: unknown): string {
     if (error.status === 401) return "Your sign-in expired. Sign in again."
     if (error.status === 429) return "Too many requests. Retry in a few seconds."
   }
-  return "Session not started. Retry"
+  return "Session not started. Retry."
 }
 
 const KINDS = {

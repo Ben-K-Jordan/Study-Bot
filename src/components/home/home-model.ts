@@ -32,6 +32,20 @@ export interface ExamCountdown {
   missedCount: number
 }
 
+/**
+ * Stored statuses of a session nobody has started yet. A session moved by
+ * Reschedule becomes RESCHEDULED and is still to do, as Plan and the run
+ * service treat it (src/services/reflow.ts isMissedItem, run.ts).
+ */
+export function isUnstartedPlanStatus(status: string): boolean {
+  return status === "SCHEDULED" || status === "RESCHEDULED"
+}
+
+/** Stored statuses of a session the student can start or resume. */
+export function isOpenPlanStatus(status: string): boolean {
+  return isUnstartedPlanStatus(status) || status === "IN_PROGRESS"
+}
+
 /** The exam day as an instant that falls on that calendar day in `timeZone`. */
 export function examInstant(examDateKey: string, timeZone: string): Date {
   return zonedTimeToUtc(examDateKey, "12:00", timeZone)
@@ -39,8 +53,9 @@ export function examInstant(examDateKey: string, timeZone: string): Date {
 
 /**
  * Sessions that slipped and haven't been rescheduled since: marked missed,
- * or still scheduled on a day that has ended. A reschedule after the
- * session's start time means the student already dealt with it.
+ * or never started on a day that has ended (rescheduled ones included). A
+ * reschedule after the session's start time means the student already
+ * dealt with it.
  */
 export function missedItems<I extends ItemLike>(
   plan: PlanLike<I>,
@@ -50,7 +65,7 @@ export function missedItems<I extends ItemLike>(
   return plan.items.filter((item) => {
     const slipped =
       item.status === "MISSED" ||
-      (item.status === "SCHEDULED" && dayKey(item.endTime, timeZone) < todayKey)
+      (isUnstartedPlanStatus(item.status) && dayKey(item.endTime, timeZone) < todayKey)
     if (!slipped) return false
     return !plan.lastRescheduledAt || item.startTime > plan.lastRescheduledAt
   })
@@ -102,11 +117,9 @@ export interface TodayPlan {
   today: ScheduledItem[]
   /** The session to start now: the first open one today. */
   current: ScheduledItem | null
-  /** When nothing is open today: the next scheduled session after today. */
+  /** When nothing is open today: the next unstarted session after today. */
   next: ScheduledItem | null
 }
-
-const OPEN = new Set(["SCHEDULED", "IN_PROGRESS"])
 
 export function todayPlan(plans: readonly PlanLike[], timeZone: string, now: Date): TodayPlan {
   const todayKey = dayKey(now, timeZone)
@@ -132,12 +145,12 @@ export function todayPlan(plans: readonly PlanLike[], timeZone: string, now: Dat
   const carriedOver = all.find(
     (i) => i.status === "IN_PROGRESS" && dayKey(new Date(i.startTime), timeZone) < todayKey
   )
-  const current = carriedOver ?? today.find((i) => OPEN.has(i.status)) ?? null
+  const current = carriedOver ?? today.find((i) => isOpenPlanStatus(i.status)) ?? null
   const tomorrowKey = addDays(todayKey, 1)
   const next = current
     ? null
     : (all.find(
-        (i) => i.status === "SCHEDULED" && dayKey(new Date(i.startTime), timeZone) >= tomorrowKey
+        (i) => isUnstartedPlanStatus(i.status) && dayKey(new Date(i.startTime), timeZone) >= tomorrowKey
       ) ?? null)
   return { today, current, next }
 }

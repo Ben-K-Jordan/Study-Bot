@@ -1,11 +1,15 @@
 /**
- * Server-side reads shared by Home and Progress. Import only from Server
- * Components. Each loader is wrapped in React.cache so a page that asks for
- * the same data in several sections queries once per request, and callers
- * can start loaders early (call without awaiting) to avoid waterfalls.
+ * Server-side reads shared by Home and Progress. Server Components only:
+ * `server-only` makes a client import fail the build instead of pulling
+ * Prisma into the browser bundle. Each loader is wrapped in React.cache so a
+ * page that asks for the same data in several sections queries once per
+ * request, and callers can start loaders early (call without awaiting) to
+ * avoid waterfalls.
  *
  * Read-only: nothing here writes.
  */
+import "server-only"
+
 import { cache } from "react"
 import { redirect } from "next/navigation"
 
@@ -13,6 +17,7 @@ import { getCurrentUserId } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone"
 import { logger } from "@/lib/logger"
+import { pretestKey, splitRatedAnswers, type RatedAnswerLike } from "@/components/progress/progress-model"
 import { getActivityByDay, getGameState, resolveTimeZone } from "@/services/gamification"
 
 /** The signed-in student, or a redirect to sign-in. */
@@ -32,6 +37,10 @@ export interface PlanItemRow {
   sessionId: string
   startTime: Date
   endTime: Date
+  /**
+   * The stored status, except that a session with a run under way reads
+   * IN_PROGRESS (starting a run doesn't write the item), as Plan shows it.
+   */
   status: string
   completedAt: Date | null
 }
@@ -57,7 +66,7 @@ function topicsFromConfig(config: unknown): string[] {
 }
 
 export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
-  const [plans, audits] = await Promise.all([
+  const [plans, audits, openRuns] = await Promise.all([
     prisma.studyPlan.findMany({
       where: { userId },
       orderBy: [{ examDate: "asc" }, { createdAt: "desc" }],
@@ -88,7 +97,13 @@ export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
       select: { planId: true, createdAt: true },
       take: 200,
     }),
+    // Runs under way (the same statuses Plan counts as in progress)
+    prisma.sessionRun.findMany({
+      where: { userId, status: { in: ["ACTIVE", "PAUSED"] } },
+      select: { sessionId: true },
+    }),
   ])
+  const underWay = new Set(openRuns.map((run) => run.sessionId))
 
   const lastReflow = new Map<string, Date>()
   for (const audit of audits) {
@@ -103,7 +118,9 @@ export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
     examDateKey: plan.examDate.toISOString().slice(0, 10),
     createdAt: plan.createdAt,
     topics: topicsFromConfig(plan.config),
-    items: plan.items,
+    items: plan.items.map((item) =>
+      item.status !== "DONE" && underWay.has(item.sessionId) ? { ...item, status: "IN_PROGRESS" } : item
+    ),
     lastRescheduledAt: lastReflow.get(plan.planId) ?? null,
   }))
 })
@@ -238,35 +255,31 @@ export const loadLastSevenDays = cache(async (userId: string, timeZone: string):
   return totals
 })
 
-export interface RatedAnswer {
-  confidence: number
-  correct: boolean
-  partial: boolean
-  createdAt: Date
-}
+export type RatedAnswer = RatedAnswerLike
 
-/** Answers with a confidence rating and a score, newest 12 weeks. */
+/**
+ * Scored answers from the newest 12 weeks: the rated ones, and a count of
+ * the unrated ones. Pretest answers are left out, as on the end screen. Runs
+ * saved before question rows existed (spring 2026) can't be told apart and
+ * count as ordinary questions.
+ */
 export const loadRatedAnswers = cache(async (userId: string): Promise<{ rated: RatedAnswer[]; unrated: number }> => {
   const since = new Date(Date.now() - 12 * 7 * 86_400_000)
-  const attempts = await prisma.sessionAttempt.findMany({
-    where: { run: { userId }, selfScore: { not: null }, createdAt: { gte: since } },
-    select: { confidenceRating: true, selfScore: true, createdAt: true },
-  })
-  const rated: RatedAnswer[] = []
-  let unrated = 0
-  for (const a of attempts) {
-    if (a.confidenceRating == null) {
-      unrated += 1
-      continue
-    }
-    rated.push({
-      confidence: a.confidenceRating,
-      correct: a.selfScore === "CORRECT",
-      partial: a.selfScore === "PARTIAL",
-      createdAt: a.createdAt,
-    })
-  }
-  return { rated, unrated }
+  const scored = { selfScore: { not: null }, createdAt: { gte: since } }
+  const [attempts, pretests] = await Promise.all([
+    prisma.sessionAttempt.findMany({
+      where: { run: { userId }, ...scored },
+      select: { runId: true, promptIndex: true, confidenceRating: true, selfScore: true, createdAt: true },
+    }),
+    prisma.sessionRunPrompt.findMany({
+      where: {
+        run: { userId, attempts: { some: scored } },
+        meta: { path: ["pack"], equals: "PRE_TEST" },
+      },
+      select: { runId: true, promptIndex: true },
+    }),
+  ])
+  return splitRatedAnswers(attempts, new Set(pretests.map((p) => pretestKey(p.runId, p.promptIndex))))
 })
 
 /** The plan for a course whose exam is next, else its newest plan. */

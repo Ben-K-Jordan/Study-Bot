@@ -565,7 +565,7 @@ model CardReview {
 model XpEvent {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
-  action    String // FLASHCARD_REVIEW | GUIDE_GENERATED | CHAT_QUESTION | SESSION_COMPLETED | PERFECT_DECK | STREAK_MILESTONE
+  action    String // FLASHCARD_REVIEW | SESSION_COMPLETED | PERFECT_DECK | STREAK_MILESTONE | STREAK_FREEZE_AWARD | STREAK_FREEZE_USED (older rows may hold GUIDE_GENERATED or CHAT_QUESTION)
   xpAmount  Int      @map("xp_amount")
   sourceId  String?  @map("source_id")
   createdAt DateTime @default(now()) @map("created_at")

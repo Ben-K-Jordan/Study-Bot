@@ -13,7 +13,7 @@ import {
   loadPlans,
   loadSafely,
   loadTimeZone,
-} from "@/components/progress/study-data"
+} from "@/services/progress-data"
 import { buildTopics, WEAK_TOPIC_THRESHOLD } from "@/components/progress/topics"
 import { formatCountdown, formatPercent } from "@/lib/format"
 import { dayKey } from "@/lib/timezone"

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     logger.error("onboarding.read_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Onboarding status didn't load. Retry" }, { status: 500 });
+    return NextResponse.json({ error: "Onboarding status didn't load. Retry." }, { status: 500 });
   }
 }
 
@@ -49,6 +49,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ complete: true });
   } catch (err) {
     logger.error("onboarding.write_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Onboarding status not saved. Retry" }, { status: 500 });
+    return NextResponse.json({ error: "Onboarding status not saved. Retry." }, { status: 500 });
   }
 }

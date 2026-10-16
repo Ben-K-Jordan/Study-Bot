@@ -12,6 +12,8 @@ import {
   dayLabel,
   describeDay,
   heatLevel,
+  pretestKey,
+  splitRatedAnswers,
   weekStart,
 } from "@/components/progress/progress-model"
 import {
@@ -29,7 +31,7 @@ import type { DayActivity } from "@/services/gamification"
 const NOW = new Date("2026-10-15T19:00:00Z")
 
 function day(overrides: Partial<DayActivity> = {}): DayActivity {
-  return { sessions: 0, reviews: 0, guides: 0, chatQuestions: 0, freezeUsed: false, xp: 0, ...overrides }
+  return { sessions: 0, reviews: 0, freezeUsed: false, xp: 0, ...overrides }
 }
 
 describe("topics", () => {
@@ -82,13 +84,13 @@ describe("topics", () => {
 describe("calibrate", () => {
   const at = (iso: string) => new Date(iso)
   const answers = [
-    { confidence: 5, correct: true, partial: false, createdAt: at("2026-10-05T18:00:00Z") },
-    { confidence: 5, correct: true, partial: false, createdAt: at("2026-10-06T18:00:00Z") },
-    { confidence: 5, correct: false, partial: false, createdAt: at("2026-10-07T18:00:00Z") },
-    { confidence: 4, correct: false, partial: true, createdAt: at("2026-10-13T18:00:00Z") },
-    { confidence: 3, correct: true, partial: false, createdAt: at("2026-10-13T18:00:00Z") },
-    { confidence: 1, correct: true, partial: false, createdAt: at("2026-10-14T18:00:00Z") },
-    { confidence: 2, correct: false, partial: false, createdAt: at("2026-10-14T18:00:00Z") },
+    { confidence: 5, correct: true, createdAt: at("2026-10-05T18:00:00Z") },
+    { confidence: 5, correct: true, createdAt: at("2026-10-06T18:00:00Z") },
+    { confidence: 5, correct: false, createdAt: at("2026-10-07T18:00:00Z") }, // incorrect
+    { confidence: 4, correct: false, createdAt: at("2026-10-13T18:00:00Z") }, // partly correct
+    { confidence: 3, correct: true, createdAt: at("2026-10-13T18:00:00Z") },
+    { confidence: 1, correct: true, createdAt: at("2026-10-14T18:00:00Z") },
+    { confidence: 2, correct: false, createdAt: at("2026-10-14T18:00:00Z") },
   ]
 
   it("maps old five-step ratings onto the three levels", () => {
@@ -102,8 +104,8 @@ describe("calibrate", () => {
       { level: "unsure", answers: 1, correct: 1, rate: 1 },
       { level: "guessing", answers: 2, correct: 1, rate: 0.5 },
     ])
-    // Partly correct isn't counted as overconfident; only a wrong Sure is.
-    expect(result.overconfident).toBe(1)
+    // Sure and not fully correct, as on the end screen: the incorrect and the partly correct one.
+    expect(result.overconfident).toBe(2)
     expect(result.underconfident).toBe(1)
   })
 
@@ -115,6 +117,28 @@ describe("calibrate", () => {
     ])
     expect(result.weeks[0].sure).toBeCloseTo(2 / 3)
     expect(result.weeks[0].unsure).toBeNull()
+  })
+
+  it("leaves pretest answers out and counts unrated ones", () => {
+    const attempt = (promptIndex: number, confidenceRating: number | null, selfScore: string | null) => ({
+      runId: "run-1",
+      promptIndex,
+      confidenceRating,
+      selfScore,
+      createdAt: at("2026-10-14T18:00:00Z"),
+    })
+    const { rated, unrated } = splitRatedAnswers(
+      [
+        attempt(0, 5, "INCORRECT"), // pretest: wrong answers are expected
+        attempt(1, null, "CORRECT"), // pretest, unrated
+        attempt(2, 5, "PARTIAL"),
+        attempt(3, null, "INCORRECT"),
+        attempt(4, 1, null), // not scored yet (exam simulation)
+      ],
+      new Set([pretestKey("run-1", 0), pretestKey("run-1", 1)])
+    )
+    expect(rated.map((a) => [a.confidence, a.correct])).toEqual([[5, false]])
+    expect(unrated).toBe(1)
   })
 
   it("finds the week start across a month boundary", () => {
@@ -132,6 +156,8 @@ describe("heatmap", () => {
     expect(describeDay(day({ sessions: 1, reviews: 8, xp: 26 }))).toBe("1 session and 8 card reviews")
     expect(describeDay(day({ reviews: 1, xp: 2 }))).toBe("1 card review")
     expect(describeDay(day({ freezeUsed: true }))).toBe("Streak freeze used")
+    // A day that holds only XP from older guide or chat events still says what it held.
+    expect(describeDay(day({ xp: 5 }))).toBe("5 XP")
     expect(describeDay(undefined)).toBe("No study")
   })
 

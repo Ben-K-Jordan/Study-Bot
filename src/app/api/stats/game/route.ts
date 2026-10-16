@@ -19,6 +19,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(state);
   } catch (err) {
     logger.error("stats.game_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Progress didn't load. Retry" }, { status: 500 });
+    return NextResponse.json({ error: "Progress didn't load. Retry." }, { status: 500 });
   }
 }

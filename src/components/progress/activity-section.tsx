@@ -1,9 +1,18 @@
 import { SectionHeader } from "@/components/app/section-header"
 import { Card, CardContent } from "@/components/ui/card"
-import { buildHeatmap, dayLabel, describeDay, type Heatmap, type HeatLevel } from "@/components/progress/progress-model"
+import { Disclosure } from "@/components/progress/disclosure"
+import {
+  buildHeatmap,
+  dayLabel,
+  describeDay,
+  isStudyDay,
+  type Heatmap,
+  type HeatLevel,
+} from "@/components/progress/progress-model"
+import { ScrollRegion } from "@/components/progress/scroll-region"
 import { ScrollToEnd } from "@/components/progress/scroll-to-end"
 import { SectionError } from "@/components/progress/section-error"
-import { loadSafely, loadTimeZone, loadYearOfActivity } from "@/components/progress/study-data"
+import { loadSafely, loadTimeZone, loadYearOfActivity } from "@/services/progress-data"
 import { cn } from "@/lib/utils"
 import { plural } from "@/lib/format"
 
@@ -96,7 +105,12 @@ function ActivityCard({
         </ScrollToEnd>
 
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 type-label-m text-on-surface-variant">
-          <p>Each square is a day. The stronger the color, the more XP that day earned. Hover a day to see what it held.</p>
+          <p>
+            Each square is a day. The stronger the color, the more XP you earned that day.
+            {activeList.length > 0
+              ? " To see what a day held, hover its square or show the study days as a list."
+              : null}
+          </p>
           <div className="flex items-center gap-1.5" aria-hidden="true">
             <span>Less</span>
             {([0, 1, 2, 3, 4] as const).map((level) => (
@@ -113,18 +127,17 @@ function ActivityCard({
         </div>
 
         {activeList.length > 0 ? (
-          <details className="rounded-xl bg-surface-container px-4 py-2">
-            <summary className="cursor-pointer rounded-md py-1 type-label-l text-primary">
-              Show study days as a list
-            </summary>
-            <ul role="list" className="flex max-h-72 flex-col gap-1 overflow-y-auto py-2 type-body-m text-on-surface">
-              {activeList.map((day) => (
-                <li key={day.key} className="tabular-nums">
-                  {day.text}
-                </li>
-              ))}
-            </ul>
-          </details>
+          <Disclosure showLabel="Show study days as a list" hideLabel="Hide the list">
+            <ScrollRegion label="Study days, newest first" className="max-h-72">
+              <ul role="list" className="flex flex-col gap-1 type-body-m text-on-surface">
+                {activeList.map((day) => (
+                  <li key={day.key} className="tabular-nums">
+                    {day.text}
+                  </li>
+                ))}
+              </ul>
+            </ScrollRegion>
+          </Disclosure>
         ) : null}
       </CardContent>
     </Card>
@@ -137,7 +150,7 @@ export async function ActivitySection({ userId }: { userId: string }) {
     const { todayKey, days } = await loadYearOfActivity(userId, timeZone)
     const heatmap = buildHeatmap(days, todayKey)
     const activeList = [...days.entries()]
-      .filter(([, d]) => d.xp + d.sessions + d.reviews + d.guides + d.chatQuestions > 0 || d.freezeUsed)
+      .filter(([, d]) => isStudyDay(d) || d.freezeUsed)
       .sort(([a], [b]) => (a < b ? 1 : -1))
       .map(([key, d]) => ({
         key,

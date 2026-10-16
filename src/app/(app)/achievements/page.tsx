@@ -15,7 +15,7 @@ import {
   loadTimeZone,
   loadYearOfActivity,
   requireUserId,
-} from "@/components/progress/study-data"
+} from "@/services/progress-data"
 
 /**
  * Progress: mastery by topic, confidence against results, streak and XP,

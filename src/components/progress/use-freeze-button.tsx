@@ -14,7 +14,7 @@ function failureMessage(error: unknown): string {
     // 409 carries a full sentence: none left, already used, or studied today.
     if (error.status === 409 && error.message) return error.message
   }
-  return "Freeze not used. Retry"
+  return "Freeze not used. Retry."
 }
 
 /** Spends one streak freeze on today, then refreshes Progress. */

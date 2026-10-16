@@ -7,7 +7,7 @@ import { SectionHeader } from "@/components/app/section-header"
 import { Button } from "@/components/ui/button"
 import { examCountdowns, type ExamCountdown } from "@/components/home/home-model"
 import { SectionError } from "@/components/progress/section-error"
-import { loadPlans, loadSafely, loadTimeZone } from "@/components/progress/study-data"
+import { loadPlans, loadSafely, loadTimeZone } from "@/services/progress-data"
 
 const HEADING_ID = "home-exams"
 

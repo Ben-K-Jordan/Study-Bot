@@ -14,8 +14,8 @@ const querySchema = z.object({
  * GET /api/stats/activity: study activity per day in the student's time
  * zone, plus the streak and total XP (the same numbers Progress shows).
  *
- * activity[].count is what the day holds: sessions + card reviews + guides +
- * chat questions. Each part is also given on its own.
+ * activity[].count is what the day holds: sessions + card reviews. Each part
+ * is also given on its own. Guides and chat earn no XP and aren't counted.
  */
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
@@ -43,11 +43,9 @@ export async function GET(request: NextRequest) {
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .map(([date, d]) => ({
         date,
-        count: d.sessions + d.reviews + d.guides + d.chatQuestions,
+        count: d.sessions + d.reviews,
         sessions: d.sessions,
         reviews: d.reviews,
-        guides: d.guides,
-        chat_questions: d.chatQuestions,
         freeze_used: d.freezeUsed,
         xp: d.xp,
       }));
@@ -60,7 +58,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     logger.error("stats.activity_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Activity didn't load. Retry" }, { status: 500 });
+    return NextResponse.json({ error: "Activity didn't load. Retry." }, { status: 500 });
   }
 }
 

@@ -1,12 +1,17 @@
+import { after } from "next/server";
+
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { badgesReached, type BadgeProgressValues } from "@/lib/badge-data";
-import { addDays, dayKey, isValidTimezone, zonedTimeToUtc } from "@/lib/timezone";
+import { addDays, dayKey, resolveTimeZone, zonedTimeToUtc } from "@/lib/timezone";
 
+/**
+ * XP per action. Only practice earns XP: finished sessions and card reviews
+ * (plus the perfect-deck bonus). Generating a guide or asking in chat is not
+ * practice, so it earns nothing and doesn't count toward a streak.
+ */
 export const XP_AMOUNTS: Record<string, number> = {
   FLASHCARD_REVIEW: 2,
-  GUIDE_GENERATED: 5,
-  CHAT_QUESTION: 1,
   SESSION_COMPLETED: 10,
   PERFECT_DECK: 3,
   STREAK_MILESTONE: 0,
@@ -25,35 +30,11 @@ export const MAX_STREAK_FREEZES = 3;
 
 /**
  * The time zone that decides what "today" is for this student, everywhere:
- * streaks, XP today, the activity heatmap and today's sessions.
- *
- * Settings first, then the zone of the student's newest plan (plans record
- * the zone they were made in), then UTC. Pass the settings value when you
- * already have it to skip a query; `undefined` means "look it up".
+ * streaks, XP today, the activity heatmap and today's sessions. It lives in
+ * `@/lib/timezone` (Settings, then the newest plan's zone, then UTC) and is
+ * re-exported here for existing callers.
  */
-export async function resolveTimeZone(
-  userId: string,
-  settingsZone?: string | null,
-): Promise<string> {
-  const settings =
-    settingsZone !== undefined
-      ? settingsZone
-      : (
-          await prisma.userGameState.findUnique({
-            where: { userId },
-            select: { timezone: true },
-          })
-        )?.timezone ?? null;
-  if (settings && isValidTimezone(settings)) return settings;
-
-  const plan = await prisma.studyPlan.findFirst({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    select: { timezone: true },
-  });
-  if (plan?.timezone && isValidTimezone(plan.timezone)) return plan.timezone;
-  return "UTC";
-}
+export { resolveTimeZone };
 
 /** The instant today starts in `timeZone`. */
 export function startOfDay(now: Date, timeZone: string): Date {
@@ -82,9 +63,9 @@ interface ActivityEvent {
 }
 
 /**
- * The days that count toward a streak: any XP event (sessions, card reviews,
- * guides, chat), any completed plan item, and any day a freeze bridged.
- * Freeze awards are bookkeeping, not study.
+ * The days that count toward a streak: any XP event (sessions and card
+ * reviews), any completed plan item, and any day a freeze bridged. Freeze
+ * awards are bookkeeping, not study.
  */
 export function collectActiveDays(
   events: readonly ActivityEvent[],
@@ -115,13 +96,19 @@ interface StreakState {
   timezone?: string | null;
 }
 
-async function loadActiveDays(
+/**
+ * How far back active days are read: a short window first, and the long one
+ * only when the streak runs past the short one. Most streaks are short, and
+ * every card review adds an event, so reading 400 days each time grows with use.
+ */
+const ACTIVE_DAY_WINDOWS = [40, 400] as const;
+
+async function loadActiveDaysSince(
   userId: string,
   timeZone: string | null,
   legacyFreezeDate: string | null,
-  now: Date,
+  since: Date,
 ): Promise<Set<string>> {
-  const since = new Date(now.getTime() - 400 * 86_400_000);
   const [events, items] = await Promise.all([
     prisma.xpEvent.findMany({
       where: { userId, createdAt: { gte: since } },
@@ -133,6 +120,32 @@ async function loadActiveDays(
     }),
   ]);
   return collectActiveDays(events, items, legacyFreezeDate, timeZone);
+}
+
+/**
+ * Active days, enough of them to count the current streak exactly (up to
+ * the last 400 days). Days older than the streak may be missing.
+ */
+async function loadActiveDays(
+  userId: string,
+  timeZone: string | null,
+  legacyFreezeDate: string | null,
+  now: Date,
+): Promise<Set<string>> {
+  const todayKey = dayKey(now, timeZone);
+  let days = new Set<string>();
+  for (const windowDays of ACTIVE_DAY_WINDOWS) {
+    days = await loadActiveDaysSince(
+      userId,
+      timeZone,
+      legacyFreezeDate,
+      new Date(now.getTime() - windowDays * 86_400_000),
+    );
+    // The window's first day may be partial, so a streak that reaches the
+    // day after it might run further back.
+    if (streakFromDays(days, todayKey) < windowDays - 2) break;
+  }
+  return days;
 }
 
 /**
@@ -252,10 +265,6 @@ export interface DayActivity {
   sessions: number;
   /** Flashcard reviews. */
   reviews: number;
-  /** Study guides generated. */
-  guides: number;
-  /** Questions asked in chat. */
-  chatQuestions: number;
   /** A streak freeze covered the day. */
   freezeUsed: boolean;
   /** XP earned that day. */
@@ -263,7 +272,7 @@ export interface DayActivity {
 }
 
 function emptyDay(): DayActivity {
-  return { sessions: 0, reviews: 0, guides: 0, chatQuestions: 0, freezeUsed: false, xp: 0 };
+  return { sessions: 0, reviews: 0, freezeUsed: false, xp: 0 };
 }
 
 /**
@@ -300,10 +309,6 @@ export function bucketActivity(
       if (e.sourceId) runsWithEvent.add(e.sourceId);
     } else if (e.action === "FLASHCARD_REVIEW") {
       entry.reviews += 1;
-    } else if (e.action === "GUIDE_GENERATED") {
-      entry.guides += 1;
-    } else if (e.action === "CHAT_QUESTION") {
-      entry.chatQuestions += 1;
     }
   }
   for (const item of completedItems) {
@@ -344,7 +349,11 @@ export async function getActivityByDay(
 
 /**
  * Record XP for an action, then award any freeze or achievement it unlocks.
- * Awarding never fails the action that earned the XP.
+ *
+ * Inside a Next request the awarding runs after the response is sent, so the
+ * student never waits for it (the app runs as one long-lived Node server, so
+ * the work finishes). Elsewhere, such as scripts and tests, it runs before
+ * this returns. Awarding never fails the action that earned the XP.
  */
 export async function awardXp(
   userId: string,
@@ -366,42 +375,83 @@ export async function awardXp(
 
   logger.info("xp.awarded", { user_id: userId, action, xp: amount, source_id: sourceId });
 
-  try {
-    await syncProgress(userId);
-  } catch (err) {
-    logger.error("progress.sync_failed", { user_id: userId, error: String(err) });
-  }
+  const earned = { createdAt: event.createdAt };
+  await afterResponse(async () => {
+    try {
+      await syncProgress(userId, earned);
+    } catch (err) {
+      logger.error("progress.sync_failed", { user_id: userId, error: String(err) });
+    }
+  });
 
   return { id: event.id, xpAmount: amount };
+}
+
+/** Runs `task` once the response is sent when called inside a Next request, else right away. */
+async function afterResponse(task: () => Promise<void>): Promise<void> {
+  try {
+    after(task);
+    return;
+  } catch {
+    // Outside a request scope (scripts, tests, jobs) there is nothing to wait for.
+  }
+  await task();
+}
+
+/**
+ * Whether the XP event created at `at` is the student's first study of their
+ * day. Only then can the streak change: a later event lands on a day that
+ * already counts. A freeze used earlier today doesn't count as study here,
+ * so studying after it still checks the streak milestones.
+ */
+async function isFirstStudyOfDay(userId: string, at: Date, timeZone: string): Promise<boolean> {
+  const earlier = await prisma.xpEvent.findFirst({
+    where: {
+      userId,
+      createdAt: { gte: startOfDay(at, timeZone), lt: at },
+      action: { notIn: [FREEZE_AWARD, FREEZE_USED] },
+    },
+    select: { id: true },
+  });
+  return !earlier;
 }
 
 /**
  * The write path for progress: awards a streak freeze at each 7-day
  * milestone and any achievement the student has reached. Idempotent, so
  * running it twice awards nothing new.
+ *
+ * Pass `earned` (the XP event that triggered it) to skip the streak work
+ * when that event wasn't the first study of the day: the streak, its freeze
+ * milestones and the streak achievements can't have changed since the first
+ * one ran. `streak` is then null.
  */
 export async function syncProgress(
   userId: string,
-): Promise<{ newAchievements: string[]; streakFreezes: number; streak: number }> {
+  earned?: { createdAt: Date },
+): Promise<{ newAchievements: string[]; streakFreezes: number; streak: number | null }> {
   const state = await prisma.userGameState.upsert({
     where: { userId },
     create: { userId },
     update: {},
   });
   const timeZone = await resolveTimeZone(userId, state.timezone ?? null);
+  const streakMayChange = !earned || (await isFirstStudyOfDay(userId, earned.createdAt, timeZone));
 
   const [streak, xpTotalResult, achievements, reviewCount, perfectDeckCount] = await Promise.all([
-    computeStreak(userId, { ...state, timezone: timeZone }),
+    streakMayChange ? computeStreak(userId, { ...state, timezone: timeZone }) : null,
     prisma.xpEvent.aggregate({ where: { userId }, _sum: { xpAmount: true } }),
     prisma.achievement.findMany({ where: { userId }, select: { badgeType: true } }),
     prisma.cardReview.count({ where: { userId } }),
     prisma.xpEvent.count({ where: { userId, action: "PERFECT_DECK" } }),
   ]);
 
-  const streakFreezes = await maybeAwardStreakFreeze(userId, streak, state.streakFreezes);
+  const streakFreezes =
+    streak === null ? state.streakFreezes : await maybeAwardStreakFreeze(userId, streak, state.streakFreezes);
 
   const values: BadgeProgressValues = {
-    streak,
+    // Unchanged streaks were already checked for achievements by the day's first event.
+    streak: streak ?? 0,
     xp: xpTotalResult._sum.xpAmount || 0,
     reviews: reviewCount,
     perfectDecks: perfectDeckCount,

@@ -16,7 +16,7 @@ import {
   loadTimeZone,
   loadUnresolvedErrors,
   type CourseErrors,
-} from "@/components/progress/study-data"
+} from "@/services/progress-data"
 import {
   buildTopics,
   compareWeakestFirst,

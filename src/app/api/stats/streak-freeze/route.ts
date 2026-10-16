@@ -39,6 +39,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, freezesRemaining: result.freezesRemaining });
   } catch (err) {
     logger.error("stats.streak_freeze_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Freeze not used. Retry" }, { status: 500 });
+    return NextResponse.json({ error: "Freeze not used. Retry." }, { status: 500 });
   }
 }

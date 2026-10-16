@@ -22,7 +22,7 @@ import {
   loadTimeZone,
   loadUnresolvedErrors,
   requireUserId,
-} from "@/components/progress/study-data"
+} from "@/services/progress-data"
 
 /**
  * Home: exam countdowns first, then weak spots beside today's session, then
@@ -63,14 +63,15 @@ async function Home() {
       </Suspense>
 
       {/* Today comes first in reading order so phones reach it before weak spots;
-          from 1200px it sits on the right, as the direction contract draws it. */}
-      <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-6">
-        <div className="min-w-0 lg:col-start-2 lg:row-start-1">
+          from 840px it sits on the right, as the direction contract draws it, so
+          laptop widths don't stretch one session card across the page. */}
+      <div className="grid gap-8 md:grid-cols-[3fr_2fr] md:gap-6">
+        <div className="min-w-0 md:col-start-2 md:row-start-1">
           <Suspense fallback={<TodaySkeleton />}>
             <TodaySection userId={userId} now={now} />
           </Suspense>
         </div>
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+        <div className="min-w-0 md:col-start-1 md:row-start-1">
           <Suspense fallback={<WeakSpotsSkeleton />}>
             <WeakSpotsSection userId={userId} now={now} />
           </Suspense>

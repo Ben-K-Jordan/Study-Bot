@@ -6,10 +6,10 @@ import { SectionHeader } from "@/components/app/section-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { todayPlan, type ScheduledItem } from "@/components/home/home-model"
+import { isOpenPlanStatus, todayPlan, type ScheduledItem } from "@/components/home/home-model"
 import { modeLabel } from "@/components/progress/modes"
 import { SectionError } from "@/components/progress/section-error"
-import { loadPlans, loadSafely, loadSessions, loadTimeZone, type SessionInfo } from "@/components/progress/study-data"
+import { loadPlans, loadSafely, loadSessions, loadTimeZone, type SessionInfo } from "@/services/progress-data"
 import { formatDateTime, formatDateWeekday, formatList, formatTimeRange } from "@/lib/format"
 
 const HEADING_ID = "home-today"
@@ -86,7 +86,7 @@ function OtherSessions({
       <ul role="list" className="flex flex-col divide-y divide-border rounded-2xl bg-card px-4 ring-1 ring-border">
         {items.map((item) => {
           const badge = STATUS_BADGE[item.status]
-          const open = item.status === "SCHEDULED" || item.status === "IN_PROGRESS"
+          const open = isOpenPlanStatus(item.status)
           const label = `${modeLabel(sessions.get(item.sessionId)?.mode)}, ${item.courseName}`
           return (
             <li key={item.id} className="flex min-h-12 items-center gap-3 py-2">
@@ -188,7 +188,7 @@ export async function TodaySection({ userId, now }: { userId: string; now: Date 
         id={HEADING_ID}
         title="Today"
         description={description}
-        action={{ href: "/plan", label: "Full plan" }}
+        action={{ href: "/plan", label: "Open plan" }}
       />
       {content}
     </section>

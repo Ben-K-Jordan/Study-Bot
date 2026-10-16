@@ -6,7 +6,7 @@ import { SectionHeader } from "@/components/app/section-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { SectionError } from "@/components/progress/section-error"
-import { loadGameState, loadSafely } from "@/components/progress/study-data"
+import { loadGameState, loadSafely } from "@/services/progress-data"
 import { UseFreezeButton } from "@/components/progress/use-freeze-button"
 import { formatNumber, plural } from "@/lib/format"
 import { MAX_STREAK_FREEZES, XP_AMOUNTS, type GameState } from "@/services/gamification"
@@ -29,7 +29,7 @@ function StreakCard({ game }: { game: GameState }) {
           <FlameIcon className="size-5 text-on-surface-variant" aria-hidden="true" />
           <h3>Streak</h3>
         </CardTitle>
-        <CardDescription>Days in a row with a session, a card review, or other study.</CardDescription>
+        <CardDescription>Days in a row with a finished session or a card review.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">

@@ -6,41 +6,45 @@ import { SectionHeader } from "@/components/app/section-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CalibrationChartLazy } from "@/components/progress/calibration-chart-lazy"
+import { Disclosure } from "@/components/progress/disclosure"
 import { calibrate, CONFIDENCE_LABELS, type Calibration, type WeekPoint } from "@/components/progress/progress-model"
+import { ScrollRegion } from "@/components/progress/scroll-region"
 import { SectionError } from "@/components/progress/section-error"
-import { loadRatedAnswers, loadSafely, loadTimeZone } from "@/components/progress/study-data"
+import { loadRatedAnswers, loadSafely, loadTimeZone } from "@/services/progress-data"
 import { formatNumber, formatPercent, plural } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 const HEADING_ID = "progress-confidence"
 
 function rateText(rate: number | null): string {
-  return rate === null ? "No answers" : formatPercent(rate)
+  return rate === null ? "No questions" : formatPercent(rate)
 }
 
 function Findings({ calibration, unrated }: { calibration: Calibration; unrated: number }) {
   const lines: string[] = []
-  if (calibration.ordered) lines.push("The surer you were, the more often you were right.")
+  if (calibration.ordered) lines.push("The surer you were, the more often you were correct.")
+  // Same wording and definitions as the end screen's confidence results.
   if (calibration.overconfident > 0) {
     lines.push(
       `${plural(calibration.overconfident, {
-        one: "Overconfident on # answer: you marked it Sure and got it wrong.",
-        other: "Overconfident on # answers: you marked them Sure and got them wrong.",
+        one: "Overconfident on # question: you marked it Sure and it wasn't fully correct.",
+        other: "Overconfident on # questions: you marked them Sure and they weren't fully correct.",
       })} Errors you marked Sure come first in Error repair.`
     )
   }
   if (calibration.underconfident > 0) {
     lines.push(
       plural(calibration.underconfident, {
-        one: "Underconfident on # answer: you marked it Guessing and got it right.",
-        other: "Underconfident on # answers: you marked them Guessing and got them right.",
+        one: "Underconfident on # question: you marked it Guessing and it was correct.",
+        other: "Underconfident on # questions: you marked them Guessing and they were correct.",
       })
     )
   }
   if (unrated > 0) {
     lines.push(
       plural(unrated, {
-        one: "# answer had no rating, so it isn't counted here.",
-        other: "# answers had no rating, so they aren't counted here.",
+        one: "# question had no rating, so it isn't counted here.",
+        other: "# questions had no rating, so they aren't counted here.",
       })
     )
   }
@@ -53,90 +57,97 @@ function Findings({ calibration, unrated }: { calibration: Calibration; unrated:
   )
 }
 
+// Phones get narrower cell padding and wrapping column headers, so the tables fit at 320px.
+const HEAD = "px-2 whitespace-normal sm:px-3"
+const ROW_HEAD = "px-2 font-normal sm:px-3"
+const CELL = "px-2 whitespace-normal sm:px-3"
+
 function WeeklyTable({ weeks }: { weeks: WeekPoint[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col">Week of</TableHead>
-          <TableHead scope="col" className="text-right">Sure</TableHead>
-          <TableHead scope="col" className="text-right">Unsure</TableHead>
-          <TableHead scope="col" className="text-right">Guessing</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {weeks.map((week) => (
-          <TableRow key={week.weekKey}>
-            <TableHead scope="row" className="font-normal">{week.label}</TableHead>
-            <TableCell className="text-right tabular-nums">{rateText(week.sure)}</TableCell>
-            <TableCell className="text-right tabular-nums">{rateText(week.unsure)}</TableCell>
-            <TableCell className="text-right tabular-nums">{rateText(week.guessing)}</TableCell>
+    <ScrollRegion label="How often you were correct, by week">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col" className={HEAD}>Week of</TableHead>
+            <TableHead scope="col" className={cn(HEAD, "text-right")}>Sure</TableHead>
+            <TableHead scope="col" className={cn(HEAD, "text-right")}>Unsure</TableHead>
+            <TableHead scope="col" className={cn(HEAD, "text-right")}>Guessing</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {weeks.map((week) => (
+            <TableRow key={week.weekKey}>
+              <TableHead scope="row" className={ROW_HEAD}>{week.label}</TableHead>
+              <TableCell className={cn(CELL, "text-right tabular-nums")}>{rateText(week.sure)}</TableCell>
+              <TableCell className={cn(CELL, "text-right tabular-nums")}>{rateText(week.unsure)}</TableCell>
+              <TableCell className={cn(CELL, "text-right tabular-nums")}>{rateText(week.guessing)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ScrollRegion>
   )
 }
 
 function CalibrationCard({ calibration, unrated }: { calibration: Calibration; unrated: number }) {
   const showTrend = calibration.weeks.length >= 2
   return (
-    <Card>
+    // 16px padding on phones (24px from 600px) leaves the tables room at 320px.
+    <Card className="[--card-spacing:--spacing(4)] sm:[--card-spacing:--spacing(6)]">
       <CardContent className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <h3 className="type-title-s text-on-surface">All rated answers, last 12 weeks</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">How sure you were</TableHead>
-                <TableHead scope="col" className="text-right">Answers</TableHead>
-                <TableHead scope="col" className="text-right">Right</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {calibration.levels.map((level) => (
-                <TableRow key={level.level}>
-                  <TableHead scope="row" className="font-normal">{CONFIDENCE_LABELS[level.level]}</TableHead>
-                  <TableCell className="text-right tabular-nums">{formatNumber(level.answers)}</TableCell>
-                  <TableCell className="sm:w-36">
-                    <div className="flex items-center justify-end gap-3">
-                      {/* The bar repeats the percent, so phones show the number alone and the table fits */}
-                      {level.rate !== null ? (
-                        <span className="hidden w-16 sm:block">
-                          <ProgressLinear
-                            value={level.rate * 100}
-                            label={`Right when ${CONFIDENCE_LABELS[level.level]}`}
-                            valueText={formatPercent(level.rate)}
-                          />
-                        </span>
-                      ) : null}
-                      <span className="w-10 text-right tabular-nums">{rateText(level.rate)}</span>
-                    </div>
-                  </TableCell>
+          <h3 className="type-title-s text-on-surface">All rated questions, last 12 weeks</h3>
+          <ScrollRegion label="Rated questions by how sure you were">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col" className={HEAD}>How sure</TableHead>
+                  <TableHead scope="col" className={cn(HEAD, "text-right")}>Questions</TableHead>
+                  <TableHead scope="col" className={cn(HEAD, "text-right")}>Correct</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {calibration.levels.map((level) => (
+                  <TableRow key={level.level}>
+                    <TableHead scope="row" className={ROW_HEAD}>
+                      {CONFIDENCE_LABELS[level.level]}
+                    </TableHead>
+                    <TableCell className={cn(CELL, "text-right tabular-nums")}>{formatNumber(level.answers)}</TableCell>
+                    <TableCell className={cn(CELL, "sm:w-36")}>
+                      <div className="flex items-center justify-end gap-3">
+                        {/* The bar repeats the percent, so phones show the number alone and the table fits */}
+                        {level.rate !== null ? (
+                          <span className="hidden w-16 sm:block">
+                            <ProgressLinear
+                              value={level.rate * 100}
+                              label={`Correct when ${CONFIDENCE_LABELS[level.level]}`}
+                              valueText={formatPercent(level.rate)}
+                            />
+                          </span>
+                        ) : null}
+                        <span className="min-w-10 text-right tabular-nums">{rateText(level.rate)}</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollRegion>
           <Findings calibration={calibration} unrated={unrated} />
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <h3 className="type-title-s text-on-surface">Right answers by week</h3>
+          <h3 className="type-title-s text-on-surface">How often you were correct, by week</h3>
           {showTrend ? (
             <>
               <CalibrationChartLazy weeks={calibration.weeks} />
-              <details className="group rounded-xl bg-surface-container px-4 py-2">
-                <summary className="cursor-pointer rounded-md py-1 type-label-l text-primary">
-                  Show the weeks as a table
-                </summary>
-                <div className="pt-2">
-                  <WeeklyTable weeks={calibration.weeks} />
-                </div>
-              </details>
+              <Disclosure showLabel="Show the weeks as a table" hideLabel="Hide the table">
+                <WeeklyTable weeks={calibration.weeks} />
+              </Disclosure>
             </>
           ) : (
             <p className="type-body-m text-on-surface-variant">
-              The weekly trend appears once you have rated answers from 2 different weeks.
+              The weekly trend appears once you have rated questions from 2 different weeks.
             </p>
           )}
         </div>
@@ -158,8 +169,8 @@ export async function ConfidenceSection({ userId }: { userId: string }) {
     content = (
       <EmptyState
         icon={GaugeIcon}
-        title="No rated answers yet"
-        description="Before you check an answer, rate how sure you are. This section compares that with how often you're right."
+        title="No rated questions yet"
+        description="Before you check an answer, rate how sure you are. This section compares that with how often you're correct."
         bordered
       />
     )
@@ -172,7 +183,7 @@ export async function ConfidenceSection({ userId }: { userId: string }) {
       <SectionHeader
         id={HEADING_ID}
         title="Confidence"
-        description="How sure you were before checking each answer, against how often you were right. Partly correct answers count as not right."
+        description="How sure you were before checking each answer, against how often you were correct. Partly correct answers don't count as correct."
       />
       {content}
     </section>

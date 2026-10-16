@@ -37,9 +37,45 @@ export function confidenceLevel(rating: number): ConfidenceLevel {
 
 export interface RatedAnswerLike {
   confidence: number
+  /** Scored Correct. Partly correct counts as not right, as on the end screen. */
   correct: boolean
-  partial: boolean
   createdAt: Date
+}
+
+/** A scored answer as stored: confidence 1 to 5 or null, self-score CORRECT, PARTIAL or INCORRECT. */
+export interface ScoredAttemptLike {
+  runId: string
+  promptIndex: number
+  confidenceRating: number | null
+  selfScore: string | null
+  createdAt: Date
+}
+
+/** Key for one question of one run, as `pretestKey(runId, promptIndex)`. */
+export function pretestKey(runId: string, promptIndex: number): string {
+  return `${runId}:${promptIndex}`
+}
+
+/**
+ * Split scored answers into rated ones and a count of unrated ones. Pretest
+ * answers are left out entirely: wrong answers are expected there and don't
+ * count toward accuracy, so the end screen leaves them out of confidence too.
+ */
+export function splitRatedAnswers(
+  attempts: readonly ScoredAttemptLike[],
+  pretests: ReadonlySet<string>
+): { rated: RatedAnswerLike[]; unrated: number } {
+  const rated: RatedAnswerLike[] = []
+  let unrated = 0
+  for (const a of attempts) {
+    if (a.selfScore == null || pretests.has(pretestKey(a.runId, a.promptIndex))) continue
+    if (a.confidenceRating == null) {
+      unrated += 1
+      continue
+    }
+    rated.push({ confidence: a.confidenceRating, correct: a.selfScore === "CORRECT", createdAt: a.createdAt })
+  }
+  return { rated, unrated }
 }
 
 export interface LevelSummary {
@@ -64,7 +100,7 @@ export interface WeekPoint {
 export interface Calibration {
   levels: LevelSummary[]
   rated: number
-  /** Marked Sure and answered incorrectly. */
+  /** Marked Sure and not fully correct (partly correct included), as on the end screen. */
   overconfident: number
   /** Marked Guessing and answered correctly. */
   underconfident: number
@@ -104,9 +140,7 @@ export function calibrate(
   maxWeeks = 8
 ): Calibration {
   const levels = LEVEL_ORDER.map((level) => summarize(answers, level))
-  const overconfident = answers.filter(
-    (a) => confidenceLevel(a.confidence) === "sure" && !a.correct && !a.partial
-  ).length
+  const overconfident = answers.filter((a) => confidenceLevel(a.confidence) === "sure" && !a.correct).length
   const underconfident = answers.filter(
     (a) => confidenceLevel(a.confidence) === "guessing" && a.correct
   ).length
@@ -162,14 +196,18 @@ export function describeDay(day: DayActivity | undefined): string {
   const parts: string[] = []
   if (day.sessions > 0) parts.push(plural(day.sessions, { one: "# session", other: "# sessions" }))
   if (day.reviews > 0) parts.push(plural(day.reviews, { one: "# card review", other: "# card reviews" }))
-  if (day.guides > 0) parts.push(plural(day.guides, { one: "# guide", other: "# guides" }))
-  if (day.chatQuestions > 0)
-    parts.push(plural(day.chatQuestions, { one: "# chat question", other: "# chat questions" }))
+  // XP from actions that no longer earn any (older guide and chat events).
+  if (parts.length === 0 && day.xp > 0) parts.push(`${formatNumber(day.xp)} XP`)
   if (parts.length > 0) {
     const text = formatList(parts)
     return day.freezeUsed ? `${text}, and a streak freeze` : text
   }
   return day.freezeUsed ? "Streak freeze used" : "No study"
+}
+
+/** Whether a day holds any study (a freeze alone doesn't count). */
+export function isStudyDay(day: DayActivity | undefined): boolean {
+  return !!day && day.xp + day.sessions + day.reviews > 0
 }
 
 export interface HeatCell {
@@ -220,7 +258,7 @@ export function buildHeatmap(
         else if (months.length === 1) months[0] = label
       }
       const day = days.get(key)
-      const studied = !!day && day.xp + day.sessions + day.reviews + day.guides + day.chatQuestions > 0
+      const studied = isStudyDay(day)
       if (studied) activeDays += 1
       run = studied || day?.freezeUsed ? run + 1 : 0
       longestStreak = Math.max(longestStreak, run)

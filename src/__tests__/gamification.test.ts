@@ -11,6 +11,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // but local midnight serializes to the PREVIOUS UTC day.
 process.env.TZ = "Asia/Tokyo";
 
+// next/server's after() throws outside a request scope, as in scripts and
+// tests. A test can switch `inRequest` on to collect the scheduled work.
+const nextServer = vi.hoisted(() => ({ inRequest: false, tasks: [] as Array<() => Promise<void>> }));
+vi.mock("next/server", () => ({
+  after: (task: () => Promise<void>) => {
+    if (!nextServer.inRequest) throw new Error("`after` was called outside a request scope.");
+    nextServer.tasks.push(task);
+  },
+}));
+
 interface XpEventRow {
   id: string;
   userId: string;
@@ -75,11 +85,19 @@ vi.mock("@/lib/db", () => {
 
   function matchesXpWhere(row: XpEventRow, where: Where): boolean {
     if (where.userId !== undefined && row.userId !== where.userId) return false;
-    if (where.action !== undefined && row.action !== where.action) return false;
+    if (where.action !== undefined) {
+      const cond = where.action as string | { notIn?: string[] };
+      if (typeof cond === "string") {
+        if (row.action !== cond) return false;
+      } else if (cond.notIn?.includes(row.action)) {
+        return false;
+      }
+    }
     if (where.sourceId !== undefined && row.sourceId !== where.sourceId) return false;
     if (where.createdAt !== undefined) {
-      const cond = where.createdAt as { gte?: Date };
+      const cond = where.createdAt as { gte?: Date; lt?: Date };
       if (cond.gte !== undefined && row.createdAt < cond.gte) return false;
+      if (cond.lt !== undefined && row.createdAt >= cond.lt) return false;
     }
     return true;
   }
@@ -367,6 +385,22 @@ describe("computeStreak", () => {
     expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(120);
   });
 
+  it("reads only the recent window for a short streak", async () => {
+    for (let i = 0; i < 5; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    // An older run of study outside the short window doesn't matter here.
+    for (let i = 60; i < 70; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(5);
+    expect(prisma.xpEvent.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads further back when the streak reaches the edge of the short window", async () => {
+    for (let i = 0; i < 45; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(45);
+    expect(prisma.xpEvent.findMany).toHaveBeenCalledTimes(2);
+  });
+
   it("bridges gaps using durable STREAK_FREEZE_USED events (sourceId = bridged date)", async () => {
     addXpEvent({ createdAt: new Date("2026-07-15T09:00:00Z") });
     addXpEvent({ createdAt: new Date("2026-07-13T09:00:00Z") });
@@ -613,6 +647,42 @@ describe("syncProgress (the write path)", () => {
     const result = await syncProgress("user1");
     expect(result.newAchievements).toContain("FIRST_PERFECT");
   });
+
+  it("skips the streak work when the event isn't the first study of the day", async () => {
+    // Six earlier days plus a review this morning: the 7-day milestone was
+    // reached by this morning's review, so a second one changes nothing.
+    for (let i = 1; i < 7; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 60 * 60_000) });
+    addXpEvent({ createdAt: NOW });
+    setGameState({ streakFreezes: 0 });
+
+    const result = await syncProgress("user1", { createdAt: NOW });
+    expect(result.streak).toBeNull();
+    expect(result.streakFreezes).toBe(0);
+    expect(result.newAchievements).not.toContain("STREAK_7");
+    expect(prisma.studyPlanItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it("checks the streak on the first study of the day", async () => {
+    for (let i = 0; i < 7; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    setGameState({ streakFreezes: 0 });
+
+    const result = await syncProgress("user1", { createdAt: NOW });
+    expect(result.streak).toBe(7);
+    expect(result.streakFreezes).toBe(1);
+    expect(result.newAchievements).toContain("STREAK_7");
+  });
+
+  it("still checks the streak when only a freeze came earlier today", async () => {
+    addXpEvent({ action: "STREAK_FREEZE_USED", xpAmount: 0, sourceId: "2026-07-14", createdAt: new Date(NOW.getTime() - 86_400_000) });
+    addXpEvent({ action: "STREAK_FREEZE_USED", xpAmount: 0, sourceId: "2026-07-15", createdAt: new Date(NOW.getTime() - 60 * 60_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 2 * 86_400_000) });
+    addXpEvent({ createdAt: NOW });
+
+    const result = await syncProgress("user1", { createdAt: NOW });
+    expect(result.streak).toBe(3);
+    expect(result.newAchievements).toContain("STREAK_3");
+  });
 });
 
 describe("awardXp", () => {
@@ -620,10 +690,40 @@ describe("awardXp", () => {
     addXpEvent({ createdAt: new Date(NOW.getTime() - 86_400_000) });
     addXpEvent({ createdAt: new Date(NOW.getTime() - 2 * 86_400_000) });
 
+    // Outside a Next request there is no response to wait for, so the
+    // awarding finishes before awardXp returns.
     await awardXp("user1", "FLASHCARD_REVIEW", undefined, "card-1");
 
     expect(testPrisma.xpEvents.filter((e) => e.sourceId === "card-1")).toHaveLength(1);
     expect(testPrisma.achievements).toContain("STREAK_3");
+  });
+
+  it("awards after the response when called inside a request", async () => {
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 86_400_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 2 * 86_400_000) });
+    nextServer.inRequest = true;
+    nextServer.tasks.length = 0;
+    try {
+      const result = await awardXp("user1", "FLASHCARD_REVIEW", undefined, "card-2");
+
+      // The XP is recorded before the response; the awarding waits for after().
+      expect(result.xpAmount).toBe(2);
+      expect(testPrisma.xpEvents.filter((e) => e.sourceId === "card-2")).toHaveLength(1);
+      expect(testPrisma.achievements).not.toContain("STREAK_3");
+      expect(nextServer.tasks).toHaveLength(1);
+
+      await nextServer.tasks[0]();
+      expect(testPrisma.achievements).toContain("STREAK_3");
+    } finally {
+      nextServer.inRequest = false;
+      nextServer.tasks.length = 0;
+    }
+  });
+
+  it("gives no XP for guides or chat, which aren't practice", async () => {
+    expect(await awardXp("user1", "GUIDE_GENERATED")).toEqual({ id: "", xpAmount: 0 });
+    expect(await awardXp("user1", "CHAT_QUESTION")).toEqual({ id: "", xpAmount: 0 });
+    expect(testPrisma.xpEvents).toHaveLength(0);
   });
 
   it("skips zero amounts", async () => {
