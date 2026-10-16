@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { classifyPlanItem, countPlanItems, runStateFromStatuses } from "@/lib/plan-status";
+import {
+  RUN_UNDER_WAY_STATUSES,
+  classifyPlanItem,
+  countPlanItems,
+  runStateFromStatuses,
+  withRunUnderWay,
+} from "@/lib/plan-status";
 import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
 
 const NOW = new Date("2026-10-15T20:00:00Z"); // 4:00 PM in New York
@@ -11,6 +17,27 @@ describe("runStateFromStatuses", () => {
     expect(runStateFromStatuses(["CREATED"])).toBe("none");
     expect(runStateFromStatuses(["PAUSED"])).toBe("in_progress");
     expect(runStateFromStatuses(["ACTIVE", "COMPLETED"])).toBe("completed");
+  });
+});
+
+describe("withRunUnderWay", () => {
+  const underWay = new Set(["s1"]);
+
+  it("reads a session with a run under way as IN_PROGRESS, whatever the item stored", () => {
+    for (const status of ["SCHEDULED", "RESCHEDULED", "MISSED", "SKIPPED", "IN_PROGRESS"]) {
+      expect(withRunUnderWay({ sessionId: "s1", status }, underWay).status).toBe("IN_PROGRESS");
+    }
+  });
+
+  it("leaves done sessions and sessions without a run as they are", () => {
+    const done = { sessionId: "s1", status: "DONE" };
+    const other = { sessionId: "s2", status: "SCHEDULED" };
+    expect(withRunUnderWay(done, underWay)).toBe(done);
+    expect(withRunUnderWay(other, underWay)).toBe(other);
+  });
+
+  it("counts the same run statuses as under way that Plan counts as in progress", () => {
+    for (const status of RUN_UNDER_WAY_STATUSES) expect(runStateFromStatuses([status])).toBe("in_progress");
   });
 });
 

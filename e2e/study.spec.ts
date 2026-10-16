@@ -1,7 +1,8 @@
 /**
  * Study (/learn): the recommended session card with its mode and reason in
  * plain words, the mode and length pickers, Start session (one session
- * even on a double click), and the course it opens on when none is chosen.
+ * even on a double click), the course it opens on when none is chosen, and
+ * Resume session on a planned session that is under way.
  * Each test seeds its own identity, because Study picks its course from the
  * account's materials and plans.
  *
@@ -10,7 +11,18 @@
  * the session-*.spec.ts files.
  */
 import type { Page, Request } from "@playwright/test";
-import { test, expect, createPlan, createSession, finishSession, unique, uploadMaterial } from "./fixtures";
+import {
+  test,
+  expect,
+  MODE_LABELS,
+  createPlan,
+  createSession,
+  finishSession,
+  morningZone,
+  startRun,
+  unique,
+  uploadMaterial,
+} from "./fixtures";
 
 /** The recommendation card: the one section with the Start session button. */
 function sessionCard(page: Page) {
@@ -136,4 +148,35 @@ test("with no course chosen, Study opens on the course with the nearest exam, no
   await expect(switcher).toHaveText(latestCourse);
   await page.reload();
   await expect(page.getByRole("combobox", { name: "Course" })).toHaveText(latestCourse);
+});
+
+test("a planned session with a run under way offers Resume session, as Home does", async ({
+  testUserPage: page,
+  testUser,
+}) => {
+  const course = unique("E2E Resume");
+  await uploadMaterial(testUser.api, { course, text: "Hash tables: keys map to buckets through a hash function." });
+  // A morning zone and an all-day window, so sessions are left today whenever the suite runs.
+  const plan = await createPlan(testUser.api, { course_name: course, time_zone: morningZone(), all_day: true });
+  const first = plan.items[0];
+  const label = MODE_LABELS[first.mode];
+  // Starting the run doesn't touch the plan item; the run is what Study has to read.
+  await startRun(testUser.api, first.session_id);
+
+  await page.goto("/learn");
+  await expect(page.getByRole("combobox", { name: "Course" })).toHaveText(course);
+  const planned = page.getByRole("region", { name: "Planned for today" });
+  const resume = planned.getByRole("link", { name: new RegExp(`^Resume session: ${label}, `) });
+  await expect(resume).toHaveText("Resume session");
+  await expect(resume).toHaveAttribute("href", `/s/${first.session_id}`);
+  await expect(planned.locator(`a[href="/s/${first.session_id}"]`)).toHaveCount(1);
+
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Today" }).getByRole("link", { name: "Resume session" })).toHaveAttribute(
+    "href",
+    `/s/${first.session_id}`,
+  );
+
+  await page.goto(`/s/${first.session_id}`);
+  await expect(page.getByRole("button", { name: "Resume session" })).toBeVisible();
 });

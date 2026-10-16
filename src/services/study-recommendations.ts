@@ -20,6 +20,7 @@ import { getStreak, resolveTimeZone } from "@/services/gamification";
 import { createSession } from "@/services/session";
 import { endOfToday } from "@/services/spaced-repetition";
 import { isOpenPlanStatus, isUnstartedPlanStatus } from "@/lib/home-model";
+import { RUN_UNDER_WAY_STATUSES, withRunUnderWay } from "@/lib/plan-status";
 import {
   breakProtocolFor,
   questionCountFor,
@@ -339,6 +340,16 @@ async function findActivePlan(
   return (examName ? plans.find((p) => p.examName === examName) : undefined) ?? plans[0] ?? null;
 }
 
+/** The sessions among `sessionIds` with a run under way, the signal Home and Plan read. */
+async function sessionsUnderWay(userId: string, sessionIds: string[]): Promise<Set<string>> {
+  if (sessionIds.length === 0) return new Set();
+  const runs = await prisma.sessionRun.findMany({
+    where: { userId, sessionId: { in: sessionIds }, status: { in: [...RUN_UNDER_WAY_STATUSES] } },
+    select: { sessionId: true },
+  });
+  return new Set(runs.map((run) => run.sessionId));
+}
+
 /**
  * @param examName The exam chosen in the course switcher, if any. It picks
  *   which plan's exam and sessions show; topics and errors stay course-wide.
@@ -354,8 +365,13 @@ export async function getStudyRecommendations(
   const planPromise = zonePromise.then((zone) =>
     findActivePlan(userId, courseName, examName, dayKey(now, zone)),
   );
+  // Starting a run doesn't write the plan item, so the runs say which
+  // sessions are under way (Resume session, as on Home).
+  const underWayPromise = planPromise.then((plan) =>
+    sessionsUnderWay(userId, plan?.items.map((item) => item.sessionId) ?? []),
+  );
 
-  const [dueObjectives, masterySummary, courseErrors, activePlan, recentSessions, zone, streak] =
+  const [dueObjectives, masterySummary, courseErrors, activePlan, recentSessions, zone, streak, underWay] =
     await Promise.all([
       getDueObjectives(userId, courseName, 200, now),
       getMasterySummary(userId, courseName),
@@ -375,6 +391,7 @@ export async function getStudyRecommendations(
       zonePromise,
       // The same streak Home and Progress show
       getStreak(userId),
+      underWayPromise,
     ]);
 
   const todayKey = dayKey(now, zone);
@@ -493,13 +510,14 @@ export async function getStudyRecommendations(
   let todayDone = 0;
 
   if (activePlan) {
-    for (const item of activePlan.items) {
+    const planItems = activePlan.items.map((item) => withRunUnderWay(item, underWay));
+    for (const item of planItems) {
       if (dayKey(item.startTime, zone) !== todayKey) continue;
       todayPlanned++;
       if (item.status === "DONE") todayDone++;
     }
     // Sessions moved by Reschedule (RESCHEDULED) are still to do, as on Home and Plan.
-    const open = activePlan.items.filter((item) => isOpenPlanStatus(item.status));
+    const open = planItems.filter((item) => isOpenPlanStatus(item.status));
     const todayItems = open
       .filter((item) => dayKey(item.startTime, zone) === todayKey)
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());

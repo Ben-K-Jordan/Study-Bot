@@ -11,7 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 process.env.TZ = "Asia/Tokyo";
 
 interface RunRow {
-  endedAt: Date | null;
+  sessionId: string;
+  status: string;
 }
 
 interface PlanItemRow {
@@ -32,7 +33,8 @@ interface PlanRow {
 }
 
 interface TestState {
-  completedRuns: RunRow[];
+  /** Session runs in any status; the service asks for the ones under way. */
+  runs: RunRow[];
   gameState: { row: { timezone: string | null } | null };
   errors: { runId: string; promptIndex: number; errorType: string }[];
   plan: PlanRow | null;
@@ -49,7 +51,7 @@ interface TestState {
 // Mock prisma before importing the service
 vi.mock("@/lib/db", () => {
   const state: TestState = {
-    completedRuns: [],
+    runs: [],
     gameState: { row: null },
     errors: [],
     plan: null,
@@ -64,7 +66,16 @@ vi.mock("@/lib/db", () => {
 
   return {
     prisma: {
-      sessionRun: { findMany: vi.fn(async () => state.completedRuns) },
+      sessionRun: {
+        findMany: vi.fn(
+          async (args: { where?: { sessionId?: { in?: string[] }; status?: { in?: string[] } } }) =>
+            state.runs.filter(
+              (run) =>
+                (!args?.where?.sessionId?.in || args.where.sessionId.in.includes(run.sessionId)) &&
+                (!args?.where?.status?.in || args.where.status.in.includes(run.status)),
+            ),
+        ),
+      },
       sessionErrorLog: { findMany: vi.fn(async () => state.errors) },
       // Plans whose exam is today or later, nearest exam first (findActivePlan).
       studyPlan: {
@@ -188,7 +199,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.clearAllMocks();
-  state.completedRuns.length = 0;
+  state.runs = [];
   state.gameState.row = null;
   state.errors = [];
   state.plan = null;
@@ -572,6 +583,60 @@ describe("planned sessions", () => {
 
     const recs = await getStudyRecommendations("user1", "Biology");
     expect(recs.next_planned?.session_id).toBe("s-moved");
+  });
+
+  it("marks a session with a run under way IN_PROGRESS, so Study offers Resume session as Home does", async () => {
+    state.gameState.row = { timezone: "America/New_York" };
+    const today = (sessionId: string, hour: number, status = "SCHEDULED"): PlanItemRow => ({
+      sessionId,
+      status,
+      dayIndex: 0,
+      startTime: new Date(`2026-07-15T${hour}:00:00Z`),
+      endTime: new Date(`2026-07-15T${hour}:30:00Z`),
+    });
+    state.plan = planWith([
+      today("s-started", 14),
+      // Missed, then opened from its link and started: resumable, as on Home
+      today("s-missed", 15, "MISSED"),
+      today("s-done", 16, "DONE"),
+      today("s-open", 17),
+    ]);
+    state.nudgeSessions = ["s-started", "s-missed", "s-open"].map((sessionId) => ({
+      sessionId,
+      mode: "RETRIEVAL",
+      topicScope: "Cell cycle",
+    }));
+    // Starting a run doesn't write the plan item; the runs say what is under way.
+    state.runs = [
+      { sessionId: "s-started", status: "ACTIVE" },
+      { sessionId: "s-missed", status: "PAUSED" },
+      // A finished session's later run doesn't reopen it.
+      { sessionId: "s-done", status: "ACTIVE" },
+      { sessionId: "s-open", status: "COMPLETED" },
+      { sessionId: "s-elsewhere", status: "ACTIVE" },
+    ];
+
+    const recs = await getStudyRecommendations("user1", "Biology");
+    expect(recs.plan_nudge?.items.map((i) => [i.session_id, i.status])).toEqual([
+      ["s-started", "IN_PROGRESS"],
+      ["s-missed", "IN_PROGRESS"],
+      ["s-open", "SCHEDULED"],
+    ]);
+    expect([recs.today_planned, recs.today_done]).toEqual([4, 1]);
+    // Only the plan's own sessions are looked up, by the statuses Home and Plan count.
+    expect(vi.mocked(prisma.sessionRun.findMany)).toHaveBeenCalledWith({
+      where: {
+        userId: "user1",
+        sessionId: { in: ["s-started", "s-missed", "s-done", "s-open"] },
+        status: { in: ["ACTIVE", "PAUSED"] },
+      },
+      select: { sessionId: true },
+    });
+  });
+
+  it("skips the run lookup when the course has no plan", async () => {
+    await getStudyRecommendations("user1", "Biology");
+    expect(vi.mocked(prisma.sessionRun.findMany)).not.toHaveBeenCalled();
   });
 });
 

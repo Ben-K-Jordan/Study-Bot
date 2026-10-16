@@ -18,6 +18,7 @@ import { isSureRating } from "@/lib/confidence"
 import { prisma } from "@/lib/db"
 import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone"
 import { logger } from "@/lib/logger"
+import { RUN_UNDER_WAY_STATUSES, withRunUnderWay } from "@/lib/plan-status"
 import { pretestKey, splitRatedAnswers, type RatedAnswerLike } from "@/lib/progress-model"
 import { getActivityByDay, getGameState, resolveTimeZone } from "@/services/gamification"
 
@@ -111,7 +112,7 @@ export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
     }),
     // Runs under way (the same statuses Plan counts as in progress)
     prisma.sessionRun.findMany({
-      where: { userId, status: { in: ["ACTIVE", "PAUSED"] } },
+      where: { userId, status: { in: [...RUN_UNDER_WAY_STATUSES] } },
       select: { sessionId: true },
     }),
   ])
@@ -131,9 +132,7 @@ export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
     examDateKey: plan.examDate.toISOString().slice(0, 10),
     createdAt: plan.createdAt,
     topics: topicsFromConfig(plan.config),
-    items: plan.items.map((item) =>
-      item.status !== "DONE" && underWay.has(item.sessionId) ? { ...item, status: "IN_PROGRESS" } : item
-    ),
+    items: plan.items.map((item) => withRunUnderWay(item, underWay)),
     lastRescheduledAt: lastReflow.get(plan.planId) ?? null,
   }))
 })

@@ -13,11 +13,30 @@ export type PlanItemState = "done" | "in_progress" | "missed" | "skipped" | "sch
 /** What the session's runs say: none started, one under way, or one finished. */
 export type RunState = "none" | "in_progress" | "completed";
 
+/** Run statuses that mean a session is under way, so it offers Resume session. */
+export const RUN_UNDER_WAY_STATUSES: readonly string[] = ["ACTIVE", "PAUSED"];
+
 /** Fold a session's run statuses (CREATED, ACTIVE, PAUSED, COMPLETED) into one state. */
 export function runStateFromStatuses(statuses: readonly string[]): RunState {
   if (statuses.includes("COMPLETED")) return "completed";
-  if (statuses.some((s) => s === "ACTIVE" || s === "PAUSED")) return "in_progress";
+  if (statuses.some((s) => RUN_UNDER_WAY_STATUSES.includes(s))) return "in_progress";
   return "none";
+}
+
+/**
+ * A plan item with its runs folded into its status. Starting a run doesn't
+ * write the item, so one whose session has a run under way reads
+ * IN_PROGRESS; a DONE item stays DONE. Home, the Start button and Study
+ * read plan items through this, so they offer Resume session for the same
+ * sessions Plan marks in progress.
+ */
+export function withRunUnderWay<T extends { sessionId: string; status: string }>(
+  item: T,
+  sessionsUnderWay: ReadonlySet<string>,
+): T {
+  return item.status !== "DONE" && sessionsUnderWay.has(item.sessionId)
+    ? { ...item, status: "IN_PROGRESS" }
+    : item;
 }
 
 /** YYYY-MM-DD of an instant in a timezone. */
