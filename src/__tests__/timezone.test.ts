@@ -3,8 +3,43 @@
  * absolute instant or a day key, so the results must not depend on the
  * timezone of the machine running the tests.
  */
-import { describe, it, expect } from "vitest";
-import { addDays, dayKey, daysBetween, hourOfDay, zonedTimeToUtc } from "@/lib/timezone";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const db = vi.hoisted(() => ({
+  settingsZone: null as string | null,
+  planZone: null as string | null,
+  settingsReads: 0,
+  planReads: 0,
+}));
+
+vi.mock("@/lib/db", () => ({
+  prisma: {
+    userGameState: {
+      findUnique: async () => {
+        db.settingsReads++;
+        return { timezone: db.settingsZone };
+      },
+    },
+    studyPlan: {
+      findFirst: async () => {
+        db.planReads++;
+        return db.planZone === null ? null : { timezone: db.planZone };
+      },
+    },
+  },
+}));
+
+import {
+  addDays,
+  dayKey,
+  daysBetween,
+  getStoredTimezone,
+  getUserTimezone,
+  hourOfDay,
+  isValidTimezone,
+  resolveTimeZone,
+  zonedTimeToUtc,
+} from "@/lib/timezone";
 
 describe("zonedTimeToUtc", () => {
   it("converts a wall-clock time in a zone to the UTC instant", () => {
@@ -56,5 +91,80 @@ describe("day arithmetic", () => {
     expect(dayKey(instant, null)).toBe("2026-07-17");
     expect(hourOfDay(instant, "America/New_York")).toBe(22.5);
     expect(hourOfDay(instant, null)).toBe(2.5);
+  });
+});
+
+describe("formatter reuse", () => {
+  it("gives the same answers when a zone's formatter is reused", () => {
+    const instants = Array.from({ length: 48 }, (_, i) => new Date(Date.UTC(2026, 2, 7, i)));
+    const first = instants.map((d) => dayKey(d, "America/New_York"));
+    const again = instants.map((d) => dayKey(d, "America/New_York"));
+    expect(again).toEqual(first);
+    // Midnight in New York is 05:00 UTC on both days: clocks change at 2am on March 8
+    expect(first[4]).toBe("2026-03-06");
+    expect(first[5]).toBe("2026-03-07");
+    expect(first[24 + 4]).toBe("2026-03-07");
+    expect(first[24 + 5]).toBe("2026-03-08");
+  });
+
+  it("keeps zones apart", () => {
+    const instant = new Date("2026-07-16T23:30:00Z");
+    expect(dayKey(instant, "Asia/Tokyo")).toBe("2026-07-17");
+    expect(dayKey(instant, "America/Los_Angeles")).toBe("2026-07-16");
+    expect(hourOfDay(instant, "Asia/Tokyo")).toBe(8.5);
+    expect(hourOfDay(instant, "America/Los_Angeles")).toBe(16.5);
+  });
+
+  it("reads midnight as hour 0", () => {
+    expect(hourOfDay(new Date("2026-07-16T04:00:00Z"), "America/New_York")).toBe(0);
+  });
+
+  it("validates zones, valid or not, any number of times", () => {
+    for (let i = 0; i < 3; i++) {
+      expect(isValidTimezone("Europe/Paris")).toBe(true);
+      expect(isValidTimezone("UTC")).toBe(true);
+      expect(isValidTimezone("Not/AZone")).toBe(false);
+      expect(isValidTimezone("")).toBe(false);
+    }
+    expect(dayKey(new Date("2026-07-17T02:30:00Z"), "Not/AZone")).toBe("2026-07-17");
+  });
+});
+
+describe("the student's zone", () => {
+  beforeEach(() => {
+    db.settingsZone = null;
+    db.planZone = null;
+    db.settingsReads = 0;
+    db.planReads = 0;
+  });
+
+  it("prefers the Settings zone", async () => {
+    db.settingsZone = "America/Chicago";
+    db.planZone = "Europe/Paris";
+    expect(await resolveTimeZone("u1")).toBe("America/Chicago");
+    expect(await getUserTimezone("u1")).toBe("America/Chicago");
+    expect(db.planReads).toBe(0);
+  });
+
+  it("uses the newest plan's zone when Settings has none", async () => {
+    db.planZone = "Europe/Paris";
+    expect(await resolveTimeZone("u1")).toBe("Europe/Paris");
+    expect(await getUserTimezone("u1")).toBe("Europe/Paris");
+    // Settings itself stays empty
+    expect(await getStoredTimezone("u1")).toBeNull();
+  });
+
+  it("ends at UTC, or null, with no valid zone anywhere", async () => {
+    db.settingsZone = "Not/AZone";
+    db.planZone = "Also/Not";
+    expect(await resolveTimeZone("u1")).toBe("UTC");
+    expect(await getUserTimezone("u1")).toBeNull();
+  });
+
+  it("skips the Settings query when the caller passes the value", async () => {
+    db.planZone = "Europe/Paris";
+    expect(await resolveTimeZone("u1", "Asia/Tokyo")).toBe("Asia/Tokyo");
+    expect(await resolveTimeZone("u1", null)).toBe("Europe/Paris");
+    expect(db.settingsReads).toBe(0);
   });
 });

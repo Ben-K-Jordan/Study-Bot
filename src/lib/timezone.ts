@@ -12,34 +12,71 @@
  * converts them with zonedTimeToUtc rather than Date#setHours, which would
  * use the server's zone.
  */
+import { cache } from "react";
 import { prisma } from "@/lib/db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// ---------------------------------------------------------------------------
+// Formatters, one per zone
+// ---------------------------------------------------------------------------
+
+/**
+ * Intl formatters are costly to build (about 70 µs each), and dayKey runs
+ * once per row when a year of activity is bucketed into days, so each zone's
+ * formatter is built once and reused. Only valid zones are stored. The cap
+ * bounds the maps when callers pass arbitrary strings (Intl accepts any
+ * letter case of a zone name).
+ */
+const MAX_CACHED_ZONES = 500;
+
+const DAY_OPTIONS: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digit", day: "2-digit" };
+const WALL_CLOCK_OPTIONS: Intl.DateTimeFormatOptions = {
+  hourCycle: "h23",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "numeric",
+};
+
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+const wallClockFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** The stored formatter for `timeZone`, built on first use; null when the zone is invalid. */
+function formatterFor(
+  store: Map<string, Intl.DateTimeFormat>,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+  timeZone: string,
+): Intl.DateTimeFormat | null {
+  const stored = store.get(timeZone);
+  if (stored) return stored;
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat(locale, { ...options, timeZone });
+  } catch {
+    return null;
+  }
+  if (store.size >= MAX_CACHED_ZONES) store.clear();
+  store.set(timeZone, formatter);
+  return formatter;
+}
+
+/** en-CA formats as YYYY-MM-DD. */
+const dayFormatter = (timeZone: string) => formatterFor(dayFormatters, "en-CA", DAY_OPTIONS, timeZone);
+const wallClockFormatter = (timeZone: string) =>
+  formatterFor(wallClockFormatters, "en-US", WALL_CLOCK_OPTIONS, timeZone);
+
 /** Calendar day key (YYYY-MM-DD) for a date in the given IANA timezone. */
 export function dayKey(date: Date, timeZone?: string | null): string {
-  if (!timeZone) return date.toISOString().slice(0, 10);
-  try {
-    // en-CA formats as YYYY-MM-DD
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(date);
-  } catch {
-    return date.toISOString().slice(0, 10);
-  }
+  const formatter = timeZone ? dayFormatter(timeZone) : null;
+  return formatter ? formatter.format(date) : date.toISOString().slice(0, 10);
 }
 
 /** Whether a string is a valid IANA timezone identifier. */
 export function isValidTimezone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
+  return typeof tz === "string" && tz !== "" && wallClockFormatter(tz) !== null;
 }
 
 /** The day key `days` calendar days after `key` (YYYY-MM-DD in, YYYY-MM-DD out). */
@@ -55,29 +92,17 @@ export function daysBetween(from: string, to: string): number {
 
 /** Wall-clock fields of an instant in a timezone (UTC when null or invalid). */
 function wallClock(date: Date, timeZone?: string | null) {
-  if (timeZone) {
-    try {
-      const parts: Record<string, string> = {};
-      const dtf = new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        hourCycle: "h23",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      for (const p of dtf.formatToParts(date)) parts[p.type] = p.value;
-      return {
-        year: Number(parts.year),
-        month: Number(parts.month),
-        day: Number(parts.day),
-        hour: Number(parts.hour) % 24,
-        minute: Number(parts.minute),
-      };
-    } catch {
-      // fall through to UTC
-    }
+  const formatter = timeZone ? wallClockFormatter(timeZone) : null;
+  if (formatter) {
+    const parts: Record<string, string> = {};
+    for (const p of formatter.formatToParts(date)) parts[p.type] = p.value;
+    return {
+      year: Number(parts.year),
+      month: Number(parts.month),
+      day: Number(parts.day),
+      hour: Number(parts.hour) % 24,
+      minute: Number(parts.minute),
+    };
   }
   return {
     year: date.getUTCFullYear(),
@@ -114,11 +139,12 @@ export function zonedTimeToUtc(key: string, time: string, timeZone?: string | nu
   return new Date(ts);
 }
 
-/**
- * The user's configured timezone, or null (= UTC day boundaries).
- * Stored on UserGameState and editable in Settings.
- */
-export async function getUserTimezone(userId: string): Promise<string | null> {
+// ---------------------------------------------------------------------------
+// The student's zone
+// ---------------------------------------------------------------------------
+
+/** The zone saved in Settings (UserGameState.timezone), or null. */
+export async function getStoredTimezone(userId: string): Promise<string | null> {
   try {
     const state = await prisma.userGameState.findUnique({
       where: { userId },
@@ -129,3 +155,49 @@ export async function getUserTimezone(userId: string): Promise<string | null> {
     return null;
   }
 }
+
+/** The zone of the student's newest plan (plans record the zone they were made in), or null. */
+async function newestPlanTimezone(userId: string): Promise<string | null> {
+  try {
+    const plan = await prisma.studyPlan.findFirst({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      select: { timezone: true },
+    });
+    return plan?.timezone ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Settings first, then the newest plan's zone. Pass the settings value when
+ * you already have it to skip a query; `undefined` means "look it up".
+ */
+async function findTimezone(userId: string, settingsZone?: string | null): Promise<string | null> {
+  const settings = settingsZone !== undefined ? settingsZone : await getStoredTimezone(userId);
+  if (settings && isValidTimezone(settings)) return settings;
+  const planZone = await newestPlanTimezone(userId);
+  return planZone && isValidTimezone(planZone) ? planZone : null;
+}
+
+/**
+ * The time zone that decides what "today" is for this student on every
+ * screen: streaks, XP today, cards due today, chat day labels, session dates
+ * and the relearning criterion. Settings first, then the zone of the
+ * student's newest plan, then UTC. Deduplicated per request in Server
+ * Components (React.cache); elsewhere each call reads the database.
+ */
+export const resolveTimeZone = cache(
+  async (userId: string, settingsZone?: string | null): Promise<string> =>
+    (await findTimezone(userId, settingsZone)) ?? "UTC",
+);
+
+/**
+ * The same zone as resolveTimeZone, but null when the student has neither a
+ * Settings zone nor a plan (null means UTC day boundaries). For the value
+ * saved in Settings alone, use getStoredTimezone.
+ */
+export const getUserTimezone = cache(
+  async (userId: string): Promise<string | null> => findTimezone(userId),
+);
