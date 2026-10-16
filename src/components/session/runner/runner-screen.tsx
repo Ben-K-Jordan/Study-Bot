@@ -16,6 +16,7 @@ import type { Outcome } from "./question-reducer"
 import { QuestionScreen, type SavedAnswer } from "./question-screen"
 import { readShortcutsEnabled, writeShortcutsEnabled } from "./storage"
 import {
+  needsSavedAnswers,
   repairsAdded,
   resultCompletesRun,
   resultStartsBreak,
@@ -97,9 +98,13 @@ function Runner({ run, onSubmit, onComplete, onFinish, onBreak, onQuestionShown 
   const needPrompt = !held && !finished && !scoringIntro && !livePrompt
   const recovery = useApi<RunnerPrompt>(needPrompt ? promptUrl(run.run_id, run.current_index) : null)
 
-  // Exam scoring shows each saved answer; load them when the run lacks them.
-  const scoring = run.phase === "REVIEW"
-  const needAttempts = scoring && !run.attempts
+  // Exam scoring shows each saved answer; load them when the run lacks them,
+  // and keep them while the last scored question shows its feedback.
+  const needAttempts = needsSavedAnswers({
+    runPhase: run.phase,
+    shownPhase: held?.phase,
+    hasAttempts: Boolean(run.attempts),
+  })
   const fetchedRun = useApi<{ attempts?: RunnerAttemptRecord[] }>(needAttempts ? runUrl(run.run_id) : null)
   const attempts = run.attempts ?? fetchedRun.data?.attempts
 

@@ -133,6 +133,22 @@ export function resultPhase(result: AttemptSubmitResult | null | undefined): str
   return typeof result?.phase === "string" ? result.phase : null
 }
 
+/**
+ * Exam scoring shows each question's saved answer, so the runner loads the
+ * answers when the run payload lacks them. They stay needed while a scored
+ * question is still on screen: its feedback outlasts the REVIEW phase once
+ * the last score completes the run.
+ */
+export function needsSavedAnswers(input: {
+  runPhase: string
+  /** The phase of the question held on screen for its feedback, if any. */
+  shownPhase: string | null | undefined
+  hasAttempts: boolean
+}): boolean {
+  if (input.hasAttempts) return false
+  return input.runPhase === "REVIEW" || input.shownPhase === "REVIEW"
+}
+
 /** Worked-example completion problems carry the solution's step count. */
 export function promptStepCount(prompt: RunnerPrompt): number | null {
   const value = prompt.meta?.step_count

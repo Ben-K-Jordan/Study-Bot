@@ -37,7 +37,7 @@ import {
   type QuestionState,
 } from "@/components/session/runner/question-reducer"
 import { draftKey, parseDraft } from "@/components/session/runner/storage"
-import { repairsAdded, resultCompletesRun, resultStartsBreak } from "@/components/session/runner/types"
+import { needsSavedAnswers, repairsAdded, resultCompletesRun, resultStartsBreak } from "@/components/session/runner/types"
 import { feedbackSummary, plainSummaryText } from "@/components/session/runner/question-kind"
 import { feedbackStatus } from "@/components/session/runner/use-feedback"
 import { questionBindings, type QuestionHotkeys } from "@/components/session/runner/use-question-hotkeys"
@@ -538,6 +538,21 @@ describe("failed saves", () => {
     expect(submitFailure(server)).toEqual({ message: server.message, reload: false })
     expect(needsReload(new ApiError("This question isn't in the session. Reload to continue.", 400, null))).toBe(true)
     expect(needsReload(new TypeError("Failed to fetch"))).toBe(false)
+  })
+})
+
+describe("saved exam answers", () => {
+  it("load while the run is scoring and the payload lacks them", () => {
+    expect(needsSavedAnswers({ runPhase: "REVIEW", shownPhase: null, hasAttempts: false })).toBe(true)
+    expect(needsSavedAnswers({ runPhase: "REVIEW", shownPhase: "REVIEW", hasAttempts: true })).toBe(false)
+    expect(needsSavedAnswers({ runPhase: "EXAM", shownPhase: "EXAM", hasAttempts: false })).toBe(false)
+  })
+
+  it("stay loaded while the last scored question shows its feedback", () => {
+    // The last score completes the run, which leaves REVIEW, but the scored
+    // question stays on screen until See results.
+    expect(needsSavedAnswers({ runPhase: "COMPLETE", shownPhase: "REVIEW", hasAttempts: false })).toBe(true)
+    expect(needsSavedAnswers({ runPhase: "COMPLETE", shownPhase: undefined, hasAttempts: false })).toBe(false)
   })
 })
 
