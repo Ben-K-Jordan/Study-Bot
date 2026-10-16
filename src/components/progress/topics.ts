@@ -3,6 +3,7 @@
  * a mastery value and a status. Pure, so Home and Progress agree and the
  * rules are unit-tested.
  */
+import { humanizeObjectiveKey, slugifyObjectiveTitle } from "@/lib/objective-keys";
 
 /** Below this last accuracy a practiced topic counts as a weak spot. */
 export const WEAK_TOPIC_THRESHOLD = 0.7;
@@ -31,23 +32,6 @@ export interface Topic {
   value: number | null;
   status: TopicStatus;
   lastStudiedAt: string | null;
-}
-
-/** The key the plan generator derives from a topic title (plan-generator.ts). */
-export function topicKey(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 60)
-    .replace(/_+$/g, "");
-  return slug || "objective";
-}
-
-/** "css_specificity" becomes "Css specificity" when no real title is known. */
-export function titleFromKey(key: string): string {
-  const words = key.replace(/_+/g, " ").trim();
-  return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
 }
 
 export function topicStatus(row: Pick<MasteryRow, "lastAccuracy" | "repetitions" | "easeFactor" | "nextDueAt" | "lastStudiedAt">, now: Date): TopicStatus {
@@ -89,7 +73,7 @@ export function buildTopics(
       named.set(plan.courseName, keys);
     }
     for (const title of plan.titles) {
-      const key = topicKey(title);
+      const key = slugifyObjectiveTitle(title);
       titles.set(`${plan.courseName}\u0000${key}`, title);
       keys.add(key);
     }
@@ -103,7 +87,7 @@ export function buildTopics(
     topics.push({
       courseName: row.courseName,
       key: row.objectiveKey,
-      title: titles.get(id) ?? titleFromKey(row.objectiveKey),
+      title: titles.get(id) ?? humanizeObjectiveKey(row.objectiveKey),
       value: row.lastAccuracy,
       status: topicStatus(row, now),
       lastStudiedAt: row.lastStudiedAt?.toISOString() ?? null,
@@ -117,7 +101,7 @@ export function buildTopics(
       topics.push({
         courseName,
         key,
-        title: titles.get(id) ?? titleFromKey(key),
+        title: titles.get(id) ?? humanizeObjectiveKey(key),
         value: null,
         status: "not-practiced",
         lastStudiedAt: null,

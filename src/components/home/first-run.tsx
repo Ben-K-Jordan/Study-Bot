@@ -4,21 +4,23 @@ import { CalendarClockIcon, FileUpIcon, ListChecksIcon, type LucideIcon } from "
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 
+// The steps follow the New plan form the button opens: course, exam and
+// study hours first, then the materials on the same form.
 const STEPS: readonly { icon: LucideIcon; title: string; body: string }[] = [
+  {
+    icon: CalendarClockIcon,
+    title: "Create a plan",
+    body: "Name the course and exam, then set the exam date and the hours you can study.",
+  },
   {
     icon: FileUpIcon,
     title: "Upload your materials",
-    body: "Lecture slides and notes for one course, as PDF, text, or Markdown.",
-  },
-  {
-    icon: CalendarClockIcon,
-    title: "Set the exam date",
-    body: "Add the hours you can study. Sessions of about 30 minutes fill the days up to the exam.",
+    body: "On the same form, add lecture slides and notes as PDF, text, or Markdown.",
   },
   {
     icon: ListChecksIcon,
     title: "Answer from memory",
-    body: "Each session asks questions from your files. Questions you get wrong come back until you answer them correctly on 2 different days.",
+    body: "Each session takes about 30 minutes and asks questions from your files. Questions you get wrong come back until you answer them correctly on 2 different days.",
   },
 ]
 
@@ -54,7 +56,7 @@ export function FirstRun() {
         </CardContent>
         <CardFooter>
           <Button asChild size="lg" className="w-full sm:w-auto">
-            <Link href="/plan/new">Create plan</Link>
+            <Link href="/plan/new">New plan</Link>
           </Button>
         </CardFooter>
       </Card>

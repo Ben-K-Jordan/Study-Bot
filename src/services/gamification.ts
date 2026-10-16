@@ -21,6 +21,23 @@ export const XP_AMOUNTS: Record<string, number> = {
 const FREEZE_AWARD = "STREAK_FREEZE_AWARD";
 const FREEZE_USED = "STREAK_FREEZE_USED";
 
+/**
+ * The XP actions that are study, so they make a day active for streaks and
+ * the heatmap. Older rows with retired actions (GUIDE_GENERATED,
+ * CHAT_QUESTION) still count toward XP totals but never mark a day studied.
+ */
+const STUDY_ACTIONS: ReadonlySet<string> = new Set([
+  "SESSION_COMPLETED",
+  "FLASHCARD_REVIEW",
+  "PERFECT_DECK",
+  "STREAK_MILESTONE",
+]);
+
+/** Whether an XP event's action is study (see STUDY_ACTIONS). */
+function isStudyAction(action: string): boolean {
+  return STUDY_ACTIONS.has(action);
+}
+
 /** Most streak freezes a student can hold. */
 export const MAX_STREAK_FREEZES = 3;
 
@@ -47,13 +64,26 @@ export function startOfDay(now: Date, timeZone: string): Date {
  * arithmetic on YYYY-MM-DD keys, so daylight saving never skips a day.
  */
 export function streakFromDays(activeDays: ReadonlySet<string>, todayKey: string): number {
+  return currentStreakRun(activeDays, todayKey).length;
+}
+
+/**
+ * The current streak and the day it began, or `startKey: null` when there is
+ * no streak. Same rules as streakFromDays.
+ */
+export function currentStreakRun(
+  activeDays: ReadonlySet<string>,
+  todayKey: string,
+): { length: number; startKey: string | null } {
   let cursor = activeDays.has(todayKey) ? todayKey : addDays(todayKey, -1);
-  let streak = 0;
+  let length = 0;
+  let startKey: string | null = null;
   while (activeDays.has(cursor)) {
-    streak++;
+    length++;
+    startKey = cursor;
     cursor = addDays(cursor, -1);
   }
-  return streak;
+  return { length, startKey };
 }
 
 interface ActivityEvent {
@@ -63,9 +93,10 @@ interface ActivityEvent {
 }
 
 /**
- * The days that count toward a streak: any XP event (sessions and card
- * reviews), any completed plan item, and any day a freeze bridged. Freeze
- * awards are bookkeeping, not study.
+ * The days that count toward a streak: any study XP event (sessions and card
+ * reviews, see STUDY_ACTIONS), any completed plan item, and any day a freeze
+ * bridged. Freeze awards are bookkeeping, and retired guide and chat events
+ * were never study.
  */
 export function collectActiveDays(
   events: readonly ActivityEvent[],
@@ -75,12 +106,11 @@ export function collectActiveDays(
 ): Set<string> {
   const days = new Set<string>();
   for (const e of events) {
-    if (e.action === FREEZE_AWARD) continue;
     if (e.action === FREEZE_USED) {
       days.add(e.sourceId ?? dayKey(e.createdAt, timeZone));
       continue;
     }
-    days.add(dayKey(e.createdAt, timeZone));
+    if (isStudyAction(e.action)) days.add(dayKey(e.createdAt, timeZone));
   }
   for (const item of completedItems) {
     days.add(dayKey(item.completedAt ?? item.startTime, timeZone));
@@ -157,12 +187,20 @@ export async function computeStreak(
   userId: string,
   existingGameState?: StreakState | null,
 ): Promise<number> {
+  return (await loadStreakRun(userId, existingGameState)).length;
+}
+
+/** The current streak and the day it began, read like computeStreak. */
+async function loadStreakRun(
+  userId: string,
+  existingGameState?: StreakState | null,
+): Promise<{ length: number; startKey: string | null }> {
   const state =
     existingGameState ?? (await prisma.userGameState.findUnique({ where: { userId } }));
   const timeZone = state?.timezone ?? null;
   const now = new Date();
   const days = await loadActiveDays(userId, timeZone, state?.streakFreezeUsedDate ?? null, now);
-  return streakFromDays(days, dayKey(now, timeZone));
+  return currentStreakRun(days, dayKey(now, timeZone));
 }
 
 /**
@@ -278,7 +316,9 @@ function emptyDay(): DayActivity {
 /**
  * Pure: bucket XP events and completed plan items into the student's days.
  * A plan item finished through a session already has a SESSION_COMPLETED
- * event for its run, so it is only counted when no such event exists.
+ * event for its run, so it is only counted when no such event exists. Only
+ * study events (STUDY_ACTIONS) fill a day: XP from retired guide and chat
+ * events stays in the totals but never shows on the heatmap.
  */
 export function bucketActivity(
   events: readonly (ActivityEvent & { xpAmount: number })[],
@@ -297,11 +337,11 @@ export function bucketActivity(
   const runsWithEvent = new Set<string>();
 
   for (const e of events) {
-    if (e.action === FREEZE_AWARD) continue;
     if (e.action === FREEZE_USED) {
       day(e.sourceId ?? dayKey(e.createdAt, timeZone)).freezeUsed = true;
       continue;
     }
+    if (!isStudyAction(e.action)) continue;
     const entry = day(dayKey(e.createdAt, timeZone));
     entry.xp += e.xpAmount;
     if (e.action === "SESSION_COMPLETED") {
@@ -409,7 +449,7 @@ async function isFirstStudyOfDay(userId: string, at: Date, timeZone: string): Pr
     where: {
       userId,
       createdAt: { gte: startOfDay(at, timeZone), lt: at },
-      action: { notIn: [FREEZE_AWARD, FREEZE_USED] },
+      action: { in: [...STUDY_ACTIONS] },
     },
     select: { id: true },
   });
@@ -439,7 +479,7 @@ export async function syncProgress(
   const streakMayChange = !earned || (await isFirstStudyOfDay(userId, earned.createdAt, timeZone));
 
   const [streak, xpTotalResult, achievements, reviewCount, perfectDeckCount] = await Promise.all([
-    streakMayChange ? computeStreak(userId, { ...state, timezone: timeZone }) : null,
+    streakMayChange ? loadStreakRun(userId, { ...state, timezone: timeZone }) : null,
     prisma.xpEvent.aggregate({ where: { userId }, _sum: { xpAmount: true } }),
     prisma.achievement.findMany({ where: { userId }, select: { badgeType: true } }),
     prisma.cardReview.count({ where: { userId } }),
@@ -447,11 +487,13 @@ export async function syncProgress(
   ]);
 
   const streakFreezes =
-    streak === null ? state.streakFreezes : await maybeAwardStreakFreeze(userId, streak, state.streakFreezes);
+    streak === null
+      ? state.streakFreezes
+      : await maybeAwardStreakFreeze(userId, streak, timeZone, state.streakFreezes);
 
   const values: BadgeProgressValues = {
     // Unchanged streaks were already checked for achievements by the day's first event.
-    streak: streak ?? 0,
+    streak: streak?.length ?? 0,
     xp: xpTotalResult._sum.xpAmount || 0,
     reviews: reviewCount,
     perfectDecks: perfectDeckCount,
@@ -465,23 +507,34 @@ export async function syncProgress(
     logger.info("achievements.awarded", { user_id: userId, badges: newAchievements });
   }
 
-  return { newAchievements, streakFreezes, streak };
+  return { newAchievements, streakFreezes, streak: streak?.length ?? null };
 }
 
 /**
  * Atomically award a streak freeze at 7-day milestones, up to the cap.
- * A zero-XP marker event per milestone stops a second award.
+ * A zero-XP marker event per milestone (sourceId "7", "14", ...) stops a
+ * second award within the same streak. Only markers created since the
+ * streak began count, so a later streak that reaches 7 again earns again.
  * Returns the freeze count after the operation.
  */
 async function maybeAwardStreakFreeze(
   userId: string,
-  streak: number,
+  streak: { length: number; startKey: string | null },
+  timeZone: string,
   currentFreezes: number,
 ): Promise<number> {
-  if (streak <= 0 || streak % 7 !== 0 || currentFreezes >= MAX_STREAK_FREEZES) return currentFreezes;
+  const { length, startKey } = streak;
+  if (length <= 0 || !startKey || length % 7 !== 0 || currentFreezes >= MAX_STREAK_FREEZES) {
+    return currentFreezes;
+  }
 
   const existingAward = await prisma.xpEvent.findFirst({
-    where: { userId, action: FREEZE_AWARD, sourceId: String(streak) },
+    where: {
+      userId,
+      action: FREEZE_AWARD,
+      sourceId: String(length),
+      createdAt: { gte: zonedTimeToUtc(startKey, "00:00", timeZone) },
+    },
     select: { id: true },
   });
   if (existingAward) return currentFreezes;
@@ -498,10 +551,10 @@ async function maybeAwardStreakFreeze(
         userId,
         action: FREEZE_AWARD,
         xpAmount: 0,
-        sourceId: String(streak),
+        sourceId: String(length),
       },
     });
-    logger.info("streak.freeze_earned", { user_id: userId, streak });
+    logger.info("streak.freeze_earned", { user_id: userId, streak: length });
     return currentFreezes + 1;
   }
   return currentFreezes;

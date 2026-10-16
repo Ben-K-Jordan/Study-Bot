@@ -14,10 +14,11 @@ import { cache } from "react"
 import { redirect } from "next/navigation"
 
 import { getCurrentUserId } from "@/lib/auth"
+import { isSureRating } from "@/lib/confidence"
 import { prisma } from "@/lib/db"
 import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone"
 import { logger } from "@/lib/logger"
-import { pretestKey, splitRatedAnswers, type RatedAnswerLike } from "@/components/progress/progress-model"
+import { pretestKey, splitRatedAnswers, type RatedAnswerLike } from "@/lib/progress-model"
 import { getActivityByDay, getGameState, resolveTimeZone } from "@/services/gamification"
 
 /** The signed-in student, or a redirect to sign-in. */
@@ -65,12 +66,23 @@ function topicsFromConfig(config: unknown): string[] {
   return objectives.filter((o): o is string => typeof o === "string" && o.trim().length > 0)
 }
 
+/** How many plans Home and Progress read: the ones with the latest exams. */
+export const PLAN_LIMIT = 50
+
+/**
+ * The student's plans, soonest exam first (newest plan first on the same
+ * date). Past the limit, the plans with the earliest exams are the ones left
+ * out: they are long over, while upcoming exams and today's sessions must
+ * always load.
+ */
 export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
-  const [plans, audits, openRuns] = await Promise.all([
+  const [latestFirst, audits, openRuns] = await Promise.all([
     prisma.studyPlan.findMany({
       where: { userId },
-      orderBy: [{ examDate: "asc" }, { createdAt: "desc" }],
-      take: 50,
+      // Read from the latest exam back, then reverse below. createdAt runs
+      // ascending here so the reversed list is newest plan first per date.
+      orderBy: [{ examDate: "desc" }, { createdAt: "asc" }],
+      take: PLAN_LIMIT,
       select: {
         planId: true,
         courseName: true,
@@ -103,6 +115,7 @@ export const loadPlans = cache(async (userId: string): Promise<PlanRow[]> => {
       select: { sessionId: true },
     }),
   ])
+  const plans = latestFirst.toReversed()
   const underWay = new Set(openRuns.map((run) => run.sessionId))
 
   const lastReflow = new Map<string, Date>()
@@ -211,7 +224,7 @@ export const loadUnresolvedErrors = cache(async (userId: string): Promise<Course
       byCourse.set(courseName, entry)
     }
     entry.count += 1
-    if ((e.confidenceRating ?? 0) >= 4) entry.sureCount += 1
+    if (isSureRating(e.confidenceRating)) entry.sureCount += 1
   }
   return [...byCourse.values()].sort((a, b) => b.count - a.count || a.courseName.localeCompare(b.courseName))
 })

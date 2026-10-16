@@ -219,7 +219,7 @@ test.describe("keyboard use of the shell", () => {
     await expect(page.getByRole("main")).toBeFocused();
     // The next stop is the page's own first control, past the navigation and the top app bar.
     await page.keyboard.press("Tab");
-    await expect(page.getByRole("main").getByRole("link", { name: "Create plan" })).toBeFocused();
+    await expect(page.getByRole("main").getByRole("link", { name: "New plan" })).toBeFocused();
   });
 
   // Untagged, so only the desktop project runs it: the rail shows from 600px.

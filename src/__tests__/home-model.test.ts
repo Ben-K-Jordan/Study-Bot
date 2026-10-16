@@ -11,7 +11,7 @@ import {
   missedItems,
   todayPlan,
   type PlanLike,
-} from "@/components/home/home-model"
+} from "@/lib/home-model"
 import { statItems } from "@/components/home/stat-items"
 import { daysUntil } from "@/lib/format"
 

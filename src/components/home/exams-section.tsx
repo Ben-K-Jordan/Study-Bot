@@ -5,7 +5,7 @@ import { CountdownCard } from "@/components/app/countdown-card"
 import { EmptyState } from "@/components/app/empty-state"
 import { SectionHeader } from "@/components/app/section-header"
 import { Button } from "@/components/ui/button"
-import { examCountdowns, type ExamCountdown } from "@/components/home/home-model"
+import { examCountdowns, type ExamCountdown } from "@/lib/home-model"
 import { SectionError } from "@/components/progress/section-error"
 import { loadPlans, loadSafely, loadTimeZone } from "@/services/progress-data"
 
@@ -66,7 +66,7 @@ export async function ExamsSection({ userId, now }: { userId: string; now: Date 
         description="A plan schedules practice sessions from your course files up to your exam date."
         action={
           <Button asChild>
-            <Link href="/plan/new">Create plan</Link>
+            <Link href="/plan/new">New plan</Link>
           </Button>
         }
         bordered

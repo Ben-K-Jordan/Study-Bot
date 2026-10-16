@@ -15,17 +15,15 @@ import {
   pretestKey,
   splitRatedAnswers,
   weekStart,
-} from "@/components/progress/progress-model"
+} from "@/lib/progress-model"
 import {
   buildTopics,
   compareWeakestFirst,
   isWeakTopic,
-  titleFromKey,
-  topicKey,
   topicStatus,
 } from "@/components/progress/topics"
 import { ALL_BADGES, badgesReached } from "@/lib/badge-data"
-import { slugifyObjectiveTitle } from "@/lib/plan-generator"
+import { slugifyObjectiveTitle } from "@/lib/objective-keys"
 import type { DayActivity } from "@/services/gamification"
 
 const NOW = new Date("2026-10-15T19:00:00Z")
@@ -35,17 +33,13 @@ function day(overrides: Partial<DayActivity> = {}): DayActivity {
 }
 
 describe("topics", () => {
-  it("derives keys exactly like the plan generator", () => {
-    for (const title of ["CSS specificity", "Responsive images and srcset", "ref and reactive", "  Big-O!  "]) {
-      expect(topicKey(title)).toBe(slugifyObjectiveTitle(title))
-    }
-  })
-
   it("titles topics from the plans, falling back to a readable key", () => {
     const topics = buildTopics(
       [
         { courseName: "INFO 1300", objectiveKey: "css_specificity", lastAccuracy: 0.2, repetitions: 0, easeFactor: 1.3, lastStudiedAt: NOW, nextDueAt: null },
         { courseName: "INFO 1300", objectiveKey: "media_queries", lastAccuracy: 0.9, repetitions: 1, easeFactor: 2.5, lastStudiedAt: NOW, nextDueAt: null },
+        // A key written outside the plan generator keeps its acronym.
+        { courseName: "INFO 1300", objectiveKey: "HTML_forms", lastAccuracy: 0.8, repetitions: 1, easeFactor: 2.5, lastStudiedAt: NOW, nextDueAt: null },
       ],
       [{ courseName: "INFO 1300", titles: ["CSS specificity", "The box model"] }],
       NOW
@@ -53,9 +47,9 @@ describe("topics", () => {
     expect(topics.map((t) => [t.title, t.status])).toEqual([
       ["CSS specificity", "practiced"],
       ["Media queries", "practiced"],
+      ["HTML forms", "practiced"],
       ["The box model", "not-practiced"],
     ])
-    expect(titleFromKey("grid_template_areas")).toBe("Grid template areas")
   })
 
   it("marks mastered and due topics with the server's rules", () => {
@@ -67,7 +61,7 @@ describe("topics", () => {
   it("sorts weakest first with never-practiced topics last, and finds weak spots", () => {
     const t = (title: string, value: number | null, status: "practiced" | "mastered" | "not-practiced" = "practiced") => ({
       courseName: "C",
-      key: topicKey(title),
+      key: slugifyObjectiveTitle(title),
       title,
       value,
       status,
@@ -93,16 +87,17 @@ describe("calibrate", () => {
     { confidence: 2, correct: false, createdAt: at("2026-10-14T18:00:00Z") },
   ]
 
-  it("maps old five-step ratings onto the three levels", () => {
-    expect([1, 2, 3, 4, 5].map(confidenceLevel)).toEqual(["guessing", "guessing", "unsure", "sure", "sure"])
+  it("maps old five-step ratings onto the three levels, as the end screen does", () => {
+    // The old 2 was labelled Unsure, and 4 Confident.
+    expect([1, 2, 3, 4, 5].map((rating) => confidenceLevel(rating))).toEqual(["guessing", "unsure", "unsure", "sure", "sure"])
   })
 
   it("summarizes each level and counts over- and underconfidence", () => {
     const result = calibrate(answers, "America/New_York")
     expect(result.levels).toEqual([
       { level: "sure", answers: 4, correct: 2, rate: 0.5 },
-      { level: "unsure", answers: 1, correct: 1, rate: 1 },
-      { level: "guessing", answers: 2, correct: 1, rate: 0.5 },
+      { level: "unsure", answers: 2, correct: 1, rate: 0.5 },
+      { level: "guessing", answers: 1, correct: 1, rate: 1 },
     ])
     // Sure and not fully correct, as on the end screen: the incorrect and the partly correct one.
     expect(result.overconfident).toBe(2)
@@ -156,7 +151,7 @@ describe("heatmap", () => {
     expect(describeDay(day({ sessions: 1, reviews: 8, xp: 26 }))).toBe("1 session and 8 card reviews")
     expect(describeDay(day({ reviews: 1, xp: 2 }))).toBe("1 card review")
     expect(describeDay(day({ freezeUsed: true }))).toBe("Streak freeze used")
-    // A day that holds only XP from older guide or chat events still says what it held.
+    // A day with study XP but no session or review (a perfect-deck bonus) still says what it held.
     expect(describeDay(day({ xp: 5 }))).toBe("5 XP")
     expect(describeDay(undefined)).toBe("No study")
   })

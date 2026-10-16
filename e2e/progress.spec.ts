@@ -86,6 +86,7 @@ test("Confidence compares how sure the student was with how often they were corr
 test("a finished session shows in the streak, XP, activity and achievements", { tag: "@mobile" }, async ({
   testUserPage: page,
   testUser,
+  isMobile,
 }) => {
   const session = await createSession(testUser.api, { course_name: unique("E2E Streak") });
   await finishSession(testUser.api, session.id);
@@ -107,12 +108,23 @@ test("a finished session shows in the streak, XP, activity and achievements", { 
     const activity = page.getByRole("region", { name: "Activity" });
     // The squares are hidden from assistive technology; the sentence and the list carry the data.
     await expect(activity.getByText("Active on 1 day in the last 12 months.")).toBeVisible();
-    const heatmap = activity.getByRole("region", { name: "Activity heatmap, last 12 months" });
-    await heatmap.focus();
-    await expect(heatmap).toBeFocused();
-
     const showList = activity.getByRole("button", { name: "Show study days as a list" });
     await hydrated(showList);
+
+    const heatmap = activity.getByRole("region", { name: "Activity heatmap, last 12 months" });
+    if (isMobile) {
+      // A phone is narrower than the year, so the scroller is a tab stop. Focusing it
+      // reads the summary and points to the list, since the squares themselves are silent.
+      await expect(heatmap).toHaveAccessibleDescription(
+        /^Active on 1 day in the last 12 months\. Each square is a day\..*show the study days as a list\.$/,
+      );
+      await heatmap.focus();
+      await expect(heatmap).toBeFocused();
+    } else {
+      // At desktop width the whole year fits: no empty region and no extra tab stop.
+      await expect(heatmap).toHaveCount(0);
+    }
+
     await showList.click();
     await expect(activity.getByRole("button", { name: "Hide the list" })).toHaveAttribute("aria-expanded", "true");
     // A new identity has no plan or saved zone, so its days are UTC days: "Fri, Oct 16: 1 session".

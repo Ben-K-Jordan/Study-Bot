@@ -26,17 +26,21 @@ import {
 test("a new student's Home leads to materials and a first plan", { tag: "@mobile" }, async ({ testUserPage: page }) => {
   await page.goto("/");
   const firstRun = page.getByRole("region", { name: "Plan for your first exam" });
+  // The steps follow the form the one link opens: course and exam first, then materials.
   await expect(firstRun.getByRole("listitem")).toHaveText([
-    /^Upload your materials/,
-    /^Set the exam date/,
+    /^Create a plan/,
+    /^Upload your materials\s*On the same form/,
     /^Answer from memory/,
   ]);
   // No countdowns or weak spots before there is anything to count.
   await expect(page.getByRole("region", { name: "Exams" })).toHaveCount(0);
 
-  await firstRun.getByRole("link", { name: "Create plan" }).click();
+  // "New plan" is the link to the form; "Create plan" is only the form's submit button.
+  await expect(firstRun.getByRole("link")).toHaveText(["New plan"]);
+  await firstRun.getByRole("link", { name: "New plan" }).click();
   await expect(page).toHaveURL(/\/plan\/new$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("New plan");
+  await expect(page.getByRole("button", { name: "Create plan" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Upload materials" })).toBeVisible();
 });
 
@@ -108,8 +112,8 @@ test("the Start button opens today's session from other screens", { tag: "@mobil
   // Wide screens keep it in the rail; phones leave Home's corner to the Today card.
   await expect(start).toHaveCount(isMobile ? 0 : 1);
 
-  await page.goto("/plan/materials");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Materials");
+  await page.goto("/guides");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Study guides");
   await expect(start).toHaveAttribute("data-placement", isMobile ? "floating" : "rail");
   await expect(start).toHaveAttribute("href", `/s/${first.session_id}`);
   await start.click();

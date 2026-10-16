@@ -8,15 +8,16 @@ import {
   isStudyDay,
   type Heatmap,
   type HeatLevel,
-} from "@/components/progress/progress-model"
+} from "@/lib/progress-model"
 import { ScrollRegion } from "@/components/progress/scroll-region"
-import { ScrollToEnd } from "@/components/progress/scroll-to-end"
 import { SectionError } from "@/components/progress/section-error"
 import { loadSafely, loadTimeZone, loadYearOfActivity } from "@/services/progress-data"
 import { cn } from "@/lib/utils"
 import { plural } from "@/lib/format"
 
 const HEADING_ID = "progress-activity"
+const SUMMARY_ID = "progress-activity-summary"
+const KEY_ID = "progress-activity-key"
 
 // 53 week columns after a fixed column for the weekday names.
 const COLUMNS = "grid-cols-[2rem_repeat(53,minmax(0.625rem,1rem))]"
@@ -89,7 +90,7 @@ function ActivityCard({
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
-        <p className="type-body-m text-on-surface">
+        <p id={SUMMARY_ID} className="type-body-m text-on-surface">
           {plural(heatmap.activeDays, {
             zero: "No study days in the last 12 months.",
             one: "Active on # day in the last 12 months.",
@@ -100,12 +101,23 @@ function ActivityCard({
             : null}
         </p>
 
-        <ScrollToEnd label="Activity heatmap, last 12 months">
+        {/*
+          The squares are hidden from assistive technology: the summary above
+          and the list below carry the same days. On a phone the year is wider
+          than the card, so the scroller becomes a tab stop, and focusing it
+          reads that summary and points to the list.
+        */}
+        <ScrollRegion
+          label="Activity heatmap, last 12 months"
+          describedBy={`${SUMMARY_ID} ${KEY_ID}`}
+          startAtEnd
+          className="pb-2"
+        >
           <HeatmapGrid heatmap={heatmap} />
-        </ScrollToEnd>
+        </ScrollRegion>
 
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 type-label-m text-on-surface-variant">
-          <p>
+          <p id={KEY_ID}>
             Each square is a day. The stronger the color, the more XP you earned that day.
             {activeList.length > 0
               ? " To see what a day held, hover its square or show the study days as a list."

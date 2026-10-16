@@ -86,10 +86,10 @@ vi.mock("@/lib/db", () => {
   function matchesXpWhere(row: XpEventRow, where: Where): boolean {
     if (where.userId !== undefined && row.userId !== where.userId) return false;
     if (where.action !== undefined) {
-      const cond = where.action as string | { notIn?: string[] };
+      const cond = where.action as string | { in?: string[]; notIn?: string[] };
       if (typeof cond === "string") {
         if (row.action !== cond) return false;
-      } else if (cond.notIn?.includes(row.action)) {
+      } else if (cond.notIn?.includes(row.action) || (cond.in && !cond.in.includes(row.action))) {
         return false;
       }
     }
@@ -444,6 +444,17 @@ describe("computeStreak", () => {
     expect(streak).toBe(4);
   });
 
+  it("does not count a day that holds only retired guide or chat XP", async () => {
+    // Before guides and chat stopped earning XP, they wrote these rows. They
+    // still count toward XP totals, but a day with nothing else isn't study.
+    addXpEvent({ createdAt: new Date("2026-07-15T09:00:00Z") });
+    addXpEvent({ action: "GUIDE_GENERATED", xpAmount: 5, createdAt: new Date("2026-07-14T09:00:00Z") });
+    addXpEvent({ action: "CHAT_QUESTION", xpAmount: 1, createdAt: new Date("2026-07-13T09:00:00Z") });
+    addXpEvent({ createdAt: new Date("2026-07-12T09:00:00Z") });
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
+  });
+
   it("does not treat STREAK_FREEZE_AWARD marker events as study activity", async () => {
     addXpEvent({ createdAt: new Date("2026-07-14T09:00:00Z") });
     addXpEvent({
@@ -612,6 +623,43 @@ describe("syncProgress (the write path)", () => {
     expect(awards()).toHaveLength(1);
   });
 
+  it("awards a freeze again when a later streak reaches 7 days", async () => {
+    // First streak: June 1 to 7, then a missed day (June 8).
+    for (let day = 1; day <= 7; day++) {
+      addXpEvent({ createdAt: new Date(`2026-06-0${day}T09:00:00Z`) });
+    }
+    vi.setSystemTime(new Date("2026-06-07T10:00:00Z"));
+    setGameState({ streakFreezes: 0 });
+
+    const first = await syncProgress("user1");
+    expect(first).toMatchObject({ streak: 7, streakFreezes: 1 });
+
+    // Second streak: June 9 to 15. The June 7 marker belongs to the old streak.
+    for (let day = 9; day <= 15; day++) {
+      addXpEvent({ createdAt: new Date(`2026-06-${String(day).padStart(2, "0")}T09:00:00Z`) });
+    }
+    vi.setSystemTime(new Date("2026-06-15T10:00:00Z"));
+
+    const second = await syncProgress("user1");
+    expect(second).toMatchObject({ streak: 7, streakFreezes: 2 });
+    expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(2);
+
+    // Still one award per milestone within the second streak.
+    const again = await syncProgress("user1");
+    expect(again.streakFreezes).toBe(2);
+  });
+
+  it("still finds a milestone marker written earlier in the same streak", async () => {
+    // Rows written before markers were scoped to a streak keep blocking a repeat award.
+    seedDays(7);
+    addXpEvent({ action: "STREAK_FREEZE_AWARD", xpAmount: 0, sourceId: "7", createdAt: new Date(NOW.getTime() - 60 * 60_000) });
+    setGameState({ streakFreezes: 1 });
+
+    const result = await syncProgress("user1");
+    expect(result.streakFreezes).toBe(1);
+    expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(1);
+  });
+
   it("does not award a freeze on non-milestone days", async () => {
     seedDays(5);
     setGameState({ streakFreezes: 0 });
@@ -764,6 +812,21 @@ describe("bucketActivity", () => {
     );
 
     expect(days.get("2026-07-15")?.sessions).toBe(2);
+  });
+
+  it("leaves retired guide and chat XP off the heatmap", () => {
+    const days = bucketActivity(
+      [
+        { action: "GUIDE_GENERATED", xpAmount: 5, sourceId: "g1", createdAt: new Date("2026-07-13T15:00:00Z") },
+        { action: "CHAT_QUESTION", xpAmount: 1, sourceId: null, createdAt: new Date("2026-07-14T15:00:00Z") },
+        { action: "FLASHCARD_REVIEW", xpAmount: 2, sourceId: "c1", createdAt: new Date("2026-07-14T16:00:00Z") },
+      ],
+      [],
+      ZONE,
+    );
+
+    expect(days.has("2026-07-13")).toBe(false);
+    expect(days.get("2026-07-14")).toMatchObject({ reviews: 1, xp: 2 });
   });
 
   it("marks days a freeze bridged without counting them as study", () => {

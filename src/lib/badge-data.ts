@@ -57,11 +57,6 @@ export const ALL_BADGES: BadgeDefinition[] = [
   { key: "XP_1000", label: "1,000 XP", description: "Earn 1,000 XP.", category: "xp", metric: "xp", threshold: 1000, unit: XP },
 ];
 
-/** Map from badge key to definition for O(1) lookup */
-export const BADGE_MAP: Record<string, BadgeDefinition> = Object.fromEntries(
-  ALL_BADGES.map((b) => [b.key, b]),
-);
-
 export const TOTAL_BADGES = ALL_BADGES.length;
 
 /** Category order and headings on the Progress screen. */
@@ -70,11 +65,6 @@ export const BADGE_CATEGORIES: readonly { key: BadgeCategory; label: string }[] 
   { key: "review", label: "Flashcards" },
   { key: "xp", label: "XP" },
 ];
-
-/** @deprecated Use BADGE_CATEGORIES. Kept for older imports. */
-export const CATEGORY_LABELS: Record<string, { label: string }> = Object.fromEntries(
-  BADGE_CATEGORIES.map((c) => [c.key, { label: c.label }]),
-);
 
 /** The values each metric is measured against. */
 export type BadgeProgressValues = Record<BadgeMetric, number>;

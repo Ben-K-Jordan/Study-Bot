@@ -4,7 +4,7 @@ import { ListTreeIcon } from "lucide-react"
 import { EmptyState } from "@/components/app/empty-state"
 import { SectionHeader } from "@/components/app/section-header"
 import { Button } from "@/components/ui/button"
-import { examInstant } from "@/components/home/home-model"
+import { examInstant } from "@/lib/home-model"
 import { MasteryList, type CourseTopics } from "@/components/progress/mastery-list"
 import { SectionError } from "@/components/progress/section-error"
 import {
@@ -74,7 +74,7 @@ export async function MasterySection({ userId, now }: { userId: string; now: Dat
         description="Topics come from your plans. Mastery fills in as you answer questions on them."
         action={
           <Button asChild>
-            <Link href="/plan/new">Create plan</Link>
+            <Link href="/plan/new">New plan</Link>
           </Button>
         }
         bordered

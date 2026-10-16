@@ -8,7 +8,7 @@ import {
   achievementGroups,
   achievementViews,
   type AchievementView,
-} from "@/components/progress/progress-model"
+} from "@/lib/progress-model"
 import { SectionError } from "@/components/progress/section-error"
 import { loadGameState, loadSafely } from "@/services/progress-data"
 import { TOTAL_BADGES } from "@/lib/badge-data"

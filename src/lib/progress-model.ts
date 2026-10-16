@@ -11,6 +11,7 @@ import {
   type BadgeProgressValues,
 } from "@/lib/badge-data"
 import { formatDateFull, formatDateShort, formatDateWeekday, formatList, formatNumber, plural } from "@/lib/format"
+import { CONFIDENCE_SCALE, confidenceLevel, type ConfidenceLevel } from "@/lib/confidence"
 import { addDays, dayKey } from "@/lib/timezone"
 import type { DayActivity } from "@/services/gamification"
 
@@ -18,22 +19,15 @@ import type { DayActivity } from "@/services/gamification"
 // Confidence
 // ---------------------------------------------------------------------------
 
-export type ConfidenceLevel = "sure" | "unsure" | "guessing"
+// One scale for every screen (lib/confidence): a stored rating reads as the
+// same level here, on the end screen and in the picker.
+export { confidenceLevel, type ConfidenceLevel }
 
-export const CONFIDENCE_LABELS: Record<ConfidenceLevel, string> = {
-  sure: "Sure",
-  unsure: "Unsure",
-  guessing: "Guessing",
-}
+export const CONFIDENCE_LABELS = Object.fromEntries(
+  CONFIDENCE_SCALE.map((entry) => [entry.level, entry.label]),
+) as Record<ConfidenceLevel, string>
 
 const LEVEL_ORDER: readonly ConfidenceLevel[] = ["sure", "unsure", "guessing"]
-
-/** Ratings are stored 1, 3, 5; older answers used every step from 1 to 5. */
-export function confidenceLevel(rating: number): ConfidenceLevel {
-  if (rating >= 4) return "sure"
-  if (rating <= 2) return "guessing"
-  return "unsure"
-}
 
 export interface RatedAnswerLike {
   confidence: number
@@ -196,7 +190,7 @@ export function describeDay(day: DayActivity | undefined): string {
   const parts: string[] = []
   if (day.sessions > 0) parts.push(plural(day.sessions, { one: "# session", other: "# sessions" }))
   if (day.reviews > 0) parts.push(plural(day.reviews, { one: "# card review", other: "# card reviews" }))
-  // XP from actions that no longer earn any (older guide and chat events).
+  // Study XP with no session or review behind it that day, such as a perfect-deck bonus.
   if (parts.length === 0 && day.xp > 0) parts.push(`${formatNumber(day.xp)} XP`)
   if (parts.length > 0) {
     const text = formatList(parts)
