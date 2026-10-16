@@ -319,7 +319,6 @@ export function QuestionScreen({
   const footer = (
     <QuestionFooter
       step={state.step}
-      help={help}
       mcq={mcq}
       examAnswering={examAnswering}
       examMcqScorable={examMcqScorable}
@@ -405,6 +404,7 @@ export function QuestionScreen({
         status={status}
         question={<InlineText>{heading}</InlineText>}
         questionId={questionId}
+        actions={help}
         footer={footer}
         feedback={sheet}
       >

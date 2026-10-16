@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import { RotateCcwIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -10,16 +9,17 @@ import type { Step } from "./question-reducer"
 import { ScoreBar } from "./scoring"
 import type { SelfScore } from "./types"
 
-const WIDE = "w-full sm:w-auto sm:min-w-44"
+// From 600px the one action sits at the footer's right end.
+const WIDE = "w-full sm:ml-auto sm:w-auto sm:min-w-44"
 
 /**
  * The footer bar for each step before feedback: Submit answer, the score
  * buttons, Save score, or Change score and Save correction. The feedback
- * sheet takes its place after that.
+ * sheet takes its place after that. Keyboard shortcuts lives in the top
+ * bar, so a phone's footer stays one control tall.
  */
 export function QuestionFooter({
   step,
-  help,
   mcq,
   examAnswering,
   examMcqScorable,
@@ -37,8 +37,6 @@ export function QuestionFooter({
   onSaveCorrection,
 }: {
   step: Step
-  /** The keyboard shortcuts button. */
-  help: React.ReactNode
   mcq: boolean
   examAnswering: boolean
   examMcqScorable: boolean
@@ -60,50 +58,41 @@ export function QuestionFooter({
 }) {
   if (step === "answering") {
     return (
-      <>
-        {help}
-        <LessonButton
-          variant="check"
-          kbd={mcq ? "Enter" : ["Mod", "Enter"]}
-          disabled={!canSubmit}
-          loading={pending}
-          loadingLabel={examAnswering ? "Saving answer…" : "Checking answer…"}
-          onClick={onSubmit}
-          className={WIDE}
-        >
-          Submit answer
-        </LessonButton>
-      </>
+      <LessonButton
+        variant="check"
+        kbd={mcq ? "Enter" : ["Mod", "Enter"]}
+        disabled={!canSubmit}
+        loading={pending}
+        loadingLabel={examAnswering ? "Saving answer…" : "Checking answer…"}
+        onClick={onSubmit}
+        className={WIDE}
+      >
+        Submit answer
+      </LessonButton>
     )
   }
 
   if (step === "scoring") {
     return examMcqScorable ? (
-      <>
-        {help}
-        <LessonButton
-          variant="check"
-          kbd="Enter"
-          disabled={!scoringReady}
-          loading={pending}
-          loadingLabel="Saving score…"
-          onClick={onSaveExamMcqScore}
-          className={WIDE}
-        >
-          Save score
-        </LessonButton>
-      </>
+      <LessonButton
+        variant="check"
+        kbd="Enter"
+        disabled={!scoringReady}
+        loading={pending}
+        loadingLabel="Saving score…"
+        onClick={onSaveExamMcqScore}
+        className={WIDE}
+      >
+        Save score
+      </LessonButton>
     ) : (
-      <>
-        {help}
-        <ScoreBar
-          prompt={scoringWait ?? (isPretest ? "How close were you?" : "Score your answer")}
-          pendingScore={pendingScore}
-          disabled={pending || !scoringReady}
-          showKeys={shortcutsEnabled}
-          onScore={onScore}
-        />
-      </>
+      <ScoreBar
+        prompt={scoringWait ?? (isPretest ? "How close were you?" : "Score your answer")}
+        pendingScore={pendingScore}
+        disabled={pending || !scoringReady}
+        showKeys={shortcutsEnabled}
+        onScore={onScore}
+      />
     )
   }
 

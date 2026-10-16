@@ -12,9 +12,12 @@ import { Switch } from "@/components/ui/switch"
 import { HOTKEY_HELP } from "./hotkeys"
 
 /**
- * The session's keyboard shortcuts, one button away (or "?"). Single-key
- * shortcuts can be turned off here (WCAG 2.1.4); Ctrl or Cmd with Enter
- * always works. Hidden on touch screens, where there is no keyboard.
+ * The session's keyboard shortcuts, one button away in the top bar (or
+ * "?"). Single-key shortcuts can be turned off here (WCAG 2.1.4); Ctrl or
+ * Cmd with Enter always works. Touch screens show it too: a phone or
+ * tablet can have a keyboard paired, or switch software that sends keys,
+ * and those keys run the shortcuts. In the top bar it never adds a row to
+ * the phone's stacked footer, and it stays put while feedback is up.
  *
  * Opened with "?", it hands focus back to where the student was (an answer,
  * say) when it closes, so the next Enter submits instead of reopening the
@@ -44,14 +47,14 @@ export function KeyboardHelp({
         <button
           type="button"
           aria-label="Keyboard shortcuts"
-          className="flex size-11 shrink-0 items-center justify-center self-start rounded-full text-lesson-muted transition-colors hover:bg-lesson-option-hover hover:text-lesson-on-surface pointer-coarse:hidden sm:self-center"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-lesson-muted transition-colors hover:bg-lesson-option-hover hover:text-lesson-on-surface"
         >
           <KeyboardIcon aria-hidden="true" className="size-6" />
         </button>
       </PopoverTrigger>
       <PopoverContent
-        align="start"
-        side="top"
+        align="end"
+        side="bottom"
         className="w-80"
         aria-labelledby={titleId}
         onCloseAutoFocus={(event) => {

@@ -500,13 +500,26 @@ test("one multiple-choice question by touch on a phone", { tag: "@mobile" }, asy
   await page.getByRole("button", { name: "Resume session" }).tap();
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(BASE_CASE.text);
-  // No keyboard on a phone, so no keyboard shortcuts button.
-  await expect(page.getByRole("button", { name: "Keyboard shortcuts" })).toBeHidden();
+  // A phone can have a keyboard paired, and its keys run the single-key
+  // shortcuts, so their off switch is in the top bar on the row with Leave
+  // session, not in a footer row of its own (WCAG 2.1.4).
+  const help = page.getByRole("button", { name: "Keyboard shortcuts" });
+  await expect(help).toBeVisible();
+  const leave = page.getByRole("link", { name: "Leave session" });
+  const rowTop = (el: HTMLElement) => Math.round(el.getBoundingClientRect().top);
+  expect(await help.evaluate(rowTop)).toBe(await leave.evaluate(rowTop));
+  await help.tap();
+  const shortcuts = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(shortcuts.getByRole("switch", { name: "Single-key shortcuts" })).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(shortcuts).toBeHidden();
   await pick(page.getByRole("radio", { name: "The base case" }));
   await pick(confidenceRadio(page, "Sure"));
   await page.getByRole("button", { name: "Submit answer" }).tap();
 
   await expect(feedbackSheet(page, "Correct")).toBeInViewport();
+  // Feedback replaces the footer; the shortcuts stay in the top bar.
+  await expect(help).toBeVisible();
   await feedbackSheet(page, "Correct").getByRole("button", { name: "See results" }).tap();
   await expect(page.getByRole("heading", { level: 1, name: "Session complete" })).toBeVisible();
 });

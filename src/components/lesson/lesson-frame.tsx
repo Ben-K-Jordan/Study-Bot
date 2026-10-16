@@ -93,11 +93,12 @@ export function LessonProgress({
 
 /**
  * Full-screen frame for one question at a time, in Duolingo's grammar:
- * a top bar with Leave session, the thick progress bar and "Question 3 of
- * 12"; the question as the page's h1, the largest thing on screen; the
- * answer area; and a footer bar for Skip and Check that FeedbackSheet
- * replaces after an answer. Provides the live region primitives announce
- * through. Use inside the /s/[sessionId] lesson layout.
+ * a top bar with Leave session, the thick progress bar, "Question 3 of
+ * 12" and any icon actions; the question as the page's h1, the largest
+ * thing on screen; the answer area; and a footer bar for Skip and Check
+ * that FeedbackSheet replaces after an answer. Provides the live region
+ * primitives announce through. Use inside the /s/[sessionId] lesson
+ * layout.
  */
 export function LessonFrame({
   current,
@@ -110,6 +111,7 @@ export function LessonFrame({
   question,
   questionId,
   headingLevel = "h1",
+  actions,
   children,
   footer,
   feedback,
@@ -132,6 +134,12 @@ export function LessonFrame({
   questionId?: string
   /** h2 only when the frame is embedded in another page (the design page). */
   headingLevel?: "h1" | "h2"
+  /**
+   * Icon buttons at the end of the top bar, after the counter, such as
+   * Keyboard shortcuts. They stay there through feedback, while the footer
+   * gives way to the sheet.
+   */
+  actions?: React.ReactNode
   /** The answer area: options, a recall box, a confidence picker. */
   children: React.ReactNode
   /**
@@ -194,6 +202,7 @@ export function LessonFrame({
                 </>
               ) : null}
             </p>
+            {actions}
           </div>
         </div>
 
