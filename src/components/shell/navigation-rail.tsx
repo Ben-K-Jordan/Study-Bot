@@ -20,7 +20,7 @@ export function NavigationRail({ fab }: { fab?: React.ReactNode }) {
     <ViewTransition enter="shell-rail-recede" exit="shell-rail-recede" default="none">
       <nav
         aria-label="Main"
-        className="fixed inset-y-0 left-0 z-30 hidden w-(--rail-width) flex-col items-center bg-surface pb-4 sm:flex"
+        className="fixed inset-y-0 left-0 z-30 hidden w-(--rail-width) flex-col items-center bg-surface pb-4 sm:flex print:hidden"
       >
         <div className="flex h-(--app-bar-height) shrink-0 items-center justify-center">
           <AppMark className="size-9" />

@@ -103,7 +103,7 @@ function setActive(course: string | null) {
   for (const listener of listeners) listener();
 }
 
-/** Reads the stored course outside React (legacy screens). */
+/** Reads the stored course outside React, for code that runs before paint (Study's preferred course). */
 export function getStoredActiveCourse(): string | null {
   if (typeof window === "undefined") return null;
   return getSnapshot();

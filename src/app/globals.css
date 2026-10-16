@@ -151,10 +151,21 @@
   --delay-dial: 120ms;
   --ease-dial: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Shell metrics */
+  /* Shell metrics. --bottom-bar-height is the space the fixed bottom bar
+     covers: 5rem, or 0 in short windows, where the bar sits at the end of
+     the page instead (see below). */
   --app-bar-height: 4rem;
   --rail-width: 5rem;
   --bottom-bar-height: 5rem;
+}
+
+/* Short windows (a phone in landscape, or 400% zoom): the bottom bar is
+   static there, so offsets that clear it (page padding, scroll margins,
+   pinned composers and save bars, toasts) drop to nothing. */
+@media (max-height: 32rem) {
+  :root {
+    --bottom-bar-height: 0rem;
+  }
 }
 
 /* Dark theme: the same roles at GM3's dark tones */
@@ -580,10 +591,15 @@
     outline-offset: 2px;
   }
 
-  /* Keep focused controls clear of the sticky app bar and bottom bar */
+  /* Keep focused controls clear of the fixed app bar and bottom bar. In
+     short windows neither covers the page, so a little room is enough. */
   :focus {
     scroll-margin-top: calc(var(--app-bar-height) + 1rem);
     scroll-margin-bottom: calc(var(--bottom-bar-height) + 1rem);
+
+    @variant short {
+      scroll-margin-top: 1rem;
+    }
   }
 
   #main-content:focus {
@@ -671,6 +687,15 @@
     }
   }
 
+  /* While the page is still its loading skeleton (grey bars, no text), the
+     dial waits at square. It turns when the first real screen replaces the
+     skeleton, so the student sees the question's own glyphs round. Moving
+     between screens later (intro, question, results) keeps it at 100. */
+  .lesson:has(> main > [data-slot="loading-region"]) {
+    font-variation-settings: "ROND" 0;
+    font-weight: 400;
+  }
+
   /* Menus, tooltips, dialogs and toasts portal out of .lesson to <body>,
      so during a session they take the rounded type explicitly. */
   body:has(.lesson)
@@ -731,10 +756,16 @@
 }
 
 /* Compact windows: the floating Start session button sits above the bottom
-   bar, so the page leaves room for it at the end. */
-@media (width < 37.5rem) {
+   bar, so the page leaves room for it at the end, and a control that takes
+   focus scrolls clear of it as well as the bar (WCAG 2.4.11). Short windows
+   hide the button (see SessionFab), so they need neither. */
+@media (width < 37.5rem) and (height > 32rem) {
   body:has([data-slot="session-fab"][data-placement="floating"]) #main-content {
     padding-bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom) + 5.5rem);
+  }
+
+  body:has([data-slot="session-fab"][data-placement="floating"]) :focus {
+    scroll-margin-bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom) + 5.5rem);
   }
 }
 

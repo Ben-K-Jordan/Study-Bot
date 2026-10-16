@@ -11,6 +11,11 @@ import { TopAppBar } from "@/components/shell/top-app-bar"
  * Pages render inside <main id="main-content">; wrap content in
  * <PageContainer> for the standard width and gutters.
  *
+ * The rail, the app bar and the bottom bar sit at the top level of the
+ * shell, outside the content column. React only runs a <ViewTransition>'s
+ * enter and exit when no DOM element around it is inserted or removed with
+ * it, so this is what lets all three recede when a session opens.
+ *
  * `account` (name and email) comes from the server session, so the account
  * menu is complete in the first HTML. `railFab` and `floatingFab` hold the
  * Start session button (TodaySessionFab inside Suspense) for the rail and
@@ -31,12 +36,12 @@ export function AppShell({
     <AppBarTitleProvider>
       <SkipLink />
       <NavigationRail fab={railFab} />
-      <div className="flex min-h-dvh flex-col sm:pl-(--rail-width)">
-        <TopAppBar account={account} />
+      <TopAppBar account={account} />
+      <div className="flex min-h-dvh flex-col pt-(--app-bar-height) sm:pl-(--rail-width) print:p-0">
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex flex-1 flex-col pb-[calc(var(--bottom-bar-height)+env(safe-area-inset-bottom))] sm:pb-0"
+          className="flex flex-1 flex-col pb-[calc(var(--bottom-bar-height)+env(safe-area-inset-bottom))] sm:pb-0 print:pb-0"
         >
           {children}
         </main>

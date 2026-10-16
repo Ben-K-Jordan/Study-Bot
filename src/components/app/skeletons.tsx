@@ -47,7 +47,9 @@ export function PageHeaderSkeleton({ className }: { className?: string }) {
 
 /**
  * Wraps skeletons so assistive tech hears one "Loading…" instead of
- * nothing. Keep it mounted only while loading.
+ * nothing. Keep it mounted only while loading. As a whole session or card
+ * review page (the .lesson scope), it holds the roundness dial at square
+ * until the real screen arrives (globals.css).
  */
 export function LoadingRegion({
   label = "Loading…",
@@ -59,7 +61,7 @@ export function LoadingRegion({
   children: React.ReactNode
 }) {
   return (
-    <div role="status" aria-live="polite" className={className}>
+    <div role="status" aria-live="polite" data-slot="loading-region" className={className}>
       <span className="sr-only">{label}</span>
       {children}
     </div>

@@ -38,10 +38,12 @@ export function MasteryBar({
         aria-valuemax={100}
         aria-valuenow={Math.round(ratio * 100)}
         aria-valuetext={status ? `${percent}, ${status}` : percent}
-        className="h-2 w-full overflow-hidden rounded-full bg-surface-container-highest"
+        // In forced colours the track is outlined and the fill drawn in a
+        // system colour, since both backgrounds would otherwise disappear.
+        className="h-2 w-full overflow-hidden rounded-full bg-surface-container-highest forced-colors:border forced-colors:border-[CanvasText]"
       >
         <div
-          className={cn("h-full rounded-full transition-[width] duration-250 ease-standard", tone)}
+          className={cn("h-full rounded-full transition-[width] duration-250 ease-standard forced-colors:bg-[CanvasText]", tone)}
           style={{ width: `${ratio * 100}%` }}
         />
       </div>

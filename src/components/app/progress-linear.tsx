@@ -1,10 +1,12 @@
 import { cn } from "@/lib/utils"
 
+// Forced colours drop background colours: the bar and the stop dot take a
+// system colour there, and the remaining track an outline.
 const toneClass = {
-  primary: "bg-primary",
-  tertiary: "bg-tertiary",
-  warning: "bg-warning",
-  error: "bg-error",
+  primary: "bg-primary forced-colors:bg-[CanvasText]",
+  tertiary: "bg-tertiary forced-colors:bg-[CanvasText]",
+  warning: "bg-warning forced-colors:bg-[CanvasText]",
+  error: "bg-error forced-colors:bg-[CanvasText]",
 } as const
 
 /**
@@ -42,7 +44,7 @@ export function ProgressLinear({
     >
       {clamped === null ? (
         <>
-          <div className="absolute inset-0 rounded-full bg-secondary-container" />
+          <div className="absolute inset-0 rounded-full bg-secondary-container forced-colors:border forced-colors:border-[CanvasText]" />
           <div
             className={cn(
               "absolute inset-y-0 w-2/5 rounded-full motion-safe:animate-[progress-indeterminate_1.6s_var(--ease-standard)_infinite]",
@@ -59,7 +61,7 @@ export function ProgressLinear({
             />
           ) : null}
           {clamped < 100 ? (
-            <div className="relative h-full min-w-1 flex-1 rounded-full bg-secondary-container">
+            <div className="relative h-full min-w-1 flex-1 rounded-full bg-secondary-container forced-colors:border forced-colors:border-[CanvasText]">
               <span className={cn("absolute top-0 right-0 size-1 rounded-full", toneClass[tone])} />
             </div>
           ) : null}

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { buildCourseOptions } from "@/hooks/use-course-options"
 import { closeFocusOrder, firstConnected, resolveOpener, type FocusTarget } from "@/components/app/return-focus"
 import { lessonProgressText } from "@/components/lesson/lesson-frame"
-import { NAV_ITEMS, ROUTE_TITLES, goToLabel, titleFor } from "@/components/shell/nav-items"
+import { ROUTE_TITLES, titleFor } from "@/components/shell/nav-items"
 import { sessionFabLabel, showsFloatingFab } from "@/components/shell/session-fab"
 
 describe("titleFor (the app bar h1)", () => {
@@ -27,15 +27,6 @@ describe("titleFor (the app bar h1)", () => {
   })
 })
 
-describe("goToLabel", () => {
-  it("names the destination by its page title", () => {
-    const byHref = (href: string) => NAV_ITEMS.find((item) => item.href === href)!
-    expect(goToLabel(byHref("/"))).toBe("Go to Home")
-    expect(goToLabel(byHref("/plan"))).toBe("Go to Plan")
-    expect(goToLabel(byHref("/flashcards"))).toBe("Go to Flashcards")
-  })
-})
-
 describe("sessionFabLabel", () => {
   it("starts today's session or resumes one under way", () => {
     expect(sessionFabLabel(false)).toBe("Start today's session")
@@ -51,6 +42,16 @@ describe("showsFloatingFab", () => {
     expect(showsFloatingFab("/settings-other")).toBe(true)
     expect(showsFloatingFab("/plan")).toBe(true)
     expect(showsFloatingFab("/flashcards/abc")).toBe(true)
+  })
+
+  it("stays off pages with their own start or save action: Study and the plan forms", () => {
+    // Study's Start session starts the mode it sets up, not today's session
+    expect(showsFloatingFab("/learn")).toBe(false)
+    // The button would sit over the form's fields at 320px
+    expect(showsFloatingFab("/plan/new")).toBe(false)
+    expect(showsFloatingFab("/plan/materials")).toBe(false)
+    expect(showsFloatingFab("/plan")).toBe(true)
+    expect(showsFloatingFab("/learning")).toBe(true)
   })
 })
 

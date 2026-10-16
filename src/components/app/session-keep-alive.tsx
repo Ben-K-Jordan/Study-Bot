@@ -30,24 +30,46 @@ function writeNow(): void {
  * often the student studies. It also clears the cookie of a session that was
  * ended (password reset, deleted account).
  *
- * At most one request a day per browser, and none on the sign-in screens.
+ * It checks on every page the student opens, client navigations included,
+ * and whenever the tab comes back into view, so one tab kept open for days
+ * stays signed in too. At most one request a day per browser, and none on
+ * the sign-in screens.
  */
 export function SessionKeepAlive() {
   const pathname = usePathname()
   const onAuthScreen = pathname?.startsWith("/auth") ?? false
 
   React.useEffect(() => {
-    if (onAuthScreen || Date.now() - readLast() < DAY_MS) return
-    const controller = new AbortController()
-    fetch("/api/auth/session", { cache: "no-store", signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((session: { user?: unknown } | null) => {
-        // Only a signed-in answer counts; signed out, the next load asks again
-        if (session?.user) writeNow()
-      })
-      .catch(() => {})
-    return () => controller.abort()
-  }, [onAuthScreen])
+    if (onAuthScreen) return
+    let controller: AbortController | null = null
+
+    const refreshIfDue = () => {
+      if (controller || Date.now() - readLast() < DAY_MS) return
+      const current = new AbortController()
+      controller = current
+      fetch("/api/auth/session", { cache: "no-store", signal: current.signal })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((session: { user?: unknown } | null) => {
+          // Only a signed-in answer counts; signed out, the next check asks again
+          if (session?.user) writeNow()
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (controller === current) controller = null
+        })
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshIfDue()
+    }
+
+    refreshIfDue()
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+      controller?.abort()
+    }
+  }, [onAuthScreen, pathname])
 
   return null
 }

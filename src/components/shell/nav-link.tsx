@@ -36,8 +36,10 @@ export function NavDestination({
           "relative isolate flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150 ease-standard",
           // State layer for the whole destination, drawn on the indicator
           "before:absolute before:inset-0 before:-z-10 before:rounded-full before:bg-current before:opacity-0 before:transition-opacity group-hover/nav:before:opacity-8 group-focus-visible/nav:before:opacity-10 group-active/nav:before:opacity-10",
+          // Forced colours drop the indicator's fill, so the current
+          // destination also gets a Highlight outline there.
           active
-            ? "bg-secondary-container text-on-secondary-container"
+            ? "bg-secondary-container text-on-secondary-container forced-colors:outline-2 forced-colors:outline-[Highlight]"
             : "group-hover/nav:text-on-surface"
         )}
       >

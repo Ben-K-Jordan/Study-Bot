@@ -15,6 +15,35 @@ export function lessonProgressText(done: number, total: number): string {
 }
 
 /**
+ * Publishes the sticky footer's height (the action bar or the feedback
+ * sheet) on the frame as --lesson-footer-h, so a field scrolled into view
+ * stops above it (FIELD_SCROLL_MARGINS in the runner). 0 while the footer
+ * sits in the page flow (short windows), where it covers nothing.
+ */
+function useFooterHeight(
+  frameRef: React.RefObject<HTMLDivElement | null>,
+  footerRef: React.RefObject<HTMLDivElement | null>,
+) {
+  React.useLayoutEffect(() => {
+    const frame = frameRef.current
+    const footer = footerRef.current
+    if (!frame || !footer) return
+    const update = () => {
+      const covers = getComputedStyle(footer).position === "sticky"
+      frame.style.setProperty("--lesson-footer-h", `${covers ? footer.offsetHeight : 0}px`)
+    }
+    update()
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update)
+    observer?.observe(footer)
+    window.addEventListener("resize", update)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener("resize", update)
+    }
+  }, [frameRef, footerRef])
+}
+
+/**
  * The thick lesson progress bar: a rounded grey track, a green fill, and a
  * soft highlight along the top third of the fill.
  */
@@ -39,16 +68,22 @@ export function LessonProgress({
       aria-valuenow={done}
       aria-valuetext={lessonProgressText(done, total)}
       data-slot="lesson-progress"
-      className={cn("relative h-4 w-full overflow-hidden rounded-full bg-lesson-progress-track", className)}
+      className={cn(
+        "relative h-4 w-full overflow-hidden rounded-full bg-lesson-progress-track",
+        // Forced colours drop both fills: outline the track, draw the bar in
+        // a system colour
+        "forced-colors:border forced-colors:border-[CanvasText]",
+        className
+      )}
     >
       <div
-        className="relative h-full rounded-full bg-lesson-progress-fill transition-[width] duration-(--duration-long) ease-emphasized"
+        className="relative h-full rounded-full bg-lesson-progress-fill transition-[width] duration-(--duration-long) ease-emphasized forced-colors:bg-[CanvasText]"
         style={{ width: `${ratio * 100}%` }}
       >
         {ratio > 0 ? (
           <span
             aria-hidden="true"
-            className="absolute inset-x-2 top-[3px] h-[5px] rounded-full bg-white/30"
+            className="absolute inset-x-2 top-[3px] h-[5px] rounded-full bg-white/30 forced-colors:hidden"
           />
         ) : null}
       </div>
@@ -99,7 +134,10 @@ export function LessonFrame({
   headingLevel?: "h1" | "h2"
   /** The answer area: options, a recall box, a confidence picker. */
   children: React.ReactNode
-  /** Actions before checking: Skip (neutral) on the left, Check on the right. */
+  /**
+   * Actions before checking, secondary first: Skip (neutral), then Check.
+   * Phones stack them in that order; wider windows put Skip on the left.
+   */
   footer?: React.ReactNode
   /** A FeedbackSheet; when present it replaces the footer. */
   feedback?: React.ReactNode
@@ -107,6 +145,9 @@ export function LessonFrame({
 }) {
   const shown = Math.min(questionNumber ?? current + 1, total)
   const Heading = headingLevel
+  const frameRef = React.useRef<HTMLDivElement>(null)
+  const footerRef = React.useRef<HTMLDivElement>(null)
+  useFooterHeight(frameRef, footerRef)
 
   const closeButton = <XIcon className="size-6" strokeWidth={2.5} aria-hidden="true" />
   const closeClasses =
@@ -114,7 +155,7 @@ export function LessonFrame({
 
   return (
     <LessonAnnouncer>
-      <div data-slot="lesson-frame" className={cn("flex min-h-dvh flex-1 flex-col", className)}>
+      <div ref={frameRef} data-slot="lesson-frame" className={cn("flex min-h-dvh flex-1 flex-col", className)}>
         {/* The bars stay put while the question scrolls, except in short
             windows (zoomed in, or a phone in landscape), where they would
             cover the question and the focused option. */}
@@ -168,10 +209,13 @@ export function LessonFrame({
           {children}
         </div>
 
-        <div className="sticky bottom-0 z-10 short:static">
+        <div ref={footerRef} className="sticky bottom-0 z-10 short:static">
           {feedback ?? (footer ? (
             <div className="border-t-2 border-lesson-option-border bg-lesson-surface">
-              <div className="mx-auto flex w-full max-w-4xl flex-col-reverse gap-3 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-6">
+              {/* Stacked in DOM order on phones (Skip above Check, the main
+                  action nearest the thumb), side by side from 600px, so the
+                  visual order always matches the Tab order. */}
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-6">
                 {footer}
               </div>
             </div>

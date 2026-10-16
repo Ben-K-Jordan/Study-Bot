@@ -1,22 +1,21 @@
 "use client"
 
 import * as React from "react"
+import { CheckIcon } from "lucide-react"
 
+import { CONFIDENCE_SCALE, type ConfidenceValue } from "@/lib/confidence"
 import { cn } from "@/lib/utils"
 
-/** The one confidence scale, stored as 1, 3 and 5. */
-export const CONFIDENCE_LEVELS = [
-  { value: 1, label: "Guessing" },
-  { value: 3, label: "Unsure" },
-  { value: 5, label: "Sure" },
-] as const
+/** The picker's chips, in order: the one confidence scale, stored as 1, 3 and 5. */
+export const CONFIDENCE_LEVELS = CONFIDENCE_SCALE
 
-export type ConfidenceValue = (typeof CONFIDENCE_LEVELS)[number]["value"]
+export type { ConfidenceValue }
 
 /**
  * "How sure are you?" as three tactile chips (real radio inputs). Rated
  * before anything is revealed. The screen owns the shortcut keys and passes
- * their labels in `hints`.
+ * their labels in `hints`. The chosen chip shows a check in place of its key
+ * hint, like a segmented button, so the choice never rests on colour alone.
  */
 export function ConfidencePicker({
   value,
@@ -67,6 +66,9 @@ export function ConfidencePicker({
                 "border-lesson-option-border bg-lesson-option text-lesson-on-surface [--lip:var(--lesson-option-border)] hover:bg-lesson-option-hover",
                 "data-[state=selected]:border-lesson-selected-border data-[state=selected]:bg-lesson-selected data-[state=selected]:text-lesson-on-selected data-[state=selected]:[--lip:var(--lesson-selected-lip)]",
                 "data-disabled:pointer-events-none data-disabled:opacity-60",
+                // Forced colours keep only borders and text: the chosen chip
+                // gets a Highlight border beside its check
+                "forced-colors:data-[state=selected]:border-[Highlight]",
                 "has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-[6px] has-[input:focus-visible]:outline-ring data-[preview~=focus]:outline-2 data-[preview~=focus]:outline-offset-[6px] data-[preview~=focus]:outline-ring"
               )}
             >
@@ -79,7 +81,11 @@ export function ConfidencePicker({
                 onChange={() => onChange(level.value)}
                 className="sr-only"
               />
-              {hints?.[index] ? (
+              {checked ? (
+                <span data-check="" aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center">
+                  <CheckIcon className="size-5" strokeWidth={3} />
+                </span>
+              ) : hints?.[index] ? (
                 <span
                   aria-hidden="true"
                   className="flex size-6 items-center justify-center rounded-md border-2 border-current/25 text-xs font-bold pointer-coarse:hidden"

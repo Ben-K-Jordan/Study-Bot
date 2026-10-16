@@ -26,6 +26,11 @@ const OVERFLOW = [...NAV_ITEMS.filter((item) => !item.primary), SETTINGS_ITEM]
  * M3 navigation bar for compact windows (under 600px): four destinations
  * plus More, which opens a bottom sheet with the rest and the theme.
  * Entering a session it slides down.
+ *
+ * In short windows (a phone in landscape, or 400% zoom) the bar stops being
+ * fixed and sits at the end of the page, so it never covers the content or
+ * a focused control; globals.css sets --bottom-bar-height to 0 there, so
+ * every offset that clears the bar drops with it.
  */
 export function BottomNav() {
   const pathname = usePathname()
@@ -36,9 +41,11 @@ export function BottomNav() {
     <ViewTransition enter="shell-nav-recede" exit="shell-nav-recede" default="none">
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 bg-surface-container pb-[env(safe-area-inset-bottom)] sm:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 bg-surface-container pb-[env(safe-area-inset-bottom)] sm:hidden short:static print:hidden"
       >
-        <ul className="mx-auto grid h-(--bottom-bar-height) max-w-md grid-cols-5 items-center px-1">
+        {/* h-20 is --bottom-bar-height at full height (5rem); the variable
+            drops to 0 in short windows, where the bar no longer covers anything. */}
+        <ul className="mx-auto grid h-20 max-w-md grid-cols-5 items-center px-1">
           {PRIMARY.map((item) => (
             <li key={item.href}>
               <NavDestination item={item} active={isActivePath(pathname, item.href)} />
@@ -56,7 +63,8 @@ export function BottomNav() {
                     className={cn(
                       "relative isolate flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150 ease-standard",
                       "before:absolute before:inset-0 before:-z-10 before:rounded-full before:bg-current before:opacity-0 before:transition-opacity group-hover/nav:before:opacity-8 group-focus-visible/nav:before:opacity-10 group-active/nav:before:opacity-10",
-                      moreActive && "bg-secondary-container text-on-secondary-container"
+                      moreActive &&
+                        "bg-secondary-container text-on-secondary-container forced-colors:outline-2 forced-colors:outline-[Highlight]"
                     )}
                   >
                     <EllipsisIcon className="size-6" aria-hidden="true" />
@@ -64,7 +72,7 @@ export function BottomNav() {
                   <span className={cn("type-label-m", moreActive && "text-on-surface")}>More</span>
                 </button>
               </SheetTrigger>
-              <SheetContent side="bottom" className="px-2 pb-6">
+              <SheetContent side="bottom" className="px-2 data-[side=bottom]:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
                 <SheetHeader className="px-4 pt-6 pb-2">
                   <SheetTitle>More</SheetTitle>
                   <SheetDescription className="sr-only">

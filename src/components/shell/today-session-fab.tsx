@@ -3,7 +3,7 @@ import "server-only"
 import { cache } from "react"
 
 import { getCurrentUserId } from "@/lib/auth"
-import { todayPlan } from "@/components/home/home-model"
+import { todayPlan } from "@/lib/home-model"
 import { SessionFab, type SessionFabProps } from "@/components/shell/session-fab"
 import { loadPlans, loadSafely, loadTimeZone } from "@/services/progress-data"
 

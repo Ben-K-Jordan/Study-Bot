@@ -34,10 +34,14 @@ const toneStyles: Record<FeedbackTone, { sheet: string; badge: string; icon: typ
  * The bar that slides up after an answer, in place of LessonFrame's footer.
  * The heading ("Correct", "Incorrect", or a neutral line such as "Model
  * answer shown") is announced through the lesson's live region (role
- * status); the body holds a short note such as the takeaway (longer
- * feedback belongs in the page below the question); Continue is the one
- * action and takes focus so Enter moves on. The question stays visible
- * above it.
+ * status); the body holds a short note such as the correct answer or the
+ * takeaway (longer feedback belongs in the page below the question).
+ * Continue is the one action and takes focus so Enter moves on; the note is
+ * its description, so a screen reader reads the correction on the way
+ * instead of skipping it. The question stays visible above it.
+ *
+ * The secondary action comes first in the DOM and on screen at every
+ * width: above Continue on phones, to its left from 600px.
  */
 export function FeedbackSheet({
   tone,
@@ -68,6 +72,7 @@ export function FeedbackSheet({
   const styles = toneStyles[tone]
   const Icon = styles.icon
   const titleId = React.useId()
+  const noteId = React.useId()
   const continueRef = React.useRef<HTMLButtonElement>(null)
   const sheetRef = React.useRef<HTMLElement>(null)
   const announce = useLessonAnnounce()
@@ -120,9 +125,13 @@ export function FeedbackSheet({
               <span role={announce ? undefined : "status"}>{title}</span>
             </h2>
           </div>
-          {children ? <div className="flex flex-col gap-3 type-body-l font-medium">{children}</div> : null}
+          {children ? (
+            <div id={noteId} className="flex flex-col gap-3 type-body-l font-medium">
+              {children}
+            </div>
+          ) : null}
         </div>
-        <div className="flex shrink-0 flex-col-reverse gap-3 sm:flex-row sm:items-center">
+        <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center">
           {secondaryAction}
           <LessonButton
             ref={continueRef}
@@ -131,6 +140,7 @@ export function FeedbackSheet({
             disabled={continueDisabled}
             loading={continueLoading}
             kbd="Enter"
+            aria-describedby={children ? noteId : undefined}
             className="w-full sm:w-auto sm:min-w-40"
           >
             {continueLabel}

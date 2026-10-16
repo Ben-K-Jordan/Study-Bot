@@ -67,12 +67,3 @@ export function titleFor(pathname: string): string {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname
   return ROUTE_TITLES[path] ?? navItemFor(path)?.title ?? "Study Bot"
 }
-
-/**
- * The one label for a link that leaves a flow for a destination: "Go to
- * Home", "Go to Plan", "Go to Flashcards". Use "Open plan" for one specific
- * plan, and "All plans" or "All decks" only as list headers' links.
- */
-export function goToLabel(item: Pick<NavItem, "title">): string {
-  return `Go to ${item.title}`
-}

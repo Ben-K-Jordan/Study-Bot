@@ -34,7 +34,9 @@ function RadioGroupItem({
         data-slot="radio-group-indicator"
         className="flex size-full items-center justify-center"
       >
-        <span className="size-2.5 rounded-full bg-primary" />
+        {/* Forced colours drop background colours, so the dot takes a
+            system colour there and the choice stays visible. */}
+        <span className="size-2.5 rounded-full bg-primary forced-colors:bg-[CanvasText]" />
       </RadioGroupPrimitive.Indicator>
     </RadioGroupPrimitive.Item>
   )
