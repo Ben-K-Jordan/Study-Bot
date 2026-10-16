@@ -25,12 +25,21 @@ const nextConfig = {
           key: "Content-Security-Policy",
           value: [
             "default-src 'self'",
+            // 'unsafe-inline' stays only because Next.js streams page data as
+            // inline scripts and next-themes adds one, and without a
+            // per-request nonce nothing else lets them run. A
+            // Content-Security-Policy that src/proxy.ts sets on a response
+            // replaces this whole header for that response.
             `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-            // Fonts are self-hosted from @fontsource packages
+            // Radix, sonner and the chart component set inline styles, and
+            // fonts are self-hosted from @fontsource packages.
             "style-src 'self' 'unsafe-inline'",
             "font-src 'self'",
             "img-src 'self' data: blob:",
-            "connect-src 'self' https://www.googleapis.com https://oauth2.googleapis.com",
+            // Google Calendar and OAuth calls run in server routes only; the
+            // browser reaches Google's consent page by navigation.
+            "connect-src 'self'",
+            "object-src 'none'",
             "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",

@@ -1,24 +1,24 @@
 # Study Bot
 
-A studying platform built on the cognitive science of learning. Upload your course materials, and it turns them into retrieval practice with instant graded feedback, spaced review scheduled around your exam date, and error repair that follows you until a mistake is genuinely fixed.
+A studying platform built on the cognitive science of learning. Upload your course materials and set your exam dates, and it turns them into retrieval practice with immediate graded feedback, spaced review scheduled back from each exam, and error repair that keeps bringing a mistake back until you answer it correctly on two different days.
 
 <p align="center">
-  <img src="docs/images/answer_loop.gif" alt="Answering a multiple choice question and receiving instant graded feedback" width="880" />
+  <img src="docs/images/review_hypercorrection.png" alt="Feedback on a wrong multiple choice answer marked Sure: the right answer, a confident error note, why the wrong option was tempting, and an AI-written explanation with two numbered sources from a lecture" width="880" />
 </p>
 
-<p align="center"><em>The core loop: rate your confidence, answer, and get graded feedback with the reasoning behind the trap you picked. All in seconds.</em></p>
+<p align="center"><em>The core loop: answer, say how sure you are, and get graded feedback that explains why the wrong option was tempting and cites your own materials.</em></p>
 
 ## Why it works
 
 Every mechanic traces to a specific finding in the learning science literature, including the boundary conditions where a technique is deliberately not applied. The five minute version:
 
-* **Testing beats rereading.** Practice testing outperforms restudying by about half again at a week of delay, so every session is a question deck, never a page of notes. Roediger and Karpicke (2006); meta analysis by Adesope and colleagues (2017); rated a top technique by Dunlosky and colleagues (2013).
+* **Testing beats rereading.** Practice testing outperforms restudying by about half again at a week of delay, so every session is a set of questions, never a page of notes. Roediger and Karpicke (2006); meta analysis by Adesope and colleagues (2017); rated a top technique by Dunlosky and colleagues (2013).
 * **Feedback speed and quality are the engine.** The active ingredient of deliberate practice is a tight loop: attempt, immediate informative feedback, corrected attempt. Ericsson and colleagues (1993). Immediate feedback is the right default in applied settings per Kulik and Kulik (1988), and elaborated explanation produces roughly ten times the effect of a bare right or wrong mark per Van der Kleij and colleagues (2015).
 * **Your most fixable errors are the confident ones.** Errors made with high confidence, once corrected emphatically, are remembered best. Butterfield and Metcalfe (2001). They also resurface after a delay, so they get their own intensified review schedule. Butler, Fazio, and Marsh (2011).
 * **One correct answer is not mastery.** Durable learning requires successive relearning: correct retrievals spaced across separate days. Rawson and Dunlosky (2011).
 * **Mixed practice feels worse and works better.** Interleaving related topics roughly doubled delayed test scores versus blocked practice in mathematics. It feels harder, and that difficulty is the mechanism. Rohrer and Taylor (2007); classroom trial by Rohrer and colleagues (2020).
 * **Struggling before studying helps.** Attempting questions on material you have not studied yet primes later encoding, even when you answer wrong. Richland, Kornell, and Kao (2009).
-* **Spacing is scheduled for you.** An SM2 scheduler spaces each objective and compresses intervals as the exam approaches, following the optimal retention ridgeline of Cepeda and colleagues (2008).
+* **Spacing is scheduled for you.** An SM2 scheduler spaces each topic and compresses intervals as the exam approaches, following the optimal retention ridgeline of Cepeda and colleagues (2008).
 
 The full treatment, with effect sizes, primary citations, and the failure modes each feature is designed around, lives in [docs/LEARNING_SCIENCE.md](docs/LEARNING_SCIENCE.md).
 
@@ -33,9 +33,11 @@ npm run setup
 npm run dev
 ```
 
-Then open http://localhost:3000. The defaults need no API keys or external accounts: the AI provider is a deterministic mock, email logs to the console, and calendar sync uses a local fake. Signing up logs you straight in and drops you on the dashboard with a two step welcome.
+Then open http://localhost:3000. The defaults need no API keys or external accounts: the AI provider is a deterministic mock, email logs to the console, and calendar sync uses a local fake. Signing up signs you in and opens Home.
 
-To be blunt about the default: mock mode exists for tests. With `AI_PROVIDER` set to `mock`, sessions get canned questions and canned feedback, which exercises the machinery but teaches you nothing. To actually study, set `AI_PROVIDER` to `openai` and add an `OPENAI_API_KEY` in `.env`. The settings page tells you which provider is active.
+Mock mode exists for tests. With `AI_PROVIDER` set to `mock`, sessions get canned questions and canned feedback, which exercises the app but teaches you nothing. To study for real, set `AI_PROVIDER` to `openai` and add an `OPENAI_API_KEY` in `.env`. Settings, under AI features, says whether AI is on, paused, or answering with sample responses.
+
+To look around with realistic data instead of an empty account, point `DATABASE_URL` at a database whose name contains `demo` and run `npm run db:seed-demo`. It creates the account `demo@studybot.local` (its password is in `scripts/seed-demo.ts`) with four courses, plans, three weeks of finished sessions, decks, guides, and chat history, all dated relative to today.
 
 What `npm run setup` does: copies `.env.example` to `.env`, generates `NEXTAUTH_SECRET` and `TOKEN_ENC_KEY`, starts PostgreSQL through Docker, applies all migrations, and runs `prisma/manual-scripts/001_pgvector.sql` to add the embedding column. It is idempotent and never overwrites a value you set yourself.
 
@@ -48,71 +50,67 @@ Notes:
 
 ## What it looks like
 
-Every session opens with a preflight card stating the contract: mode, scope, prompt count, deck composition, and break protocol. One button starts it.
+Every session opens with a summary card: the mode and topics, the course and how far away its exam is, how many questions there are and what kind, the planned time, and the target accuracy. One button starts it, and so does Enter.
 
 <p align="center">
-  <img src="docs/images/preflight.png" alt="Session preflight screen with mode, scope, deck composition, and break protocol" width="880" />
+  <img src="docs/images/preflight.png" alt="Start screen for a Retrieval session: 6 questions (4 new, 1 pretest, and 1 repair), 30 minutes planned, 80% target accuracy, and a note that the pretest question doesn't count toward accuracy" width="880" />
 </p>
 
-During a session the interface recedes: the navigation collapses to a single quiet exit link, the question is the largest thing on screen, and there is no running score to watch. Multiple choice is graded by the server, and the answer key never reaches your browser before you commit. Rate your confidence first with one tap or one key.
+During a session the app shell goes away. A close button, a progress bar, and the question are all that's left, and there is no running score to watch. Multiple choice is graded by the server, and the answer key never reaches your browser before you commit. Say how sure you are before you check, with a click or the Q, W, and E keys.
 
 <p align="center">
-  <img src="docs/images/runner_mcq.png" alt="A multiple choice question with a confidence selector and keyboard hints" width="880" />
+  <img src="docs/images/runner_mcq.png" alt="A multiple choice question about CSS specificity with numbered options, one selected, and Guessing, Unsure, and Sure buttons with their key hints" width="880" />
 </p>
 
-Miss a question you were sure about, and the app names the moment. That is the hypercorrection effect, and the review that follows is engineered around it: the question you just answered stays on screen with its feedback, the correction is the only highlighted element, and feedback generation starts the instant your answer lands so the explanation is usually waiting before you finish reading the verdict.
+Miss a question you marked Sure, and the feedback calls it a confident error. Errors made with high confidence are often corrected well right after feedback, then return later, so the question comes back on another day. The question you answered stays on screen with the feedback under it: why the option you picked was tempting, an explanation labeled AI-written, and the numbered sources from your own materials that it cites. Generation starts the moment your answer lands, so the explanation is usually ready before you finish reading the result.
+
+Free recall questions make you answer from memory before anything is revealed, and you rate how sure you are while you still can't see the answer.
 
 <p align="center">
-  <img src="docs/images/review_hypercorrection.png" alt="Review panel flagging a high confidence miss with the correct answer and the reasoning behind the trap" width="880" />
+  <img src="docs/images/runner_free_recall.png" alt="A free recall question with a typed answer and Unsure selected" width="880" />
 </p>
 
-Free recall questions make you answer from memory before anything is revealed, with confidence collected while you still cannot see the answer.
+Then you score yourself against an explicit model answer and its points to check, because accurate self assessment requires a reference standard. Score it partly correct or incorrect, and the model answer stays on the page above the form where you log the error and write its correction rule.
 
 <p align="center">
-  <img src="docs/images/runner_free_recall.png" alt="A free recall question with a typed answer and a confidence rating" width="880" />
+  <img src="docs/images/model_answer.png" alt="The typed answer above an AI-written model answer with three points to check, and Correct, Partly correct, and Incorrect buttons with key hints" width="880" />
 </p>
 
-Then you score yourself against an explicit model answer and key points, not a feeling. Accurate self assessment requires a reference standard, and the model answer stays visible, dimmed, while you write the correction rule for an error log.
+The end screen shows accuracy, time answering, and how often you were right at each level of confidence, then suggests follow-up dates computed from how you actually did. One click adds them to your plan.
 
 <p align="center">
-  <img src="docs/images/model_answer.png" alt="Model answer with key points shown before self scoring" width="880" />
+  <img src="docs/images/end_screen.png" alt="Session complete screen with accuracy, questions, time answering, errors logged, a chart of accuracy by confidence, and two follow-up sessions with an Add follow-ups to plan button" width="880" />
 </p>
 
-The end screen shows accuracy, time, and a calibration chart of your confidence against your outcomes, then recommends spaced follow up dates computed from how you actually did. One tap schedules them into your plan.
+Each plan has its own page. It opens with the exam countdown and how many sessions are done, missed, or still scheduled, then lists the sessions by date with their topics and status. Reschedule sessions previews the new times before anything moves, and Export calendar (.ics) gives you the whole plan as a calendar file. Creating a new plan for the same course replaces the old one after a confirmation, so plans never silently stack.
 
 <p align="center">
-  <img src="docs/images/end_screen.png" alt="End screen with stats, confidence calibration, and recommended follow up sessions with a schedule button" width="880" />
+  <img src="docs/images/plan.png" alt="Plan page for INFO 1300 Prelim 2: a list of plans with days until each exam, progress through the plan's sessions, and dated sessions with Reschedule and Resume session buttons" width="880" />
 </p>
 
-Your plan is a fixture, not a popup: it greets you with a countdown to the exam, real dated day groups with a focus line per session, an exam day marker, a reschedule button for missed sessions, and calendar export. Creating a new plan for the same course replaces the old one after a confirmation, so plans never silently stack.
+Home leads with your exams and weak spots. Each exam gets a countdown card with its plan's progress. Unresolved errors and low-mastery topics each sit beside a button that starts a repair or practice session on them, and today's session is one click from starting. Streak, XP, and accuracy share one quiet line at the bottom, and the activity heatmap and achievements are on Progress, so they never compete with starting the work.
 
 <p align="center">
-  <img src="docs/images/plan.png" alt="Plan page with days until exam, dated sessions, focus lines, and reschedule and calendar export controls" width="880" />
-</p>
-
-The dashboard leads with today: your scheduled sessions and one primary start button. Streak, XP, accuracy, and the activity heatmap are there, but demoted to a quiet strip and the bottom of the page so they never compete with starting the work.
-
-<p align="center">
-  <img src="docs/images/home.png" alt="Dashboard with today's sessions first, a quiet stats strip, achievements, and activity heatmap" width="880" />
+  <img src="docs/images/home.png" alt="Home with countdown cards for four exams, unresolved errors and low-mastery topics with Repair and Practice buttons, and today's Retrieval session with a Start session button" width="880" />
 </p>
 
 ## Study modes
 
 * **Retrieval** is the default: free recall plus multiple choice generated from your materials, scored immediately with elaborated feedback.
-* **Interleaved practice** runs the same loop with prompts mixed across objectives, never more than two in a row from one topic. Use it when topics are similar enough to confuse, because telling them apart is the skill.
-* **Exam simulation** withholds all feedback until the end, then walks you through review: multiple choice is scored objectively from the answer key, and free recall is scored by you against the model answer. This is the one place delayed feedback is intentional.
-* **Error repair** builds a deck from your unresolved mistakes, confident misses first. Each error resolves only after two correct recalls on different days, and decks stay within the course you are studying.
+* **Interleaved practice** runs the same loop with questions mixed across topics, never more than two in a row from one topic. Use it when topics are similar enough to confuse, because telling them apart is the skill.
+* **Exam simulation** withholds all feedback until the end. You answer every question first, then go back through them: multiple choice is scored from the answer key, and you score free recall against the model answer. This is the one place delayed feedback is intentional.
+* **Error repair** builds a session from your unresolved errors, confident ones first. Each error resolves only after two correct recalls on different days, and the questions stay within the course you are studying.
 * **Worked examples** teach procedural material by fading: study a fully worked solution with the reasoning behind each step, then solve versions with the final step missing, then the final two, then a full transfer problem.
 
-Every mode shares the same spine: pretest diagnostics for never studied objectives (quarantined from grading), warm ups for objectives due for review, timed work and break cycles, variant questions injected after misses (announced with a quiet note, and the progress bar never moves backward), and full resumability. A refresh or crash loses nothing, including an answer you typed but had not scored yet.
+Every mode shares the same spine: pretest questions for topics you haven't studied yet (left out of your accuracy), warm-ups for topics due for review, repair questions added after a miss (announced with a short note), and full resumability. A refresh or crash loses nothing, including an answer you typed but had not scored yet.
 
 ## The feedback loop
 
 1. You commit an answer, and optionally a confidence rating, before anything is revealed. No hints, excerpts, or answers leak beforehand; this is enforced server side and covered by an end to end test. Committed retrieval attempts enhance learning even when they fail, per Kornell, Hays, and Bjork (2009).
-2. Multiple choice answers are graded server side instantly, including why the distractor you picked was tempting. Free recall answers are scored by you against a revealed model answer with key points.
-3. Elaborated feedback cites exact excerpts from your own uploaded materials, and generation starts the moment your attempt lands so the wait is minimal. It persists with the attempt and never regenerates or disappears. When your materials contain nothing relevant, it says so plainly instead of pretending.
-4. A miss creates an error log and injects a retry variant later in the same session. The error resolves only after two correct retrievals on different days, and a wrong retry resets the streak.
-5. The whole loop runs from the keyboard: number keys answer and score, Enter advances. More feedback cycles per hour is the entire point.
+2. Multiple choice answers are graded server side instantly, including why the distractor you picked was tempting. You score free recall answers yourself against a revealed model answer and its points to check.
+3. Elaborated feedback is labeled AI-written and cites numbered sources from your own uploaded materials, and generation starts the moment your attempt lands so the wait is minimal. It persists with the attempt and never regenerates or disappears. When your materials contain nothing relevant, it says so plainly instead of pretending.
+4. A miss logs an error and adds a repair question later in the same session. The error resolves only after two correct answers on different days, and a wrong answer on a retry starts that count over.
+5. The whole loop runs from the keyboard, so more questions fit in an hour: number keys answer and score, Q, W, and E rate how sure you are, and Enter advances. Press ? for the full list. Single-key shortcuts can be turned off for screen reader and speech input users.
 
 ## Techniques and the research behind them
 
@@ -121,29 +119,29 @@ Each technique below is implemented in the product. Citations are shortened here
 * **Retrieval practice.** All five modes are built on active recall of your materials. Roediger and Karpicke (2006); Adesope and colleagues (2017); Dunlosky and colleagues (2013).
 * **Deliberate practice loops.** Immediate informative feedback on every attempt, with difficulty adapting toward a band slightly above your current level. Ericsson and colleagues (1993); Kulik and Kulik (1988); Corbett and Anderson (2001); Bjork and Bjork on desirable difficulties.
 * **Elaborated, task focused feedback.** Misses always get the correct answer plus an explanation grounded in your own course materials, never a bare mark, and the framing targets the task rather than the person. Van der Kleij and colleagues (2015); Shute (2008); Kluger and DeNisi (1996).
-* **Hypercorrection.** Confidence is captured before the answer is revealed; confident misses get flagged, receive the fullest correction, and jump the queue in error repair decks. Butterfield and Metcalfe (2001); Butler, Fazio, and Marsh (2011); Fazio and Marsh (2009).
-* **Spaced repetition with exam awareness.** Objective mastery and flashcards both run on an SM2 scheduler whose intervals compress as the exam approaches, and inside the final days the app deliberately lets you cram. Cepeda and colleagues (2006, 2008).
+* **Hypercorrection.** Confidence is captured before the answer is revealed; confident misses get flagged, receive the fullest correction, and come first in error repair sessions. Butterfield and Metcalfe (2001); Butler, Fazio, and Marsh (2011); Fazio and Marsh (2009).
+* **Spaced repetition with exam awareness.** Topic mastery and flashcards both run on an SM2 scheduler whose intervals compress as the exam approaches, and inside the final days the app deliberately lets you cram. Cepeda and colleagues (2006, 2008).
 * **Successive relearning.** Error logs resolve only after two correct retrievals on different calendar days in your timezone, and follow up session dates come from the actual scheduler rather than a fixed table. Rawson and Dunlosky (2011); Rawson, Dunlosky, and Sciartelli (2013).
-* **Interleaving.** Mixed practice decks alternate objectives, and AI generated decks are reinterleaved so they never collapse into blocked practice. Rohrer and Taylor (2007); Rohrer and colleagues (2020); Kornell and Bjork (2008); boundary conditions from Brunmair and Richter (2019).
-* **Pretesting.** New objectives get a diagnostic question before study. Wrong answers there are expected, framed supportively, and quarantined from your grades and error logs. Richland, Kornell, and Kao (2009); Pan and Sana (2021).
+* **Interleaving.** Mixed practice sessions alternate topics, and AI generated question sets are reinterleaved so they never collapse into blocked practice. Rohrer and Taylor (2007); Rohrer and colleagues (2020); Kornell and Bjork (2008); boundary conditions from Brunmair and Richter (2019).
+* **Pretesting.** New topics get a pretest question before study. Wrong answers there are expected, framed supportively, and left out of your accuracy and error log. Richland, Kornell, and Kao (2009); Pan and Sana (2021).
 * **Worked examples with backward fading.** Study a stepped solution, then complete progressively less scaffolded problems, because novices learn more from studying solutions than from unassisted problem solving, while experts should skip ahead. Sweller and Cooper (1985); Renkl and colleagues (2002); Kalyuga and colleagues (2003).
 * **Multiple choice done safely.** Answer keys are withheld from the client until you answer, correct answer confirmation always closes the loop to prevent lure learning, and distractors are built from documented misconceptions. Roediger and Marsh (2005); Butler and Roediger (2008).
 * **Self explanation and generation.** After feedback you can restate the concept in your own words, invent your own example, and answer a Socratic follow up, all saved with the attempt and tucked behind a single quiet link so they never crowd the screen. Chi and colleagues (1989); Bisra and colleagues (2018).
 * **Calibration.** Your confidence ratings are charted against your actual outcomes, and only ratings you actually gave are counted. Overconfidence produces underachievement. Dunlosky and Rawson (2012); Nelson and Dunlosky (1991).
-* **A cognitive load minimal interface.** One question at a time, the question is the largest thing on screen, navigation recedes to an exit link during sessions, status chrome sits in low contrast, and decoration is omitted. Sweller (1988); Sundararajan and Adesope (2020) on seductive details.
+* **A cognitive load minimal interface.** One question at a time, the question is the largest thing on screen, navigation shrinks to a close button during sessions, status chrome sits in low contrast, and decoration is omitted. Sweller (1988); Sundararajan and Adesope (2020) on seductive details.
 
 ## Feature map
 
-The navigation is four destinations: Dashboard, Learn, Plan, and Settings. Flashcards, study guides, and chat live one tap away inside Learn.
+A navigation rail holds seven destinations (Home, Plan, Study, Cards, Guides, Chat, and Progress), with Settings at the bottom. On a phone, the first four sit in a bottom bar and the rest open from More. The app follows the system light or dark theme, with a manual switch in the top bar.
 
-* **Study planner.** Sessions scheduled backwards from your exam date around your availability, with pre exam tapering, a live countdown, Google Calendar sync (including free and busy detection), ICS export, and deterministic rescheduling of missed sessions with a preview before anything moves.
-* **Learn.** A recommendation engine that reads your mastery and unresolved errors, tells you which session to run next and why, and starts it in one tap.
-* **Content upload and search.** PDFs and notes are chunked and searched with PostgreSQL full text search, and every generated question and piece of feedback cites its exact source chunks. Optional embedding based hybrid search sits behind `HYBRID_SEARCH_ENABLED`. Each document also gets an AI summary.
-* **Chat.** Ask questions against your own materials and get answers with citations that quote the exact source passages.
+* **Plan.** Sessions scheduled backwards from your exam date around your availability, with pre exam tapering, a live countdown, Google Calendar sync (including free and busy detection), ICS export, and deterministic rescheduling of missed sessions with a preview before anything moves. Course materials are uploaded and managed from here too.
+* **Study.** A recommendation engine that reads your mastery and unresolved errors, tells you which session to run next and why, and starts it in one click.
+* **Content upload and search.** PDFs and notes are chunked and searched with PostgreSQL full text search, and every generated question and piece of feedback cites its sources by number. Optional embedding based hybrid search sits behind `HYBRID_SEARCH_ENABLED`. Each document also gets an AI summary.
+* **Chat.** Ask questions against your own materials and get AI-written answers with numbered sources that quote the exact passages. When your materials don't cover a question, the answer says so.
 * **Flashcards.** Decks you create, plus cards auto generated from your errors with the correction as the answer, scheduled by the same exam aware SM2.
-* **Study guides.** Key concepts, FAQ, and cheat sheet formats generated per course from your materials.
-* **Progress.** XP with an adjustable daily goal, streaks with earned freezes, achievements, per objective mastery, and a calibration dashboard. Session XP is awarded only at session boundaries so it never intrudes on the answer loop.
-* **Account.** Full data export and account deletion, password reset by email, and a timezone setting with one tap detection so streaks roll over at your actual midnight.
+* **Study guides.** Key concepts, FAQ, and cheat sheet formats generated per course from your materials, each exportable as Markdown.
+* **Progress.** XP with an adjustable daily goal, streaks with earned freezes, achievements, an activity heatmap, per topic mastery, and confidence calibration. Session XP is awarded only at session boundaries so it never intrudes on the answer loop.
+* **Account.** Full data export and account deletion, password reset by email, and a time zone setting with a one-click switch to your device's zone, so streaks roll over at your actual midnight.
 
 ## Configuration
 
@@ -153,7 +151,7 @@ The navigation is four destinations: Dashboard, Learn, Plan, and Settings. Flash
 * `NEXTAUTH_SECRET` signs sessions. Generated by setup.
 * `AI_PROVIDER` is `mock` by default (fully offline) or `openai`, which requires `OPENAI_API_KEY`.
 * `AI_MODEL_ANSWER` picks the generation model and `AI_MODEL_EMBED` the embedding model.
-* `AI_DAILY_COST_CAP_USD` and `AI_MONTHLY_COST_CAP_USD` are hard per user spending caps, and `AI_DISABLED` set to true is the emergency kill switch.
+* `AI_DAILY_COST_CAP_USD` and `AI_MONTHLY_COST_CAP_USD` are hard per user spending caps, `AI_DAILY_EMBED_COST_CAP_USD` caps embedding uploaded files, and `AI_DISABLED` set to true is the emergency kill switch.
 * `TOKEN_ENC_KEY` encrypts stored Google OAuth tokens. Generated by setup and required in production.
 * `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_PROVIDER` control calendar sync. The default `fake` provider stubs it; use `real` in production.
 * `EMAIL_PROVIDER` is `console` by default, or `smtp` with the SMTP variables for real mail.
@@ -165,6 +163,7 @@ One warning: `ALLOW_TEST_AUTH` makes the app trust a header as the authenticated
 ## Deployment and ops notes
 
 * **Auth gates.** `REQUIRE_EMAIL_VERIFICATION` is off by default, so new accounts can sign in immediately; enable it only once real SMTP is configured, because the console email provider prints verification links to server logs only. `ALLOW_TEST_AUTH` must never be set in production. `TOKEN_ENC_KEY` is required in production (setup generates one for local use).
+* **Behind a reverse proxy.** Sign-in, sign-up and password reset limits key on the client's address, read from `X-Forwarded-For`. Next fills that header only when the client sent none, so without a proxy a client can claim any address. Run production behind a reverse proxy that appends `X-Forwarded-For`, and set `TRUSTED_PROXY_HOPS` to the number of proxies that append to it (1 by default).
 * **One long lived Node process.** The app is not serverless safe. Feedback is generated eagerly when an attempt lands, and the AI rate limiter and circuit breaker hold their state in process, so run it as a single persistent Node server via `npm start` rather than as per request functions.
 * **The port 3000 trap.** If something else already holds port 3000, Next silently starts on 3001 while `NEXTAUTH_URL` still points at 3000, and sign in breaks with baffling redirects. Free port 3000, or update `NEXTAUTH_URL` (plus `BASE_URL`) to the port actually in use.
 * **Admin endpoints.** The admin APIs (job queue, search health, AI usage) are gated by `ADMIN_USER_IDS`, a comma separated list of user UUIDs. Until you set it, nobody is an admin. There is no admin UI.
@@ -175,15 +174,19 @@ One warning: `ALLOW_TEST_AUTH` makes the app trust a header as the authenticated
 * `npm test` runs everything vitest knows. `npm run test:unit` needs no database.
 * `npm run test:integration` needs PostgreSQL reachable through `DATABASE_URL`.
 * `npm run test:e2e` runs Playwright: against your dev server locally, or against a production build when `CI` is set. Run `npx playwright install chromium` once first.
+* `npm run lint` and `npm run typecheck` run ESLint and the TypeScript compiler.
 * `npm run worker` processes background jobs, `npm run db:migrate` creates new migrations, and `npm run db:seed-research` loads the research evidence base that grounds plan generation.
+* `npm run db:seed-demo` fills a demo database (see Quick start), and `npm run screenshots -- --base http://localhost:3000 --out <dir>` signs in as the demo user and captures every page in light and dark, at desktop and phone sizes. The options are listed at the top of `scripts/screenshots.ts`.
+* In development, `/design` shows every colour token, component, and lesson primitive in both themes. It returns 404 in production.
 
 Integration and e2e tests read `DATABASE_URL`; point it at a dedicated test database rather than your dev one.
 
-Layout, briefly: `src/app` holds pages and API routes, `src/services` holds domain logic, `src/lib` holds the science (prompt generation, spacing, mastery) and infrastructure (AI gateway, jobs, search), `src/ui` holds shared components, `prisma` holds schema and migrations, `e2e` holds Playwright specs, `scripts` holds setup and the worker, and `docs` holds the learning science foundation, with DOI links to every paper it cites.
+Layout, briefly: `src/app` holds pages and API routes, `src/services` holds domain logic, `src/lib` holds the science (prompt generation, spacing, mastery) and infrastructure (AI gateway, jobs, search), `src/components` holds the interface (shadcn/ui primitives in `ui`, the app shell in `shell`, the session building blocks in `lesson`, and one folder per screen), `prisma` holds schema and migrations, `e2e` holds Playwright specs, `scripts` holds setup, the worker, the seed scripts, and the screenshot harness, and `docs` holds the learning science foundation, with DOI links to every paper it cites.
 
 ## Architecture notes
 
 * Next.js App Router with TypeScript and zod validation at every API boundary.
+* The interface is Tailwind CSS v4 with shadcn/ui on Radix, lucide icons, and the Google Sans Flex typeface, coloured with Material 3 roles in light and dark themes. Sessions use their own lesson styles: one question per screen, tactile answer buttons, and a feedback sheet that slides up.
 * PostgreSQL through Prisma. The bundled image ships pgvector, so hybrid search can turn on without repaving the database.
 * Background jobs run through a PostgreSQL backed queue with row locking. No Redis or external broker to operate.
 * One AI gateway is the choke point for all model calls, with response caching, per user cost caps, request timeouts, a circuit breaker, and an emergency kill switch. Providers are pluggable, and the mock provider keeps the whole app usable offline and in CI.
