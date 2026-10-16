@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import Link from "next/link"
 import { CircleCheckIcon } from "lucide-react"
 
-import { AuthActions, AuthCard, EmailAddress } from "@/components/auth/auth-card"
+import { AuthActions, AuthCard, EmailAddress, focusOnMount } from "@/components/auth/auth-card"
 import {
   AuthTextField,
   PendingStatus,
@@ -67,8 +67,17 @@ export function SignInForm({
     initialError ? { type: "banner", message: initialError } : null
   )
   const [attempt, setAttempt] = useState(0)
+  // Bumped when "Send a new link" fails, so the summary remounts, takes
+  // focus and reads the new message (it isn't a live region).
+  const [resendFailures, setResendFailures] = useState(0)
   const [pending, setPending] = useState(false)
   const resend = useResendVerification()
+  const linkSentId = useId()
+
+  async function sendNewLink() {
+    const result = await resend.send(values.email)
+    if (result?.status === "failed") setResendFailures((n) => n + 1)
+  }
 
   function update(field: Field, value: string) {
     setValues((current) => ({ ...current, [field]: value }))
@@ -141,17 +150,26 @@ export function SignInForm({
         {problem?.type === "banner" ? <ErrorSummary message={problem.message} focus={false} /> : null}
         {problem?.type === "sign-in" ? (
           problem.failure.status === "unverified" && resend.state.status === "sent" ? (
-            <Alert variant="success" role="status">
+            // Replaces the summary whose button had focus, so it takes focus
+            // itself (and is a group, not a status, so it's read once).
+            <Alert
+              variant="success"
+              ref={focusOnMount}
+              tabIndex={-1}
+              role="group"
+              aria-labelledby={`${linkSentId}-title`}
+              aria-describedby={`${linkSentId}-description`}
+            >
               <CircleCheckIcon aria-hidden="true" />
-              <AlertTitle>New link sent</AlertTitle>
-              <AlertDescription>
+              <AlertTitle id={`${linkSentId}-title`}>New link sent</AlertTitle>
+              <AlertDescription id={`${linkSentId}-description`}>
                 It went to <EmailAddress className="text-current">{resend.state.email}</EmailAddress> and lasts 24 hours.
                 Open it, then sign in.
               </AlertDescription>
             </Alert>
           ) : (
             <ErrorSummary
-              key={attempt}
+              key={`${attempt}-${resendFailures}`}
               message={
                 resend.state.status === "failed"
                   ? resend.state.message
@@ -164,7 +182,7 @@ export function SignInForm({
                   variant="outline"
                   size="sm"
                   disabled={resend.state.status === "sending"}
-                  onClick={() => resend.send(values.email)}
+                  onClick={() => void sendNewLink()}
                 >
                   {resend.state.status === "sending" ? (
                     <>

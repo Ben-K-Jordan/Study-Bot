@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { authOptions } from "@/lib/auth-options";
 
+export { isEmailVerificationRequired } from "@/lib/auth-options";
+
 /** Server-side helpers for the auth pages. Import only from Server Components. */
 
 export type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -28,8 +30,4 @@ export async function redirectIfSignedIn(destination: string): Promise<void> {
     signedIn = false;
   }
   if (signedIn) redirect(destination);
-}
-
-export function isEmailVerificationRequired(): boolean {
-  return process.env.REQUIRE_EMAIL_VERIFICATION === "true";
 }

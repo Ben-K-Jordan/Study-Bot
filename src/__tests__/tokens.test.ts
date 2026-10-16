@@ -1,16 +1,26 @@
 /**
- * Unit tests for src/lib/tokens.ts: link tokens are used at most once and
- * report why a link didn't work (expired, used, invalid).
+ * Unit tests for src/lib/tokens.ts: link tokens are stored only as hashes,
+ * are used at most once, report why a link didn't work (expired, used,
+ * invalid), and expired rows get purged.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { verificationToken } = vi.hoisted(() => ({
-  verificationToken: { updateMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+  verificationToken: { updateMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { verificationToken } }));
 
-import { classifyToken, consumeToken, inspectToken, redeemToken } from "@/lib/tokens";
+import {
+  classifyToken,
+  consumeToken,
+  createEmailVerificationToken,
+  createPasswordResetToken,
+  hashToken,
+  inspectToken,
+  purgeExpiredTokens,
+  redeemToken,
+} from "@/lib/tokens";
 
 const NOW = new Date("2026-10-15T12:00:00Z");
 const HOUR = 60 * 60 * 1000;
@@ -57,7 +67,8 @@ describe("redeemToken", () => {
 
     expect(await redeemToken("tok", "PASSWORD_RESET")).toEqual({ status: "valid", userId: "user-1" });
     const where = verificationToken.updateMany.mock.calls[0][0].where;
-    expect(where).toMatchObject({ token: "tok", type: "PASSWORD_RESET", usedAt: null });
+    expect(where).toMatchObject({ token: hashToken("tok"), type: "PASSWORD_RESET", usedAt: null });
+    expect(verificationToken.findUnique).toHaveBeenCalledWith({ where: { token: hashToken("tok") } });
     expect(where.expiresAt.gt).toBeInstanceOf(Date);
   });
 
@@ -96,9 +107,48 @@ describe("redeemToken", () => {
 });
 
 describe("inspectToken", () => {
-  it("reads without writing", async () => {
+  it("reads by hash without writing", async () => {
     verificationToken.findUnique.mockResolvedValue(record({ expiresAt: new Date(Date.now() - HOUR) }));
     expect((await inspectToken("tok", "PASSWORD_RESET")).status).toBe("expired");
+    expect(verificationToken.findUnique).toHaveBeenCalledWith({ where: { token: hashToken("tok") } });
     expect(verificationToken.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("creating tokens", () => {
+  beforeEach(() => {
+    verificationToken.updateMany.mockResolvedValue({ count: 0 });
+    verificationToken.create.mockResolvedValue({});
+    verificationToken.deleteMany.mockResolvedValue({ count: 0 });
+  });
+
+  it("stores only the SHA-256 of the token the link carries", async () => {
+    const token = await createPasswordResetToken("user-1");
+    const { data } = verificationToken.create.mock.calls[0][0];
+    expect(data).toMatchObject({ userId: "user-1", type: "PASSWORD_RESET", token: hashToken(token) });
+    expect(data.token).not.toBe(token);
+    expect(hashToken(token)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("ends the user's unused links of the same type first", async () => {
+    await createEmailVerificationToken("user-1");
+    expect(verificationToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", type: "EMAIL_VERIFY", usedAt: null },
+      data: { usedAt: expect.any(Date) },
+    });
+    const { data } = verificationToken.create.mock.calls[0][0];
+    const hours = (data.expiresAt.getTime() - Date.now()) / HOUR;
+    expect(hours).toBeGreaterThan(23.9);
+    expect(hours).toBeLessThanOrEqual(24);
+  });
+});
+
+describe("purgeExpiredTokens", () => {
+  it("deletes rows that expired more than a day ago", async () => {
+    verificationToken.deleteMany.mockResolvedValue({ count: 3 });
+    expect(await purgeExpiredTokens(NOW)).toBe(3);
+    expect(verificationToken.deleteMany).toHaveBeenCalledWith({
+      where: { expiresAt: { lt: new Date(NOW.getTime() - 24 * HOUR) } },
+    });
   });
 });

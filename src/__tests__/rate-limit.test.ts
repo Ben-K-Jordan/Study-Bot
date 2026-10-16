@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { createRateLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 
@@ -7,6 +7,24 @@ function makeRequest(headers: Record<string, string>): NextRequest {
 }
 
 describe("getClientIp", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("counts TRUSTED_PROXY_HOPS entries from the right when several proxies append", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "2");
+    const request = makeRequest({
+      "x-forwarded-for": "198.51.100.1, 203.0.113.7, 192.0.2.44",
+    });
+    expect(getClientIp(request)).toBe("203.0.113.7");
+  });
+
+  it("falls back to one hop when TRUSTED_PROXY_HOPS isn't a positive whole number", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "zero");
+    const request = makeRequest({ "x-forwarded-for": "198.51.100.1, 192.0.2.44" });
+    expect(getClientIp(request)).toBe("192.0.2.44");
+  });
+
   it("returns the single X-Forwarded-For entry when there is only one", () => {
     const request = makeRequest({ "x-forwarded-for": "203.0.113.7" });
     expect(getClientIp(request)).toBe("203.0.113.7");

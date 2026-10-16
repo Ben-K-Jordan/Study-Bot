@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { forgetSessionCheck, hashPassword } from "@/lib/auth-options";
 import { redeemToken, type TokenState } from "@/lib/tokens";
 import { authTokenLimiter, getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
@@ -51,11 +51,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(TOKEN_ERRORS[state.status], { status: 400 });
     }
 
-    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    // A new hash changes the session fingerprint (see auth-options), which
+    // ends every session signed in with the old password, from its next
+    // request on.
+    const passwordHash = await hashPassword(parsed.data.password);
     await prisma.user.update({
       where: { id: state.userId },
       data: { passwordHash },
     });
+    forgetSessionCheck(state.userId);
 
     logger.info("password_reset.completed", { userId: state.userId });
     return NextResponse.json({ message: "Password updated. Sign in with your new password." });

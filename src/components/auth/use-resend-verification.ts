@@ -21,23 +21,27 @@ export function useResendVerification() {
   const [state, setState] = useState<ResendState>({ status: "idle" })
   const inFlight = useRef(false)
 
-  const send = useCallback(async (rawEmail: string) => {
-    if (inFlight.current) return
+  /** Resolves to the new state, or null when a request was already out. */
+  const send = useCallback(async (rawEmail: string): Promise<ResendState | null> => {
+    if (inFlight.current) return null
     inFlight.current = true
     const email = rawEmail.trim()
     setState({ status: "sending" })
     const result = await postAuth("/api/auth/resend-verification", { email })
     inFlight.current = false
 
+    let next: ResendState
     if (result.ok) {
-      setState({ status: "sent", email })
+      next = { status: "sent", email }
     } else if (result.kind === "fields") {
-      setState({ status: "failed", message: result.issues.email ?? FIELD_MESSAGES.emailInvalid, fieldError: true })
+      next = { status: "failed", message: result.issues.email ?? FIELD_MESSAGES.emailInvalid, fieldError: true }
     } else if (result.kind === "rate-limited") {
-      setState({ status: "failed", message: result.message, fieldError: false })
+      next = { status: "failed", message: result.message, fieldError: false }
     } else {
-      setState({ status: "failed", message: REQUEST_FAILED.verificationLink, fieldError: false })
+      next = { status: "failed", message: REQUEST_FAILED.verificationLink, fieldError: false }
     }
+    setState(next)
+    return next
   }, [])
 
   const reset = useCallback(() => setState({ status: "idle" }), [])

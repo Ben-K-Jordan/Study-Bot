@@ -1,20 +1,29 @@
 /**
  * Unit tests for the auth API routes: field issues the forms map onto
- * fields, rate-limit wording, reset-link codes, anti-enumeration answers,
+ * fields, rate-limit wording, reset-link codes, anti-enumeration answers
+ * (emails go out after the response, so both answers take the same time),
  * and verification links that always land on a page instead of JSON.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { prisma } = vi.hoisted(() => ({
+const { prisma, afterTasks } = vi.hoisted(() => ({
   prisma: {
     user: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
     userGameState: { create: vi.fn() },
     $transaction: vi.fn(),
   },
+  afterTasks: [] as Array<() => unknown>,
 }));
 
 vi.mock("@/lib/db", () => ({ prisma }));
+// after() needs a request scope; collect the tasks and run them by hand.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (task: () => unknown) => {
+    afterTasks.push(task);
+  },
+}));
 vi.mock("@/lib/tokens", () => ({
   redeemToken: vi.fn(),
   createPasswordResetToken: vi.fn(async () => "reset-token"),
@@ -25,7 +34,9 @@ vi.mock("bcryptjs", () => ({ default: { hash: vi.fn(async () => "hashed") } }));
 
 import { redeemToken } from "@/lib/tokens";
 import { emailProvider } from "@/lib/email/provider";
+import bcrypt from "bcryptjs";
 import { authEmailLimiter, authTokenLimiter, signupLimiter } from "@/lib/rate-limit";
+import { authEmailAddressLimiter } from "@/app/api/auth/_lib/limits";
 import { POST as signup } from "@/app/api/auth/signup/route";
 import { POST as forgotPassword } from "@/app/api/auth/forgot-password/route";
 import { POST as resendVerification } from "@/app/api/auth/resend-verification/route";
@@ -47,11 +58,23 @@ function get(path: string, ip = `10.0.1.${++ipCounter}`) {
   return new NextRequest(`http://localhost:3000${path}`, { headers: { "x-real-ip": ip } });
 }
 
+/** Run what the routes deferred until after their response. */
+async function runAfterTasks() {
+  const tasks = afterTasks.splice(0);
+  for (const task of tasks) await task();
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  afterTasks.length = 0;
   authEmailLimiter.reset();
+  authEmailAddressLimiter.reset();
   authTokenLimiter.reset();
   signupLimiter.reset();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("POST /api/auth/signup", () => {
@@ -73,16 +96,31 @@ describe("POST /api/auth/signup", () => {
     expect((await res.json()).code).toBe("INVALID_BODY");
   });
 
-  it("gives the same 201 for a new and a taken email", async () => {
+  it("gives the same 201 for a new and a taken email, and sends the link after answering", async () => {
+    vi.stubEnv("REQUIRE_EMAIL_VERIFICATION", "true");
     prisma.$transaction.mockResolvedValueOnce({ id: "u1", email: "new@example.com", name: "New" });
     const created = await signup(post("/api/auth/signup", { name: "New", email: "New@Example.com", password: "12345678" }));
     expect(created.status).toBe(201);
+    expect(emailProvider.send).not.toHaveBeenCalled();
+    await runAfterTasks();
     expect(emailProvider.send).toHaveBeenCalledOnce();
 
     prisma.$transaction.mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" }));
     const taken = await signup(post("/api/auth/signup", { name: "Old", email: "old@example.com", password: "12345678" }));
     expect(taken.status).toBe(201);
     expect(await taken.json()).toEqual(await created.json());
+    expect(afterTasks).toHaveLength(0);
+    // Both paths hash the password, so a taken email isn't the faster answer.
+    expect(bcrypt.hash).toHaveBeenCalledTimes(2);
+    expect(bcrypt.hash).toHaveBeenCalledWith("12345678", 12);
+  });
+
+  it("sends no verification email when sign-in doesn't require one", async () => {
+    prisma.$transaction.mockResolvedValueOnce({ id: "u1", email: "new@example.com", name: "New" });
+    const res = await signup(post("/api/auth/signup", { name: "New", email: "new@example.com", password: "12345678" }));
+    expect(res.status).toBe(201);
+    await runAfterTasks();
+    expect(emailProvider.send).not.toHaveBeenCalled();
   });
 
   it("hides server failures behind a plain message", async () => {
@@ -102,14 +140,33 @@ describe("POST /api/auth/forgot-password", () => {
     ]);
   });
 
-  it("answers the same whether or not the account exists", async () => {
+  it("answers the same whether or not the account exists, and sends after answering", async () => {
     prisma.user.findUnique.mockResolvedValueOnce(null);
     const missing = await forgotPassword(post("/api/auth/forgot-password", { email: "nobody@example.com" }));
     prisma.user.findUnique.mockResolvedValueOnce({ id: "u1", email: "me@example.com", name: "Me" });
-    const found = await forgotPassword(post("/api/auth/forgot-password", { email: "me@example.com" }));
+    const found = await forgotPassword(post("/api/auth/forgot-password", { email: "Me@Example.com" }));
     expect(missing.status).toBe(200);
     expect(await missing.json()).toEqual(await found.json());
+    expect(prisma.user.findUnique).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: { email: "me@example.com" } }),
+    );
+    expect(emailProvider.send).not.toHaveBeenCalled();
+    await runAfterTasks();
     expect(emailProvider.send).toHaveBeenCalledOnce();
+    expect(vi.mocked(emailProvider.send).mock.calls[0][0]).toBe("me@example.com");
+  });
+
+  it("limits requests per address across networks", async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    let res: Response | undefined;
+    for (let i = 0; i < 200; i++) {
+      res = await forgotPassword(post("/api/auth/forgot-password", { email: "target@example.com" }));
+      if (res.status === 429) break;
+    }
+    expect(res?.status).toBe(429);
+    expect((await res!.json()).error).toMatch(/^Too many reset requests\. Retry in \d+ minutes?\.$/);
+    // Another address is unaffected.
+    expect((await forgotPassword(post("/api/auth/forgot-password", { email: "other@example.com" }))).status).toBe(200);
   });
 
   it("words its rate limit with the wait", async () => {
@@ -133,8 +190,15 @@ describe("POST /api/auth/resend-verification", () => {
     const missing = await resendVerification(post("/api/auth/resend-verification", { email: "x@example.com" }));
     prisma.user.findUnique.mockResolvedValueOnce({ id: "u1", email: "y@example.com", name: "Y", emailVerified: null });
     const pending = await resendVerification(post("/api/auth/resend-verification", { email: "y@example.com" }));
-    expect(await missing.json()).toEqual(await pending.json());
+    prisma.user.findUnique.mockResolvedValueOnce({ id: "u2", email: "z@example.com", name: "Z", emailVerified: new Date() });
+    const verified = await resendVerification(post("/api/auth/resend-verification", { email: "z@example.com" }));
+    const answer = await pending.json();
+    expect(await missing.json()).toEqual(answer);
+    expect(await verified.json()).toEqual(answer);
+    expect(emailProvider.send).not.toHaveBeenCalled();
+    await runAfterTasks();
     expect(emailProvider.send).toHaveBeenCalledOnce();
+    expect(vi.mocked(emailProvider.send).mock.calls[0][0]).toBe("y@example.com");
   });
 });
 

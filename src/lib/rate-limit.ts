@@ -147,16 +147,36 @@ export const generalLimiter = createRateLimiter("general", {
 import { NextResponse } from "next/server";
 import { retryAfterText } from "@/lib/format";
 
-/** Extract a rate-limit key from a request (IP or forwarded-for) */
+/**
+ * How many reverse proxies in front of the app append to X-Forwarded-For
+ * (TRUSTED_PROXY_HOPS, default 1). Each appends the address it saw, so the
+ * client's real address is that many entries from the right; everything to
+ * its left was sent by the client and can be anything.
+ */
+function trustedProxyHops(): number {
+  const hops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "", 10);
+  return Number.isInteger(hops) && hops >= 1 ? hops : 1;
+}
+
+/**
+ * Extract a rate-limit key from a request (IP or forwarded-for). Production
+ * must run behind a reverse proxy that appends X-Forwarded-For: Next fills
+ * the header only when the client sent none, so without a proxy the value is
+ * whatever the client chose.
+ */
 export function getClientIp(request: Pick<Request, "headers">): string {
-  // X-Forwarded-For: use the RIGHTMOST entry — it's the one appended by the
-  // nearest trusted proxy. Leftmost entries are client-supplied, so an attacker
-  // could prepend arbitrary values to rotate rate-limit buckets on every request.
+  // Count TRUSTED_PROXY_HOPS entries from the right: those were appended by
+  // the proxies. Entries further left are client-supplied, so an attacker
+  // could prepend arbitrary values to rotate rate-limit buckets.
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    const entries = forwardedFor.split(",");
-    const rightmost = entries[entries.length - 1]?.trim();
-    if (rightmost) return rightmost;
+    const entries = forwardedFor.split(",").map((entry) => entry.trim());
+    const hops = trustedProxyHops();
+    // A shorter header than expected: the leftmost entry is still the one
+    // the outermost proxy saw.
+    const index = Math.max(0, entries.length - hops);
+    const client = entries[index];
+    if (client) return client;
   }
   return request.headers.get("x-real-ip") || "unknown";
 }

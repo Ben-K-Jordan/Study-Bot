@@ -1,5 +1,6 @@
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
 
 const TOKEN_BYTES = 32;
 export const EMAIL_VERIFY_EXPIRY_HOURS = 24;
@@ -30,40 +31,71 @@ function generateToken(): string {
   return randomBytes(TOKEN_BYTES).toString("base64url");
 }
 
-/** Create an email verification token for a user */
-export async function createEmailVerificationToken(userId: string): Promise<string> {
-  // Invalidate any existing unused email verification tokens
+/**
+ * What the database stores for a token: its SHA-256 digest. The raw token
+ * exists only in the emailed link, so a database read (a backup, a replica)
+ * can't be turned into a working reset link. Exported for tests.
+ */
+export function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Rows stay a day past expiry, so an old link still reads "expired" for a while. */
+const PURGE_AFTER_MS = 24 * 60 * 60 * 1000;
+const PURGE_EVERY_MS = 60 * 60 * 1000;
+let lastPurgeAt = 0;
+
+/** Delete link tokens that expired more than a day ago. */
+export async function purgeExpiredTokens(now: Date = new Date()): Promise<number> {
+  const { count } = await prisma.verificationToken.deleteMany({
+    where: { expiresAt: { lt: new Date(now.getTime() - PURGE_AFTER_MS) } },
+  });
+  return count;
+}
+
+/**
+ * Purge at most once an hour, from the paths that create tokens. Best
+ * effort: a failed purge never stops a link from being sent.
+ */
+async function purgeExpiredTokensOccasionally(): Promise<void> {
+  const now = Date.now();
+  if (now - lastPurgeAt < PURGE_EVERY_MS) return;
+  lastPurgeAt = now;
+  try {
+    await purgeExpiredTokens(new Date(now));
+  } catch (err) {
+    logger.warn("tokens.purge_failed", { error: String(err) });
+  }
+}
+
+/** Start a new link token for a user, ending any unused one of the same type. */
+async function createToken(userId: string, type: TokenType, expiryHours: number): Promise<string> {
+  await purgeExpiredTokensOccasionally();
+
+  // Invalidate any existing unused token of this type
   await prisma.verificationToken.updateMany({
-    where: { userId, type: "EMAIL_VERIFY", usedAt: null },
+    where: { userId, type, usedAt: null },
     data: { usedAt: new Date() },
   });
 
   const token = generateToken();
-  const expiresAt = new Date(Date.now() + EMAIL_VERIFY_EXPIRY_HOURS * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
 
   await prisma.verificationToken.create({
-    data: { userId, token, type: "EMAIL_VERIFY", expiresAt },
+    data: { userId, token: hashToken(token), type, expiresAt },
   });
 
   return token;
 }
 
-/** Create a password reset token for a user */
-export async function createPasswordResetToken(userId: string): Promise<string> {
-  // Invalidate any existing unused password reset tokens
-  await prisma.verificationToken.updateMany({
-    where: { userId, type: "PASSWORD_RESET", usedAt: null },
-    data: { usedAt: new Date() },
-  });
+/** Create an email verification token for a user. Returns the raw token for the link. */
+export function createEmailVerificationToken(userId: string): Promise<string> {
+  return createToken(userId, "EMAIL_VERIFY", EMAIL_VERIFY_EXPIRY_HOURS);
+}
 
-  const token = generateToken();
-  const expiresAt = new Date(Date.now() + PASSWORD_RESET_EXPIRY_HOURS * 60 * 60 * 1000);
-
-  await prisma.verificationToken.create({
-    data: { userId, token, type: "PASSWORD_RESET", expiresAt },
-  });
-
-  return token;
+/** Create a password reset token for a user. Returns the raw token for the link. */
+export function createPasswordResetToken(userId: string): Promise<string> {
+  return createToken(userId, "PASSWORD_RESET", PASSWORD_RESET_EXPIRY_HOURS);
 }
 
 /** Classify a stored token without changing it. Exported for tests. */
@@ -84,7 +116,7 @@ export function classifyToken(
  */
 export async function inspectToken(token: string, expectedType: TokenType): Promise<TokenState> {
   if (!token) return { status: "invalid" };
-  const record = await prisma.verificationToken.findUnique({ where: { token } });
+  const record = await prisma.verificationToken.findUnique({ where: { token: hashToken(token) } });
   return classifyToken(record, expectedType, new Date());
 }
 
@@ -96,12 +128,13 @@ export async function inspectToken(token: string, expectedType: TokenType): Prom
 export async function redeemToken(token: string, expectedType: TokenType): Promise<TokenState> {
   if (!token) return { status: "invalid" };
   const now = new Date();
+  const stored = hashToken(token);
 
   const { count } = await prisma.verificationToken.updateMany({
-    where: { token, type: expectedType, usedAt: null, expiresAt: { gt: now } },
+    where: { token: stored, type: expectedType, usedAt: null, expiresAt: { gt: now } },
     data: { usedAt: now },
   });
-  const record = await prisma.verificationToken.findUnique({ where: { token } });
+  const record = await prisma.verificationToken.findUnique({ where: { token: stored } });
 
   if (count === 1 && record) return { status: "valid", userId: record.userId };
   const state = classifyToken(record, expectedType, now);
