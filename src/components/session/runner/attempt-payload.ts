@@ -3,6 +3,7 @@
  * (src/lib/validation.ts), plus the small rules around them. Pure, so the
  * contract is unit-tested without a browser.
  */
+import { isSureRating } from "@/lib/confidence"
 import type { Confidence, ErrorLogPayload, ErrorType, SelfScore } from "./types"
 
 /** The server rejects time_to_answer_seconds above 7200; stay under it. */
@@ -165,5 +166,5 @@ export function isConfidentError(input: {
   isPretest: boolean
 }): boolean {
   if (input.isPretest || input.score === null || input.score === "CORRECT") return false
-  return (input.confidence ?? 0) >= 4
+  return isSureRating(input.confidence)
 }

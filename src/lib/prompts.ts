@@ -6,6 +6,8 @@
  * in session_runs.prompts — no DB randomness needed at runtime.
  */
 
+import { clampPromptCount } from "./validation";
+
 export type PromptFormat = "FREE_RECALL" | "MCQ";
 
 export interface Prompt {
@@ -56,6 +58,17 @@ interface Objective {
 
 // ---- Shared helpers ----
 
+/**
+ * A topic title as it reads inside a sentence. Titles are stored in
+ * sentence case, so a leading article would keep its capital mid-sentence
+ * ("Define The box model..."): lower-case "The", "A" or "An" and leave the
+ * rest as written, so names and acronyms keep theirs ("the French
+ * Revolution", "CSS specificity").
+ */
+export function inSentence(title: string): string {
+  return title.replace(/^(?:The|An|A)(?=\s)/, (article) => article.toLowerCase());
+}
+
 const RETRIEVAL_VARIANTS = [
   (title: string) => `From memory: explain ${title} in 3 to 5 bullets.`,
   (title: string) => `Define ${title} and give one concrete example.`,
@@ -73,11 +86,12 @@ function resolveObjectives(
   return [{ id: "topic_0", title: topicScope ?? "General" }];
 }
 
+/** The stored count, held to 1 to 60 even for rows written before the schema bound it. */
 function resolvePromptCount(
   targetOutcome?: { prompt_count?: number } | null,
   fallback = 10
 ): number {
-  return targetOutcome?.prompt_count ?? fallback;
+  return clampPromptCount(targetOutcome?.prompt_count, fallback);
 }
 
 // ---- RETRIEVAL ----
@@ -97,7 +111,7 @@ export function generateRetrievalPrompts(session: {
     prompts.push({
       id: `p_${i}`,
       objective_id: obj.id,
-      text: variantFn(obj.title),
+      text: variantFn(inSentence(obj.title)),
       difficulty: 1,
     });
   }
@@ -144,7 +158,7 @@ export function generateInterleavedPrompts(session: {
       list.push({
         id: `p_${globalIdx}`,
         objective_id: obj.id,
-        text: variantFn(obj.title),
+        text: variantFn(inSentence(obj.title)),
         difficulty: 1,
         meta: { pack: `obj_${objIdx}` },
       });

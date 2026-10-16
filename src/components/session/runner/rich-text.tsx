@@ -4,6 +4,7 @@ import * as React from "react"
 import Markdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { CITATION_HREF, rehypeKeepCitationsWithText } from "@/lib/rehype-keep-citations"
 import { cn } from "@/lib/utils"
 
 import { linkCitations } from "./question-kind"
@@ -15,8 +16,6 @@ export interface Citations {
   active: number | null
   onCite: (n: number) => void
 }
-
-const CITATION_HREF = /^#source-(\d+)$/
 
 function blockComponents(citations?: Citations): Components {
   return {
@@ -78,10 +77,11 @@ function CitationButton({ n, citations }: { n: number; citations: Citations }) {
       aria-controls={`source-${n}`}
       aria-pressed={active}
       onClick={() => citations.onCite(n)}
-      // Margin on the left only, so the punctuation after a citation hugs it
-      // ("revisits it [1]."), and no taller than the line it sits in.
+      // A small margin on the left only (the space before it already
+      // separates it from the word), so the punctuation after a citation
+      // hugs it ("revisits it [1]."), and no taller than the line it sits in.
       className={cn(
-        "ml-1 inline-flex size-5 items-center justify-center rounded-full align-[0.1em] type-label-s font-bold tabular-nums transition-colors duration-150 ease-standard",
+        "ml-0.5 inline-flex size-5 items-center justify-center rounded-full align-[0.1em] type-label-s font-bold tabular-nums transition-colors duration-150 ease-standard",
         active
           ? "bg-lesson-selected-border text-lesson-on-primary"
           : "bg-lesson-selected text-lesson-on-selected hover:bg-lesson-selected-border hover:text-lesson-on-primary"
@@ -110,7 +110,11 @@ export function RichText({
   const text = citations ? linkCitations(children, citations.count) : children
   return (
     <div className={cn("flex min-w-0 flex-col gap-3 break-words", className)}>
-      <Markdown remarkPlugins={[remarkGfm]} components={blockComponents(citations)}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={citations ? [rehypeKeepCitationsWithText] : undefined}
+        components={blockComponents(citations)}
+      >
         {text}
       </Markdown>
     </div>

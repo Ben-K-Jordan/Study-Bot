@@ -104,6 +104,10 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Submit answer" }).click();
       const sheet = feedbackSheet(page, "Incorrect");
       await expect(sheet).toContainText("Correct answer: The base case is never reached");
+      // Focus lands on the continue button, so it carries the correction with it.
+      await expect(sheet.getByRole("button", { name: "Next question" })).toHaveAccessibleDescription(
+        /Correct answer: The base case is never reached/
+      );
       await expect(page.getByRole("region", { name: "Why your answer is tempting" })).toBeVisible();
       await expectNoAxeViolations(page, "the Incorrect feedback sheet");
 
@@ -149,7 +153,7 @@ for (const theme of ["light", "dark"] as const) {
       await box.fill("What is recursion?");
       await box.press("Enter");
       const answer = page.getByRole("article", { name: "Study Bot answered" });
-      await expect(answer.getByRole("region", { name: "Sources (1)" })).toBeVisible();
+      await expect(answer.getByRole("group", { name: "Sources (1)" })).toBeVisible();
       await answer.getByRole("button", { name: "Source 1: recursion.txt" }).click();
       await expectNoAxeViolations(page, "an answer with a source open");
     });

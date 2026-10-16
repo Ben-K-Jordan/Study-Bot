@@ -128,11 +128,6 @@ export function resultStartsBreak(result: AttemptSubmitResult | null | undefined
   return state?.on_break === true
 }
 
-/** The run phase the attempt moved to, when the server says. */
-export function resultPhase(result: AttemptSubmitResult | null | undefined): string | null {
-  return typeof result?.phase === "string" ? result.phase : null
-}
-
 /**
  * Exam scoring shows each question's saved answer, so the runner loads the
  * answers when the run payload lacks them. They stay needed while a scored

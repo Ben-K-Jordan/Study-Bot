@@ -1,6 +1,7 @@
 /**
  * Feedback from the student's materials: nothing from them shows before
- * the answer is scored, and the feedback section appears after it.
+ * the answer is scored, and the feedback section appears after it, citing
+ * the file that covers the topic.
  */
 import { test, expect, createSession, uploadMaterial, unique } from "./fixtures";
 
@@ -41,9 +42,13 @@ test("feedback stays hidden until the answer is scored", async ({ page, request 
     await expect(feedback.getByRole("region", { name: "Your correction" })).toContainText(
       "Dijkstra picks the closest vertex from a priority queue",
     );
-    // The deferred feedback finishes loading: numbered sources, or the line
-    // that says the materials don't cover the question.
+    // The deferred feedback finishes loading. The uploaded notes cover
+    // Dijkstra's algorithm, so it cites them: the search matches any of the
+    // question's words, not all of them, and never claims they don't cover it.
     await expect(feedback.getByText("Loading feedback…")).toHaveCount(0);
-    await expect(feedback).toContainText(/Source \d|Your materials don't cover this question/);
+    const sources = feedback.getByRole("region", { name: "Sources" });
+    await expect(sources).toBeVisible();
+    await expect(sources).toContainText("priority queue");
+    await expect(feedback).not.toContainText("Your materials don't cover this question");
   });
 });

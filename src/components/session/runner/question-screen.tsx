@@ -143,8 +143,20 @@ export function QuestionScreen({
       // Start typing at once, with the form's heading at the top of the view.
       correctionRef.current?.focus({ preventScroll: true })
       document.getElementById(errorLogHeadingId)?.scrollIntoView({ block: "start" })
+      // On a short screen that leaves the focused field under the footer
+      // (WCAG 2.4.11): bring the whole field up above it, heading or not.
+      fieldOf(correctionRef.current)?.scrollIntoView({ block: "nearest" })
     }
   }, [state.step, mcq, errorLogHeadingId])
+
+  // A field's error shows under it, below the box that keeps focus, so
+  // focus alone never scrolls it into view: bring the field and its error
+  // up above the footer.
+  React.useEffect(() => {
+    const field = state.fieldError?.field
+    if (!field) return
+    fieldOf(field === "correction" ? correctionRef.current : answerRef.current)?.scrollIntoView({ block: "nearest" })
+  }, [state.fieldError])
 
   // A failed save can leave focus nowhere: the options and the error-type
   // choices lock while saving, and a locked control drops focus. Put it back
@@ -161,7 +173,8 @@ export function QuestionScreen({
       if (mcq) radioFor(optionsRef.current, null)?.focus()
       else answerRef.current?.focus()
     } else if (state.step === "error_log") {
-      correctionRef.current?.focus()
+      correctionRef.current?.focus({ preventScroll: true })
+      fieldOf(correctionRef.current)?.scrollIntoView({ block: "nearest" })
     }
   }, [state.error, state.errorReload, state.step, mcq])
 
@@ -173,6 +186,16 @@ export function QuestionScreen({
   const examKey = examScoring && mcq && typeof prompt.correctIndex === "number" ? prompt.correctIndex : null
   const examMcqScorable = examKey !== null && savedChoice !== null
   const examMcqCorrect = examMcqScorable && savedChoice === examKey
+  // Exam scoring scores the answer saved during the exam. Until it has
+  // loaded there is nothing to score, and a multiple-choice pick can't be
+  // checked against its key, so no score can be recorded (a failed load
+  // stays blocked behind its Retry).
+  const scoringReady = !examScoring || saved?.status === "ready"
+  const scoringWait = scoringReady
+    ? null
+    : saved?.status === "failed"
+      ? "Your saved answer didn't load."
+      : "Loading your saved answer…"
 
   const actions = useQuestionActions({
     state,
@@ -187,6 +210,7 @@ export function QuestionScreen({
     isPretest,
     isRepair,
     examMcq: { scorable: examMcqScorable, correct: examMcqCorrect, key: examKey },
+    scoringReady,
     submit,
     onExamAnswered,
     onContinue,
@@ -225,6 +249,7 @@ export function QuestionScreen({
     mcq,
     choiceCount: choices.length,
     examMcqScorable,
+    scoringReady,
     shortcutsEnabled,
     helpOpen,
     onToggleHelp: toggleHelp,
@@ -298,6 +323,8 @@ export function QuestionScreen({
       mcq={mcq}
       examAnswering={examAnswering}
       examMcqScorable={examMcqScorable}
+      scoringReady={scoringReady}
+      scoringWait={scoringWait}
       isPretest={isPretest}
       canSubmit={mcq ? state.choice !== null : state.answer.trim().length > 0}
       pending={pending}
@@ -483,6 +510,11 @@ export function QuestionScreen({
       </LessonFrame>
     </FeedbackProvider>
   )
+}
+
+/** The whole labelled field around a text box: label, helper, box and error. */
+function fieldOf(input: HTMLElement | null): HTMLElement | null {
+  return input?.closest<HTMLElement>("[data-slot=free-recall-input]") ?? null
 }
 
 /** The radio for `choice`, else the checked one, else the first. */

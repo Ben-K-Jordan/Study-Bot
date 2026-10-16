@@ -8,7 +8,7 @@ import { ConfidencePicker } from "@/components/lesson/confidence-picker"
 import { FreeRecallInput } from "@/components/lesson/free-recall-input"
 
 import { CONFIDENCE_KEYS } from "./hotkeys"
-import { AnswerEcho, ModelAnswerCard, ModelAnswerSkeleton } from "./parts"
+import { AnswerEcho, FIELD_SCROLL_MARGINS, ModelAnswerCard, ModelAnswerSkeleton } from "./parts"
 import { InlineText } from "./rich-text"
 import type { Confidence } from "./types"
 
@@ -79,6 +79,7 @@ export function RecallAnswer({
   return (
     <FreeRecallInput
       ref={answerRef}
+      className={FIELD_SCROLL_MARGINS}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       readOnly={saving}
@@ -243,6 +244,9 @@ export function ExamMcqScoring({
     <div ref={scoringRef} tabIndex={-1} className="flex flex-col gap-2 rounded-2xl outline-none">
       {saved?.status === "failed" ? (
         <ErrorState title="Your saved answer didn't load." description="Retry to see it." onRetry={saved.retry} />
+      ) : saved?.status === "loading" ? (
+        // Not "no model answer": the key is checked once the saved pick arrives.
+        <p className="type-body-l font-medium text-lesson-neutral-text">Loading your saved answer…</p>
       ) : correctChoiceText !== null && savedChoiceText !== null ? (
         <p className="type-body-l font-bold">
           {correct ? "Your answer is correct." : `Correct answer: ${correctChoiceText}`}

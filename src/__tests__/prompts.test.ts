@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { generateRetrievalPrompts, shuffleMcqChoices, type Prompt } from "@/lib/prompts";
+import {
+  generateInterleavedPrompts,
+  generateRetrievalPrompts,
+  inSentence,
+  shuffleMcqChoices,
+  type Prompt,
+} from "@/lib/prompts";
 
 describe("generateRetrievalPrompts", () => {
   it("generates the exact number of prompts from target_outcome.prompt_count", () => {
@@ -120,5 +126,44 @@ describe("shuffleMcqChoices", () => {
   it("returns non-MCQ prompts unchanged", () => {
     const freeRecall: Prompt = { id: "p_1", text: "Explain osmosis", difficulty: 1 };
     expect(shuffleMcqChoices(freeRecall, "seed-f")).toBe(freeRecall);
+  });
+});
+
+describe("inSentence", () => {
+  it("lower-cases a leading article only", () => {
+    expect(inSentence("The box model")).toBe("the box model");
+    expect(inSentence("A linked list")).toBe("a linked list");
+    expect(inSentence("An array")).toBe("an array");
+    expect(inSentence("The French Revolution")).toBe("the French Revolution");
+  });
+
+  it("leaves titles without a leading article as written", () => {
+    expect(inSentence("CSS specificity")).toBe("CSS specificity");
+    expect(inSentence("Theory of mind")).toBe("Theory of mind");
+    expect(inSentence("Anatomy")).toBe("Anatomy");
+    expect(inSentence("A* search")).toBe("A* search");
+  });
+
+  it("is applied where the question templates put a topic mid-sentence", () => {
+    const objectives = [
+      { id: "o1", title: "The box model" },
+      { id: "o2", title: "CSS specificity" },
+    ];
+    const retrieval = generateRetrievalPrompts({
+      objectives,
+      target_outcome: { prompt_count: 6 },
+      topic_scope: "INFO 1300",
+    });
+    const interleaved = generateInterleavedPrompts({
+      objectives,
+      target_outcome: { prompt_count: 6 },
+      topic_scope: "INFO 1300",
+      seed: "s",
+    });
+    for (const p of [...retrieval, ...interleaved]) {
+      expect(p.text).not.toContain("The box model");
+    }
+    expect(retrieval.map((p) => p.text)).toContain("Define CSS specificity and give one concrete example.");
+    expect(retrieval[0].text).toBe("From memory: explain the box model in 3 to 5 bullets.");
   });
 });

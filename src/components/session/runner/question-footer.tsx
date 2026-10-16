@@ -3,6 +3,7 @@
 import * as React from "react"
 import { RotateCcwIcon } from "lucide-react"
 
+import { cn } from "@/lib/utils"
 import { LessonButton } from "@/components/lesson/lesson-button"
 
 import type { Step } from "./question-reducer"
@@ -22,6 +23,8 @@ export function QuestionFooter({
   mcq,
   examAnswering,
   examMcqScorable,
+  scoringReady = true,
+  scoringWait = null,
   isPretest,
   canSubmit,
   pending,
@@ -39,6 +42,10 @@ export function QuestionFooter({
   mcq: boolean
   examAnswering: boolean
   examMcqScorable: boolean
+  /** Exam scoring: the saved answer has loaded, so a score can be recorded. */
+  scoringReady?: boolean
+  /** Exam scoring: why the score buttons are off, said where they are. */
+  scoringWait?: string | null
   isPretest: boolean
   canSubmit: boolean
   pending: boolean
@@ -77,6 +84,7 @@ export function QuestionFooter({
         <LessonButton
           variant="check"
           kbd="Enter"
+          disabled={!scoringReady}
           loading={pending}
           loadingLabel="Saving score…"
           onClick={onSaveExamMcqScore}
@@ -89,9 +97,9 @@ export function QuestionFooter({
       <>
         {help}
         <ScoreBar
-          prompt={isPretest ? "How close were you?" : "Score your answer"}
+          prompt={scoringWait ?? (isPretest ? "How close were you?" : "Score your answer")}
           pendingScore={pendingScore}
-          disabled={pending}
+          disabled={pending || !scoringReady}
           showKeys={shortcutsEnabled}
           onScore={onScore}
         />
@@ -100,11 +108,23 @@ export function QuestionFooter({
   }
 
   if (step === "error_log") {
+    // One row on a phone too, so the footer stays one button tall and the
+    // correction rule field has room above it. From 600px the two buttons
+    // sit at the footer's two ends.
     return (
-      <>
-        <LessonButton variant="neutral" disabled={pending} onClick={onChangeScore} className="w-full sm:w-auto">
+      <div className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-2 sm:contents">
+        <LessonButton
+          variant="neutral"
+          disabled={pending}
+          onClick={onChangeScore}
+          className="max-sm:min-w-0 max-sm:px-3 sm:w-auto"
+        >
           <RotateCcwIcon aria-hidden="true" />
-          Change score
+          {/* "Change" under 600px; the name stays "Change score". One span,
+              so the button's flex gap doesn't widen the space. */}
+          <span>
+            Change<span className="max-sm:sr-only"> score</span>
+          </span>
         </LessonButton>
         <LessonButton
           variant="check"
@@ -113,11 +133,11 @@ export function QuestionFooter({
           loading={pending}
           loadingLabel="Saving answer…"
           onClick={onSaveCorrection}
-          className={WIDE}
+          className={cn(WIDE, "max-sm:min-w-0 max-sm:px-3 max-sm:[&_[data-slot=kbd-group]]:hidden")}
         >
           Save correction
         </LessonButton>
-      </>
+      </div>
     )
   }
 

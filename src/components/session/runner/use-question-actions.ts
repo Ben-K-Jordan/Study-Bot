@@ -41,6 +41,8 @@ export interface QuestionActionsInput {
   isRepair: boolean
   /** Exam scoring of a multiple-choice answer: the key and the saved pick are both known. */
   examMcq: { scorable: boolean; correct: boolean; key: number | null }
+  /** Exam scoring: the answer saved during the exam has loaded. Always true otherwise. */
+  scoringReady: boolean
   submit: (attempt: Record<string, unknown>) => Promise<AttemptSubmitResult | null>
   onExamAnswered: (result: AttemptSubmitResult) => void
   onContinue: (outcome: Outcome) => void | Promise<void>
@@ -222,7 +224,7 @@ export function useQuestionActions(input: QuestionActionsInput) {
   }
 
   function chooseScore(score: SelfScore) {
-    if (busy.current || state.pending || state.step !== "scoring") return
+    if (busy.current || state.pending || state.step !== "scoring" || !input.scoringReady) return
     const errorLog = needsErrorLog({
       score,
       isPretest: input.isPretest,
@@ -234,7 +236,7 @@ export function useQuestionActions(input: QuestionActionsInput) {
   }
 
   function saveExamMcqScore() {
-    if (busy.current || state.pending || state.step !== "scoring" || !examMcq.scorable) return
+    if (busy.current || state.pending || state.step !== "scoring" || !examMcq.scorable || !input.scoringReady) return
     if (examMcq.correct) {
       dispatch({ type: "score", score: "CORRECT", errorLog: false })
       void saveScore("CORRECT", null)

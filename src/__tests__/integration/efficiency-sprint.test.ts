@@ -207,17 +207,18 @@ The loop invariant for binary search is that the target element, if present, mus
         result = await generateFeedback(USER, attemptId);
       }
       expect(result.status).toBe("OK");
-      // We have course docs, should get results
-      if (result.excerpts.length > 0) {
-        expect(result.excerpts[0].snippet).toBeTruthy();
-        expect(result.excerpts[0].doc_title).toBeTruthy();
+      // The uploaded file covers loop invariants, so the feedback must cite it
+      // (no anchors exist yet, so this goes through the full-text fallback).
+      expect(result.no_sources).toBeUndefined();
+      expect(result.excerpts.length).toBeGreaterThan(0);
+      expect(result.excerpts[0].snippet).toBeTruthy();
+      expect(result.excerpts[0].doc_title).toBeTruthy();
 
-        // Citations should be stored in DB
-        const citations = await prisma.attemptCitation.findMany({
-          where: { attemptId },
-        });
-        expect(citations.length).toBeGreaterThan(0);
-      }
+      // Citations should be stored in DB
+      const citations = await prisma.attemptCitation.findMany({
+        where: { attemptId },
+      });
+      expect(citations.length).toBeGreaterThan(0);
     });
 
     it("GET feedback is idempotent (returns cached citations)", async () => {

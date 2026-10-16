@@ -9,6 +9,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 import { RichText } from "./rich-text"
 
+/**
+ * Scroll margins for a text field, so scrolling it into view clears the
+ * sticky top bar and the footer (whose height the frame publishes as
+ * --lesson-footer-h; 8rem covers a one-row footer plus a phone's home bar
+ * until it does).
+ */
+export const FIELD_SCROLL_MARGINS = "scroll-mt-28 scroll-mb-[calc(var(--lesson-footer-h,8rem)+1rem)]"
+
 /** The tag every block of AI-written text carries beside its heading. */
 export function AiTag({ className }: { className?: string }) {
   return <SharedAiTag tone="lesson" className={className} />

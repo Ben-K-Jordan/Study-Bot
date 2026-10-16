@@ -42,7 +42,10 @@ import { feedbackSummary, plainSummaryText } from "@/components/session/runner/q
 import { feedbackStatus } from "@/components/session/runner/use-feedback"
 import { questionBindings, type QuestionHotkeys } from "@/components/session/runner/use-question-hotkeys"
 import { submitFailure } from "@/components/session/runner/use-question-actions"
-import { needsReload } from "@/components/session/runner/api"
+import { needsReload, promptUrl } from "@/components/session/runner/api"
+import { RichText } from "@/components/session/runner/rich-text"
+import { rehypeKeepCitationsWithText } from "@/lib/rehype-keep-citations"
+import { renderToStaticMarkup } from "react-dom/server"
 import { ApiError } from "@/lib/client-api"
 
 describe("answer timing", () => {
@@ -228,6 +231,45 @@ describe("sources", () => {
   it("link only citations that have a source", () => {
     expect(linkCitations("See [1] and [3].", 2)).toBe("See [1](#source-1) and [3].")
     expect(linkCitations("See [1].", 0)).toBe("See [1].")
+  })
+
+  it("keep a citation on the line of the word before it", () => {
+    const tree = {
+      type: "root",
+      children: [
+        {
+          type: "element",
+          tagName: "p",
+          children: [
+            { type: "text", value: "finds that minimum quickly " },
+            { type: "element", tagName: "a", properties: { href: "#source-1" }, children: [{ type: "text", value: "1" }] },
+            { type: "text", value: " " },
+            { type: "element", tagName: "a", properties: { href: "#source-2" }, children: [{ type: "text", value: "2" }] },
+            { type: "text", value: ". A FIFO queue " },
+            { type: "element", tagName: "a", properties: { href: "https://example.com" }, children: [] },
+          ],
+        },
+      ],
+    }
+    rehypeKeepCitationsWithText()(tree)
+    const p = tree.children[0] as { children: { type: string; value?: string; tagName?: string; children?: unknown[] }[] }
+    expect(p.children.map((c) => c.value ?? c.tagName)).toEqual(["finds that minimum ", "span", ". A FIFO queue ", "a"])
+    const span = p.children[1] as unknown as { properties: { className: string[] }; children: { value?: string; tagName?: string }[] }
+    expect(span.properties.className).toEqual(["whitespace-nowrap"])
+    expect(span.children.map((c) => c.value ?? c.tagName)).toEqual(["quickly ", "a", " ", "a"])
+  })
+
+  it("render citations inside a nowrap span with the word before them", () => {
+    const html = renderToStaticMarkup(
+      // RichText has no hooks, so calling it directly gives the element to render.
+      RichText({
+        citations: { count: 1, label: () => "Source 1: Lecture 4", active: null, onCite: () => undefined },
+        children: "A binary heap finds that minimum quickly [1]. A FIFO queue does not.",
+      })
+    )
+    expect(html).toMatch(/minimum <span class="whitespace-nowrap">quickly <button[^>]*aria-label="Source 1: Lecture 4"[^>]*>1<\/button><\/span>\. A FIFO/)
+    // Without sources nothing is wrapped.
+    expect(renderToStaticMarkup(RichText({ children: "Plain [1] text." }))).not.toContain("whitespace-nowrap")
   })
 
   it("label sources with title and page, skipping page 0", () => {
@@ -515,6 +557,13 @@ describe("question keys", () => {
     expect(rated).toEqual([1, 3, 5])
   })
 
+  it("record no score from the keyboard until the saved exam answer has loaded", () => {
+    expect(keys({ ...base, step: "scoring", mcq: false, scoringReady: false })).toEqual(["?"])
+    expect(keys({ ...base, step: "scoring", examMcqScorable: true, scoringReady: false })).toEqual(["?"])
+    expect(keys({ ...base, step: "scoring", examMcqScorable: true, scoringReady: true })).toEqual(["?", "enter"])
+    expect(keys({ ...base, step: "scoring", mcq: false, scoringReady: true })).toEqual(["?", "1", "2", "3"])
+  })
+
   it("keep only Enter bindings when single-key shortcuts are off", () => {
     expect(keys({ ...base, shortcutsEnabled: false })).toEqual(["enter"])
     expect(keys({ ...base, mcq: false, shortcutsEnabled: false })).toEqual(["mod+enter"])
@@ -538,6 +587,16 @@ describe("failed saves", () => {
     expect(submitFailure(server)).toEqual({ message: server.message, reload: false })
     expect(needsReload(new ApiError("This question isn't in the session. Reload to continue.", 400, null))).toBe(true)
     expect(needsReload(new TypeError("Failed to fetch"))).toBe(false)
+  })
+})
+
+describe("question URLs", () => {
+  it("give exam scoring its own key, so a copy loaded while answering (no answer key) is never reused", () => {
+    expect(promptUrl("r 1", 2)).toBe("/api/runs/r%201/prompt?index=2")
+    expect(promptUrl("r1", 2, "EXAM")).toBe("/api/runs/r1/prompt?index=2")
+    expect(promptUrl("r1", 2, "ACTIVE")).toBe("/api/runs/r1/prompt?index=2")
+    expect(promptUrl("r1", 2, "REVIEW")).toBe("/api/runs/r1/prompt?index=2&phase=review")
+    expect(promptUrl("r1", 2, "REVIEW")).not.toBe(promptUrl("r1", 2, "EXAM"))
   })
 })
 

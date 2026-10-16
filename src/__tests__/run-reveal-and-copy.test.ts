@@ -206,9 +206,20 @@ describe("question text", () => {
     }
   });
 
+  it("lower-cases a topic's leading article mid-sentence and keeps other capitals", () => {
+    expect(pretestQuestionText("The box model")).toBe(
+      "Pretest: what do you already know about the box model? Explain as much as you can from memory."
+    );
+    expect(reviewQuestionText("The French Revolution", null)).toBe(
+      "From memory: explain the French Revolution and what matters most to remember about it."
+    );
+    expect(pretestQuestionText("CSS specificity")).toContain("about CSS specificity?");
+    expect(pretestQuestionText("Theory of mind")).toContain("about Theory of mind?");
+  });
+
   it("names review topics, never snake_case keys", () => {
     expect(humanizeObjectiveKey("photosynthesis_light_reactions")).toBe("Photosynthesis light reactions");
-    expect(humanizeObjectiveKey("bigO-notation")).toBe("Big o notation");
+    expect(humanizeObjectiveKey("bigO-notation")).toBe("Big O notation");
     const text = reviewQuestionText(humanizeObjectiveKey("photosynthesis_light_reactions"), 4);
     expect(text).toContain("Photosynthesis light reactions");
     expect(text).not.toContain("_");

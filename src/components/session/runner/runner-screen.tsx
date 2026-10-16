@@ -96,7 +96,7 @@ function Runner({ run, onSubmit, onComplete, onFinish, onBreak, onQuestionShown 
   // The next question didn't come with the run: load it here, so a failed
   // load shows Retry instead of a false "all done".
   const needPrompt = !held && !finished && !scoringIntro && !livePrompt
-  const recovery = useApi<RunnerPrompt>(needPrompt ? promptUrl(run.run_id, run.current_index) : null)
+  const recovery = useApi<RunnerPrompt>(needPrompt ? promptUrl(run.run_id, run.current_index, run.phase) : null)
 
   // Exam scoring shows each saved answer; load them when the run lacks them,
   // and keep them while the last scored question shows its feedback.

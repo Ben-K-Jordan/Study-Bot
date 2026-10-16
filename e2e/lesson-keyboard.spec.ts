@@ -107,9 +107,9 @@ test("a whole short session by keyboard alone", async ({ page, request, seedSess
       ["CORRECT", null],
     ]);
 
-    // No plan in this course, so the follow-ups offer Create plan before the footer.
+    // No plan in this course, so the follow-ups offer New plan before the footer.
     await tabTo(page, [
-      page.getByRole("region", { name: "Follow-up sessions" }).getByRole("link", { name: "Create plan" }),
+      page.getByRole("region", { name: "Follow-up sessions" }).getByRole("link", { name: "New plan" }),
       page.getByRole("button", { name: "Start session again" }),
     ]);
     await page.keyboard.press("Enter");

@@ -338,9 +338,10 @@ export function FeedbackBody({
             {correct ? "Why it's correct" : "Explanation"}
           </SectionTitle>
           <p className="type-body-m text-lesson-muted">
+            {/* Feedback saved before every note carried its sources can lack them: say so, never imply a source. */}
             {sources.length > 0
               ? "Written by AI from your materials. Check it against the numbered sources."
-              : "Written by AI from your materials."}
+              : "Written by AI. No passage from your materials was used, so check it against your notes."}
           </p>
           <RichText className="type-body-l font-medium" citations={citations}>
             {mainText}

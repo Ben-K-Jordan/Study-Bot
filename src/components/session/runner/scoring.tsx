@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { LessonButton } from "@/components/lesson/lesson-button"
 import { FreeRecallInput } from "@/components/lesson/free-recall-input"
 
+import { FIELD_SCROLL_MARGINS } from "./parts"
 import type { ErrorType, SelfScore } from "./types"
 
 export const SCORE_OPTIONS: readonly { score: SelfScore; label: string; key: string }[] = [
@@ -43,7 +44,10 @@ export function ScoreBar({
       <p id={labelId} className="type-title-s font-bold text-lesson-neutral-text lg:mr-auto">
         {prompt}
       </p>
-      <div className="grid gap-3 sm:grid-cols-3 lg:shrink-0">
+      {/* Three across at every width, like a lesson's answer row, so the
+          bar stays about one button tall and the model answer it is scored
+          against stays in view above it on a phone. */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:shrink-0">
         {SCORE_OPTIONS.map(({ score, label, key }) => {
           const { icon: Icon, className } = SCORE_ICONS[score]
           const loading = pendingScore === score
@@ -58,11 +62,16 @@ export function ScoreBar({
               loadingLabel="Saving answer…"
               aria-keyshortcuts={showKeys ? key : undefined}
               onClick={() => onScore(score)}
-              // Three across from 600px: tighter padding, and key hints only
-              // where they fit (840px and up).
-              className="min-w-0 sm:px-3 max-md:[&_[data-slot=kbd-group]]:hidden lg:min-w-44"
+              // Under 600px the icon sits over a smaller label that may wrap;
+              // from 600px, icon beside label. Key hints only where they fit
+              // (840px and up).
+              className={cn(
+                "min-w-0 sm:px-3 max-md:[&_[data-slot=kbd-group]]:hidden lg:min-w-44",
+                "max-sm:min-h-14 max-sm:flex-col max-sm:gap-1 max-sm:px-1 max-sm:py-2 max-sm:text-center max-sm:whitespace-normal max-sm:type-label-l max-sm:font-bold"
+              )}
             >
-              <Icon aria-hidden="true" strokeWidth={3} className={className} />
+              {/* Off, the icon greys out with its label. */}
+              <Icon aria-hidden="true" strokeWidth={3} className={disabled && !loading ? undefined : className} />
               {label}
             </LessonButton>
           )
@@ -192,6 +201,7 @@ export function ErrorLogForm({
       <ErrorTypePicker value={errorType} onChange={onErrorType} disabled={disabled} />
       <FreeRecallInput
         ref={correctionRef}
+        className={FIELD_SCROLL_MARGINS}
         label="Correction rule"
         description="The rule or fact that makes the answer right, in your own words. It comes back in repair questions."
         value={correctionRule}
@@ -203,6 +213,7 @@ export function ErrorLogForm({
         readOnly={disabled}
       />
       <FreeRecallInput
+        className={FIELD_SCROLL_MARGINS}
         label="Similar question (optional)"
         description="A question you'd ask yourself to check this next time. Repair questions can use it."
         value={similarQuestion}

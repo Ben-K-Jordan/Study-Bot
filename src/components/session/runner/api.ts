@@ -3,7 +3,7 @@
  * onSubmit; these cover the model answer, the next question when it didn't
  * arrive, and reflections saved after feedback.
  */
-import { ApiError, apiGet, apiPost } from "@/lib/client-api"
+import { ApiError, apiGet, apiPatch, apiPost } from "@/lib/client-api"
 
 import type { RevealPayload, RunnerPrompt } from "./types"
 
@@ -16,8 +16,17 @@ export function revealUrl(runId: string, index: number): string {
   return `/api/runs/${encodeURIComponent(runId)}/reveal?index=${index}`
 }
 
-export function promptUrl(runId: string, index: number): string {
-  return `/api/runs/${encodeURIComponent(runId)}/prompt?index=${index}`
+/**
+ * GET /prompt for one question. In exam scoring (phase REVIEW) the server
+ * adds the multiple-choice key, so that phase gets its own URL, and with it
+ * its own SWR cache entry: a copy loaded while answering, without the key,
+ * is never served to the scoring screen. The route ignores the parameter.
+ * Other phases keep the plain URL, which the session screen's preload
+ * shares, so an adaptive GET is never sent twice.
+ */
+export function promptUrl(runId: string, index: number, phase?: string): string {
+  const base = `/api/runs/${encodeURIComponent(runId)}/prompt?index=${index}`
+  return phase === "REVIEW" ? `${base}&phase=review` : base
 }
 
 export function runUrl(runId: string): string {
@@ -28,8 +37,8 @@ export function feedbackUrl(attemptId: string): string {
   return `/api/attempts/${encodeURIComponent(attemptId)}/feedback`
 }
 
-export function fetchPrompt(runId: string, index: number): Promise<RunnerPrompt> {
-  return apiGet(promptUrl(runId, index))
+export function fetchPrompt(runId: string, index: number, phase?: string): Promise<RunnerPrompt> {
+  return apiGet(promptUrl(runId, index, phase))
 }
 
 /** Saves the reflection typed after feedback against the attempt it belongs to. */
@@ -37,17 +46,7 @@ export async function saveReflection(
   attemptId: string,
   reflection: { self_explanation?: string; generated_example?: string; socratic_answer?: string }
 ): Promise<void> {
-  const res = await fetch(`/api/attempts/${encodeURIComponent(attemptId)}/meta`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(reflection),
-    signal: AbortSignal.timeout(30_000),
-  })
-  if (!res.ok) {
-    const body: unknown = await res.json().catch(() => null)
-    const message = (body as { error?: unknown } | null)?.error
-    throw new ApiError(typeof message === "string" ? message : "Reflection not saved.", res.status, body)
-  }
+  await apiPatch(`/api/attempts/${encodeURIComponent(attemptId)}/meta`, reflection)
 }
 
 /**

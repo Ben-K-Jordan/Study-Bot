@@ -27,6 +27,7 @@ import {
   createSession,
   feedbackSheet,
   getJson,
+  hydrated,
   pick,
   questionCounter,
   scoreAs,
@@ -254,6 +255,10 @@ test.describe("finishing", () => {
       `);
       const confidenceSection = page.getByRole("region", { name: "Confidence" });
       await expect(confidenceSection).toContainText("Your confidence matched your result on 3 of 3 rated questions.");
+      await expect(confidenceSection.getByRole("listitem")).toContainText(["Sure: 3 of 3 correct (100%)"]);
+      // The table sits behind a disclosure.
+      await hydrated(confidenceSection.getByRole("button", { name: "Show as a table" }));
+      await confidenceSection.getByRole("button", { name: "Show as a table" }).click();
       await expect(confidenceSection.getByRole("row", { name: "Sure 3 3 (100%)" })).toBeVisible();
 
       const followups = page.getByRole("region", { name: "Follow-up sessions" });
@@ -397,6 +402,33 @@ test.describe("exam simulation", () => {
     });
   });
 
+  test("no score is recorded while the saved exam answers are still loading", async ({ page, request, seedSession }) => {
+    const session = await seedSession({ course_name: unique("E2E Exam"), mode: "EXAM_SIM", deck: [BASE_CASE, RECURSIVE_CASE] });
+    // Hold the saved answers (GET /api/runs/{id}) until the checks below are done.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(`**/api/runs/${session.runId}`, async (route) => {
+      if (route.request().method() === "GET") await held;
+      await route.fallback();
+    });
+    await page.goto(session.url);
+    await answerTheExam(page);
+
+    const bar = page.getByRole("group", { name: "Loading your saved answer…" });
+    await expect(bar).toBeVisible();
+    for (const name of ["Correct", "Partly correct", "Incorrect"]) {
+      await expect(bar.getByRole("button", { name, exact: true })).toBeDisabled();
+    }
+    await expect(page.getByRole("main")).not.toContainText("has no model answer");
+    await page.keyboard.press("1");
+    await page.keyboard.press("Enter");
+    expect((await storedRun(request, session.runId)).attempts.map((a) => a.self_score)).toEqual([null, null]);
+
+    release();
+    await expect(page.getByRole("main").getByText("Correct answer: The base case", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save score" })).toBeEnabled();
+  });
+
   test("the last exam answer stays on screen after it is scored", async ({ page, seedSession }) => {
     const session = await seedSession({ course_name: unique("E2E Exam"), mode: "EXAM_SIM", deck: [BASE_CASE, RECURSIVE_CASE] });
     await page.goto(session.url);
@@ -409,6 +441,55 @@ test.describe("exam simulation", () => {
     await scoreAs(page, "Correct");
     await expect(feedbackSheet(page, "Correct")).toBeVisible();
     await expect(yourAnswer).toContainText("It calls itself on a smaller piece of the problem");
+  });
+});
+
+/** The top of the sticky footer that holds `el` (the score bar, Save correction). */
+const footerTop = (el: HTMLElement): number => {
+  let node: HTMLElement | null = el;
+  while (node && getComputedStyle(node).position !== "sticky") node = node.parentElement;
+  return node ? node.getBoundingClientRect().top : window.innerHeight;
+};
+
+test("on a small phone the score bar is one row and the correction rule stays above the footer", { tag: "@mobile" }, async ({
+  page,
+  seedSession,
+}) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  const session = await seedSession({ course_name: unique("E2E Small phone"), deck: [RECURSIVE_CASE] });
+  await page.goto(session.url);
+  await page.getByRole("button", { name: "Resume session" }).click();
+  await answerBox(page).fill("It calls the function again");
+  await page.getByRole("button", { name: "Submit answer" }).click();
+
+  await test.step("the three scores sit in one row, under the model answer they're scored against", async () => {
+    const bar = page.getByRole("group", { name: "Score your answer" });
+    // The bar replaces Submit answer once the model answer arrives.
+    await expect(bar.getByRole("button")).toHaveCount(3);
+    const tops = await bar.getByRole("button").evaluateAll((buttons) => buttons.map((b) => Math.round(b.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1);
+    const barTop = await bar.evaluate(footerTop);
+    const modelTop = await page.getByRole("region", { name: "Model answer" }).evaluate((el) => el.getBoundingClientRect().top);
+    // At least the heading and a few lines of the model answer show above the bar.
+    expect(barTop - modelTop).toBeGreaterThan(120);
+  });
+
+  await test.step("the focused correction rule field, and its error, are not hidden by the footer", async () => {
+    await scoreAs(page, "Incorrect");
+    const rule = page.getByRole("textbox", { name: "Correction rule" });
+    await expect(rule).toBeFocused();
+    const save = page.getByRole("button", { name: "Save correction" });
+    const limit = await save.evaluate(footerTop);
+    expect(await rule.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(limit);
+    // Change score and Save correction share one row.
+    const changeTop = await page.getByRole("button", { name: "Change score" }).evaluate((el) => Math.round(el.getBoundingClientRect().top));
+    expect(await save.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBe(changeTop);
+
+    await save.click();
+    const error = page.getByText("Write the correction rule first.");
+    await expect(error).toBeVisible();
+    await expect(rule).toBeFocused();
+    expect(await error.evaluate((el) => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(await save.evaluate(footerTop));
   });
 });
 

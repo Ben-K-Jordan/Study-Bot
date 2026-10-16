@@ -14,6 +14,11 @@ export interface QuestionHotkeys {
   choiceCount: number
   /** Exam scoring of a multiple-choice answer: the score is known, Enter saves it. */
   examMcqScorable: boolean
+  /**
+   * Exam scoring: false until the answer saved during the exam has loaded,
+   * so no key records a score for an answer the student can't see.
+   */
+  scoringReady?: boolean
   /** Single-key shortcuts are on (WCAG 2.1.4 lets the student turn them off). */
   shortcutsEnabled: boolean
   helpOpen: boolean
@@ -46,7 +51,9 @@ export function questionBindings(input: QuestionHotkeys): Binding[] {
       for (const [key, value] of Object.entries(CONFIDENCE_BY_KEY)) list.push({ key, run: () => input.onRate(value) })
     }
   } else if (input.step === "scoring") {
-    if (input.examMcqScorable) {
+    if (input.scoringReady === false) {
+      // Nothing to score yet: the saved answer is loading or failed (Retry).
+    } else if (input.examMcqScorable) {
       list.push({ key: "enter", run: input.onSaveExamMcqScore })
     } else if (single) {
       list.push({ key: "1", run: () => input.onScore("CORRECT") })
