@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { AUTH_FILE, BASE_URL, E2E_PORT, assertE2eDatabase, serverEnv } from "./e2e/support/env";
+import { AUTH_FILE, BASE_URL, E2E_PORT, TIME_ZONE, assertE2eDatabase, serverEnv } from "./e2e/support/env";
 
 /**
  * e2e suite. See e2e/README.md for running it locally.
@@ -42,7 +42,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     locale: "en-US",
-    timezoneId: "America/New_York",
+    timezoneId: TIME_ZONE,
   },
   projects: [
     {

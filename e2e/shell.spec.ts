@@ -5,7 +5,7 @@
  * identity keeps the screens in their empty states, so the checks don't
  * depend on what other tests created.
  */
-import { test, expect, axeBuilder } from "./fixtures";
+import { test, expect, expectNoAxeViolations } from "./fixtures";
 
 const DESTINATIONS = [
   { path: "/", title: "Home" },
@@ -25,10 +25,8 @@ for (const { path, title } of DESTINATIONS) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
     await expect(page).toHaveTitle(`${title} · Study Bot`);
-    // Loading states ("Loading chat history…") give way to the page's own
-    // content before axe looks.
-    await expect(page.getByRole("main").getByRole("status").filter({ hasText: /^Loading/ })).toHaveCount(0);
-
-    expect((await axeBuilder(page).analyze()).violations).toEqual([]);
+    // Waits for loading states ("Loading chat history…") to give way to the
+    // page's own content before axe looks.
+    await expectNoAxeViolations(page, title);
   });
 }
