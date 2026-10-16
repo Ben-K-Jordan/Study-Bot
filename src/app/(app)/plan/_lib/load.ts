@@ -9,7 +9,7 @@ import { getPlanView, listPlanSummaries, type PlanSummary, type PlanView } from 
 import { listDocuments } from "@/services/content"
 import { getPublishStatus } from "@/services/publish"
 import { sortPlans } from "@/components/plan/plan-model"
-import type { CalendarState } from "@/components/plan/calendar-types"
+import { lastCalendarAction, type CalendarState } from "@/components/plan/calendar-types"
 import type { MaterialDoc } from "@/components/materials/types"
 
 const FALLBACK_ZONE = "America/New_York"
@@ -48,7 +48,9 @@ async function calendarState(userId: string, view: PlanView): Promise<CalendarSt
       ? {
           status: publication.status as NonNullable<CalendarState["publication"]>["status"],
           added,
-          total: view.items.length,
+          // Skipped sessions don't belong in the calendar
+          total: view.counts.total,
+          last_action: lastCalendarAction(publication),
           last_error: publication.last_error,
         }
       : null,
@@ -121,20 +123,26 @@ export function toMaterialDoc(doc: Awaited<ReturnType<typeof listDocuments>>[num
   }
 }
 
-/** The New plan form's defaults: study hours from Settings, known courses, existing plans. */
+/**
+ * The New plan form's defaults: study hours from Settings, known courses,
+ * existing plans, and the time zone saved in Settings (null when there is
+ * none, so the form sends the browser's instead).
+ */
 export async function loadNewPlanDefaults(userId: string) {
-  const [state, summaries, documents, timeZone] = await Promise.all([
+  const [state, summaries, documents, setting] = await Promise.all([
     prisma.userGameState.findUnique({
       where: { userId },
       select: { studyStartTime: true, studyEndTime: true, dailyStudyCap: true },
     }),
     listPlanSummaries(userId),
     listDocuments(userId, "COURSE"),
-    displayTimeZone(userId),
+    getUserTimezone(userId),
   ])
+  const savedTimeZone = setting && isValidTimezone(setting) ? setting : null
 
   return {
-    timeZone,
+    timeZone: savedTimeZone ?? FALLBACK_ZONE,
+    savedTimeZone,
     studyStart: state?.studyStartTime ?? "09:00",
     studyEnd: state?.studyEndTime ?? "17:00",
     dailyCap: state?.dailyStudyCap ?? 180,

@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { createPlanWithReplace } from "@/services/plan";
+import { createPlanWithReplace, planEndDateKey } from "@/services/plan";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { dateColumnKey } from "@/lib/plan-dates";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { unauthorized } from "@/lib/http";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   try {
@@ -41,7 +40,7 @@ export async function GET(request: NextRequest) {
       exam_name: plan.examName,
       exam_date: dateColumnKey(plan.examDate),
       start_date: dateColumnKey(plan.startDate),
-      end_date: dateColumnKey(plan.endDate),
+      end_date: planEndDateKey(plan.startDate),
       timezone: plan.timezone,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {
@@ -86,11 +85,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
+
+  // Creating a plan runs AI topic extraction and reads Google Calendar
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {

@@ -38,6 +38,7 @@ import { errorCode, errorMessage, readJson } from "@/components/plan/api-errors"
 import { isInGoogleCalendar, type CalendarState } from "@/components/plan/calendar-types"
 import { DeletePlanDialog } from "@/components/plan/delete-plan-dialog"
 import { RescheduleDialog, type RescheduleItem } from "@/components/plan/reschedule-dialog"
+import { useReturnFocus } from "@/components/plan/use-return-focus"
 
 interface PublishResponse {
   status: "OK" | "PARTIAL" | "FAILED"
@@ -53,11 +54,17 @@ interface PlanActionsValue {
   planId: string
   examName: string
   canReschedule: boolean
-  openReschedule: () => void
+  /** Opens the reschedule preview; focus returns to `opener` when it closes. */
+  openReschedule: (opener: HTMLElement | null) => void
+  /** The toolbar's Reschedule sessions button, where focus returns by default. */
+  rescheduleButtonRef: React.RefObject<HTMLButtonElement | null>
   calendar: CalendarState
   inGoogleCalendar: boolean
   publishing: boolean
   publish: (options?: { force?: boolean }) => Promise<void>
+  /** Removes the plan's events from Google Calendar; throws when the request fails. */
+  removeFromGoogle: () => Promise<void>
+  removing: boolean
   problem: CalendarProblem | null
   clearProblem: () => void
 }
@@ -74,7 +81,8 @@ function usePlanActions(): PlanActionsValue {
  * Holds the plan's interactive state (the reschedule dialog and Google
  * Calendar requests) so the toolbar, the calendar notice and the Reschedule
  * buttons on missed rows share it. Opens the reschedule dialog on load when
- * the URL has ?reschedule=1 (links from Home).
+ * the URL has ?reschedule=1 (links from Home). Render it with `key={planId}`
+ * so switching plans starts from a clean state.
  */
 export function PlanActionsProvider({
   planId,
@@ -100,13 +108,23 @@ export function PlanActionsProvider({
   const [rescheduleOpen, setRescheduleOpen] = React.useState(wantsReschedule)
   const [openToken, setOpenToken] = React.useState(0)
   const [publishing, setPublishing] = React.useState(false)
+  const [removing, setRemoving] = React.useState(false)
   const [problem, setProblem] = React.useState<CalendarProblem | null>(null)
   const inGoogleCalendar = isInGoogleCalendar(calendar)
+  // The dialog has no trigger of its own (it opens from the toolbar, a
+  // missed row or ?reschedule=1), so focus goes back to the opener by hand
+  const rescheduleButtonRef = React.useRef<HTMLButtonElement | null>(null)
+  const rescheduleFocus = useReturnFocus(rescheduleButtonRef)
+  const rememberOpener = rescheduleFocus.remember
 
-  const openReschedule = React.useCallback(() => {
-    setOpenToken((n) => n + 1)
-    setRescheduleOpen(true)
-  }, [])
+  const openReschedule = React.useCallback(
+    (opener: HTMLElement | null) => {
+      rememberOpener(opener)
+      setOpenToken((n) => n + 1)
+      setRescheduleOpen(true)
+    },
+    [rememberOpener]
+  )
 
   const onRescheduleOpenChange = React.useCallback(
     (next: boolean) => {
@@ -134,7 +152,10 @@ export function PlanActionsProvider({
           toast("Added to Google Calendar")
         } else if (result.status === "PARTIAL") {
           const added = result.summary.total - result.summary.failed
-          toast(`${added} of ${plural(result.summary.total, { one: "# session", other: "# sessions" })} added to Google Calendar`)
+          // A partial result stays until dismissed; the notice below offers the retry
+          toast(`${added} of ${plural(result.summary.total, { one: "# session", other: "# sessions" })} added to Google Calendar`, {
+            duration: Infinity,
+          })
         }
         router.refresh()
       } catch (error) {
@@ -149,8 +170,45 @@ export function PlanActionsProvider({
     [planId, router]
   )
 
+  const removeFromGoogle = React.useCallback(async () => {
+    setRemoving(true)
+    try {
+      const result = (await apiPost(`/api/plans/${encodeURIComponent(planId)}/unpublish/google`, {})) as {
+        deleted: number
+        failed: number
+      }
+      setProblem(null)
+      router.refresh()
+      if (result.failed > 0) {
+        toast(
+          `${result.failed} of ${plural(result.deleted + result.failed, { one: "# event", other: "# events" })} weren't removed from Google Calendar. Retry from the plan menu.`,
+          { duration: Infinity }
+        )
+      } else {
+        toast("Removed from Google Calendar")
+      }
+    } finally {
+      setRemoving(false)
+    }
+  }, [planId, router])
+
   const value = React.useMemo<PlanActionsValue>(
     () => ({
+      planId,
+      examName,
+      canReschedule,
+      openReschedule,
+      rescheduleButtonRef,
+      calendar,
+      inGoogleCalendar,
+      publishing,
+      publish,
+      removeFromGoogle,
+      removing,
+      problem,
+      clearProblem: () => setProblem(null),
+    }),
+    [
       planId,
       examName,
       canReschedule,
@@ -159,10 +217,10 @@ export function PlanActionsProvider({
       inGoogleCalendar,
       publishing,
       publish,
+      removeFromGoogle,
+      removing,
       problem,
-      clearProblem: () => setProblem(null),
-    }),
-    [planId, examName, canReschedule, openReschedule, calendar, inGoogleCalendar, publishing, publish, problem]
+    ]
   )
 
   return (
@@ -178,6 +236,8 @@ export function PlanActionsProvider({
           timeZone={timeZone}
           items={items}
           inGoogleCalendar={inGoogleCalendar}
+          onUpdateCalendar={() => void publish()}
+          returnFocus={rescheduleFocus}
         />
       ) : null}
     </PlanActionsContext.Provider>
@@ -188,7 +248,7 @@ export function PlanActionsProvider({
 export function RescheduleRowButton({ sessionLabel }: { sessionLabel: string }) {
   const { openReschedule } = usePlanActions()
   return (
-    <Button variant="outline" size="sm" onClick={openReschedule}>
+    <Button variant="outline" size="sm" onClick={(event) => openReschedule(event.currentTarget)}>
       <CalendarSyncIcon data-icon="inline-start" aria-hidden="true" />
       Reschedule
       <span className="sr-only"> missed session: {sessionLabel}</span>
@@ -215,7 +275,8 @@ async function downloadIcs(planId: string) {
 /**
  * The plan's actions: Reschedule sessions, Add to Google Calendar (or its
  * status), Export calendar (.ics), and a menu with the Google Calendar
- * options, Replace plan and Delete plan.
+ * options, Replace plan and Delete plan. Under 600px Export calendar moves
+ * into the menu so the header stays one row.
  */
 export function PlanToolbar({
   courseName,
@@ -230,11 +291,25 @@ export function PlanToolbar({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { planId, examName, canReschedule, openReschedule, calendar, inGoogleCalendar, publishing, publish } =
-    usePlanActions()
+  const {
+    planId,
+    examName,
+    canReschedule,
+    openReschedule,
+    rescheduleButtonRef,
+    calendar,
+    inGoogleCalendar,
+    publishing,
+    publish,
+    removeFromGoogle,
+  } = usePlanActions()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [removeOpen, setRemoveOpen] = React.useState(false)
   const [exporting, setExporting] = React.useState(false)
+  // Both dialogs open from a menu item, which is gone once the menu closes,
+  // so focus goes back to the menu button (ConfirmDialog does this itself)
+  const menuButtonRef = React.useRef<HTMLButtonElement | null>(null)
+  const deleteFocus = useReturnFocus(menuButtonRef)
 
   const connected = calendar.connection === "connected"
   const canAdd = calendar.configured && connected && !inGoogleCalendar
@@ -253,22 +328,6 @@ export function PlanToolbar({
     }
   }
 
-  async function removeFromGoogle() {
-    // A failed request throws, and the dialog stays open with its message
-    const result = (await apiPost(`/api/plans/${encodeURIComponent(planId)}/unpublish/google`, {})) as {
-      deleted: number
-      failed: number
-    }
-    router.refresh()
-    if (result.failed > 0) {
-      toast(
-        `${result.failed} of ${plural(result.deleted + result.failed, { one: "# event", other: "# events" })} weren't removed from Google Calendar. Retry from the plan menu.`
-      )
-    } else {
-      toast("Removed from Google Calendar")
-    }
-  }
-
   async function deletePlan({ removeCalendarEvents }: { removeCalendarEvents: boolean }) {
     const query = removeCalendarEvents ? "?calendar=remove" : ""
     try {
@@ -277,6 +336,8 @@ export function PlanToolbar({
     } catch (error) {
       throw new Error(errorMessage(error, "Plan not deleted."))
     }
+    // The plan and its menu are about to leave the page
+    deleteFocus.remember(document.getElementById("main-content"))
     toast(`${examName} plan deleted`)
     if (searchParams.get("plan")) router.replace(pathname)
     else router.refresh()
@@ -285,7 +346,7 @@ export function PlanToolbar({
   return (
     <div className="flex flex-wrap items-center gap-2">
       {canReschedule ? (
-        <Button variant="outline" onClick={openReschedule}>
+        <Button ref={rescheduleButtonRef} variant="outline" onClick={(event) => openReschedule(event.currentTarget)}>
           <CalendarSyncIcon data-icon="inline-start" aria-hidden="true" />
           Reschedule sessions
         </Button>
@@ -309,7 +370,7 @@ export function PlanToolbar({
         </Badge>
       ) : null}
 
-      <Button variant="outline" onClick={exportCalendar} disabled={exporting}>
+      <Button variant="outline" className="hidden sm:inline-flex" onClick={exportCalendar} disabled={exporting}>
         {exporting ? (
           <Spinner data-icon="inline-start" aria-hidden="true" role={undefined} />
         ) : (
@@ -320,18 +381,33 @@ export function PlanToolbar({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={`More actions for the ${examName} plan`}>
+          <Button
+            ref={menuButtonRef}
+            variant="ghost"
+            size="icon"
+            aria-label={`More actions for the ${examName} plan`}
+          >
             <EllipsisVerticalIcon aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuGroup className="sm:hidden">
+            <DropdownMenuItem disabled={exporting} onSelect={() => void exportCalendar()}>
+              <DownloadIcon aria-hidden="true" />
+              {exporting ? "Exporting…" : "Export calendar (.ics)"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator className="sm:hidden" />
           {inGoogleCalendar ? (
             <DropdownMenuGroup>
               <DropdownMenuItem disabled={publishing || !connected} onSelect={() => void publish()}>
                 <RefreshCwIcon aria-hidden="true" />
                 Update Google Calendar
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={!connected} onSelect={() => setRemoveOpen(true)}>
+              <DropdownMenuItem
+                disabled={!connected}
+                onSelect={() => setRemoveOpen(true)}
+              >
                 <CalendarX2Icon aria-hidden="true" />
                 Remove from Google Calendar
               </DropdownMenuItem>
@@ -354,7 +430,13 @@ export function PlanToolbar({
                 Replace plan
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => {
+                deleteFocus.remember(menuButtonRef.current)
+                setDeleteOpen(true)
+              }}
+            >
               <Trash2Icon aria-hidden="true" />
               Delete plan
             </DropdownMenuItem>
@@ -369,13 +451,15 @@ export function PlanToolbar({
         upcomingCount={upcomingCount}
         inGoogleCalendar={inGoogleCalendar}
         onConfirm={deletePlan}
+        onCloseAutoFocus={deleteFocus.onCloseAutoFocus}
       />
 
       <ConfirmDialog
         open={removeOpen}
         onOpenChange={setRemoveOpen}
+        returnFocus={menuButtonRef}
         title={`Remove the ${courseName} ${examName} sessions from Google Calendar?`}
-        description={`This deletes the plan's ${plural(calendar.publication?.added ?? totalSessions, {
+        description={`This removes the plan's ${plural(calendar.publication?.added ?? totalSessions, {
           one: "# event",
           other: "# events",
         })} from Google Calendar. The plan and its sessions stay here.`}
@@ -394,14 +478,15 @@ export function PlanToolbar({
  * or the last request's error with its fix.
  */
 export function CalendarNotice() {
-  const { calendar, inGoogleCalendar, problem, clearProblem, publish, publishing } = usePlanActions()
+  const { calendar, inGoogleCalendar, problem, clearProblem, publish, publishing, removeFromGoogle, removing } =
+    usePlanActions()
   const publication = calendar.publication
 
   if (problem) {
     const reconnect = problem.code === "GOOGLE_RECONNECT_REQUIRED" || problem.code === "GOOGLE_NOT_CONNECTED"
     const otherCalendar = problem.code === "ALREADY_PUBLISHED_DIFFERENT_CALENDAR"
     return (
-      <Alert variant={reconnect ? "warning" : "destructive"}>
+      <Alert variant={reconnect ? "warning" : "destructive"} role="alert">
         <CircleAlertIcon aria-hidden="true" />
         <AlertTitle>{problem.message}</AlertTitle>
         <AlertDescription>
@@ -441,6 +526,46 @@ export function CalendarNotice() {
           <div className="mt-2">
             <Button asChild size="sm" variant="outline">
               <Link href="/settings#calendar">Reconnect Google Calendar</Link>
+            </Button>
+          </div>
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  // Remove from Google Calendar left some events behind
+  if (publication?.status === "PARTIAL" && publication.last_action === "remove" && publication.added > 0) {
+    return (
+      <Alert variant="warning" role="status">
+        <CircleAlertIcon aria-hidden="true" />
+        <AlertTitle>
+          {plural(publication.added, {
+            one: "# event wasn't removed from Google Calendar.",
+            other: "# events weren't removed from Google Calendar.",
+          })}
+        </AlertTitle>
+        <AlertDescription>
+          <div className="mt-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                void removeFromGoogle().catch((error) =>
+                  toast(errorMessage(error, "Events not removed."), {
+                    action: { label: "Retry", onClick: () => void removeFromGoogle().catch(() => undefined) },
+                  })
+                )
+              }
+              disabled={removing || calendar.connection !== "connected"}
+            >
+              {removing ? (
+                <Spinner data-icon="inline-start" aria-hidden="true" role={undefined} />
+              ) : (
+                <CalendarX2Icon data-icon="inline-start" aria-hidden="true" />
+              )}
+              {removing
+                ? "Removing events…"
+                : plural(publication.added, { one: "Remove # event", other: "Remove # events" })}
             </Button>
           </div>
         </AlertDescription>

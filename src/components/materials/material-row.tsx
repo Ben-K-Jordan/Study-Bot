@@ -8,20 +8,21 @@ import {
   FileTextIcon,
   HourglassIcon,
   RotateCcwIcon,
-  SparklesIcon,
   Trash2Icon,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { apiDelete } from "@/lib/client-api"
 import { formatDate, formatList } from "@/lib/format"
+import { AiTag } from "@/components/app/ai-tag"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
-import { errorMessage, readJson } from "@/components/plan/api-errors"
+import { errorMessage } from "@/components/plan/api-errors"
 import { fileKind } from "@/components/materials/file-rules"
+import { processUntilSettled } from "@/components/materials/requests"
 import type { MaterialDoc } from "@/components/materials/types"
 
 function StatusBadge({ status, processing }: { status: string; processing: boolean }) {
@@ -60,43 +61,50 @@ function StatusBadge({ status, processing }: { status: string; processing: boole
 /**
  * One course file: name, kind, date and exam, status in words, its AI
  * summary behind a toggle, Retry or Finish processing when it isn't ready,
- * and Delete with a confirmation.
+ * and Delete with a confirmation. While the file is being read (here, in the
+ * upload list, or by another request) it shows Processing and no button.
  */
 export function MaterialRow({
   doc,
   timeZone,
+  busy = false,
   onChanged,
   onDeleted,
 }: {
   doc: MaterialDoc
   timeZone: string
+  /** The upload list on this page is still uploading or processing this file. */
+  busy?: boolean
   /** After processing finishes or fails: refresh the list. */
   onChanged: () => void | Promise<unknown>
   /** After the file is deleted. */
   onDeleted: (doc: MaterialDoc) => void | Promise<unknown>
 }) {
-  const [processing, setProcessing] = React.useState(false)
+  const [processingHere, setProcessingHere] = React.useState(false)
   const [processError, setProcessError] = React.useState<string | null>(null)
+  const pending = React.useRef<AbortController | null>(null)
   const name = doc.original_filename || doc.title
   const hasSummary = Boolean(doc.summary?.trim())
   const questions = (doc.suggested_questions ?? []).filter((q) => q.trim())
+  const processing = processingHere || busy || doc.status === "PROCESSING"
+
+  React.useEffect(() => () => pending.current?.abort(), [])
 
   async function process() {
-    setProcessing(true)
+    const controller = new AbortController()
+    pending.current = controller
+    setProcessingHere(true)
     setProcessError(null)
     try {
-      const res = await fetch(`/api/content/documents/${doc.document_id}/process`, { method: "POST" })
-      const data = (await readJson(res)) as { status?: string }
-      if (data?.status !== "PROCESSED") {
-        setProcessError(`Couldn't read ${name}. Check that it has selectable text, then retry.`)
-      } else {
-        toast(`${name} ready`)
-      }
+      const outcome = await processUntilSettled(doc.document_id, controller.signal)
+      if (outcome === "PROCESSED") toast(`${name} ready`)
+      else setProcessError(`Couldn't read ${name}. Check that it has selectable text, then retry.`)
       await onChanged()
     } catch (error) {
+      if (controller.signal.aborted) return
       setProcessError(errorMessage(error, `${name} wasn't processed.`))
     } finally {
-      setProcessing(false)
+      if (!controller.signal.aborted) setProcessingHere(false)
     }
   }
 
@@ -180,10 +188,7 @@ export function MaterialRow({
               <div className="ml-8 flex max-w-prose flex-col gap-3 rounded-xl bg-surface-container-low p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="type-title-s text-on-surface">Summary</p>
-                  <Badge variant="outline">
-                    <SparklesIcon data-icon="inline-start" aria-hidden="true" />
-                    AI-written
-                  </Badge>
+                  <AiTag />
                 </div>
                 <p className="type-body-m text-pretty text-on-surface">{doc.summary}</p>
                 {questions.length > 0 ? (

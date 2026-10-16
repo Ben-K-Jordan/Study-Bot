@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
 import { computeFollowups } from "@/lib/spacing";
-import { dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
+import { addDays, dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 import { getBaseUrl } from "@/lib/config";
-import { dateColumnKey } from "@/lib/plan-dates";
+import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
 import { logger } from "@/lib/logger";
 
 /**
@@ -107,6 +107,40 @@ export function computeFollowupSchedule(input: FollowupScheduleInput): {
 }
 
 /**
+ * The first plan (by exam date) whose exam is today or later on that plan's
+ * own calendar. An exam that is today still counts: follow-ups after it are
+ * skipped, but the plan is the one to report on.
+ */
+export function activePlan<P extends { examDate: Date; timezone: string }>(
+  plans: readonly P[],
+  now: Date,
+): P | undefined {
+  return plans.find((p) => dateColumnKey(p.examDate) >= dayKey(now, p.timezone));
+}
+
+/**
+ * The plan follow-ups go into: this course's plan with the nearest exam that
+ * is today or later in the plan's own zone, so a plan stays eligible on its
+ * exam day. examDate is a DATE column (midnight UTC), so the query keeps
+ * every exam from yesterday (UTC) on, the earliest "today" any zone can
+ * have, and the plan's zone decides. The end screen's preview and the
+ * scheduler both use this, so the preview never offers days that aren't added.
+ */
+export async function findFollowupPlan(userId: string, courseName: string, now: Date = new Date()) {
+  const candidates = await prisma.studyPlan.findMany({
+    where: {
+      userId,
+      courseName,
+      examDate: { gte: dateColumnValue(addDays(dayKey(now, "UTC"), -1)) },
+    },
+    orderBy: [{ examDate: "asc" }, { createdAt: "desc" }],
+    // Only an exam from the day before can fail the zone check.
+    take: 10,
+  });
+  return activePlan(candidates, now) ?? null;
+}
+
+/**
  * Insert the recommended follow-ups for a completed run into the user's
  * active study plan. Idempotent per run: repeated calls return the already
  * scheduled items ("already_scheduled") instead of inserting duplicates.
@@ -132,12 +166,7 @@ export async function scheduleFollowups(userId: string, runId: string) {
   });
   if (!session) return { error: "not_found" as const };
 
-  // Active plan: the course's plan with the nearest upcoming exam (same
-  // convention as the exam-aware mastery lookup in run.ts).
-  const plan = await prisma.studyPlan.findFirst({
-    where: { userId, courseName: session.courseName, examDate: { gte: new Date() } },
-    orderBy: { examDate: "asc" },
-  });
+  const plan = await findFollowupPlan(userId, session.courseName);
   if (!plan) return { data: { status: "no_plan" as const } };
 
   const metrics = run.metrics as { accuracy?: number } | null;

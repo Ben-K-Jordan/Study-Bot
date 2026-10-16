@@ -5,8 +5,11 @@ import { uploadDocumentSchema, listDocumentsSchema } from "@/lib/validation-cont
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { unauthorized } from "@/lib/http";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+/** Longest file name kept, matching the title limit in uploadDocumentSchema. */
+const MAX_NAME_LENGTH = 300;
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -31,13 +34,6 @@ function resolveMimeType(file: File): string {
 }
 
 const FILE_RULE = "Upload a PDF, text, or Markdown file up to 10 MB.";
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-    { status: 401 },
-  );
-}
 
 /**
  * POST /api/content/documents (multipart: file, namespace, course_name,
@@ -88,10 +84,15 @@ export async function POST(request: NextRequest) {
     title: (formData.get("title") as string) || undefined,
   };
 
+  // A hand-built request can put folders ("../") and any length in the
+  // name; keep only its last segment, at a length the screens can show.
+  // Storage never uses this name for the path (see storedFileName).
+  const fileName = (file.name.split(/[\\/]/).pop() ?? "").trim().slice(0, MAX_NAME_LENGTH) || "Untitled file";
+
   try {
     const parsed = uploadDocumentSchema.parse(fields);
     const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const title = parsed.title || file.name;
+    const title = parsed.title || fileName;
 
     const result = await uploadDocument(
       userId,
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
       parsed.course_name,
       parsed.exam_name || undefined,
       title,
-      file.name,
+      fileName,
       mimeType,
       fileBuffer
     );
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
     }
     logger.error("document_upload_failed", { error: String(err) });
     return NextResponse.json(
-      { error: `${file.name} wasn't uploaded. Retry in a minute.`, code: "internal" },
+      { error: `${fileName} wasn't uploaded. Retry in a minute.`, code: "internal" },
       { status: 500 },
     );
   }

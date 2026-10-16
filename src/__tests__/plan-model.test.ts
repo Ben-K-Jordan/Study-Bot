@@ -8,6 +8,7 @@ import {
   keyOf,
   modeLabel,
   previewSentence,
+  rescheduleToast,
   samePlanTarget,
   sortPlans,
 } from "@/components/plan/plan-model";
@@ -132,7 +133,7 @@ describe("plan helpers", () => {
   it("names modes in sentence case", () => {
     expect(modeLabel("EXAM_SIM")).toBe("Exam simulation");
     expect(modeLabel("INTERLEAVED_PRACTICE")).toBe("Interleaved practice");
-    expect(modeLabel("")).toBe("Study session");
+    expect(modeLabel("")).toBe("Session");
   });
 });
 
@@ -147,3 +148,40 @@ describe("previewSentence", () => {
     );
   });
 });
+
+describe("rescheduleToast", () => {
+  const applied = (moved: number, dropped: number, calendar: { status?: string; code?: string } | null = null) => ({
+    applied: true,
+    summary: { moved, dropped },
+    calendar,
+  })
+
+  it("says what moved and what was skipped in one message", () => {
+    expect(rescheduleToast(applied(3, 2)).title).toBe("3 sessions moved and 2 skipped")
+    expect(rescheduleToast(applied(1, 1)).title).toBe("1 session moved and 1 skipped")
+    expect(rescheduleToast(applied(2, 0)).title).toBe("2 sessions moved")
+    expect(rescheduleToast(applied(0, 1)).title).toBe("1 session skipped")
+    expect(rescheduleToast({ applied: false, calendar: null }).title).toBe("Nothing to reschedule")
+  })
+
+  it("adds one whole sentence about Google Calendar, with the way to fix it", () => {
+    expect(rescheduleToast(applied(3, 0, { status: "OK" }))).toEqual({
+      title: "3 sessions moved",
+      description: "Google Calendar updated.",
+    })
+    expect(rescheduleToast(applied(3, 2, { status: "PARTIAL" }))).toEqual({
+      title: "3 sessions moved and 2 skipped",
+      description: "Some Google Calendar events weren't updated. Update them from the plan menu.",
+      calendarAction: "update",
+    })
+    expect(rescheduleToast(applied(3, 0, { status: "FAILED", code: "unknown" }))).toEqual({
+      title: "3 sessions moved",
+      description: "Google Calendar wasn't updated. Update it from the plan menu.",
+      calendarAction: "update",
+    })
+    expect(rescheduleToast(applied(3, 0, { status: "FAILED", code: "GOOGLE_RECONNECT_REQUIRED" })).calendarAction).toBe(
+      "reconnect"
+    )
+    expect(rescheduleToast(applied(3, 0, { status: "NOT_PUBLISHED" })).description).toBeUndefined()
+  })
+})

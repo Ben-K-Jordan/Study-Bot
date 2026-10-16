@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { ITEM_STATUSES } from "@/services/reflow";
+import { unauthorized } from "@/lib/http";
 
 const updateStatusSchema = z.object({
   status: z.enum(ITEM_STATUSES),
@@ -16,10 +17,7 @@ export async function POST(
 ) {
   const userId = await getUserId(req);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   const { planId, itemId } = await params;

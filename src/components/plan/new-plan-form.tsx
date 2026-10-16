@@ -39,6 +39,7 @@ import { useMaterialUploads } from "@/components/materials/use-material-uploads"
 import type { MaterialDoc } from "@/components/materials/types"
 import { errorMessage, fieldIssues, readJson } from "@/components/plan/api-errors"
 import { samePlanTarget, type PlanSummary } from "@/components/plan/plan-model"
+import { useReturnFocus } from "@/components/plan/use-return-focus"
 
 type FieldName = "course" | "exam" | "examDate" | "studyStart" | "studyEnd" | "topics" | "materials"
 
@@ -84,10 +85,12 @@ function browserTimeZone(): string | undefined {
  * materials the plan reads (files already in that course, plus uploads here)
  * or typed topics. A plan for the same course and exam is replaced only
  * after asking, and the server deletes the old plan only once the new one
- * exists. The browser's time zone goes with the request.
+ * exists. The plan uses the time zone saved in Settings; only without one
+ * does the browser's zone go with the request.
  */
 export function NewPlanForm({
   todayKey,
+  savedTimeZone,
   defaults,
   plans,
   materials,
@@ -95,6 +98,8 @@ export function NewPlanForm({
 }: {
   /** Today in the student's zone (YYYY-MM-DD), the earliest exam date. */
   todayKey: string
+  /** The zone saved in Settings, or null. Plan and Home show times in it. */
+  savedTimeZone?: string | null
   defaults: { studyStart: string; studyEnd: string; dailyCap: number }
   plans: PlanSummary[]
   materials: MaterialDoc[]
@@ -114,6 +119,10 @@ export function NewPlanForm({
   const [confirmTarget, setConfirmTarget] = React.useState<PlanSummary | null>(null)
   const [removeOldEvents, setRemoveOldEvents] = React.useState(true)
   const uploads = useMaterialUploads()
+  // The Replace plan dialog opens from submitting the form, not from a
+  // trigger, so focus goes back by hand when it closes
+  const submitRef = React.useRef<HTMLButtonElement | null>(null)
+  const replaceFocus = useReturnFocus(submitRef)
 
   const ids = {
     course: React.useId(),
@@ -170,15 +179,22 @@ export function NewPlanForm({
     return next
   }
 
-  function focusFirst(found: Partial<Record<FieldName, string>>) {
+  function firstInvalid(found: Partial<Record<FieldName, string>>): HTMLElement | null {
     const first = FIELD_ORDER.find((name) => found[name])
-    if (first) requestAnimationFrame(() => fieldRefs.current[first]?.focus())
+    return first ? (fieldRefs.current[first] ?? null) : null
+  }
+
+  function focusFirst(found: Partial<Record<FieldName, string>>) {
+    const element = firstInvalid(found)
+    if (element) requestAnimationFrame(() => element.focus())
   }
 
   async function create(target: PlanSummary | null) {
     setSubmitting(true)
     setFormError(null)
-    const zone = browserTimeZone()
+    // With a saved zone the server uses it; the browser's zone could differ
+    // (travel, a school VM) and put the study window at the wrong hours
+    const zone = savedTimeZone ? undefined : browserTimeZone()
     const body = {
       course_name: course.trim(),
       exam_name: exam.trim(),
@@ -218,7 +234,9 @@ export function NewPlanForm({
       if (Object.keys(mapped).length > 0) {
         setErrors(mapped)
         setFormError("Check the highlighted fields.")
-        focusFirst(mapped)
+        // From the Replace plan dialog, focus lands on the field once it closes
+        if (target) replaceFocus.remember(firstInvalid(mapped))
+        else focusFirst(mapped)
       } else {
         setFormError(
           errorMessage(error, target ? "Plan not created. Your current plan is unchanged." : "Plan not created.")
@@ -238,11 +256,15 @@ export function NewPlanForm({
         ? {
             description:
               "Your materials didn't give enough topics yet, so it uses general review topics. Replace the plan once your files are ready.",
+            // A warning to act on stays until it is dismissed
+            duration: Infinity,
           }
         : undefined
     )
     if (result.replaced && !result.replaced.deleted) {
-      toast(result.replaced.message ?? "The old plan wasn't deleted. Delete it from its plan page.")
+      toast(result.replaced.message ?? "The old plan wasn't deleted. Delete it from its plan page.", {
+        duration: Infinity,
+      })
     }
     router.push(`/plan?plan=${encodeURIComponent(result.plan_id)}`)
   }
@@ -264,6 +286,9 @@ export function NewPlanForm({
     setFormError(null)
     const target = plans.find((p) => samePlanTarget(p, { course_name: course, exam_name: exam })) ?? null
     if (target) {
+      // Enter in a field or the Create plan button: focus returns there
+      const opener = document.activeElement
+      replaceFocus.remember(opener instanceof HTMLElement && opener !== document.body ? opener : null)
       setRemoveOldEvents(true)
       setConfirmTarget(target)
       return
@@ -543,7 +568,7 @@ export function NewPlanForm({
           <Button asChild variant="text">
             <Link href="/plan">Cancel</Link>
           </Button>
-          <Button type="submit" size="lg" disabled={submitting}>
+          <Button ref={submitRef} type="submit" size="lg" disabled={submitting}>
             {submitting ? <Spinner data-icon="inline-start" aria-hidden="true" role={undefined} /> : null}
             {submitting ? "Creating plan…" : "Create plan"}
           </Button>
@@ -556,7 +581,7 @@ export function NewPlanForm({
           if (!open && !submitting) setConfirmTarget(null)
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={replaceFocus.onCloseAutoFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>Replace your {confirmTarget?.course_name} plan?</AlertDialogTitle>
             <AlertDialogDescription>

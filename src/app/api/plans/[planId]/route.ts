@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { deletePlan, getPlan } from "@/services/plan";
 import { logger } from "@/lib/logger";
-
-function unauthorized() {
-  return NextResponse.json(
-    { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-    { status: 401 },
-  );
-}
+import { unauthorized } from "@/lib/http";
 
 export async function GET(
   request: NextRequest,

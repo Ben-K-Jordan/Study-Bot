@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFollowupSchedule } from "@/services/followups";
+import { activePlan, computeFollowupSchedule } from "@/services/followups";
 
 /**
  * Unit tests for the pure follow-up scheduling core: deterministic mapping
@@ -139,5 +139,27 @@ describe("computeFollowupSchedule", () => {
     const d = planned[0].start_time;
     expect(d.getUTCHours()).toBe(9);
     expect(d.getUTCMinutes()).toBe(0);
+  });
+});
+
+describe("activePlan", () => {
+  const plan = (id: string, examDate: string, timezone = "America/New_York") => ({
+    id,
+    examDate: new Date(`${examDate}T00:00:00.000Z`),
+    timezone,
+  });
+  // Thu 2026-10-15, 4:00 PM in New York (already Oct 15 evening in UTC)
+  const now = new Date("2026-10-15T20:00:00Z");
+
+  it("keeps an exam that is today on the plan's calendar", () => {
+    expect(activePlan([plan("today", "2026-10-15"), plan("later", "2026-10-22")], now)?.id).toBe("today");
+  });
+
+  it("skips exams that are over in the plan's zone", () => {
+    expect(activePlan([plan("yesterday", "2026-10-14"), plan("later", "2026-10-22")], now)?.id).toBe("later");
+    // 11 PM in New York is already the 16th in Tokyo
+    const late = new Date("2026-10-16T03:00:00Z");
+    expect(activePlan([plan("tokyo", "2026-10-15", "Asia/Tokyo")], late)).toBeUndefined();
+    expect(activePlan([plan("ny", "2026-10-15")], late)?.id).toBe("ny");
   });
 });

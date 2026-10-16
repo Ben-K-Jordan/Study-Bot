@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { computeReflow, type ReflowConfig, type ReflowItem, type ReflowResult } from "@/services/reflow";
+import {
+  computeReflow,
+  subtractIntervals,
+  type ReflowConfig,
+  type ReflowItem,
+  type ReflowResult,
+} from "@/services/reflow";
 import { addDays, zonedTimeToUtc } from "@/lib/timezone";
 import { dateColumnKey } from "@/lib/plan-dates";
 import { getGoogleClient, GoogleReconnectError, type BusyInterval } from "@/lib/google/calendar-client";
@@ -135,8 +141,10 @@ export async function prepareReflow(
   const examKey = dateColumnKey(plan.examDate);
   const lastDay = body.include_missed ? addDays(examKey, -1) : undefined;
 
-  // Optionally fetch Google Calendar busy blocks (a read; nothing is written)
+  // Optionally fetch Google Calendar busy blocks (a read; nothing is written).
+  // rawBusy is the time other events take; busyIntervals adds the buffer.
   let busyIntervals: TimeInterval[] = [];
+  let rawBusy: TimeInterval[] = [];
   if (body.respect_google_busy) {
     try {
       const integration = await prisma.googleIntegration.findUnique({ where: { userId } });
@@ -162,19 +170,31 @@ export async function prepareReflow(
             calendarIds,
           });
 
-          busyIntervals = busy.map((b) => ({
-            start: new Date(b.start).getTime(),
-            end: new Date(b.end).getTime(),
-          }));
+          // The plan's own events are busy time in Google Calendar too. Cut
+          // them out first, or every published session clashes with itself
+          // (and with its neighbour once buffered) and gets moved.
+          const ownEvents = await prisma.planItemExternalEvent.findMany({
+            where: { provider: "GOOGLE", planId },
+            select: { planItemId: true },
+          });
+          const published = new Set(ownEvents.map((e) => e.planItemId));
+          const ownSlots: TimeInterval[] = plan.items
+            .filter((item) => published.has(item.id))
+            .map((item) => ({ start: item.startTime.getTime(), end: item.endTime.getTime() }));
+
+          rawBusy = subtractIntervals(
+            busy.map((b) => ({
+              start: new Date(b.start).getTime(),
+              end: new Date(b.end).getTime(),
+            })),
+            ownSlots,
+          );
 
           // Expand each busy block by buffer_minutes on each side
-          if (body.buffer_minutes > 0) {
-            const bufferMs = body.buffer_minutes * 60 * 1000;
-            busyIntervals = busyIntervals.map((b) => ({
-              start: b.start - bufferMs,
-              end: b.end + bufferMs,
-            }));
-          }
+          const bufferMs = body.buffer_minutes * 60 * 1000;
+          busyIntervals = bufferMs > 0
+            ? rawBusy.map((b) => ({ start: b.start - bufferMs, end: b.end + bufferMs }))
+            : rawBusy;
         }
       }
       // Not connected: schedule without busy data
@@ -198,7 +218,9 @@ export async function prepareReflow(
     now,
     busyIntervals,
     plan.timezone,
-    { includeMissed: body.include_missed, lastDay },
+    // A kept session moves only when it really overlaps an event; the
+    // buffer applies to the new times picked for the others
+    { includeMissed: body.include_missed, lastDay, clashIntervals: rawBusy },
   );
 
   return { plan, reflowItems, result, now, busyIntervals };

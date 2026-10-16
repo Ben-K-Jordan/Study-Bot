@@ -82,7 +82,7 @@ export default async function PlanPage({ searchParams }: { searchParams: SearchP
             It may have been deleted or replaced.
             <div className="mt-2">
               <Button asChild size="sm" variant="outline">
-                <Link href="/plan">Go to your plans</Link>
+                <Link href="/plan">Go to Plan</Link>
               </Button>
             </div>
           </AlertDescription>
@@ -99,7 +99,10 @@ export default async function PlanPage({ searchParams }: { searchParams: SearchP
 
   return (
     <PlanWorkspace plans={plans} selectedPlanId={view.plan_id} section="plan" timeZone={timeZone}>
+      {/* Keyed by plan: ?plan= changes keep client state, and one plan's
+          calendar error or pending request must not carry over to another */}
       <PlanActionsProvider
+        key={view.plan_id}
         planId={view.plan_id}
         examName={view.exam_name}
         timeZone={timeZone}

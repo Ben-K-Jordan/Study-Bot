@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { jsonError, parseReflowBody, prepareReflow, reflowRequestSchema, summarize } from "../shared";
+import { unauthorized } from "@/lib/http";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { parseReflowBody, prepareReflow, reflowRequestSchema, summarize } from "../shared";
 
 /**
  * POST /api/plans/{planId}/reflow/preview
@@ -15,8 +17,12 @@ export async function POST(
 ) {
   const userId = await getUserId(req);
   if (!userId) {
-    return jsonError(401, "Your sign-in expired. Sign in again.", "unauthorized");
+    return unauthorized();
   }
+
+  // Each preview and apply reads Google Calendar free/busy
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const { planId } = await params;
 

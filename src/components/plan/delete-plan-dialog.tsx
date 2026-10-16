@@ -30,6 +30,7 @@ export function DeletePlanDialog({
   upcomingCount,
   inGoogleCalendar,
   onConfirm,
+  onCloseAutoFocus,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -39,6 +40,8 @@ export function DeletePlanDialog({
   inGoogleCalendar: boolean
   /** Throws an Error whose message is shown in the dialog. */
   onConfirm: (options: { removeCalendarEvents: boolean }) => Promise<void>
+  /** Where focus goes on close; the dialog has no trigger of its own. */
+  onCloseAutoFocus?: (event: Event) => void
 }) {
   const [removeEvents, setRemoveEvents] = React.useState(true)
   const [pending, setPending] = React.useState(false)
@@ -82,7 +85,7 @@ export function DeletePlanDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete the {examName} plan?</AlertDialogTitle>
           <AlertDialogDescription>

@@ -8,9 +8,10 @@
  * 1. Separate items into fixed and movable. By default the movable items are
  *    the SCHEDULED, unlocked, future ones. With `includeMissed` (the Plan
  *    screen's "Reschedule sessions") the missed sessions move instead: items
- *    marked MISSED and scheduled ones whose time passed without being
- *    started. Future sessions keep their place, which keeps their spacing,
- *    unless they fall after `lastDay` or clash with busy time.
+ *    marked MISSED and scheduled ones whose day ended without them being
+ *    started (one from earlier today can still be started, as the Plan
+ *    screen shows it). Future sessions keep their place, which keeps their
+ *    spacing, unless they fall after `lastDay` or clash with busy time.
  * 2. Build day grids from the plan availability config, from the plan's
  *    first day through the horizon (the later of plan day 6 and the latest
  *    item's day, or `lastDay` when given, such as the day before the exam)
@@ -67,6 +68,12 @@ export interface ReflowConfig {
 }
 
 export interface ReflowOptions {
+  /**
+   * Busy time a kept session must not overlap (includeMissed only), without
+   * the buffer `busyIntervals` adds around events for new placements.
+   * Defaults to `busyIntervals`.
+   */
+  clashIntervals?: TimeInterval[];
   /**
    * Move missed sessions: items marked MISSED, and SCHEDULED or RESCHEDULED
    * items whose time passed without being started. Future sessions stay put
@@ -134,13 +141,47 @@ function windowForDay(config: ReflowConfig, dayIdx: number) {
   return days[dayIdx % days.length] ?? DEFAULT_WINDOW;
 }
 
-/** Whether an item is a missed session: marked MISSED, or its time passed unstarted. */
-export function isMissedItem(item: Pick<ReflowItem, "status" | "endTime">, now: Date): boolean {
+/**
+ * Whether an item is a missed session: marked MISSED, or its time passed
+ * unstarted. With a timezone, only once its day has ended there, matching
+ * the Plan screen (classifyPlanItem) and Home: a 2 PM session can still be
+ * started that evening, so Reschedule leaves it alone until tomorrow.
+ */
+export function isMissedItem(
+  item: Pick<ReflowItem, "status" | "endTime">,
+  now: Date,
+  timeZone?: string | null,
+): boolean {
   if (item.status === "MISSED") return true;
-  return (
-    (item.status === "SCHEDULED" || item.status === "RESCHEDULED") &&
-    item.endTime.getTime() <= now.getTime()
-  );
+  if (item.status !== "SCHEDULED" && item.status !== "RESCHEDULED") return false;
+  if (item.endTime.getTime() > now.getTime()) return false;
+  if (timeZone && dayKey(item.endTime, timeZone) === dayKey(now, timeZone)) return false;
+  return true;
+}
+
+/**
+ * `busy` minus `own`: what is left of each busy interval after cutting out
+ * the given ones. Google's free/busy merges touching events into one block,
+ * so a plan's own events are cut out of a block rather than matched whole.
+ */
+export function subtractIntervals(busy: readonly TimeInterval[], own: readonly TimeInterval[]): TimeInterval[] {
+  const cuts = [...own].filter((c) => c.end > c.start).sort((a, b) => a.start - b.start);
+  const out: TimeInterval[] = [];
+  for (const block of busy) {
+    let pieces: TimeInterval[] = [{ start: block.start, end: block.end }];
+    for (const cut of cuts) {
+      if (cut.start >= block.end) break;
+      if (cut.end <= block.start) continue;
+      pieces = pieces.flatMap((piece) => {
+        if (cut.end <= piece.start || cut.start >= piece.end) return [piece];
+        const left = { start: piece.start, end: Math.min(piece.end, cut.start) };
+        const right = { start: Math.max(piece.start, cut.end), end: piece.end };
+        return [left, right].filter((p) => p.end > p.start);
+      });
+    }
+    out.push(...pieces);
+  }
+  return out;
 }
 
 // ---- Core Algorithm ----
@@ -170,6 +211,7 @@ export function computeReflow(
   const changes: ReflowChange[] = [];
   const warnings: ReflowWarning[] = [];
   const includeMissed = options.includeMissed === true;
+  const clashIntervals = options.clashIntervals ?? busyIntervals;
 
   // Classify items
   const fixed: ReflowItem[] = [];
@@ -185,16 +227,18 @@ export function computeReflow(
     }
 
     if (includeMissed) {
-      if (isMissedItem(item, now)) {
+      if (isMissedItem(item, now, timeZone)) {
         missedIds.add(item.id);
         movable.push(item);
       } else if (item.status === "SCHEDULED" || item.status === "RESCHEDULED") {
+        // Earlier today and not started: it stays, and can still be started
+        const earlierToday = item.endTime.getTime() <= now.getTime();
         const afterHorizon =
           options.lastDay !== undefined && dayKey(item.startTime, timeZone) > options.lastDay;
-        const clashes = busyIntervals.some(
+        const clashes = clashIntervals.some(
           (b) => b.start < item.endTime.getTime() && b.end > item.startTime.getTime(),
         );
-        if (afterHorizon || clashes) movable.push(item);
+        if (!earlierToday && (afterHorizon || clashes)) movable.push(item);
         else stays.push(item);
       } else {
         fixed.push(item); // DONE, SKIPPED

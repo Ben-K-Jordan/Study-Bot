@@ -24,7 +24,8 @@ import { getBaseUrl } from "@/lib/config";
 
 // ---- Types ----
 
-export type ItemAction = "CREATED" | "UPDATED" | "UNCHANGED" | "FAILED";
+/** REMOVED: a session Reschedule skipped, whose event was taken out of the calendar. */
+export type ItemAction = "CREATED" | "UPDATED" | "UNCHANGED" | "FAILED" | "REMOVED";
 
 export interface PublishItemResult {
   plan_item_id: string;
@@ -47,6 +48,9 @@ export interface PublishResult {
     updated: number;
     unchanged: number;
     failed: number;
+    /** Events of skipped sessions taken out of the calendar. */
+    removed: number;
+    /** Sessions that belong in the calendar (skipped ones don't). */
     total: number;
   };
   item_results: PublishItemResult[];
@@ -209,7 +213,35 @@ export async function publishPlanToGoogle(
   // 3) Process each item
   const itemResults: PublishItemResult[] = [];
 
-  const tasks = plan.items.map((item) => async () => {
+  // Sessions Reschedule skipped are off the schedule: take their events out
+  // (once), and never create one. A removal that fails stays mapped and is
+  // retried on the next publish; it doesn't count against this one.
+  const skippedItems = plan.items.filter((item) => item.status === "SKIPPED");
+  const removeTasks = skippedItems.flatMap((item) => {
+    const mapping = mappingByItemId.get(item.id);
+    if (!mapping || options.dryRun) return [];
+    return [
+      async () => {
+        try {
+          await client.deleteEvent(mapping.calendarId, mapping.eventId);
+        } catch (err) {
+          if (err instanceof GoogleReconnectError) throw err;
+          if (!(err instanceof GoogleApiError && (err.status === 404 || err.status === 410))) {
+            warnings.push(`Event ${mapping.eventId} of a skipped session wasn't removed; retrying on the next update.`);
+            logger.warn("google.publish.skipped_remove_failed", {
+              plan_item_id: item.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return;
+          }
+        }
+        await prisma.planItemExternalEvent.delete({ where: { id: mapping.id } });
+        itemResults.push({ plan_item_id: item.id, session_id: item.sessionId, action: "REMOVED" });
+      },
+    ];
+  });
+
+  const tasks = plan.items.filter((item) => item.status !== "SKIPPED").map((item) => async () => {
     const session = sessionMap.get(item.sessionId);
     if (!session) {
       itemResults.push({
@@ -235,7 +267,7 @@ export async function publishPlanToGoogle(
       startTime: item.startTime.toISOString(),
       endTime: item.endTime.toISOString(),
       timezone: plan.timezone,
-      objectives: session.objectives as string[] | null,
+      objectives: session.objectives,
       targetOutcome: session.targetOutcome as Record<string, unknown> | null,
       breakProtocol: session.breakProtocol as Record<string, unknown> | null,
       baseUrl,
@@ -405,7 +437,7 @@ export async function publishPlanToGoogle(
   });
 
   try {
-    await runWithConcurrency(tasks, SYNC_CONCURRENCY);
+    await runWithConcurrency([...removeTasks, ...tasks], SYNC_CONCURRENCY);
   } catch (err) {
     if (err instanceof GoogleReconnectError) {
       return { error: "GOOGLE_RECONNECT_REQUIRED", status: 409 };
@@ -419,6 +451,7 @@ export async function publishPlanToGoogle(
     updated: itemResults.filter((r) => r.action === "UPDATED").length,
     unchanged: itemResults.filter((r) => r.action === "UNCHANGED").length,
     failed: itemResults.filter((r) => r.action === "FAILED").length,
+    removed: itemResults.filter((r) => r.action === "REMOVED").length,
   };
 
   const status: PublishResult["status"] =
@@ -477,7 +510,7 @@ export async function publishPlanToGoogle(
       status,
       published_at: now.toISOString(),
       duration_ms: durationMs,
-      summary: { ...counts, total: itemResults.length },
+      summary: { ...counts, total: itemResults.length - counts.removed },
       item_results: itemResults,
       warnings: warnings.length > 0 ? warnings : undefined,
     },

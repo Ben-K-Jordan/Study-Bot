@@ -8,7 +8,7 @@
  *
  * If no DATABASE_URL is available, tests are skipped automatically.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 const hasDb = !!process.env.DATABASE_URL;
 
@@ -79,7 +79,7 @@ describe.skipIf(!hasDb)("Integration: full session flow", () => {
 
     expect(result.session_id).toBeDefined();
     expect(result.session_url).toContain(`/s/${result.session_id}`);
-    expect(result.calendar.title).toBe("TEST 101 | Exam 1 | Retrieval: Unit Tests");
+    expect(result.calendar.title).toBe("Retrieval: Unit Tests · TEST 101 Exam 1");
     sessionId = result.session_id;
   });
 

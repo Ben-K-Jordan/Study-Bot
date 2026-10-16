@@ -22,7 +22,7 @@ export type { PlanSummary, PlanView, PlanViewItem }
 export { MODE_LABELS }
 
 export function modeLabel(mode: string): string {
-  return sharedModeLabel(mode, "Study session")
+  return sharedModeLabel(mode)
 }
 
 /** What a row shows: the stored state, with today's scheduled sessions called out. */
@@ -211,4 +211,58 @@ export function previewSentence(
     )
   }
   return parts.join(" ")
+}
+
+/** What POST /api/plans/{id}/reflow/apply returns, as the Plan screen reads it. */
+export interface RescheduleApplyResult {
+  applied: boolean
+  summary?: { moved: number; dropped: number }
+  calendar: { status?: string; code?: string; error?: string } | null
+}
+
+/**
+ * The toast after Move: what moved and what was skipped, then one sentence
+ * on Google Calendar with the way to fix it when it wasn't updated.
+ */
+export function rescheduleToast(result: RescheduleApplyResult): {
+  title: string
+  description?: string
+  calendarAction?: "update" | "reconnect"
+} {
+  if (!result.applied) return { title: "Nothing to reschedule" }
+  const moved = result.summary?.moved ?? 0
+  const dropped = result.summary?.dropped ?? 0
+  const title =
+    moved > 0 && dropped > 0
+      ? plural(moved, { one: "# session moved", other: "# sessions moved" }) +
+        plural(dropped, { one: " and # skipped", other: " and # skipped" })
+      : moved > 0
+        ? plural(moved, { one: "# session moved", other: "# sessions moved" })
+        : plural(dropped, { one: "# session skipped", other: "# sessions skipped" })
+
+  const status = result.calendar?.status
+  const code = result.calendar?.code
+  if (status === "OK") return { title, description: "Google Calendar updated." }
+  if (status === "PARTIAL") {
+    return {
+      title,
+      description: "Some Google Calendar events weren't updated. Update them from the plan menu.",
+      calendarAction: "update",
+    }
+  }
+  if (status === "FAILED") {
+    if (code === "GOOGLE_RECONNECT_REQUIRED" || code === "GOOGLE_NOT_CONNECTED") {
+      return {
+        title,
+        description: "Google Calendar wasn't updated because it needs you to sign in again.",
+        calendarAction: "reconnect",
+      }
+    }
+    return {
+      title,
+      description: "Google Calendar wasn't updated. Update it from the plan menu.",
+      calendarAction: "update",
+    }
+  }
+  return { title }
 }

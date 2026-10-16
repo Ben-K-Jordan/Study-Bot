@@ -64,9 +64,17 @@ export function MaterialsManager({
   const searchParams = useSearchParams()
   const filter = searchParams.get("course")?.trim() || null
 
+  // The server just rendered this list, so don't fetch it again on mount.
+  // Put it in the shared cache instead: the course switchers read the same
+  // key, and an older cached copy would otherwise win over the fresh one.
   const { data, error, isLoading, mutate } = useApi<{ documents: MaterialDoc[] }>(DOCUMENTS_URL, {
     fallbackData: { documents: initialMaterials },
+    revalidateOnMount: false,
+    revalidateIfStale: false,
   })
+  React.useEffect(() => {
+    void mutate({ documents: initialMaterials }, { revalidate: false })
+  }, [initialMaterials, mutate])
   const docs = React.useMemo(() => data?.documents ?? [], [data])
 
   const [course, setCourse] = React.useState(filter ?? "")
@@ -185,7 +193,8 @@ export function MaterialsManager({
         </h2>
 
         {groups.length > 1 ? (
-          <nav aria-label="Filter by course" className="-mx-4 -my-1 overflow-x-auto px-4 py-1 sm:mx-0 sm:px-0">
+          // The 4px inset at every width leaves room for the chips' 2px focus ring and 2px offset inside the scroller
+          <nav aria-label="Filter by course" className="-mx-4 -my-1 overflow-x-auto px-4 py-1 sm:-mx-1 sm:px-1">
             <ul className="flex w-max gap-2 sm:w-auto sm:flex-wrap">
               {[null, ...groups.map((g) => g.course)].map((value) => {
                 const active = value === activeCourse
@@ -249,6 +258,7 @@ export function MaterialsManager({
                         key={doc.document_id}
                         doc={doc}
                         timeZone={timeZone}
+                        busy={uploads.busyIds.has(doc.document_id)}
                         onChanged={() => mutate()}
                         onDeleted={afterDelete}
                       />

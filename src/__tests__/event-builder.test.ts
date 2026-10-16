@@ -40,31 +40,47 @@ describe("buildEventPayload", () => {
 
   it("includes session deep link in description", () => {
     const { input } = buildEventPayload(baseInput);
-    expect(input.description).toContain("https://studybot.example.com/s/sess_ghi789");
-    expect(input.description).toContain("StudyBot session:");
+    expect(input.description).toContain("Open the session: https://studybot.example.com/s/sess_ghi789");
   });
 
-  it("includes objectives with truncation", () => {
+  it("titles the event mode first, then course and exam", () => {
+    const { input } = buildEventPayload(baseInput);
+    expect(input.summary).toBe("Retrieval: Loops and invariants · CS 2110 Prelim 1");
+  });
+
+  it("lists the first topics and counts the rest", () => {
     const manyObjectives = Array.from({ length: 8 }, (_, i) => `Objective ${i + 1}`);
     const { input } = buildEventPayload({ ...baseInput, objectives: manyObjectives });
     expect(input.description).toContain("Objective 1");
-    expect(input.description).toContain("Objective 5");
-    expect(input.description).not.toContain("Objective 6");
-    expect(input.description).toContain("+3 more");
+    expect(input.description).toContain("Objective 6");
+    expect(input.description).not.toContain("Objective 7");
+    expect(input.description).toContain("and 2 more");
   });
 
-  it("includes mode, target, and break protocol", () => {
-    const { input } = buildEventPayload(baseInput);
-    expect(input.description).toContain("Mode: Retrieval");
-    expect(input.description).toContain("10 prompts");
-    expect(input.description).toContain("target 80%");
-    expect(input.description).toContain("Protocol: 50/10");
-    expect(input.description).toContain("phone away");
+  it("reads objectives stored as { id, title } objects", () => {
+    const { input } = buildEventPayload({
+      ...baseInput,
+      objectives: [
+        { id: "loops", title: "Loop invariants" },
+        { id: "bounds", title: "Loop bounds" },
+      ],
+    });
+    expect(input.description).toContain("Topics: Loop invariants and Loop bounds");
+    expect(input.description).not.toContain("[object Object]");
   });
 
-  it("includes 'Created by Study Bot' footer", () => {
+  it("states the mode, questions and target in plain words", () => {
     const { input } = buildEventPayload(baseInput);
-    expect(input.description).toContain("Created by Study Bot");
+    expect(input.description).toContain("Retrieval session for CS 2110 Prelim 1");
+    expect(input.description).toContain("10 questions. Target accuracy: 80%.");
+    // One block: no break line
+    expect(input.description).not.toContain("break");
+    expect(input.description).not.toMatch(/StudyBot|Protocol|prompts|\+\d+ more/);
+  });
+
+  it("includes 'Added by Study Bot' footer", () => {
+    const { input } = buildEventPayload(baseInput);
+    expect(input.description).toContain("Added by Study Bot");
   });
 
   it("sets sb_* extended properties", () => {
@@ -86,10 +102,10 @@ describe("buildEventPayload", () => {
       targetOutcome: null,
       breakProtocol: null,
     });
-    expect(input.description).toContain("StudyBot session:");
-    expect(input.description).not.toContain("Objectives:");
-    expect(input.description).not.toContain("Target:");
-    expect(input.description).not.toContain("Protocol:");
+    expect(input.description).toContain("Open the session:");
+    expect(input.description).toContain("Topics: Loops and invariants");
+    expect(input.description).not.toContain("questions");
+    expect(input.description).not.toContain("Target accuracy");
   });
 });
 

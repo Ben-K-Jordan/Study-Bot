@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 import {
   unpublishPlanFromGoogle,
   unpublishRequestSchema,
   calendarErrorMessage,
 } from "@/services/publish";
 import { logger } from "@/lib/logger";
+import { unauthorized } from "@/lib/http";
 
 export async function POST(
   request: NextRequest,
@@ -13,11 +15,12 @@ export async function POST(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Unauthorized", code: "unauthorized", message: "Your sign-in expired. Sign in again." },
-      { status: 401 },
-    );
+    return unauthorized();
   }
+
+  // Calls Google Calendar for every session in the plan
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const { planId } = await params;
 

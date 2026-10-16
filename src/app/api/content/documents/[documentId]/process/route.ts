@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { processDocument } from "@/services/content";
 import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { unauthorized } from "@/lib/http";
 
 /**
  * POST /api/content/documents/{id}/process: read the file into sections.
- * Responds with `status` PROCESSED or FAILED. Limited like other AI work;
- * a 429 carries Retry-After, and the screen retries after it.
+ * Responds with `status` PROCESSED, FAILED, or PROCESSING when another
+ * request is already reading the file (check back; don't start over).
+ * Limited like other AI work; a 429 carries Retry-After, and the screen
+ * retries after it.
  */
 export async function POST(
   request: NextRequest,
@@ -14,10 +17,7 @@ export async function POST(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   const rl = aiLimiter.check(userId);

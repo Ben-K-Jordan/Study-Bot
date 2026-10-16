@@ -1,10 +1,10 @@
 import Link from "next/link"
 import {
   CalendarClockIcon,
+  CalendarIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
-  CircleIcon,
   CirclePlayIcon,
   CircleSlashIcon,
   GraduationCapIcon,
@@ -36,16 +36,18 @@ import {
 import { AgendaEarlier } from "@/components/plan/agenda-earlier"
 import { RescheduleRowButton } from "@/components/plan/plan-actions"
 
+// The badge carries the status in words and an icon. No empty circle: in
+// Google Tasks and Calendar that is the "mark complete" control.
 const STATUS: Record<
   SessionDisplay,
-  { label: string; icon: LucideIcon; badge: "success" | "warning" | "secondary" | "outline" | "default"; iconClass: string }
+  { label: string; icon: LucideIcon; badge: "success" | "warning" | "secondary" | "outline" | "default" }
 > = {
-  done: { label: "Done", icon: CircleCheckIcon, badge: "success", iconClass: "text-tertiary" },
-  in_progress: { label: "In progress", icon: CirclePlayIcon, badge: "secondary", iconClass: "text-primary" },
-  missed: { label: "Missed", icon: CircleAlertIcon, badge: "warning", iconClass: "text-warning" },
-  skipped: { label: "Skipped", icon: CircleSlashIcon, badge: "outline", iconClass: "text-on-surface-variant" },
-  today: { label: "Today", icon: CalendarClockIcon, badge: "default", iconClass: "text-primary" },
-  scheduled: { label: "Scheduled", icon: CircleIcon, badge: "outline", iconClass: "text-outline" },
+  done: { label: "Done", icon: CircleCheckIcon, badge: "success" },
+  in_progress: { label: "In progress", icon: CirclePlayIcon, badge: "secondary" },
+  missed: { label: "Missed", icon: CircleAlertIcon, badge: "warning" },
+  skipped: { label: "Skipped", icon: CircleSlashIcon, badge: "outline" },
+  today: { label: "Today", icon: CalendarClockIcon, badge: "default" },
+  scheduled: { label: "Scheduled", icon: CalendarIcon, badge: "outline" },
 }
 
 function DayLabel({ day, showMonth }: { day: AgendaDay; showMonth: boolean }) {
@@ -103,43 +105,40 @@ function SessionRow({
         !skipped && "has-[a[data-session-link]:hover]:bg-on-surface/4"
       )}
     >
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <StatusIcon className={cn("mt-0.5 size-5 shrink-0", status.iconClass)} aria-hidden="true" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className={cn("type-title-s", skipped ? "text-on-surface-variant line-through decoration-1" : "text-on-surface")}>
-            {skipped ? (
-              label
-            ) : (
-              <Link
-                href={href}
-                data-session-link
-                aria-label={`${label}, ${time}`}
-                className="rounded-sm outline-none after:absolute after:inset-0 after:rounded-2xl focus-visible:after:outline-2 focus-visible:after:outline-ring focus-visible:after:outline-offset-[-2px]"
-              >
-                {label}
-              </Link>
-            )}
-          </p>
-          <p className="type-body-m text-on-surface-variant tabular-nums">
-            {time} <span aria-hidden="true">·</span> {formatDuration(minutes)}
-          </p>
-          {topics ? <p className="type-body-m text-pretty text-on-surface-variant">{topics}</p> : null}
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Badge variant={status.badge}>
-              <StatusIcon data-icon="inline-start" aria-hidden="true" />
-              {status.label}
-            </Badge>
-            {movedFrom && !skipped ? (
-              <span className="type-body-s text-on-surface-variant">Moved from {movedFrom}</span>
-            ) : null}
-            {session.afterExam && !skipped && display !== "done" ? (
-              <span className="type-body-s text-warning">After {examName}</span>
-            ) : null}
-          </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className={cn("type-title-s", skipped ? "text-on-surface-variant line-through decoration-1" : "text-on-surface")}>
+          {skipped ? (
+            label
+          ) : (
+            <Link
+              href={href}
+              data-session-link
+              aria-label={`${label}, ${time}`}
+              className="rounded-sm outline-none after:absolute after:inset-0 after:rounded-2xl focus-visible:after:outline-2 focus-visible:after:outline-ring focus-visible:after:outline-offset-[-2px]"
+            >
+              {label}
+            </Link>
+          )}
+        </p>
+        <p className="type-body-m text-on-surface-variant tabular-nums">
+          {time} <span aria-hidden="true">·</span> {formatDuration(minutes)}
+        </p>
+        {topics ? <p className="type-body-m text-pretty text-on-surface-variant">{topics}</p> : null}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Badge variant={status.badge}>
+            <StatusIcon data-icon="inline-start" aria-hidden="true" />
+            {status.label}
+          </Badge>
+          {movedFrom && !skipped ? (
+            <span className="type-body-s text-on-surface-variant">Moved from {movedFrom}</span>
+          ) : null}
+          {session.afterExam && !skipped && display !== "done" ? (
+            <span className="type-body-s text-warning">After {examName}</span>
+          ) : null}
         </div>
       </div>
 
-      <div className="relative z-10 flex shrink-0 flex-wrap gap-2 pl-8 sm:pl-0">
+      <div className="relative z-10 flex shrink-0 flex-wrap gap-2">
         {display === "today" ? (
           <Button asChild>
             <Link href={href}>

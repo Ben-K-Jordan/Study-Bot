@@ -3,7 +3,6 @@ import { redirect } from "next/navigation"
 import { getCurrentUserId } from "@/lib/auth"
 import { logger } from "@/lib/logger"
 import { PageContainer } from "@/components/app/page-container"
-import { AppBarTitle } from "@/components/shell/app-bar-title"
 import { MaterialsManager } from "@/components/materials/materials-manager"
 import { PlanLoadError } from "@/components/plan/plan-load-error"
 import { PlanWorkspace } from "@/components/plan/plan-workspace"
@@ -26,7 +25,6 @@ export default async function MaterialsPage() {
     logger.error("materials_page.load_failed", { user_id: userId, error: String(error) })
     return (
       <PageContainer size="wide">
-        <AppBarTitle>Materials</AppBarTitle>
         <PlanLoadError title="Materials didn't load." description="Your files are safe. Retry, or check your connection." />
       </PageContainer>
     )
@@ -45,7 +43,6 @@ export default async function MaterialsPage() {
       section="materials"
       timeZone={data.timeZone}
     >
-      <AppBarTitle>Materials</AppBarTitle>
       <MaterialsManager initialMaterials={data.materials} knownCourses={knownCourses} timeZone={data.timeZone} />
     </PlanWorkspace>
   )

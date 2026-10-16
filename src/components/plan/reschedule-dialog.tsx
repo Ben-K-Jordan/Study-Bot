@@ -27,7 +27,8 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { errorCode, errorMessage } from "@/components/plan/api-errors"
-import { modeLabel, previewSentence } from "@/components/plan/plan-model"
+import { modeLabel, previewSentence, rescheduleToast, type RescheduleApplyResult } from "@/components/plan/plan-model"
+import type { ReturnFocus } from "@/components/plan/use-return-focus"
 
 export interface RescheduleItem {
   id: string
@@ -54,12 +55,6 @@ interface PreviewChange {
 interface Preview {
   changes: PreviewChange[]
   summary: { moved: number; kept: number; dropped: number }
-}
-
-interface ApplyResult {
-  applied: boolean
-  summary?: { moved: number; dropped: number }
-  calendar: { status?: string; error?: string } | null
 }
 
 const BODY = { reason: "missed_sessions", include_missed: true }
@@ -126,6 +121,8 @@ export function RescheduleDialog({
   timeZone,
   items,
   inGoogleCalendar,
+  onUpdateCalendar,
+  returnFocus,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -136,6 +133,10 @@ export function RescheduleDialog({
   timeZone: string
   items: RescheduleItem[]
   inGoogleCalendar: boolean
+  /** Adds the plan to Google Calendar again (the plan menu's Update Google Calendar). */
+  onUpdateCalendar: () => void
+  /** Where focus goes when the dialog closes; it has no trigger of its own. */
+  returnFocus: ReturnFocus
 }) {
   const router = useRouter()
   const url = `/api/plans/${encodeURIComponent(planId)}/reflow/preview`
@@ -172,25 +173,26 @@ export function RescheduleDialog({
       const result = (await apiPost(`/api/plans/${encodeURIComponent(planId)}/reflow/apply`, {
         ...BODY,
         calendar_update: inGoogleCalendar && updateCalendar ? "REPUBLISH" : "NONE",
-      })) as ApplyResult
+      })) as RescheduleApplyResult
 
-      const moved = result.summary?.moved ?? 0
-      const dropped = result.summary?.dropped ?? 0
-      let message = !result.applied
-        ? "Nothing to reschedule"
-        : moved > 0
-          ? plural(moved, { one: "# session moved", other: "# sessions moved" })
-          : plural(dropped, { one: "# session skipped", other: "# sessions skipped" })
-      if (result.applied && result.calendar) {
-        const status = result.calendar.status
-        if (status === "OK") message += ". Google Calendar updated"
-        else if (status === "PARTIAL") message += ". Some Google Calendar events weren't updated"
-        else if (status === "FAILED") message += ". Google Calendar wasn't updated"
-      }
+      const message = rescheduleToast(result)
       setApplying(false)
+      // A missed row's Reschedule button leaves once its session moves, so
+      // focus goes to the toolbar's Reschedule sessions button instead
+      if (result.applied) returnFocus.remember(null)
       onOpenChange(false)
       setUpdateCalendar(true)
-      toast(message)
+      toast(message.title, {
+        description: message.description,
+        // A calendar step to take stays until it is dismissed
+        duration: message.calendarAction ? Infinity : undefined,
+        action:
+          message.calendarAction === "update"
+            ? { label: "Update Google Calendar", onClick: onUpdateCalendar }
+            : message.calendarAction === "reconnect"
+              ? { label: "Reconnect Google Calendar", onClick: () => router.push("/settings#calendar") }
+              : undefined,
+      })
       router.refresh()
     } catch (err) {
       setApplying(false)
@@ -206,7 +208,10 @@ export function RescheduleDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[min(90dvh,48rem)] flex-col gap-0 p-0 sm:max-w-xl">
+      <DialogContent
+        className="flex max-h-[min(90dvh,48rem)] flex-col gap-0 p-0 sm:max-w-xl"
+        onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+      >
         <DialogHeader className="px-6 pt-6 pr-16 pb-4">
           <DialogTitle>Reschedule sessions</DialogTitle>
           <DialogDescription>

@@ -41,9 +41,11 @@ export function classifyPlanItem(
   now: Date,
   timeZone?: string | null,
 ): PlanItemState {
-  if (item.status === "SKIPPED") return "skipped";
+  // What the runs say wins over skipped: a session Reschedule skipped can
+  // still be opened from its calendar link, started and finished
   if (item.status === "DONE" || runState === "completed") return "done";
   if (item.status === "IN_PROGRESS" || runState === "in_progress") return "in_progress";
+  if (item.status === "SKIPPED") return "skipped";
   if (item.status === "MISSED") return "missed";
   const end = item.endTime instanceof Date ? item.endTime : new Date(item.endTime);
   if (end.getTime() > now.getTime()) return "scheduled";

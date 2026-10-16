@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { errorMessage, readJson } from "@/components/plan/api-errors"
 import { fileProblem } from "@/components/materials/file-rules"
+import { anySignal, processUntilSettled } from "@/components/materials/requests"
 
 /**
  * queued: waiting for the files before it; uploading; processing (reading
@@ -30,8 +31,13 @@ export interface UploadEntry {
   documentId?: string
   /** Which step failed, so Retry repeats only that step. */
   failedStep?: "upload" | "process"
-  /** A sentence under the file name: why it failed, or a note such as a duplicate. */
+  /** A sentence under the file name: why it failed, a wait, or the duplicate note. */
   note?: string
+  /**
+   * "Already in your materials": kept apart from `note` so a ready row shows
+   * it again after a failure and Retry, and never the old failure text.
+   */
+  dedupeNote?: string
 }
 
 interface UploadResponse {
@@ -41,9 +47,9 @@ interface UploadResponse {
   course_name?: string | null
 }
 
-const MAX_WAITS = 3
 const UPLOAD_TIMEOUT_MS = 120_000
-const PROCESS_TIMEOUT_MS = 180_000
+
+const BUSY_PHASES: ReadonlySet<UploadPhase> = new Set(["queued", "uploading", "processing", "waiting"])
 
 let keySeed = 0
 function nextKey() {
@@ -51,18 +57,21 @@ function nextKey() {
   return `upload-${Date.now().toString(36)}-${keySeed}`
 }
 
-function sleep(ms: number, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer)
-        reject(new DOMException("Aborted", "AbortError"))
-      },
-      { once: true }
-    )
-  })
+/** The note for a file the server already had. */
+export function dedupeNoteFor(existingCourse: string | null | undefined, targetCourse: string): string {
+  const course = existingCourse?.trim()
+  return course && course.toLowerCase() !== targetCourse.trim().toLowerCase()
+    ? `Already in your ${course} materials, so it stays there.`
+    : "Already in your materials."
+}
+
+/** Document ids of the rows still uploading or processing. */
+export function busyDocumentIds(entries: readonly UploadEntry[]): Set<string> {
+  const ids = new Set<string>()
+  for (const entry of entries) {
+    if (entry.documentId && BUSY_PHASES.has(entry.phase)) ids.add(entry.documentId)
+  }
+  return ids
 }
 
 /**
@@ -108,47 +117,36 @@ export function useMaterialUploads({
 
   const processStep = React.useCallback(
     async (entry: UploadEntry, documentId: string, signal: AbortSignal) => {
-      for (let attempt = 0; ; attempt++) {
-        update(entry.key, { phase: "processing", note: undefined, failedStep: undefined })
-        try {
-          const res = await fetch(`/api/content/documents/${documentId}/process`, {
-            method: "POST",
-            signal: AbortSignal.any([signal, AbortSignal.timeout(PROCESS_TIMEOUT_MS)]),
-          })
-          if (res.status === 429 && attempt < MAX_WAITS) {
-            const seconds = Number(res.headers.get("Retry-After")) || 30
+      update(entry.key, { phase: "processing", note: undefined, failedStep: undefined })
+      try {
+        const outcome = await processUntilSettled(documentId, signal, {
+          onWait: (seconds) =>
             update(entry.key, {
               phase: "waiting",
               note: `Too many files at once. Processing resumes in ${seconds} seconds.`,
-            })
-            await sleep(seconds * 1000, signal)
-            continue
-          }
-          const data = (await readJson(res)) as { status?: string }
-          if (data?.status === "PROCESSED") {
-            update(entry.key, { phase: "ready", note: entry.note })
-            announce(`${entry.name} ready`)
-            onChangeRef.current?.()
-          } else {
-            update(entry.key, {
-              phase: "failed",
-              failedStep: "process",
-              note: `Couldn't read ${entry.name}. Check that it has selectable text, then retry.`,
-            })
-            announce(`Couldn't read ${entry.name}`)
-            onChangeRef.current?.()
-          }
-          return
-        } catch (error) {
-          if (signal.aborted) return
+            }),
+          onResume: () => update(entry.key, { phase: "processing", note: undefined }),
+        })
+        if (outcome === "PROCESSED") {
+          update(entry.key, { phase: "ready", note: entry.dedupeNote })
+          announce(`${entry.name} ready`)
+        } else {
           update(entry.key, {
             phase: "failed",
             failedStep: "process",
-            note: errorMessage(error, `${entry.name} wasn't processed.`),
+            note: `Couldn't read ${entry.name}. Check that it has selectable text, then retry.`,
           })
-          announce(`${entry.name} wasn't processed`)
-          return
+          announce(`Couldn't read ${entry.name}`)
         }
+        onChangeRef.current?.()
+      } catch (error) {
+        if (signal.aborted) return
+        update(entry.key, {
+          phase: "failed",
+          failedStep: "process",
+          note: errorMessage(error, `${entry.name} wasn't processed.`),
+        })
+        announce(`${entry.name} wasn't processed`)
       }
     },
     [announce, update]
@@ -171,7 +169,7 @@ export function useMaterialUploads({
         const res = await fetch("/api/content/documents", {
           method: "POST",
           body: form,
-          signal: AbortSignal.any([signal, AbortSignal.timeout(UPLOAD_TIMEOUT_MS)]),
+          signal: anySignal(signal, AbortSignal.timeout(UPLOAD_TIMEOUT_MS)),
         })
         data = (await readJson(res)) as UploadResponse
       } catch (error) {
@@ -196,24 +194,19 @@ export function useMaterialUploads({
       }
       documentRows.current.set(data.document_id, entry.key)
 
-      let note: string | undefined
-      if (data.deduped) {
-        const course = data.course_name?.trim()
-        note =
-          course && course.toLowerCase() !== entry.courseName.trim().toLowerCase()
-            ? `Already in your ${course} materials, so it stays there.`
-            : "Already in your materials."
-      }
-      const withNote = { ...entry, note }
-      onChangeRef.current?.()
+      const dedupeNote = data.deduped ? dedupeNoteFor(data.course_name, entry.courseName) : undefined
 
       if (data.status === "PROCESSED") {
-        update(entry.key, { phase: "ready", documentId: data.document_id, note })
+        update(entry.key, { phase: "ready", documentId: data.document_id, note: dedupeNote, dedupeNote })
         announce(`${entry.name} ready`)
+        onChangeRef.current?.()
         return
       }
-      update(entry.key, { documentId: data.document_id, note })
-      await processStep(withNote, data.document_id, signal)
+      // Mark the row processing before the lists refresh, so the file's row
+      // in the materials list reads Processing too and offers no second run
+      update(entry.key, { phase: "processing", documentId: data.document_id, note: dedupeNote, dedupeNote })
+      onChangeRef.current?.()
+      await processStep({ ...entry, documentId: data.document_id, dedupeNote }, data.document_id, signal)
     },
     [announce, processStep, update]
   )
@@ -266,10 +259,11 @@ export function useMaterialUploads({
       if (entry.failedStep === "process" && entry.documentId) {
         const documentId = entry.documentId
         update(key, { phase: "queued", note: undefined })
-        enqueue((signal) => processStep(entry, documentId, signal))
+        // processStep only ever restores the duplicate note, never this failure's
+        enqueue((signal) => processStep({ ...entry, note: undefined }, documentId, signal))
       } else if (files.current.has(key)) {
         update(key, { phase: "queued", note: undefined })
-        enqueue((signal) => uploadStep(entry, signal))
+        enqueue((signal) => uploadStep({ ...entry, note: undefined }, signal))
       }
     },
     [entries, enqueue, processStep, update, uploadStep]
@@ -284,10 +278,9 @@ export function useMaterialUploads({
     setEntries((list) => list.filter((e) => e.key !== key))
   }, [])
 
-  const busy = entries.some(
-    (e) => e.phase === "queued" || e.phase === "uploading" || e.phase === "processing" || e.phase === "waiting"
-  )
+  const busy = entries.some((e) => BUSY_PHASES.has(e.phase))
   const readyIds = entries.flatMap((e) => (e.phase === "ready" && e.documentId ? [e.documentId] : []))
+  const busyIds = React.useMemo(() => busyDocumentIds(entries), [entries])
 
-  return { entries, addFiles, retry, remove, busy, readyIds, announcement }
+  return { entries, addFiles, retry, remove, busy, readyIds, busyIds, announcement }
 }

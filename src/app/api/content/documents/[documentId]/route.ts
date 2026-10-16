@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { deleteDocument } from "@/services/content";
 import { logger } from "@/lib/logger";
+import { unauthorized } from "@/lib/http";
 
 /**
  * DELETE /api/content/documents/{id}: delete one course file, its sections
@@ -13,10 +14,7 @@ export async function DELETE(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   const { documentId } = await params;

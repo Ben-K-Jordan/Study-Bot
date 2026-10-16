@@ -15,6 +15,8 @@
 import { describe, it, expect } from "vitest";
 import {
   computeReflow,
+  isMissedItem,
+  subtractIntervals,
   ReflowItem,
   ReflowConfig,
   ALGORITHM_VERSION,
@@ -676,5 +678,121 @@ describe("missed sessions and the horizon", () => {
       Date.parse(moved.startTime) < Date.parse("2025-06-06T21:00:00Z") &&
       Date.parse(moved.endTime) > Date.parse("2025-06-06T20:00:00Z");
     expect(overlaps).toBe(false);
+  });
+});
+
+describe("the plan's own Google Calendar events", () => {
+  const NY = "America/New_York";
+  // Plan day 0 is Mon 2026-10-12 in New York
+  const start = new Date("2026-10-12T16:00:00Z");
+  // Thu 2026-10-15, 10:00 New York
+  const now = new Date("2026-10-15T14:00:00Z");
+  const items: ReflowItem[] = [
+    makeItem({
+      id: "missed",
+      sessionId: "sm",
+      dayIndex: 2,
+      startTime: new Date("2026-10-14T13:00:00Z"),
+      endTime: new Date("2026-10-14T14:00:00Z"),
+    }),
+    makeItem({
+      id: "future1",
+      sessionId: "s1",
+      dayIndex: 4,
+      startTime: new Date("2026-10-16T13:00:00Z"),
+      endTime: new Date("2026-10-16T14:00:00Z"),
+    }),
+    // Back to back with future1's day: 20 + 70 minutes, like day 0 of a new plan
+    makeItem({
+      id: "future2",
+      sessionId: "s2",
+      dayIndex: 4,
+      startTime: new Date("2026-10-16T14:00:00Z"),
+      endTime: new Date("2026-10-16T15:10:00Z"),
+      plannedMinutes: 70,
+    }),
+  ];
+  // Free/busy returns the published sessions themselves, merged into one block
+  const freeBusy = [{ start: Date.parse("2026-10-16T13:00:00Z"), end: Date.parse("2026-10-16T15:10:00Z") }];
+  const buffer = 10 * 60_000;
+
+  it("keeps future sessions once their own events are cut out of free/busy", () => {
+    const own = items.slice(1).map((i) => ({ start: i.startTime.getTime(), end: i.endTime.getTime() }));
+    const raw = subtractIntervals(freeBusy, own);
+    expect(raw).toEqual([]);
+    const buffered = raw.map((b) => ({ start: b.start - buffer, end: b.end + buffer }));
+    const result = computeReflow(items, defaultConfig, start, now, buffered, NY, {
+      includeMissed: true,
+      lastDay: "2026-10-21",
+      clashIntervals: raw,
+    });
+    const byId = new Map(result.changes.map((c) => [c.itemId, c]));
+    expect(byId.get("missed")?.action).toBe("MOVED");
+    expect(byId.get("future1")?.action).toBe("KEPT");
+    expect(byId.get("future2")?.action).toBe("KEPT");
+  });
+
+  it("moves them all when they aren't cut out (the old behavior)", () => {
+    const buffered = freeBusy.map((b) => ({ start: b.start - buffer, end: b.end + buffer }));
+    const result = computeReflow(items, defaultConfig, start, now, buffered, NY, { includeMissed: true });
+    expect(result.changes.filter((c) => c.action === "MOVED").map((c) => c.itemId).sort()).toEqual([
+      "future1",
+      "future2",
+      "missed",
+    ]);
+  });
+
+  it("moves a kept session only for a real overlap, not for the buffer around a neighbouring event", () => {
+    // A real event ends exactly when future1 starts
+    const raw = [{ start: Date.parse("2026-10-16T12:00:00Z"), end: Date.parse("2026-10-16T13:00:00Z") }];
+    const buffered = raw.map((b) => ({ start: b.start - buffer, end: b.end + buffer }));
+    const result = computeReflow(items, defaultConfig, start, now, buffered, NY, {
+      includeMissed: true,
+      clashIntervals: raw,
+    });
+    expect(result.changes.find((c) => c.itemId === "future1")?.action).toBe("KEPT");
+  });
+});
+
+describe("subtractIntervals", () => {
+  const iv = (start: number, end: number) => ({ start, end });
+
+  it("cuts own slots out of merged busy blocks", () => {
+    expect(subtractIntervals([iv(0, 100)], [iv(20, 40), iv(60, 80)])).toEqual([iv(0, 20), iv(40, 60), iv(80, 100)]);
+  });
+
+  it("removes a block an own slot covers and leaves the rest alone", () => {
+    expect(subtractIntervals([iv(0, 10), iv(20, 30)], [iv(-5, 15)])).toEqual([iv(20, 30)]);
+  });
+
+  it("ignores slots outside every block", () => {
+    expect(subtractIntervals([iv(10, 20)], [iv(0, 5), iv(25, 30)])).toEqual([iv(10, 20)]);
+  });
+});
+
+describe("a session from earlier today", () => {
+  const NY = "America/New_York";
+  const start = new Date("2026-10-12T16:00:00Z");
+  // Thu 2026-10-15, 4:00 PM New York
+  const now = new Date("2026-10-15T20:00:00Z");
+  const earlierToday = makeItem({
+    id: "today",
+    sessionId: "st",
+    dayIndex: 3,
+    startTime: new Date("2026-10-15T13:00:00Z"),
+    endTime: new Date("2026-10-15T14:00:00Z"),
+  });
+
+  it("isn't missed until its day ends in the plan's zone, as the Plan screen shows it", () => {
+    expect(isMissedItem(earlierToday, now, NY)).toBe(false);
+    expect(isMissedItem(earlierToday, new Date("2026-10-16T05:00:00Z"), NY)).toBe(true);
+    // Without a zone only the time counts
+    expect(isMissedItem(earlierToday, now)).toBe(true);
+  });
+
+  it("stays put on Reschedule, so its Start session button still works", () => {
+    const result = computeReflow([earlierToday], defaultConfig, start, now, [], NY, { includeMissed: true });
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0].action).toBe("KEPT");
   });
 });

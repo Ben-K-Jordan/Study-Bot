@@ -13,19 +13,41 @@ export function sha256(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
+const MAX_STORED_NAME = 120;
+
 /**
- * Build the storage key for a document file.
+ * The name a file is stored under: the last segment of the client's name
+ * (browsers and Node keep "../" and folder parts in multipart filenames),
+ * limited to letters, digits, dot, dash and underscore, with no leading
+ * dots. The original name is kept only in the database.
+ */
+export function storedFileName(filename: string): string {
+  const last = filename.split(/[\\/]/).pop() ?? "";
+  const safe = last
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .replace(/^\.+/, "")
+    .slice(-MAX_STORED_NAME);
+  return safe || "file";
+}
+
+/**
+ * Build the storage key for a document file: <user>/<document>/<safe name>.
  */
 export function buildStorageKey(
   userId: string,
   documentId: string,
   filename: string
 ): string {
-  return join(userId, documentId, filename);
+  return join(/*turbopackIgnore: true*/ userId, documentId, storedFileName(filename));
+}
+
+/** Whether a resolved path is inside UPLOAD_DIR (not the folder itself, not a sibling like uploads-x). */
+function insideUploadDir(fullPath: string): boolean {
+  return fullPath.startsWith(UPLOAD_DIR + sep);
 }
 
 /**
- * Save file bytes to disk under UPLOAD_DIR.
+ * Save file bytes to disk under UPLOAD_DIR/<user>/<document>/.
  * Returns the storage key (relative path).
  */
 export async function saveFile(
@@ -36,10 +58,12 @@ export async function saveFile(
 ): Promise<string> {
   const key = buildStorageKey(userId, documentId, filename);
   const fullPath = resolve(join(/*turbopackIgnore: true*/ UPLOAD_DIR, key));
-  if (!fullPath.startsWith(UPLOAD_DIR)) {
+  // The file must land in this document's own folder, whatever the ids hold
+  const folder = resolve(join(/*turbopackIgnore: true*/ UPLOAD_DIR, userId, documentId));
+  if (!insideUploadDir(fullPath) || dirname(fullPath) !== folder) {
     throw new Error("Invalid storage path");
   }
-  await mkdir(dirname(fullPath), { recursive: true });
+  await mkdir(folder, { recursive: true });
   await writeFile(fullPath, data);
   return key;
 }
@@ -49,7 +73,7 @@ export async function saveFile(
  */
 export function resolveStoragePath(storageKey: string): string {
   const fullPath = resolve(join(/*turbopackIgnore: true*/ UPLOAD_DIR, storageKey));
-  if (!fullPath.startsWith(UPLOAD_DIR)) {
+  if (!insideUploadDir(fullPath)) {
     throw new Error("Invalid storage path");
   }
   return fullPath;
@@ -65,7 +89,7 @@ export async function deleteStoredFile(storageKey: string, documentId: string): 
   if (!storageKey || !documentId) return;
   const filePath = resolveStoragePath(storageKey);
   const folder = dirname(filePath);
-  if (!folder.startsWith(UPLOAD_DIR + sep) || basename(folder) !== documentId) {
+  if (!insideUploadDir(folder) || basename(folder) !== documentId) {
     throw new Error("Invalid storage path");
   }
   await rm(folder, { recursive: true, force: true });

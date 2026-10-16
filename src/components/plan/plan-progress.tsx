@@ -1,7 +1,7 @@
 import {
+  CalendarIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CircleIcon,
   CirclePlayIcon,
   CircleSlashIcon,
   type LucideIcon,
@@ -25,7 +25,7 @@ const COUNTS: Count[] = [
   { key: "done", icon: CircleCheckIcon, iconClass: "text-tertiary", text: (n) => `${formatNumber(n)} done`, always: true },
   { key: "in_progress", icon: CirclePlayIcon, iconClass: "text-primary", text: (n) => `${formatNumber(n)} in progress` },
   { key: "missed", icon: CircleAlertIcon, iconClass: "text-warning", text: (n) => `${formatNumber(n)} missed` },
-  { key: "scheduled", icon: CircleIcon, iconClass: "text-outline", text: (n) => `${formatNumber(n)} scheduled`, always: true },
+  { key: "scheduled", icon: CalendarIcon, iconClass: "text-outline", text: (n) => `${formatNumber(n)} scheduled`, always: true },
   { key: "skipped", icon: CircleSlashIcon, iconClass: "text-on-surface-variant", text: (n) => `${formatNumber(n)} skipped` },
 ]
 

@@ -8,6 +8,8 @@
  * expired in dev.
  */
 
+import { anySignal } from "@/lib/abort";
+
 export interface CourseOption {
   course_name: string;
   exam_name?: string;
@@ -59,7 +61,7 @@ async function parse(res: Response) {
 }
 
 export async function apiGet(url: string, init?: { signal?: AbortSignal }) {
-  const signal = init?.signal ? AbortSignal.any([init.signal, withTimeout()]) : withTimeout();
+  const signal = init?.signal ? anySignal(init.signal, withTimeout()) : withTimeout();
   const res = await fetch(url, { signal });
   return parse(res);
 }

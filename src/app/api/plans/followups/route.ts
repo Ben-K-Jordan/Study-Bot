@@ -4,6 +4,7 @@ import { scheduleFollowups } from "@/services/followups";
 import { logger } from "@/lib/logger";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { z } from "zod";
+import { unauthorized } from "@/lib/http";
 
 const bodySchema = z.object({ run_id: z.string().min(1).max(100) });
 
@@ -17,10 +18,7 @@ const FOLLOWUP_ERRORS: Record<string, { status: number; message: string }> = {
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   const rl = generalLimiter.check(userId);

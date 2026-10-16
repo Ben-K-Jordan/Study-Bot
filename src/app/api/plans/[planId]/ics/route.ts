@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { generatePlanIcs } from "@/services/plan";
+import { unauthorized } from "@/lib/http";
 
 export async function GET(
   request: NextRequest,
@@ -8,10 +9,7 @@ export async function GET(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json(
-      { error: "Your sign-in expired. Sign in again.", code: "unauthorized" },
-      { status: 401 },
-    );
+    return unauthorized();
   }
 
   const { planId } = await params;

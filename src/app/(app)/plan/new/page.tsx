@@ -4,7 +4,6 @@ import { getCurrentUserId } from "@/lib/auth"
 import { logger } from "@/lib/logger"
 import { PageContainer } from "@/components/app/page-container"
 import { PageHeader } from "@/components/app/page-header"
-import { AppBarTitle } from "@/components/shell/app-bar-title"
 import { NewPlanForm } from "@/components/plan/new-plan-form"
 import { PlanLoadError } from "@/components/plan/plan-load-error"
 import { PlanWorkspace } from "@/components/plan/plan-workspace"
@@ -36,9 +35,8 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Sear
     logger.error("new_plan_page.load_failed", { user_id: userId, error: String(error) })
     return (
       <PageContainer size="wide">
-        <AppBarTitle>New plan</AppBarTitle>
         <PlanLoadError
-          title="The New plan form didn't load."
+          title="The new plan form didn't load."
           description="Your existing plans are safe. Retry, or check your connection."
         />
       </PageContainer>
@@ -54,7 +52,6 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Sear
 
   return (
     <PlanWorkspace plans={plans} section="new" timeZone={data.timeZone}>
-      <AppBarTitle>New plan</AppBarTitle>
       <div className="flex w-full max-w-3xl flex-col gap-6">
         <PageHeader
           title={replacing ? `Replace the ${replacing.course_name} ${replacing.exam_name} plan` : "Plan for an exam"}
@@ -64,8 +61,12 @@ export default async function NewPlanPage({ searchParams }: { searchParams: Sear
               : "Study Bot schedules practice sessions from your course files, from today up to the exam."
           }
         />
+        {/* Keyed by what prefilled it: going from ?replace= to plain /plan/new
+            keeps client state otherwise, with the replaced plan's values */}
         <NewPlanForm
+          key={replacing ? `replace:${replacing.plan_id}` : `new:${initial.course ?? ""}|${initial.exam ?? ""}`}
           todayKey={keyOf(new Date(), data.timeZone)}
+          savedTimeZone={data.savedTimeZone}
           defaults={{ studyStart: data.studyStart, studyEnd: data.studyEnd, dailyCap: data.dailyCap }}
           plans={plans}
           materials={data.materials}

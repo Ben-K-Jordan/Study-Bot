@@ -25,6 +25,14 @@ function StatusText({ status }: { status: string }) {
       </span>
     )
   }
+  if (status === "PROCESSING") {
+    return (
+      <span className="flex shrink-0 items-center gap-1 type-body-s text-on-surface-variant">
+        <HourglassIcon className="size-4" aria-hidden="true" />
+        Processing…
+      </span>
+    )
+  }
   return (
     <span className="flex shrink-0 items-center gap-1 type-body-s text-on-surface-variant">
       <HourglassIcon className="size-4" aria-hidden="true" />

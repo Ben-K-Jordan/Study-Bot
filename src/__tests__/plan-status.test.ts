@@ -29,6 +29,11 @@ describe("classifyPlanItem", () => {
     expect(classifyPlanItem({ ...future, status: "RESCHEDULED" }, "completed", NOW)).toBe("done");
   });
 
+  it("lets a skipped session's runs win: finished from its link, it reads done", () => {
+    expect(classifyPlanItem({ ...future, status: "SKIPPED" }, "completed", NOW)).toBe("done");
+    expect(classifyPlanItem({ ...future, status: "SKIPPED" }, "in_progress", NOW)).toBe("in_progress");
+  });
+
   it("marks a started session as in progress", () => {
     expect(classifyPlanItem(yesterday, "in_progress", NOW)).toBe("in_progress");
   });
