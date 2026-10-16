@@ -22,6 +22,24 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Server code and shared libraries never reach into the UI: rules a
+    // screen shares with a service or a route live in src/lib.
+    files: ["src/services/**", "src/lib/**", "src/app/api/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/components/*", "@/hooks/*"],
+              message: "Server code can't depend on UI modules. Move the shared code into src/lib.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Tests import services lazily behind a database check and inspect
     // untyped JSON payloads, so `any` stays allowed there.
     files: ["src/__tests__/**", "e2e/**"],
