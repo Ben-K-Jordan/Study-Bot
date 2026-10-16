@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 
 import { getCurrentUserId } from "@/lib/auth"
@@ -8,12 +9,27 @@ import { NewPlanForm } from "@/components/plan/new-plan-form"
 import { PlanLoadError } from "@/components/plan/plan-load-error"
 import { PlanWorkspace } from "@/components/plan/plan-workspace"
 import { keyOf, sortPlans } from "@/components/plan/plan-model"
-import { loadNewPlanDefaults } from "../_lib/load"
+import { loadNewPlanDefaults, planName } from "../_lib/load"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
 function param(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 120) : undefined
+}
+
+/** "Replace CS 2110 Prelim 1 plan" while replacing a plan, else the layout's "New plan". */
+export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
+  const replaceId = param((await searchParams).replace)
+  if (!replaceId) return {}
+  try {
+    const userId = await getCurrentUserId()
+    const plan = userId ? await planName(userId, replaceId) : null
+    return plan ? { title: `Replace ${plan.course_name} ${plan.exam_name} plan` } : {}
+  } catch (error) {
+    // The page reports its own load failures; the tab keeps "New plan"
+    logger.warn("new_plan_page.title_failed", { error: String(error) })
+    return {}
+  }
 }
 
 /**

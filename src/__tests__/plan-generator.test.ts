@@ -7,6 +7,7 @@ import {
   isCalendarDay,
   layoutBlocks,
   nextQuarterHour,
+  rollBlocksForward,
 } from "@/lib/plan-generator";
 
 // ---------------------------------------------------------------------------
@@ -384,6 +385,72 @@ describe("layoutBlocks", () => {
     expect(placed[1]!.dayIndex).toBe(1);
     const day1 = placed.filter((p) => p!.dayIndex === 1).sort((a, b) => a!.start - b!.start);
     for (let i = 1; i < day1.length; i++) expect(day1[i]!.start).toBeGreaterThanOrEqual(day1[i - 1]!.end);
+  });
+});
+
+describe("rollBlocksForward", () => {
+  const HOUR = 3_600_000;
+  const DAY0 = Date.parse("2026-10-15T13:00:00Z");
+  type Block = { id: string; dayIndex: number; plannedMinutes: number };
+  const block = (id: string, dayIndex: number, plannedMinutes: number): Block => ({ id, dayIndex, plannedMinutes });
+
+  /**
+   * Each day has `free[day]` minutes of free time from 9:00, filled first come
+   * first served (Google Calendar free time, busy events already taken out).
+   * Records which blocks each day was asked to fit.
+   */
+  function fitter(free: Record<number, number>) {
+    const asked: Record<number, string[]> = {};
+    const fitDay = (day: number, dayBlocks: readonly Block[]) => {
+      asked[day] = dayBlocks.map((b) => b.id);
+      let cursor = DAY0 + day * 24 * HOUR;
+      let left = free[day] ?? 0;
+      return dayBlocks.map((b) => {
+        if (b.plannedMinutes > left) return null;
+        const slot = { start: cursor, end: cursor + b.plannedMinutes * 60_000 };
+        cursor = slot.end;
+        left -= b.plannedMinutes;
+        return slot;
+      });
+    };
+    return { fitDay, asked };
+  }
+
+  it("moves a block from any busy day to the next day with room instead of dropping it", () => {
+    // Day 3 is fully booked; days 0 to 2 and 4 have room
+    const { fitDay, asked } = fitter({ 0: 180, 1: 180, 2: 180, 3: 0, 4: 180 });
+    const blocks = [block("a", 0, 50), block("b", 3, 50), block("c", 4, 50)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 6, dailyCapMinutes: 180, fitDay });
+    expect(placed.map((p) => p?.dayIndex)).toEqual([0, 4, 4]);
+    // Day 4's own block goes first; the one that rolled follows it
+    expect(asked[4]).toEqual(["c", "b"]);
+    expect(placed[1]!.start).toBe(placed[2]!.end);
+  });
+
+  it("keeps rolling past full days within the daily cap", () => {
+    // Day 1 has free time but is already at its 90 minute cap
+    const { fitDay } = fitter({ 0: 0, 1: 300, 2: 300 });
+    const blocks = [block("a", 0, 50), block("b", 1, 90)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 6, dailyCapMinutes: 90, fitDay });
+    expect(placed.map((p) => p?.dayIndex)).toEqual([2, 1]);
+  });
+
+  it("leaves out what fits nowhere up to the last day", () => {
+    const { fitDay, asked } = fitter({ 0: 30, 1: 30, 2: 30 });
+    const blocks = [block("a", 0, 50), block("b", 1, 20)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 2, dailyCapMinutes: 180, fitDay });
+    expect(placed[0]).toBeNull();
+    expect(placed[1]).toMatchObject({ dayIndex: 1 });
+    // Never asks about a day after the last one (the exam day)
+    expect(Object.keys(asked)).toEqual(["0", "1", "2"]);
+  });
+
+  it("tries the earliest rolled block first", () => {
+    const { fitDay, asked } = fitter({ 0: 0, 1: 0, 2: 60 });
+    const blocks = [block("a", 0, 50), block("b", 1, 50)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 2, dailyCapMinutes: 180, fitDay });
+    expect(asked[2]).toEqual(["a", "b"]);
+    expect(placed.map((p) => p?.dayIndex ?? null)).toEqual([2, null]);
   });
 });
 

@@ -3,7 +3,14 @@ import { generateSessionId } from "@/lib/session-id";
 import { z } from "zod";
 import { buildCalendarTitle, buildCalendarDescription, sessionTopics } from "@/lib/calendar";
 import { createPlanSchema, SessionMode } from "@/lib/validation";
-import { isCalendarDay, layoutBlocks, nextQuarterHour, type PlanBlock } from "@/lib/plan-generator";
+import {
+  isCalendarDay,
+  layoutBlocks,
+  nextQuarterHour,
+  rollBlocksForward,
+  type BlockPlacement,
+  type PlanBlock,
+} from "@/lib/plan-generator";
 import { generatePlanWithResearch, StudyPreferences } from "@/lib/research-plan-generator";
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
@@ -33,6 +40,7 @@ import {
   zonedTimeToUtc,
 } from "@/lib/timezone";
 import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
+import { plural } from "@/lib/format";
 import { classifyPlanItem, countPlanItems, runStateFromStatuses, type PlanItemCounts, type PlanItemState, type RunState } from "@/lib/plan-status";
 import { calendarErrorMessage, unpublishPlanFromGoogle } from "@/services/publish";
 
@@ -321,6 +329,7 @@ export async function createPlan(userId: string, input: unknown) {
           examName: parsed.exam_name,
           mode: block.mode as SessionMode,
           topicScope: block.topicScope,
+          objectives: block.objectives,
         }),
         description: buildCalendarDescription({
           courseName: parsed.course_name,
@@ -337,66 +346,47 @@ export async function createPlan(userId: string, input: unknown) {
     });
   };
 
-  // If using Google availability, group blocks by day and use scored fitting
+  // A session that doesn't fit its day moves to a later one, but never onto
+  // the exam day or past the plan's last day (the taper above already keeps
+  // the plan's own sessions off the exam day). An exam that has already
+  // passed (allowed for API callers) leaves the whole week.
+  const examDayIndex = daysBetween(startDay, parsed.exam_date);
+  const lastDayIndex =
+    examDayIndex > 0
+      ? Math.min(parsed.availability.length - 1, examDayIndex - 1)
+      : parsed.availability.length - 1;
+  let placements: (BlockPlacement | null)[];
+
   if (googleFreeSlotsByDay) {
-    // Group blocks by day
-    const blocksByDay = new Map<number, PlanBlock[]>();
-    for (const block of blocks) {
-      if (!blocksByDay.has(block.dayIndex)) blocksByDay.set(block.dayIndex, []);
-      blocksByDay.get(block.dayIndex)!.push(block);
-    }
-
-    // Today's blocks that find no free time left today move to tomorrow,
-    // after tomorrow's own blocks and within the daily cap
-    let carried: PlanBlock[] = [];
-    const lastDay = Math.max(1, ...blocksByDay.keys());
-    for (let dayIdx = 0; dayIdx <= lastDay; dayIdx++) {
-      let dayBlocks = blocksByDay.get(dayIdx) ?? [];
-      if (dayIdx === 1 && carried.length > 0) {
-        let used = dayBlocks.reduce((sum, b) => sum + b.plannedMinutes, 0);
-        const fits = carried.filter((b) => {
-          if (used + b.plannedMinutes > parsed.daily_study_cap_minutes) return false;
-          used += b.plannedMinutes;
-          return true;
-        });
-        dayBlocks = [...dayBlocks, ...fits];
-        carried = [];
-      }
-      if (dayBlocks.length === 0) continue;
-      const freeSlots = googleFreeSlotsByDay.get(dayIdx) || [];
-      const durations = dayBlocks.map((b) => b.plannedMinutes * 60000);
-      const dayEvents = googleEventsByDay?.get(dayIdx) || [];
-
-      // Use cognitively-scored slot fitting when we have event data
-      const scheduled = dayEvents.length > 0
-        ? fitBlocksScored({
-            blockDurationsMs: durations,
-            blockModes: dayBlocks.map((b) => b.mode as IntelMode),
-            freeSlots,
-            chronotype: (parsed.chronotype || "flexible") as Chronotype,
-            dayEvents,
-            bedtimeHour: inferredBedtime,
-            courseName: parsed.course_name,
-            blockTopicScopes: dayBlocks.map((b) => b.topicScope),
-            timeZone,
-          })
-        : fitBlocksIntoSlots(durations, freeSlots);
-
-      for (let i = 0; i < dayBlocks.length; i++) {
-        const block = dayBlocks[i];
-        const slot = scheduled[i];
-        if (!slot) {
-          // No free time: today's blocks get a second chance tomorrow, others are skipped
-          if (dayIdx === 0) carried.push(block);
-          continue;
-        }
-        addItem(block, dayIdx, new Date(slot.start), new Date(slot.end));
-      }
-    }
+    // Fit each day's blocks into its free time, cognitively scored when
+    // there are events to score against
+    const freeSlotsByDay = googleFreeSlotsByDay;
+    placements = rollBlocksForward(blocks, {
+      lastDayIndex,
+      dailyCapMinutes: parsed.daily_study_cap_minutes,
+      fitDay: (dayIdx, dayBlocks) => {
+        const freeSlots = freeSlotsByDay.get(dayIdx) || [];
+        const durations = dayBlocks.map((b) => b.plannedMinutes * 60000);
+        const dayEvents = googleEventsByDay?.get(dayIdx) || [];
+        return dayEvents.length > 0
+          ? fitBlocksScored({
+              blockDurationsMs: durations,
+              blockModes: dayBlocks.map((b) => b.mode as IntelMode),
+              freeSlots,
+              chronotype: (parsed.chronotype || "flexible") as Chronotype,
+              dayEvents,
+              bedtimeHour: inferredBedtime,
+              courseName: parsed.course_name,
+              blockTopicScopes: dayBlocks.map((b) => b.topicScope),
+              timeZone,
+            })
+          : fitBlocksIntoSlots(durations, freeSlots);
+      },
+    });
   } else {
     // Sequential blocks from the start of each day's window (today's from
     // now); a block that no longer fits today moves to a later day
-    const placements = layoutBlocks(blocks, {
+    placements = layoutBlocks(blocks, {
       window: (dayIdx) => {
         const dayAvail = parsed.availability[dayIdx];
         return {
@@ -406,14 +396,21 @@ export async function createPlan(userId: string, input: unknown) {
       },
       earliest,
       dailyCapMinutes: parsed.daily_study_cap_minutes,
-      lastDayIndex: parsed.availability.length - 1,
-    });
-    blocks.forEach((block, i) => {
-      const placement = placements[i];
-      if (!placement) return; // No room left this week: skipped
-      addItem(block, placement.dayIndex, new Date(placement.start), new Date(placement.end));
+      lastDayIndex,
     });
   }
+
+  // Blocks with no room anywhere before the exam are left out, and the
+  // response counts them so the form can say so
+  let skippedCount = 0;
+  blocks.forEach((block, i) => {
+    const placement = placements[i];
+    if (!placement) {
+      skippedCount++;
+      return;
+    }
+    addItem(block, placement.dayIndex, new Date(placement.start), new Date(placement.end));
+  });
 
   // Transactional: create all sessions + plan + items atomically
   await prisma.$transaction(async (tx) => {
@@ -472,6 +469,7 @@ export async function createPlan(userId: string, input: unknown) {
     user_id: userId,
     plan_id: planId,
     items_count: items.length,
+    skipped_count: skippedCount,
   });
 
   // Fire-and-forget: pre-build objective anchors so the feedback fast path
@@ -518,6 +516,8 @@ export async function createPlan(userId: string, input: unknown) {
     reasoning: planResult.reasoning ?? null,
     /** "typed", "materials", or "fallback" (general review topics stood in). */
     topics_source: topicsSource,
+    /** Sessions the plan called for that found no free time before the exam. */
+    skipped_count: skippedCount,
     ics_download_url: `${baseUrl}/api/plans/${planId}/ics`,
     items: items.map((item) => ({
       day_index: item.dayIndex,
@@ -575,6 +575,7 @@ export async function getPlan(userId: string, planId: string) {
         examName: session.examName,
         mode: session.mode as SessionMode,
         topicScope: session.topicScope,
+        objectives: session.objectives,
       }),
       description: buildCalendarDescription({
         courseName: session.courseName,
@@ -867,11 +868,14 @@ export async function deletePlan(
         };
       }
       if (result.data.failed > 0) {
-        const total = result.data.deleted + result.data.failed;
         return {
           error: "calendar_failed",
           code: "partial",
-          message: `${result.data.failed} of ${total} Google Calendar events weren't removed, so the plan was kept. Retry.`,
+          // One whole message per form: the verb follows the failed count
+          message: plural(result.data.failed, {
+            one: "# Google Calendar event wasn't removed, so the plan was kept. Retry.",
+            other: "# Google Calendar events weren't removed, so the plan was kept. Retry.",
+          }),
           removed: result.data.deleted,
           failed: result.data.failed,
         };

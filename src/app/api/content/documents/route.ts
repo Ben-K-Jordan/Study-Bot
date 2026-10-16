@@ -6,6 +6,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { unauthorized } from "@/lib/http";
+import { retryAfterText } from "@/lib/format";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 /** Longest file name kept, matching the title limit in uploadDocumentSchema. */
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
   const rl = generalLimiter.check(userId);
   if (!rl.allowed) {
     const seconds = Math.ceil(rl.retryAfterMs / 1000);
-    return tooManyRequests(rl.retryAfterMs, `Too many uploads at once. Retry in ${seconds} seconds.`);
+    return tooManyRequests(rl.retryAfterMs, `Too many uploads at once. ${retryAfterText(seconds)}`);
   }
 
   let formData: FormData;

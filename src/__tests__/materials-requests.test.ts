@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { anySignal, processUntilSettled, sleep } from "@/components/materials/requests";
+import { anySignal, processUntilSettled, sleep, unreadableNote } from "@/components/materials/requests";
 import { busyDocumentIds, dedupeNoteFor, type UploadEntry } from "@/components/materials/use-material-uploads";
 import { lastCalendarAction } from "@/components/plan/calendar-types";
 
@@ -56,6 +56,20 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
 }
 
 describe("processUntilSettled", () => {
+  it("tells a file that is too long apart from one that can't be read", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json(200, { status: "FAILED", reason: "too_long" })));
+    const tooLong = await processUntilSettled("doc-1", new AbortController().signal);
+    expect(tooLong).toBe("TOO_LONG");
+    expect(unreadableNote("textbook.pdf", "TOO_LONG")).toBe(
+      "textbook.pdf is too long to read. Split it into smaller files, then upload those.",
+    );
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json(200, { status: "FAILED", reason: "unreadable" })));
+    const failed = await processUntilSettled("doc-2", new AbortController().signal);
+    expect(failed).toBe("FAILED");
+    expect(unreadableNote("scan.pdf", "FAILED")).toBe("Couldn't read scan.pdf. Check that it has selectable text, then retry.");
+  });
+
   it("checks back while another request is processing the file, without failing it", async () => {
     vi.useFakeTimers();
     const fetchMock = vi

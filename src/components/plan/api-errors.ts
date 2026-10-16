@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/client-api"
+import { ApiError, SIGNED_OUT_MESSAGE, sharedFailureReason } from "@/lib/client-api"
 
 /** Codes and placeholder strings that must never reach the screen. */
 const RAW = /^[A-Z0-9_]+$|^[a-z0-9_]+$|^(Request failed|Internal server error|Validation failed|Unauthorized|Forbidden)$/
@@ -23,10 +23,11 @@ export function errorCode(error: unknown): string | undefined {
  */
 export function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
-    if (error.status === 401) return "Your sign-in expired. Sign in again."
+    if (error.status === 401) return SIGNED_OUT_MESSAGE
     const own = bodyField(error.body, "message") ?? bodyField(error.body, "error")
     if (own) return own
-    if (error.status === 429) return "Too many requests. Retry in a minute."
+    // No sentence from the server: the shared one, with the real wait when Retry-After came.
+    if (error.status === 429) return sharedFailureReason(error) ?? "Too many requests. Retry in a minute."
     if (error.status === 403) return "This belongs to another account."
     if (error.status >= 500) return `${fallback} Retry in a minute.`
     return fallback

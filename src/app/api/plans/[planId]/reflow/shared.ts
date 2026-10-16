@@ -11,6 +11,7 @@ import {
 import { addDays, zonedTimeToUtc } from "@/lib/timezone";
 import { dateColumnKey } from "@/lib/plan-dates";
 import { getGoogleClient, GoogleReconnectError, type BusyInterval } from "@/lib/google/calendar-client";
+import { GOOGLE_COPY } from "@/lib/google/messages";
 import { type TimeInterval } from "@/lib/google/free-slots";
 import { logger } from "@/lib/logger";
 
@@ -55,7 +56,7 @@ export async function parseReflowBody<T extends z.ZodTypeAny>(
     const text = await req.text();
     raw = text ? JSON.parse(text) : {};
   } catch {
-    return { response: jsonError(400, "The request wasn't valid JSON.", "invalid_json") };
+    return { response: jsonError(400, "The request wasn't valid JSON.", "INVALID_JSON") };
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
@@ -201,8 +202,8 @@ export async function prepareReflow(
     } catch (err) {
       if (err instanceof GoogleReconnectError) {
         return {
-          response: jsonError(409, "Google Calendar needs you to sign in again.", "GOOGLE_RECONNECT_REQUIRED", {
-            message: "Google Calendar needs you to sign in again.",
+          response: jsonError(409, GOOGLE_COPY.reconnect, "GOOGLE_RECONNECT_REQUIRED", {
+            message: GOOGLE_COPY.reconnect,
           }),
         };
       }

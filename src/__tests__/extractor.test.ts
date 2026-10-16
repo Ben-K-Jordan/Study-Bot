@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { extractDocumentText } from "@/lib/extractor";
+import { DocumentTooLongError, EXTRACTION_LIMITS, extractDocumentText } from "@/lib/extractor";
 
 /** Build a minimal valid PDF with one line of text per page. */
 function buildPdf(pageTexts: string[]): Buffer {
@@ -76,6 +76,48 @@ describe("extractDocumentText", () => {
       { pageNumber: 1, text: "First page" },
       { pageNumber: 3, text: "Third page" },
     ]);
+  });
+
+  describe("reading limits", () => {
+    const pdf = async (name: string, pages: string[]) => {
+      const file = join(dir, name);
+      await writeFile(file, buildPdf(pages));
+      return file;
+    };
+
+    it("refuses a PDF with more pages than the limit instead of reading part of it", async () => {
+      const file = await pdf("long.pdf", ["One", "Two", "Three"]);
+      await expect(extractDocumentText(file, "application/pdf", { ...EXTRACTION_LIMITS, maxPages: 2 })).rejects.toThrow(
+        DocumentTooLongError,
+      );
+      // At the limit it reads normally
+      const result = await extractDocumentText(file, "application/pdf", { ...EXTRACTION_LIMITS, maxPages: 3 });
+      expect(result.pages).toHaveLength(3);
+    });
+
+    it("stops reading once the text passes the character limit", async () => {
+      const file = await pdf("dense.pdf", ["Retrieval practice beats rereading", "Spacing beats cramming"]);
+      const error = await extractDocumentText(file, "application/pdf", { ...EXTRACTION_LIMITS, maxChars: 20 }).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(DocumentTooLongError);
+      expect((error as Error).message).toBe("This file is too long to read. Split it into smaller files.");
+    });
+
+    it("stops reading once the time budget is spent", async () => {
+      const file = await pdf("slow.pdf", ["First page", "Second page"]);
+      await expect(extractDocumentText(file, "application/pdf", { ...EXTRACTION_LIMITS, maxMs: -1 })).rejects.toThrow(
+        DocumentTooLongError,
+      );
+    });
+
+    it("refuses a text file over the character limit", async () => {
+      const file = join(dir, "huge.md");
+      await writeFile(file, "word ".repeat(10), "utf-8");
+      await expect(extractDocumentText(file, "text/markdown", { ...EXTRACTION_LIMITS, maxChars: 20 })).rejects.toThrow(
+        DocumentTooLongError,
+      );
+    });
   });
 
   it("reads text files as UTF-8 and normalizes whitespace", async () => {

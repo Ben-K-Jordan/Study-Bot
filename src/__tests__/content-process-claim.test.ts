@@ -24,11 +24,17 @@ vi.mock("@/lib/storage", () => ({
   resolveStoragePath: vi.fn((key: string) => `/uploads/${key}`),
 }));
 
-vi.mock("@/lib/extractor", () => ({ extractDocumentText: vi.fn() }));
+vi.mock("@/lib/extractor", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/extractor")>()),
+  extractDocumentText: vi.fn(),
+}));
+
+vi.mock("@/lib/error-reporter", () => ({ captureException: vi.fn() }));
 
 import { PROCESSING_CLAIM_MS, processDocument, visibleDocumentStatus } from "@/services/content";
 import { prisma } from "@/lib/db";
-import { extractDocumentText } from "@/lib/extractor";
+import { DocumentTooLongError, extractDocumentText } from "@/lib/extractor";
+import { captureException } from "@/lib/error-reporter";
 
 const findUnique = prisma.contentDocument.findUnique as ReturnType<typeof vi.fn>;
 const updateMany = prisma.contentDocument.updateMany as ReturnType<typeof vi.fn>;
@@ -86,6 +92,34 @@ describe("processDocument", () => {
     expect(Date.now() - where.OR[1].updatedAt.lt.getTime()).toBeGreaterThanOrEqual(PROCESSING_CLAIM_MS - 1000);
     expect(updateMany.mock.calls[0][0].data.status).toBe("PROCESSING");
     expect(extract).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a file over the reading limits FAILED with reason too_long, not as a fault", async () => {
+    findUnique.mockResolvedValueOnce(DOC);
+    updateMany.mockResolvedValueOnce({ count: 1 });
+    extract.mockRejectedValueOnce(new DocumentTooLongError());
+
+    const result = await processDocument("user-1", "doc-1");
+
+    expect(result).toEqual({
+      data: { document_id: "doc-1", status: "FAILED", chunk_count: 0, reason: "too_long" },
+    });
+    expect(prisma.contentDocument.update).toHaveBeenCalledWith({
+      where: { id: "doc-1" },
+      data: { status: "FAILED", errorMessage: "This file is too long to read. Split it into smaller files." },
+    });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("reports any other extraction failure as unreadable", async () => {
+    findUnique.mockResolvedValueOnce(DOC);
+    updateMany.mockResolvedValueOnce({ count: 1 });
+    extract.mockRejectedValueOnce(new Error("bad XRef entry"));
+
+    const result = await processDocument("user-1", "doc-1");
+
+    expect(result).toMatchObject({ data: { status: "FAILED", reason: "unreadable" } });
+    expect(captureException).toHaveBeenCalledTimes(1);
   });
 });
 

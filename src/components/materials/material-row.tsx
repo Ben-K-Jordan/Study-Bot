@@ -22,7 +22,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Spinner } from "@/components/ui/spinner"
 import { errorMessage } from "@/components/plan/api-errors"
 import { fileKind } from "@/components/materials/file-rules"
-import { processUntilSettled } from "@/components/materials/requests"
+import { processUntilSettled, unreadableNote } from "@/components/materials/requests"
 import type { MaterialDoc } from "@/components/materials/types"
 
 function StatusBadge({ status, processing }: { status: string; processing: boolean }) {
@@ -101,7 +101,7 @@ export function MaterialRow({
     try {
       const outcome = await processUntilSettled(doc.document_id, controller.signal)
       if (outcome === "PROCESSED") toast(`${name} ready`)
-      else setProcessError(`Couldn't read ${name}. Check that it has selectable text, then retry.`)
+      else setProcessError(unreadableNote(name, outcome))
       await onChanged()
     } catch (error) {
       if (controller.signal.aborted) return
@@ -169,7 +169,7 @@ export function MaterialRow({
                 </Button>
               }
               title={`Delete ${name}?`}
-              description={`It comes out of your ${doc.course_name ?? "course"} materials, so chat, new flashcards, and new guides stop using it. Decks and guides already made from it stay.`}
+              description={`It comes out of your ${doc.course_name ?? "course"} materials, so new session questions, chat, new flashcards, and new guides stop using it. Plans, decks, and guides already made from it stay.`}
               confirmLabel="Delete file"
               pendingLabel="Deleting file…"
               failedMessage="File not deleted. Check your connection and retry."

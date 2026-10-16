@@ -138,7 +138,7 @@ test("Delete file asks first and removes the file", { tag: "@mobile" }, async ({
     await hydrated(remove);
     await remove.click();
     await expect(dialog).toContainText(
-      `It comes out of your ${course} materials, so chat, new flashcards, and new guides stop using it. Decks and guides already made from it stay.`,
+      `It comes out of your ${course} materials, so new session questions, chat, new flashcards, and new guides stop using it. Plans, decks, and guides already made from it stay.`,
     );
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toBeHidden();

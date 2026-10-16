@@ -1,4 +1,5 @@
 import { SessionMode } from "./validation";
+import { slugifyObjectiveTitle } from "./objective-keys";
 
 export interface PlanBlock {
   dayIndex: number;
@@ -56,20 +57,8 @@ function clampDuration(desired: number, cap: number, windowMinutes: number): num
   return Math.max(15, Math.min(desired, max));
 }
 
-/**
- * Derive a stable objective id from its title. The same title always yields
- * the same id, so an objective keeps one identity across every block it
- * appears in (SM-2 mastery rows and feedback anchors are keyed by this id).
- */
-export function slugifyObjectiveTitle(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 60)
-    .replace(/_+$/g, "");
-  return slug || "objective";
-}
+// Objective ids are slugs of their titles; the rule lives in objective-keys.
+export { slugifyObjectiveTitle };
 
 /**
  * Build a title -> id map for a whole plan's objectives. Ids are slugs of the
@@ -339,6 +328,64 @@ export function layoutBlocks<B extends { dayIndex: number; plannedMinutes: numbe
         break;
       }
     }
+  }
+
+  return placements;
+}
+
+/**
+ * Places blocks one day at a time with `fitDay`, which fits that day's
+ * blocks into its free time (the Google Calendar path) and returns a slot or
+ * null for each. A block with no room on its day rolls to the next day, after
+ * that day's own blocks and within the daily cap, and keeps rolling until
+ * `lastDayIndex`; one that fits nowhere gets null. Blocks that rolled keep
+ * their original order, so the earliest goes first.
+ */
+export function rollBlocksForward<B extends { dayIndex: number; plannedMinutes: number }>(
+  blocks: readonly B[],
+  options: {
+    lastDayIndex: number;
+    dailyCapMinutes: number;
+    fitDay: (dayIndex: number, dayBlocks: readonly B[]) => readonly ({ start: number; end: number } | null)[];
+  },
+): (BlockPlacement | null)[] {
+  const placements: (BlockPlacement | null)[] = blocks.map(() => null);
+  const byDay = new Map<number, number[]>();
+  blocks.forEach((block, index) => {
+    const list = byDay.get(block.dayIndex) ?? [];
+    list.push(index);
+    byDay.set(block.dayIndex, list);
+  });
+
+  let carried: number[] = [];
+  for (let day = 0; day <= options.lastDayIndex; day++) {
+    const own = byDay.get(day) ?? [];
+    let used = own.reduce((sum, index) => sum + blocks[index].plannedMinutes, 0);
+    const joining: number[] = [];
+    const waiting: number[] = [];
+    for (const index of carried) {
+      const minutes = blocks[index].plannedMinutes;
+      if (used + minutes <= options.dailyCapMinutes) {
+        joining.push(index);
+        used += minutes;
+      } else {
+        waiting.push(index);
+      }
+    }
+
+    const dayIndexes = [...own, ...joining];
+    if (dayIndexes.length === 0) {
+      carried = waiting;
+      continue;
+    }
+    const slots = options.fitDay(day, dayIndexes.map((index) => blocks[index]));
+    const unplaced: number[] = [];
+    dayIndexes.forEach((index, k) => {
+      const slot = slots[k];
+      if (slot) placements[index] = { dayIndex: day, start: slot.start, end: slot.end };
+      else unplaced.push(index);
+    });
+    carried = [...unplaced, ...waiting].sort((a, b) => a - b);
   }
 
   return placements;

@@ -217,7 +217,7 @@ export async function generatePlanWithResearch(
       return {
         blocks: generatePlan(input),
         aiGenerated: false,
-        reasoning: "AI produced too few valid blocks — using deterministic fallback.",
+        reasoning: "AI produced too few valid blocks, so the deterministic plan is used.",
       };
     }
 
@@ -239,7 +239,7 @@ export async function generatePlanWithResearch(
     return {
       blocks: generatePlan(input),
       aiGenerated: false,
-      reasoning: `AI unavailable (${message}) — using deterministic fallback.`,
+      reasoning: `AI unavailable (${message}), so the deterministic plan is used.`,
     };
   }
 }

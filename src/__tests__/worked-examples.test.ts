@@ -188,6 +188,8 @@ describe("generateWorkedExampleDeck", () => {
       "WORKED_EXAMPLES",
       ["Projectile motion", "Free fall"],
       15,
+      // The exam's own files rank first in the search.
+      { examName: "Midterm 1" },
     );
 
     const spec = runTaskMock.mock.calls[0][1] as {

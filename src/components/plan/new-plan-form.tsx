@@ -62,6 +62,8 @@ interface CreateResponse {
   exam_name: string
   items: unknown[]
   topics_source?: "typed" | "materials" | "fallback"
+  /** Sessions with no free time left before the exam, left out of the plan. */
+  skipped_count?: number
   replaced: null | { plan_id: string; deleted: boolean; message?: string }
 }
 
@@ -245,17 +247,35 @@ export function NewPlanForm({
       return
     }
 
+    // The exam name goes in after plural(), which turns every "#" into the count
+    const withExam = (message: string) => message.replace("{exam}", () => result.exam_name)
     const count = result.items.length
-    toast(
-      `Plan created. ${plural(count, {
-        zero: `No sessions fit before ${result.exam_name}`,
-        one: `# session between today and ${result.exam_name}`,
-        other: `# sessions between today and ${result.exam_name}`,
-      })}`,
+    const skipped = result.skipped_count ?? 0
+    const warnings = [
       result.topics_source === "fallback"
+        ? "Your materials didn't give enough topics yet, so it uses general review topics. Replace the plan once your files are ready."
+        : null,
+      skipped > 0
+        ? withExam(
+            plural(skipped, {
+              one: "# session didn't fit before {exam} and was left out. To fit it, replace the plan with longer daily times.",
+              other:
+                "# sessions didn't fit before {exam} and were left out. To fit them, replace the plan with longer daily times.",
+            })
+          )
+        : null,
+    ].filter((warning): warning is string => warning !== null)
+    toast(
+      `Plan created. ${withExam(
+        plural(count, {
+          zero: "No sessions fit before {exam}",
+          one: "# session between today and {exam}",
+          other: "# sessions between today and {exam}",
+        })
+      )}`,
+      warnings.length > 0
         ? {
-            description:
-              "Your materials didn't give enough topics yet, so it uses general review topics. Replace the plan once your files are ready.",
+            description: warnings.join(" "),
             // A warning to act on stays until it is dismissed
             duration: Infinity,
           }
@@ -267,6 +287,9 @@ export function NewPlanForm({
       })
     }
     router.push(`/plan?plan=${encodeURIComponent(result.plan_id)}`)
+    // A client navigation keeps the shell's layout, so refresh it too: the
+    // Start session button reads the plans there.
+    router.refresh()
   }
 
   function onSubmit(event: React.FormEvent) {

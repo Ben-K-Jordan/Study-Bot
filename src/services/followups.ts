@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
 import { computeFollowups } from "@/lib/spacing";
+import { nextQuarterHour } from "@/lib/plan-generator";
 import { addDays, dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 import { getBaseUrl } from "@/lib/config";
 import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
@@ -13,7 +14,9 @@ import { logger } from "@/lib/logger";
  *
  * Conventions mirror src/services/plan.ts: one Session row per plan item
  * (unique planId+sessionId), RETRIEVAL mode, objectives copied from the
- * source session, times anchored to the plan's availability windows.
+ * source session (and its topic scope, unchanged: the follow-up marker lives
+ * in resources, so calendar titles and headings name only the topics),
+ * times anchored to the plan's availability windows.
  * Idempotency: each created Session carries a `followup_of_run_id` marker in
  * its resources JSON — a second call for the same run returns the existing
  * items instead of double-inserting.
@@ -36,7 +39,11 @@ export interface SkippedFollowup {
   /** YYYY-MM-DD in the plan's timezone. */
   date: string;
   days_from_now: number;
-  reason: "past_exam";
+  /**
+   * past_exam: the day falls after the exam. past: the day is over, or it is
+   * today and its study window has no room left for the session.
+   */
+  reason: "past_exam" | "past";
 }
 
 export interface PlannedFollowupItem {
@@ -61,17 +68,28 @@ export interface FollowupScheduleInput {
   planStartDate: string;
   /** Per-day availability windows from the plan config (indexed by dayIndex). */
   availability?: { start: string; end: string }[] | null;
+  /**
+   * The current time. Days before today in the plan's zone are skipped as
+   * "past", and a follow-up today starts no earlier than the next quarter
+   * hour. Defaults to the real time.
+   */
+  now?: Date;
 }
 
 /**
  * Pure scheduling core: map a run's accuracy + end time onto concrete plan
- * dates. Deterministic — the same run always yields the same schedule.
+ * dates. The days come from when the run ended, so a reload shows the same
+ * ones; `now` only decides which of them can still be added. Opening the
+ * results two days late, the first follow-up's day has passed: it is
+ * skipped, never added as a session that is already missed.
  */
 export function computeFollowupSchedule(input: FollowupScheduleInput): {
   planned: PlannedFollowupItem[];
   skipped: SkippedFollowup[];
 } {
   const recommendations = computeFollowups(input.accuracy, input.endedAt);
+  const now = (input.now ?? new Date()).getTime();
+  const todayKey = dayKey(new Date(now), input.timezone);
   const planned: PlannedFollowupItem[] = [];
   const skipped: SkippedFollowup[] = [];
 
@@ -86,20 +104,38 @@ export function computeFollowupSchedule(input: FollowupScheduleInput): {
       skipped.push({ date, days_from_now: rec.days_from_now, reason: "past_exam" });
       continue;
     }
+    if (date < todayKey) {
+      skipped.push({ date, days_from_now: rec.days_from_now, reason: "past" });
+      continue;
+    }
 
     const dayIndex = daysBetween(input.planStartDate, date);
     // Days beyond the plan window reuse the same weekday's window.
     const avail =
       input.availability?.[dayIndex] ??
       input.availability?.[((dayIndex % 7) + 7) % 7];
-    const startTime = zonedTimeToUtc(date, avail?.start ?? DEFAULT_START_TIME, input.timezone);
+    let start = zonedTimeToUtc(date, avail?.start ?? DEFAULT_START_TIME, input.timezone).getTime();
+
+    if (date === todayKey) {
+      // Today's window may be under way: start at the next quarter hour,
+      // and skip the day once the session no longer fits before it closes
+      // (midnight when the plan has no window for it).
+      const windowEnd = avail?.end
+        ? zonedTimeToUtc(date, avail.end, input.timezone).getTime()
+        : zonedTimeToUtc(addDays(date, 1), "00:00", input.timezone).getTime();
+      start = Math.max(start, nextQuarterHour(now));
+      if (start + FOLLOWUP_DURATION_MINUTES * 60000 > windowEnd) {
+        skipped.push({ date, days_from_now: rec.days_from_now, reason: "past" });
+        continue;
+      }
+    }
 
     planned.push({
       days_from_now: rec.days_from_now,
       date,
       day_index: dayIndex,
-      start_time: startTime,
-      end_time: new Date(startTime.getTime() + FOLLOWUP_DURATION_MINUTES * 60000),
+      start_time: new Date(start),
+      end_time: new Date(start + FOLLOWUP_DURATION_MINUTES * 60000),
     });
   }
 
@@ -145,7 +181,7 @@ export async function findFollowupPlan(userId: string, courseName: string, now: 
  * active study plan. Idempotent per run: repeated calls return the already
  * scheduled items ("already_scheduled") instead of inserting duplicates.
  */
-export async function scheduleFollowups(userId: string, runId: string) {
+export async function scheduleFollowups(userId: string, runId: string, now: Date = new Date()) {
   const run = await prisma.sessionRun.findUnique({
     where: { runId },
     select: {
@@ -166,7 +202,7 @@ export async function scheduleFollowups(userId: string, runId: string) {
   });
   if (!session) return { error: "not_found" as const };
 
-  const plan = await findFollowupPlan(userId, session.courseName);
+  const plan = await findFollowupPlan(userId, session.courseName, now);
   if (!plan) return { data: { status: "no_plan" as const } };
 
   const metrics = run.metrics as { accuracy?: number } | null;
@@ -178,6 +214,7 @@ export async function scheduleFollowups(userId: string, runId: string) {
     planStartDate: dateColumnKey(plan.startDate),
     availability: (plan.config as { availability?: { start: string; end: string }[] } | null)
       ?.availability,
+    now,
   });
 
   const base = getBaseUrl();
@@ -231,7 +268,10 @@ export async function scheduleFollowups(userId: string, runId: string) {
           examId: session.examId,
           examName: session.examName,
           mode: "RETRIEVAL",
-          topicScope: `Follow-up: ${session.topicScope}`,
+          // The same topics as the session it follows up. The follow-up
+          // marker is resources.followup_of_run_id, never the topic scope,
+          // which calendar titles and session headings read as topics.
+          topicScope: session.topicScope,
           objectives: session.objectives ?? undefined,
           targetOutcome: {
             type: "accuracy",

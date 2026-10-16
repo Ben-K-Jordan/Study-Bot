@@ -21,6 +21,7 @@ import { toast } from "sonner"
 
 import { apiPost } from "@/lib/client-api"
 import { plural } from "@/lib/format"
+import { GOOGLE_COPY } from "@/lib/google/messages"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -71,6 +72,18 @@ interface PlanActionsValue {
 
 const PlanActionsContext = React.createContext<PlanActionsValue | null>(null)
 
+/**
+ * Keys each opening of the reschedule preview. It counts for the whole page
+ * life, not per provider: the provider remounts for every plan switch and
+ * every visit, and a count that restarted would reuse an old SWR key, so the
+ * dialog would show a cached preview from before the last move.
+ */
+let lastOpenToken = 0
+function nextOpenToken(): number {
+  lastOpenToken += 1
+  return lastOpenToken
+}
+
 function usePlanActions(): PlanActionsValue {
   const value = React.useContext(PlanActionsContext)
   if (!value) throw new Error("Plan actions must sit inside PlanActionsProvider")
@@ -106,7 +119,7 @@ export function PlanActionsProvider({
   const pathname = usePathname()
   const wantsReschedule = searchParams.get("reschedule") === "1" && canReschedule
   const [rescheduleOpen, setRescheduleOpen] = React.useState(wantsReschedule)
-  const [openToken, setOpenToken] = React.useState(0)
+  const [openToken, setOpenToken] = React.useState(nextOpenToken)
   const [publishing, setPublishing] = React.useState(false)
   const [removing, setRemoving] = React.useState(false)
   const [problem, setProblem] = React.useState<CalendarProblem | null>(null)
@@ -120,7 +133,7 @@ export function PlanActionsProvider({
   const openReschedule = React.useCallback(
     (opener: HTMLElement | null) => {
       rememberOpener(opener)
-      setOpenToken((n) => n + 1)
+      setOpenToken(nextOpenToken())
       setRescheduleOpen(true)
     },
     [rememberOpener]
@@ -180,8 +193,12 @@ export function PlanActionsProvider({
       setProblem(null)
       router.refresh()
       if (result.failed > 0) {
+        // One whole message per form: the verb follows the failed count
         toast(
-          `${result.failed} of ${plural(result.deleted + result.failed, { one: "# event", other: "# events" })} weren't removed from Google Calendar. Retry from the plan menu.`,
+          plural(result.failed, {
+            one: "# event wasn't removed from Google Calendar. Retry from the plan menu.",
+            other: "# events weren't removed from Google Calendar. Retry from the plan menu.",
+          }),
           { duration: Infinity }
         )
       } else {
@@ -340,7 +357,8 @@ export function PlanToolbar({
     deleteFocus.remember(document.getElementById("main-content"))
     toast(`${examName} plan deleted`)
     if (searchParams.get("plan")) router.replace(pathname)
-    else router.refresh()
+    // Refresh in both cases: the shell's Start session button reads the plans.
+    router.refresh()
   }
 
   return (
@@ -520,7 +538,7 @@ export function CalendarNotice() {
     return (
       <Alert variant="warning">
         <CircleAlertIcon aria-hidden="true" />
-        <AlertTitle>Google Calendar needs you to sign in again.</AlertTitle>
+        <AlertTitle>{GOOGLE_COPY.reconnect}</AlertTitle>
         <AlertDescription>
           Until then, changes to this plan don&apos;t reach Google Calendar.
           <div className="mt-2">

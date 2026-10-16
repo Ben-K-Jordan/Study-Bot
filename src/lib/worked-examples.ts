@@ -174,6 +174,7 @@ export async function generateWorkedExampleDeck(
     "WORKED_EXAMPLES",
     objectives.map((o) => o.title),
     15, // fetch up to 15 relevant chunks
+    { examName }, // the exam's own files rank first
   );
 
   // Not enough content to ground meaningful worked examples

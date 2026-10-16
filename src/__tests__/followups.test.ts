@@ -16,6 +16,7 @@ const AVAILABILITY = Array.from({ length: 7 }, () => ({
 // 2026-07-16 15:00:00 UTC = 11:00 in America/New_York (EDT)
 const ENDED_AT = new Date("2026-07-16T15:00:00Z");
 
+/** The results are read the moment the run ends, unless a test says when. */
 function baseInput(overrides: Partial<Parameters<typeof computeFollowupSchedule>[0]> = {}) {
   return {
     accuracy: 0.75,
@@ -24,6 +25,7 @@ function baseInput(overrides: Partial<Parameters<typeof computeFollowupSchedule>
     examDate: "2026-08-15",
     planStartDate: "2026-07-16",
     availability: AVAILABILITY,
+    now: overrides.endedAt ?? ENDED_AT,
     ...overrides,
   };
 }
@@ -131,6 +133,56 @@ describe("computeFollowupSchedule", () => {
     // 09:00 America/New_York on 3/8 is EDT (UTC-4) = 13:00 UTC
     expect(planned[0].date).toBe("2026-03-08");
     expect(planned[0].start_time.toISOString()).toBe("2026-03-08T13:00:00.000Z");
+  });
+
+  describe("when the results are opened later", () => {
+    // Accuracy 0.6: follow-ups 1 and 2 days after the run, Jul 17 and Jul 18
+    const late = (now: string, overrides: Partial<Parameters<typeof computeFollowupSchedule>[0]> = {}) =>
+      computeFollowupSchedule(baseInput({ accuracy: 0.6, now: new Date(now), ...overrides }));
+
+    it("skips days that are over instead of adding sessions that are already missed", () => {
+      // Two days after the run: Jul 18, 8:00 AM in New York
+      const { planned, skipped } = late("2026-07-18T12:00:00Z");
+      expect(skipped).toEqual([{ date: "2026-07-17", days_from_now: 1, reason: "past" }]);
+      expect(planned.map((p) => p.date)).toEqual(["2026-07-18"]);
+      // Today's window hasn't opened yet, so the session keeps its 9:00 AM start
+      expect(planned[0].start_time.toISOString()).toBe("2026-07-18T13:00:00.000Z");
+    });
+
+    it("adds nothing once every day has passed", () => {
+      const { planned, skipped } = late("2026-07-20T12:00:00Z");
+      expect(planned).toEqual([]);
+      expect(skipped.map((s) => [s.date, s.reason])).toEqual([
+        ["2026-07-17", "past"],
+        ["2026-07-18", "past"],
+      ]);
+    });
+
+    it("starts a follow-up today at the next quarter hour once the window is under way", () => {
+      // Jul 18, 2:07 PM in New York
+      const { planned } = late("2026-07-18T18:07:33Z");
+      expect(planned.map((p) => p.date)).toEqual(["2026-07-18"]);
+      expect(planned[0].start_time.toISOString()).toBe("2026-07-18T18:15:00.000Z");
+      expect(planned[0].end_time.toISOString()).toBe("2026-07-18T18:45:00.000Z");
+    });
+
+    it("skips today when the session no longer fits before the window closes", () => {
+      // Jul 18, 4:40 PM in New York: 4:45 to 5:15 runs past the 5:00 PM close
+      const { planned, skipped } = late("2026-07-18T20:40:00Z");
+      expect(planned).toEqual([]);
+      expect(skipped.map((s) => [s.date, s.reason])).toEqual([
+        ["2026-07-17", "past"],
+        ["2026-07-18", "past"],
+      ]);
+    });
+
+    it("still reports a day after the exam as past_exam", () => {
+      const { skipped } = late("2026-07-18T12:00:00Z", { examDate: "2026-07-17" });
+      expect(skipped.map((s) => [s.date, s.reason])).toEqual([
+        ["2026-07-17", "past"],
+        ["2026-07-18", "past_exam"],
+      ]);
+    });
   });
 
   it("falls back to UTC wall time for an invalid timezone", () => {

@@ -15,6 +15,15 @@ export { MODE_LABELS };
 
 /** Topics named in a description before the rest are counted ("and 3 more"). */
 const MAX_TOPICS = 6;
+/** Topics named in an event title: calendar views cut long titles short. */
+const MAX_TITLE_TOPICS = 3;
+
+/**
+ * Follow-up sessions used to store "Follow-up: " in front of their topic
+ * scope (twice for a follow-up of a follow-up). Those rows still exist, and
+ * the marker isn't a topic.
+ */
+const LEGACY_FOLLOWUP_PREFIX = /^(?:follow-up:\s*)+/i;
 
 /**
  * A session's topic titles: its objectives ({ title } objects or strings),
@@ -35,32 +44,40 @@ export function sessionTopics(objectives: unknown, topicScope = ""): string[] {
     if (titles.length > 0) return titles;
   }
   return topicScope
+    .trim()
+    .replace(LEGACY_FOLLOWUP_PREFIX, "")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
 }
 
-/** "Recursion, Stacks, and Big-O", or the first few and "and 3 more". */
-function topicText(topics: readonly string[]): string {
-  if (topics.length <= MAX_TOPICS) return formatList(topics);
-  const rest = topics.length - MAX_TOPICS;
-  return formatList([...topics.slice(0, MAX_TOPICS), plural(rest, { one: "# more", other: "# more" })]);
+/** "Recursion, Stacks, and Big-O", or the first `max` and "and 3 more". */
+function topicText(topics: readonly string[], max = MAX_TOPICS): string {
+  if (topics.length <= max) return formatList(topics);
+  const rest = topics.length - max;
+  return formatList([...topics.slice(0, max), plural(rest, { one: "# more", other: "# more" })]);
 }
 
 function modeName(mode: string | undefined): string | null {
   return mode ? (MODE_LABELS[mode] ?? null) : null;
 }
 
-/** "Retrieval: Recursion and Stacks · CS 2110 Prelim 1" */
+/**
+ * "Retrieval: Recursion and Stacks · CS 2110 Prelim 1". Topics come from the
+ * objectives when given (else the topic scope), and a long list names the
+ * first 3 and counts the rest: "Exam simulation: A, B, C, and 3 more".
+ */
 export function buildCalendarTitle(params: {
   courseName: string;
   examName: string;
   mode: SessionMode | string;
   topicScope: string;
+  /** The session's objectives as stored ({ title } objects or strings). */
+  objectives?: unknown;
 }): string {
   const mode = modeName(params.mode) ?? "Study session";
-  const topics = sessionTopics(null, params.topicScope);
-  const what = topics.length > 0 ? `${mode}: ${formatList(topics)}` : mode;
+  const topics = sessionTopics(params.objectives, params.topicScope);
+  const what = topics.length > 0 ? `${mode}: ${topicText(topics, MAX_TITLE_TOPICS)}` : mode;
   const where = [params.courseName, params.examName].map((s) => s.trim()).filter(Boolean).join(" ");
   return where ? `${what} · ${where}` : what;
 }

@@ -30,7 +30,7 @@ describe("buildEventPayload", () => {
     expect(input.summary).toContain("CS 2110");
     expect(input.summary).toContain("Prelim 1");
     expect(input.summary).toContain("Retrieval");
-    expect(input.summary).toContain("Loops and invariants");
+    expect(input.summary).toContain("Understand loop invariants");
     expect(input.start).toBe("2026-04-10T14:00:00Z");
     expect(input.end).toBe("2026-04-10T15:20:00Z");
     expect(input.transparency).toBe("opaque");
@@ -43,9 +43,28 @@ describe("buildEventPayload", () => {
     expect(input.description).toContain("Open the session: https://studybot.example.com/s/sess_ghi789");
   });
 
-  it("titles the event mode first, then course and exam", () => {
+  it("titles the event mode first, then the topics, course and exam", () => {
     const { input } = buildEventPayload(baseInput);
-    expect(input.summary).toBe("Retrieval: Loops and invariants · CS 2110 Prelim 1");
+    // The same topics as the description, from the objectives
+    expect(input.summary).toBe(
+      "Retrieval: Understand loop invariants, Write correct loop bounds, and Prove termination · CS 2110 Prelim 1",
+    );
+  });
+
+  it("names the first 3 topics in the title and counts the rest", () => {
+    const manyObjectives = Array.from({ length: 6 }, (_, i) => `Topic ${i + 1}`);
+    const { input } = buildEventPayload({ ...baseInput, mode: "EXAM_SIM", objectives: manyObjectives });
+    expect(input.summary).toBe("Exam simulation: Topic 1, Topic 2, Topic 3, and 3 more · CS 2110 Prelim 1");
+  });
+
+  it("titles a follow-up stored with the old marker by its topics alone", () => {
+    const { input } = buildEventPayload({
+      ...baseInput,
+      topicScope: "Follow-up: Recursion, Stacks",
+      objectives: null,
+    });
+    expect(input.summary).toBe("Retrieval: Recursion and Stacks · CS 2110 Prelim 1");
+    expect(input.description).toContain("Topics: Recursion and Stacks");
   });
 
   it("lists the first topics and counts the rest", () => {

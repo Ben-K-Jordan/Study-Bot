@@ -12,7 +12,8 @@ type NavPlan = Pick<PlanSummary, "plan_id" | "course_name" | "exam_name" | "exam
  * The Plan area's own navigation, like the side panel of Google Calendar:
  * New plan, the student's plans (soonest exam first), and Materials. At
  * 1200px and up it is a column beside the content; below that it becomes a
- * row of buttons and a scrolling row of plan chips.
+ * row of buttons and a scrolling row of plan chips, where the section or
+ * plan on screen is marked with a check and a tonal fill.
  */
 export function PlanNav({
   plans,
@@ -61,7 +62,7 @@ export function PlanNav({
                       className={cn(
                         "state-layer relative isolate flex min-h-14 items-center gap-3 rounded-full px-4 py-2",
                         active
-                          ? "bg-secondary-container text-on-secondary-container"
+                          ? "bg-secondary-container text-on-secondary-container forced-colors:outline-2 forced-colors:outline-[Highlight]"
                           : "text-on-surface-variant hover:text-on-surface"
                       )}
                     >
@@ -90,7 +91,7 @@ export function PlanNav({
           className={cn(
             "state-layer relative isolate flex h-14 items-center gap-3 rounded-full px-4 type-label-l",
             section === "materials"
-              ? "bg-secondary-container text-on-secondary-container"
+              ? "bg-secondary-container text-on-secondary-container forced-colors:outline-2 forced-colors:outline-[Highlight]"
               : "text-on-surface-variant hover:text-on-surface"
           )}
         >
@@ -99,18 +100,28 @@ export function PlanNav({
         </Link>
       </aside>
 
-      {/* Compact and medium: buttons, then plan chips */}
+      {/* Compact and medium: New plan and Materials, then plan chips. The
+          section on screen gets the selected chip look (check icon, tonal
+          fill) like the plan chips; the others are outlined. */}
       <div className="flex min-w-0 flex-col gap-3 lg:hidden">
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary">
+          <Button asChild variant={section === "new" ? "secondary" : "outline"}>
             <Link href="/plan/new" aria-current={section === "new" ? "page" : undefined}>
-              <PlusIcon data-icon="inline-start" aria-hidden="true" />
+              {section === "new" ? (
+                <CheckIcon data-icon="inline-start" aria-hidden="true" />
+              ) : (
+                <PlusIcon data-icon="inline-start" aria-hidden="true" />
+              )}
               New plan
             </Link>
           </Button>
           <Button asChild variant={section === "materials" ? "secondary" : "outline"}>
             <Link href="/plan/materials" aria-current={section === "materials" ? "page" : undefined}>
-              <FolderOpenIcon data-icon="inline-start" aria-hidden="true" />
+              {section === "materials" ? (
+                <CheckIcon data-icon="inline-start" aria-hidden="true" />
+              ) : (
+                <FolderOpenIcon data-icon="inline-start" aria-hidden="true" />
+              )}
               Materials
             </Link>
           </Button>

@@ -135,11 +135,6 @@ export function daysUntilExam(examDate: string, timeZone: string, now: Date = ne
   return Math.round((Date.parse(examDate) - Date.parse(todayKey)) / 86_400_000)
 }
 
-/** The exam as a moment that falls on its calendar day in `timeZone`. */
-export function examMoment(examDate: string): Date {
-  return dayKeyToDate(examDate)
-}
-
 /** Formats a calendar-day key with any format.ts helper, independent of zone. */
 export const DAY_KEY_ZONE = "UTC"
 

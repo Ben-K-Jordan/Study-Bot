@@ -567,6 +567,55 @@ describe("missed sessions and the horizon", () => {
     }
   });
 
+  it("starts a session moved into today's window at the next quarter hour", () => {
+    // Wed 2025-06-04, 2:07:33 PM New York, inside the 9:00 to 17:00 window
+    const midWindow = new Date("2025-06-04T18:07:33Z");
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T13:50:00Z"),
+        plannedMinutes: 50,
+        status: "MISSED",
+      }),
+      makeItem({
+        id: "missed-2",
+        sessionId: "sm2",
+        startTime: new Date("2025-06-03T14:00:00Z"),
+        endTime: new Date("2025-06-03T14:30:00Z"),
+        plannedMinutes: 30,
+        status: "MISSED",
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, start, midWindow, [], NY, { includeMissed: true });
+    const after = (id: string) => result.changes.find((c) => c.itemId === id)!.after!;
+    // 2:15 PM, not 2:07:33; the next session follows on the same grid
+    expect(after("missed")).toMatchObject({
+      startTime: "2025-06-04T18:15:00.000Z",
+      endTime: "2025-06-04T19:05:00.000Z",
+    });
+    expect(after("missed-2").startTime).toBe("2025-06-04T19:05:00.000Z");
+  });
+
+  it("skips today when the rest of its window is under a quarter hour", () => {
+    // 4:50 PM New York: the next quarter hour is 5:00 PM, when the window closes
+    const lateNow = new Date("2025-06-04T20:50:00Z");
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T13:30:00Z"),
+        plannedMinutes: 30,
+        status: "MISSED",
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, start, lateNow, [], NY, { includeMissed: true });
+    // Thursday 9:00 AM New York
+    expect(result.changes[0].after!.startTime).toBe("2025-06-05T13:00:00.000Z");
+  });
+
   it("schedules past day 6 for plans older than a week", () => {
     // Plan started 10 days before now: the first 7 days are all in the past
     const oldStart = new Date("2025-05-25T16:00:00Z");

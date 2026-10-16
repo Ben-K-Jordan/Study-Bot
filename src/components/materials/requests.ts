@@ -29,7 +29,15 @@ const MAX_RATE_LIMIT_WAITS = 3
 const BUSY_POLL_MS = 5_000
 const MAX_BUSY_POLLS = 36
 
-export type ProcessOutcome = "PROCESSED" | "FAILED"
+/** Why a file couldn't be read, and what to do about it. */
+export function unreadableNote(name: string, outcome: "FAILED" | "TOO_LONG"): string {
+  return outcome === "TOO_LONG"
+    ? `${name} is too long to read. Split it into smaller files, then upload those.`
+    : `Couldn't read ${name}. Check that it has selectable text, then retry.`
+}
+
+/** FAILED: the file couldn't be read. TOO_LONG: it is over the reading limits, so splitting it helps. */
+export type ProcessOutcome = "PROCESSED" | "FAILED" | "TOO_LONG"
 
 /**
  * POST /api/content/documents/{id}/process until the file is ready or
@@ -59,7 +67,7 @@ export async function processUntilSettled(
       hooks.onResume?.()
       continue
     }
-    const data = (await readJson(res)) as { status?: string } | null
+    const data = (await readJson(res)) as { status?: string; reason?: string } | null
     if (data?.status === "PROCESSED") return "PROCESSED"
     if (data?.status === "PROCESSING") {
       // Still going after 3 minutes: report a timeout, not an unreadable file
@@ -68,6 +76,6 @@ export async function processUntilSettled(
       await sleep(BUSY_POLL_MS, signal)
       continue
     }
-    return "FAILED"
+    return data?.reason === "too_long" ? "TOO_LONG" : "FAILED"
   }
 }

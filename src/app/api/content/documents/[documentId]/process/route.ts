@@ -3,6 +3,7 @@ import { getUserId } from "@/lib/auth";
 import { processDocument } from "@/services/content";
 import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { unauthorized } from "@/lib/http";
+import { retryAfterText } from "@/lib/format";
 
 /**
  * POST /api/content/documents/{id}/process: read the file into sections.
@@ -23,7 +24,7 @@ export async function POST(
   const rl = aiLimiter.check(userId);
   if (!rl.allowed) {
     const seconds = Math.ceil(rl.retryAfterMs / 1000);
-    return tooManyRequests(rl.retryAfterMs, `Too many files at once. Retry in ${seconds} seconds.`);
+    return tooManyRequests(rl.retryAfterMs, `Too many files at once. ${retryAfterText(seconds)}`);
   }
 
   const { documentId } = await params;

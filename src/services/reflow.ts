@@ -26,6 +26,7 @@
  */
 
 import { computeFreeSlots, fitBlocksIntoSlots, type TimeInterval } from "@/lib/google/free-slots";
+import { nextQuarterHour } from "@/lib/plan-generator";
 import { addDays, dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 
 // ---- Types ----
@@ -324,8 +325,13 @@ export function computeReflow(
       continue;
     }
 
-    // Adjust window start to now if partially in the past
-    const effectiveStart = Math.max(windowStart.getTime(), now.getTime());
+    // Today's window may be under way: start at the next quarter hour, as a
+    // new plan does, so a session never lands at 2:07:33 PM
+    const effectiveStart = Math.max(windowStart.getTime(), nextQuarterHour(now.getTime()));
+    if (effectiveStart >= windowEnd.getTime()) {
+      dayFreeSlots.push([]);
+      continue;
+    }
 
     const free = computeFreeSlots(effectiveStart, windowEnd.getTime(), allBusy);
 

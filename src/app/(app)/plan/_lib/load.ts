@@ -4,6 +4,7 @@
  * browser.
  */
 import { prisma } from "@/lib/db"
+import { isGoogleCalendarAvailable } from "@/lib/google/availability"
 import { getUserTimezone, isValidTimezone } from "@/lib/timezone"
 import { getPlanView, listPlanSummaries, type PlanSummary, type PlanView } from "@/services/plan"
 import { listDocuments } from "@/services/content"
@@ -40,9 +41,9 @@ async function calendarState(userId: string, view: PlanView): Promise<CalendarSt
   const publication = "data" in status ? status.data.publication : null
   const added = "data" in status ? status.data.items.length : 0
   return {
-    // Hide Google options on a server without Google credentials, unless
-    // the student already connected (so existing events stay manageable).
-    configured: Boolean(process.env.GOOGLE_CLIENT_ID) || connection !== "not_connected",
+    // Hide Google options on a server that can't connect Google Calendar,
+    // unless the student already connected (so existing events stay manageable).
+    configured: isGoogleCalendarAvailable() || connection !== "not_connected",
     connection,
     publication: publication
       ? {
@@ -163,4 +164,19 @@ export async function loadMaterials(userId: string) {
     materials: documents.map(toMaterialDoc),
     plans: sortPlans(summaries, { timeZone }),
   }
+}
+
+/**
+ * The course and exam of a plan the student owns, for the Replace plan tab
+ * title. Null when the id names no plan of theirs.
+ */
+export async function planName(
+  userId: string,
+  planId: string
+): Promise<{ course_name: string; exam_name: string } | null> {
+  const plan = await prisma.studyPlan.findFirst({
+    where: { planId, userId },
+    select: { courseName: true, examName: true },
+  })
+  return plan ? { course_name: plan.courseName, exam_name: plan.examName } : null
 }

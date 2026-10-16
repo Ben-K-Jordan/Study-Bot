@@ -35,6 +35,17 @@ describe("buildCalendarTitle", () => {
     }
   });
 
+  it("reads the objectives before the scope, and caps the title at 3 topics", () => {
+    const title = buildCalendarTitle({
+      courseName: "CS 2110",
+      examName: "Prelim 1",
+      mode: "INTERLEAVED_PRACTICE",
+      topicScope: "ignored",
+      objectives: [{ title: "Recursion" }, { title: "Stacks" }, { title: "Queues" }, { title: "Graphs" }],
+    });
+    expect(title).toBe("Interleaved practice: Recursion, Stacks, Queues, and 1 more · CS 2110 Prelim 1");
+  });
+
   it("drops the topics part when there are none", () => {
     expect(buildCalendarTitle({ courseName: "CS 2110", examName: "Final", mode: "EXAM_SIM", topicScope: "" })).toBe(
       "Exam simulation · CS 2110 Final",
@@ -49,6 +60,11 @@ describe("sessionTopics", () => {
 
   it("falls back to the comma-separated scope", () => {
     expect(sessionTopics(null, "Recursion, Stacks , ")).toEqual(["Recursion", "Stacks"]);
+  });
+
+  it("drops the marker older follow-up sessions stored in their scope", () => {
+    expect(sessionTopics(null, "Follow-up: Recursion, Stacks")).toEqual(["Recursion", "Stacks"]);
+    expect(sessionTopics(null, "Follow-up: Follow-up: Unit tests")).toEqual(["Unit tests"]);
   });
 });
 

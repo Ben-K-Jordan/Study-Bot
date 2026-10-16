@@ -230,6 +230,42 @@ test("Reschedule sessions previews the move and applies it after confirming", { 
   expect(await statusOf()).toBe("RESCHEDULED");
 });
 
+test("Reschedule sessions previews afresh after leaving the plan and coming back", async ({
+  testUserPage: page,
+  testUser,
+}) => {
+  // Each visit to a plan used to restart the preview's cache key, so coming
+  // back served the first visit's preview from the cache.
+  const plan = await seedPlan(testUser.api, unique("E2E Fresh preview"));
+  const other = await seedPlan(testUser.api, unique("E2E Other plan"));
+  await setItemStatus(testUser.api, plan.id, plan.items[1].id, "MISSED");
+
+  await page.goto(`/plan?plan=${plan.id}`);
+  const reschedule = page.getByRole("button", { name: "Reschedule sessions" });
+  const dialog = page.getByRole("dialog", { name: "Reschedule sessions" });
+  const summary = dialog.getByRole("status").filter({ hasText: /sessions? moves?/ });
+  await hydrated(reschedule);
+  await reschedule.click();
+  await expect(summary).toHaveText(/^1 session moves and \d+ stays?\.$/);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+
+  await test.step("open the other plan, miss another session, and come back", async () => {
+    const plans = page.getByRole("navigation", { name: "Plans" });
+    await plans.getByRole("link", { name: new RegExp(other.course) }).click();
+    await expect(page.getByRole("heading", { level: 2, name: `${other.course} Prelim 1` })).toBeVisible();
+    await setItemStatus(testUser.api, plan.id, plan.items[2].id, "MISSED");
+    await plans.getByRole("link", { name: new RegExp(plan.course) }).click();
+    await expect(page.getByRole("heading", { level: 2, name: `${plan.course} Prelim 1` })).toBeVisible();
+  });
+
+  await hydrated(reschedule);
+  await reschedule.click();
+  await expect(summary).toHaveText(/^2 sessions move and \d+ stays?\.$/);
+  await expect(dialog.getByRole("region", { name: "New times" }).getByRole("listitem")).toHaveCount(2);
+  await expect(dialog.getByRole("button", { name: "Move 2 sessions" })).toBeVisible();
+});
+
 test("Export calendar downloads the plan as an .ics file", async ({ testUserPage: page, testUser }) => {
   const plan = await seedPlan(testUser.api, unique("E2E Export"));
   await page.goto(`/plan?plan=${plan.id}`);
@@ -264,6 +300,7 @@ test("Replace plan asks first, then swaps the old plan for the new one", async (
 
   await expect(page).toHaveURL(new RegExp(`/plan/new\\?replace=${plan.id}$`));
   await expect(page.getByRole("heading", { level: 2, name: `Replace the ${plan.course} Prelim 1 plan` })).toBeVisible();
+  await expect(page).toHaveTitle(`Replace ${plan.course} Prelim 1 plan · Study Bot`);
   await expect(page.getByRole("combobox", { name: "Course" })).toHaveValue(plan.course);
   await expect(page.getByRole("textbox", { name: "Exam", exact: true })).toHaveValue("Prelim 1");
   await expect(page.getByRole("textbox", { name: "Exam date" })).toHaveValue(plan.examDate);

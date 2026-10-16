@@ -2,9 +2,10 @@
 
 import * as React from "react"
 
+import { plural } from "@/lib/format"
 import { errorMessage, readJson } from "@/components/plan/api-errors"
 import { fileProblem } from "@/components/materials/file-rules"
-import { anySignal, processUntilSettled } from "@/components/materials/requests"
+import { anySignal, processUntilSettled, unreadableNote } from "@/components/materials/requests"
 
 /**
  * queued: waiting for the files before it; uploading; processing (reading
@@ -123,7 +124,10 @@ export function useMaterialUploads({
           onWait: (seconds) =>
             update(entry.key, {
               phase: "waiting",
-              note: `Too many files at once. Processing resumes in ${seconds} seconds.`,
+              note: plural(seconds, {
+                one: "Too many files at once. Processing resumes in # second.",
+                other: "Too many files at once. Processing resumes in # seconds.",
+              }),
             }),
           onResume: () => update(entry.key, { phase: "processing", note: undefined }),
         })
@@ -134,7 +138,7 @@ export function useMaterialUploads({
           update(entry.key, {
             phase: "failed",
             failedStep: "process",
-            note: `Couldn't read ${entry.name}. Check that it has selectable text, then retry.`,
+            note: unreadableNote(entry.name, outcome),
           })
           announce(`Couldn't read ${entry.name}`)
         }

@@ -19,6 +19,8 @@ import {
   SYNC_CONCURRENCY,
 } from "@/lib/google/calendar-client";
 import { buildEventPayload } from "@/lib/google/event-builder";
+import { googleErrorMessage } from "@/lib/google/messages";
+import { sanitizeForLog } from "@/lib/crypto/redact";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
 
@@ -105,20 +107,13 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
 
 // ---- Student-facing messages for the error codes above ----
 
-const CALENDAR_ERROR_MESSAGES: Record<string, string> = {
-  GOOGLE_NOT_CONNECTED: "Connect Google Calendar to add sessions to it.",
-  GOOGLE_RECONNECT_REQUIRED: "Google Calendar needs you to sign in again.",
-  ALREADY_PUBLISHED_DIFFERENT_CALENDAR: "This plan is already in a different Google calendar.",
-  not_found: "This plan doesn't exist anymore.",
-  forbidden: "This plan belongs to another account.",
-};
-
 /**
  * The sentence to show for a publish or unpublish error code. Routes send it
- * as `message` next to the code, so no raw code reaches the screen.
+ * as `message` next to the code, so no raw code reaches the screen. The copy
+ * lives in one place, shared with Settings and the plan screen.
  */
 export function calendarErrorMessage(code: string): string {
-  return CALENDAR_ERROR_MESSAGES[code] ?? "Google Calendar didn't respond. Retry in a minute.";
+  return googleErrorMessage(code);
 }
 
 // ---- Zod schemas for request validation ----
@@ -465,9 +460,12 @@ export async function publishPlanToGoogle(
   const dbStatus = status === "OK" ? "PUBLISHED" : status;
 
   if (!options.dryRun) {
-    const lastError = counts.failed > 0
+    // Google's error text is stored and sent back to the screen as
+    // last_error, so anything token-like in it is redacted first.
+    const failedMessage = counts.failed > 0
       ? itemResults.find((r) => r.action === "FAILED")?.error?.message || null
       : null;
+    const lastError = failedMessage ? sanitizeForLog(failedMessage) : null;
 
     await prisma.planCalendarPublication.upsert({
       where: { provider_planId: { provider: "GOOGLE", planId } },
@@ -601,7 +599,7 @@ export async function unpublishPlanFromGoogle(
       data: {
         status,
         lastSyncedAt: new Date(),
-        lastError: failedItems!.length > 0 ? failedItems![0].error.message : null,
+        lastError: failedItems!.length > 0 ? sanitizeForLog(failedItems![0].error.message) : null,
       },
     });
   }

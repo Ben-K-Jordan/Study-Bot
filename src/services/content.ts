@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { sha256, saveFile, resolveStoragePath, deleteStoredFile } from "@/lib/storage";
-import { extractDocumentText } from "@/lib/extractor";
+import { DocumentTooLongError, extractDocumentText } from "@/lib/extractor";
 import { chunkText } from "@/lib/chunker";
 import { enqueueJob } from "@/lib/jobs/queue";
 import { logger } from "@/lib/logger";
@@ -248,12 +248,20 @@ export async function processDocument(userId: string, documentId: string) {
       where: { id: doc.id },
       data: { status: "FAILED", errorMessage: msg },
     });
-    captureException(err, { user_id: userId, document_id: doc.id });
+    // A file over the reading limits is the student's to fix, not a fault
+    const tooLong = err instanceof DocumentTooLongError;
+    if (tooLong) {
+      logger.warn("document.too_long", { user_id: userId, document_id: doc.id });
+    } else {
+      captureException(err, { user_id: userId, document_id: doc.id });
+    }
     return {
       data: {
         document_id: doc.id,
         status: "FAILED",
         chunk_count: 0,
+        /** too_long: over the reading limits, so split the file; unreadable: anything else. */
+        reason: tooLong ? ("too_long" as const) : ("unreadable" as const),
       },
     };
   }

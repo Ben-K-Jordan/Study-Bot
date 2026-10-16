@@ -47,6 +47,7 @@ export function buildEventPayload(params: EventBuildInput): BuiltEvent {
     examName: params.examName,
     mode: params.mode,
     topicScope: params.topicScope,
+    objectives: params.objectives,
   });
 
   const description = buildCalendarDescription({
