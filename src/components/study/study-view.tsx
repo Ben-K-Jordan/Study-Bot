@@ -7,6 +7,7 @@ import { formatDateWeekday, plural } from "@/lib/format"
 import { useApi } from "@/lib/swr"
 import { useActiveCourse } from "@/hooks/use-active-course"
 import { useCourseOptions } from "@/hooks/use-course-options"
+import { useMounted } from "@/hooks/use-mounted"
 import { Button } from "@/components/ui/button"
 import { CourseSwitcher } from "@/components/app/course-switcher"
 import { EmptyState } from "@/components/app/empty-state"
@@ -48,21 +49,34 @@ function weakSpotStats(recs: StudyRecommendations): StatItem[] {
   return items
 }
 
+/** The recommendation for a course, and for the exam chosen with it. */
+export function recommendationsUrl(courseName: string, examName: string | null): string {
+  const params = new URLSearchParams({ course_name: courseName })
+  if (examName) params.set("exam_name", examName)
+  return `/api/learn/recommendations?${params.toString()}`
+}
+
 /**
  * Study: what to run next for the active course and why, with the mode and
  * length picker, today's planned sessions and the course's other tools.
  * Every request is keyed by its URL, so a course switch can never show the
  * previous course's recommendation.
+ *
+ * The page seeds the course list and course counts from the server. The
+ * active course lives in the browser, so the course's own content waits
+ * for hydration (skeleton until then, never another course's content), and
+ * its request starts right away instead of after the course list.
  */
 export function StudyView({ timeZone }: { timeZone?: string }) {
+  const mounted = useMounted()
   const courses = useCourseOptions()
   const { course } = useActiveCourse(courses.keys)
-  const courseName = course?.courseName ?? null
+  const ready = mounted && course !== null
+  const courseName = ready ? course.courseName : null
 
-  // Both start at once: the stored course is known before the course list arrives.
   const learn = useApi<LearnResponse>(courses.options?.length === 0 ? null : "/api/learn")
   const recs = useApi<StudyRecommendations>(
-    courseName ? `/api/learn/recommendations?course_name=${encodeURIComponent(courseName)}` : null
+    ready ? recommendationsUrl(course.courseName, course.examName) : null
   )
 
   if (courses.error && !courses.options) {
@@ -118,7 +132,7 @@ export function StudyView({ timeZone }: { timeZone?: string }) {
   return (
     <PageContainer>
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <CourseSwitcher className="w-full sm:w-auto" />
+        <CourseSwitcher />
         {recsData?.exam ? <ExamLine exam={recsData.exam} /> : null}
       </div>
 
@@ -138,7 +152,7 @@ export function StudyView({ timeZone }: { timeZone?: string }) {
           ) : recsData ? (
             <>
               <NextSessionCard
-                key={courseName}
+                key={`${courseName}::${course.examName ?? ""}`}
                 courseName={courseName}
                 examName={course.examName}
                 recs={recsData}

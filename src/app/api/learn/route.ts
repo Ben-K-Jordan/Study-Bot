@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { getStudyCourses } from "@/services/study-recommendations";
-import { unauthorized } from "./responses";
+import { unauthorized } from "@/lib/http";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);

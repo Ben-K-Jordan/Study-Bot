@@ -8,6 +8,7 @@ import { FolderUpIcon } from "lucide-react"
 import { useApi } from "@/lib/swr"
 import { useActiveCourse } from "@/hooks/use-active-course"
 import { useCourseOptions } from "@/hooks/use-course-options"
+import { useMounted } from "@/hooks/use-mounted"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CourseSwitcher } from "@/components/app/course-switcher"
@@ -37,6 +38,11 @@ function syncUrl(type: GuideType, guideId: string | null) {
  * Study guides for the active course and exam: one tab per format, the
  * guide rendered as a document, Generate guide with progress and errors,
  * export, print and delete.
+ *
+ * The page seeds the course list from the server. The active course lives
+ * in the browser, so the guides wait for hydration (skeleton until then,
+ * never another course's guides or name), and their request starts right
+ * away instead of after the course list.
  */
 export function GuidesView({
   initialType,
@@ -47,9 +53,10 @@ export function GuidesView({
   initialGuideId: string | null
   timeZone?: string
 }) {
+  const mounted = useMounted()
   const courses = useCourseOptions()
   const { activeCourse, course } = useActiveCourse(courses.keys)
-  const listUrl = course
+  const listUrl = mounted && course
     ? `/api/guides?${new URLSearchParams({
         course_name: course.courseName,
         ...(course.examName ? { exam_name: course.examName } : {}),
@@ -169,7 +176,7 @@ export function GuidesView({
     <PageContainer size="narrow">
       <GuidePrintStyles />
       <div className="flex print:hidden">
-        <CourseSwitcher className="w-full sm:w-auto" />
+        <CourseSwitcher />
       </div>
 
       <Tabs

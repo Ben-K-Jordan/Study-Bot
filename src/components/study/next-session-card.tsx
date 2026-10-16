@@ -79,8 +79,10 @@ export function NextSessionCard({
   const busy = state.status === "starting" || state.status === "opening"
   const titleId = "next-session-title"
 
+  // The coverage sentence above already gives the error count for Error
+  // repair, so the reason under it leaves the count out.
   const reason = isRecommended
-    ? recs.next_session.reason
+    ? (recs.next_session.reason_without_count ?? recs.next_session.reason)
     : `${studyModeLabel(recommended)} is the recommended mode. ${recs.next_session.reason}`
 
   return (

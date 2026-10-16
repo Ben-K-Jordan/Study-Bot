@@ -1,5 +1,6 @@
 /**
- * GET  /api/guides?course_name=&exam_name=   list guides, newest first
+ * GET  /api/guides?course_name=&exam_name=   list guides, newest first; only
+ *      the newest of each format carries `sections` (GET /api/guides/{id} for others)
  * POST /api/guides { course_name, exam_name?, guide_type }   generate one
  *
  * Error bodies carry a VOICE.md sentence in `error` and a stable `code`.
@@ -9,10 +10,10 @@ import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { GatewayError } from "@/lib/ai/gateway";
 import { logger } from "@/lib/logger";
-import { aiLimiter } from "@/lib/rate-limit";
+import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { generateStudyGuide, listStudyGuides, NoGuideMaterialsError } from "@/services/study-guides";
 import { GUIDE_TYPES } from "@/components/guides/guide-format";
-import { tooManyRequests, unauthorized } from "@/app/api/learn/responses";
+import { unauthorized } from "@/lib/http";
 
 const generateSchema = z.object({
   course_name: z.string().trim().min(1).max(200),

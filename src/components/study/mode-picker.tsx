@@ -78,8 +78,13 @@ export function ModePicker({
                 aria-describedby={`${id}-description`}
                 className="mt-0.5"
               />
-              <span className={cn("flex min-w-0 flex-col gap-0.5", unavailable && "opacity-60")}>
-                <span id={`${id}-label`} className="flex flex-wrap items-center gap-x-2 gap-y-1 type-title-s">
+              <span className="flex min-w-0 flex-col gap-0.5">
+                {/* Only the name dims: the description is the one place that
+                    says why the mode is unavailable, so it keeps full contrast. */}
+                <span
+                  id={`${id}-label`}
+                  className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 type-title-s", unavailable && "opacity-60")}
+                >
                   {mode.label}
                   {/* The card heading already says so when this mode is picked. */}
                   {mode.key === recommended && value !== recommended ? (

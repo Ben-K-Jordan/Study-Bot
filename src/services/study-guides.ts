@@ -150,36 +150,94 @@ export async function generateStudyGuide(
   };
 }
 
+/**
+ * A guide in a list. Only the newest guide of each format carries its
+ * sections; load another version with getStudyGuide (GET /api/guides/{id}),
+ * so the list stays small however often a guide is regenerated.
+ */
+export type StudyGuideListItem = Omit<StudyGuideData, "sections"> & { sections?: GuideSection[] };
+
+const GUIDE_META_SELECT = {
+  id: true,
+  userId: true,
+  courseName: true,
+  examName: true,
+  guideType: true,
+  title: true,
+  createdAt: true,
+} as const;
+
+function guideMeta(g: {
+  id: string;
+  userId: string;
+  courseName: string;
+  examName: string | null;
+  guideType: string;
+  title: string;
+  createdAt: Date;
+}): Omit<StudyGuideData, "sections"> {
+  const type = g.guideType as GuideType;
+  return {
+    id: g.id,
+    user_id: g.userId,
+    course_name: g.courseName,
+    exam_name: g.examName,
+    guide_type: type,
+    title: guideTitle(g.title, type, g.examName ? `${g.courseName} ${g.examName}` : g.courseName),
+    created_at: g.createdAt.toISOString(),
+  };
+}
+
+/** Guides for a course (and exam), newest first; sections on the newest of each format only. */
 export async function listStudyGuides(
   userId: string,
   courseName?: string,
   examName?: string,
-): Promise<StudyGuideData[]> {
+): Promise<StudyGuideListItem[]> {
   const where: Record<string, unknown> = { userId };
   if (courseName) where.courseName = courseName;
   if (examName) where.examName = examName;
 
-  const guides = await prisma.studyGuide.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-  });
+  const rows = (
+    await prisma.studyGuide.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: GUIDE_META_SELECT,
+    })
+  ).filter((g) => isGuideType(g.guideType));
 
-  return guides
-    .filter((g) => isGuideType(g.guideType))
-    .map((g) => {
-      const type = g.guideType as GuideType;
-      return {
-        id: g.id,
-        user_id: g.userId,
-        course_name: g.courseName,
-        exam_name: g.examName,
-        guide_type: type,
-        title: guideTitle(g.title, type, g.examName ? `${g.courseName} ${g.examName}` : g.courseName),
-        // Stored JSON may predate validation: clean it on the way out.
-        sections: normalizeGuideSections(g.content),
-        created_at: g.createdAt.toISOString(),
-      };
-    });
+  const newestIds: string[] = [];
+  const seen = new Set<string>();
+  for (const g of rows) {
+    if (seen.has(g.guideType)) continue;
+    seen.add(g.guideType);
+    newestIds.push(g.id);
+  }
+
+  const contents =
+    newestIds.length > 0
+      ? await prisma.studyGuide.findMany({
+          where: { userId, id: { in: newestIds } },
+          select: { id: true, content: true },
+        })
+      : [];
+  // Stored JSON may predate validation: clean it on the way out.
+  const sectionsById = new Map(contents.map((c) => [c.id, normalizeGuideSections(c.content)]));
+
+  return rows.map((g) => {
+    const sections = sectionsById.get(g.id);
+    return sections ? { ...guideMeta(g), sections } : guideMeta(g);
+  });
+}
+
+/** One guide with its sections, or null when it doesn't exist or isn't the user's. */
+export async function getStudyGuide(userId: string, guideId: string): Promise<StudyGuideData | null> {
+  const g = await prisma.studyGuide.findFirst({
+    where: { id: guideId, userId },
+    select: { ...GUIDE_META_SELECT, content: true },
+  });
+  if (!g || !isGuideType(g.guideType)) return null;
+  return { ...guideMeta(g), sections: normalizeGuideSections(g.content) };
 }
 
 /** Deletes a guide the user owns. Returns false when it doesn't exist or isn't theirs. */

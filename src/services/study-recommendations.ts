@@ -11,11 +11,14 @@
 import { prisma } from "@/lib/db";
 import { getDueObjectives, getMasterySummary } from "@/lib/mastery";
 import { logger } from "@/lib/logger";
-import { dayKey, daysBetween, getUserTimezone } from "@/lib/timezone";
+import { dayKey, daysBetween } from "@/lib/timezone";
+import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
 import { buildObjectiveIdMap } from "@/lib/plan-generator";
 import { formatList, formatTime, plural } from "@/lib/format";
-import { getStreak } from "@/services/gamification";
+import { getStreak, resolveTimeZone } from "@/services/gamification";
 import { createSession } from "@/services/session";
+import { endOfToday } from "@/services/spaced-repetition";
+import { isOpenPlanStatus, isUnstartedPlanStatus } from "@/components/home/home-model";
 import {
   breakProtocolFor,
   questionCountFor,
@@ -47,6 +50,12 @@ interface RecommendedSession {
   topic_scope: string;
   /** Why this mode, in one or two plain sentences. Rule-based, not AI. */
   reason: string;
+  /**
+   * The reason without the error count, for Error repair under a line that
+   * already gives it ("Retests your 9 unresolved errors, …"). The same as
+   * `reason` for every other mode.
+   */
+  reason_without_count: string;
 }
 
 interface OverdueObjective {
@@ -74,7 +83,7 @@ export interface PlannedSessionRef {
   session_id: string;
   start_time: string;
   end_time: string;
-  /** SCHEDULED, or IN_PROGRESS once a run has started. */
+  /** SCHEDULED or RESCHEDULED, or IN_PROGRESS once a run has started. */
   status: string;
   mode: string;
   mode_label: string;
@@ -107,10 +116,13 @@ export interface StudyRecommendations {
   plan_nudge: PlanNudge | null;
   /** The next planned session after today, when nothing is planned today. */
   next_planned: PlannedSessionRef | null;
-  /** The exam of the course's active plan. */
+  /**
+   * The exam of the course's active plan: the plan for the chosen exam when
+   * it is still ahead, else the nearest exam that hasn't passed.
+   */
   exam: ExamRef | null;
-  /** The zone used for "today" and the times above. */
-  time_zone: string | null;
+  /** The zone used for "today" and the times above (Settings, else the newest plan's, else UTC). */
+  time_zone: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,21 +182,54 @@ export function buildTopicScope(titles: readonly string[]): string {
 }
 
 /**
- * A stored topic scope in readable form. Sessions created before titles
- * were mapped hold raw keys ("photosynthesis_light_reactions, cell_cycle"),
- * possibly with a "(+2 more)" tail.
+ * A stored topic scope as one Intl list, the way Home and Plan list a
+ * session's topics. Plans store titles comma-joined ("CSS specificity, The
+ * box model"); sessions created before titles were mapped hold raw keys
+ * ("photosynthesis_light_reactions, cell_cycle"), possibly with a
+ * "(+2 more)" tail. A scope that is already a list ("A, B, and C") stays
+ * the same.
  */
 export function readableTopicScope(scope: string, titles: Map<string, string>): string {
   const trimmed = scope.trim();
   if (!trimmed) return "General review";
   const tail = trimmed.match(/\s*\(\+(\d+) more\)$/);
   const body = tail ? trimmed.slice(0, tail.index) : trimmed;
-  const parts = body.split(/,\s*/).filter(Boolean);
-  const looksLikeKeys = parts.every((p) => titles.has(p) || (KEY_PATTERN.test(p) && /[_-]/.test(p)));
-  if (!looksLikeKeys) return trimmed;
-  const readable = parts.map((p) => titles.get(p) ?? humanizeTopicKey(p));
+  const parts = body
+    .split(/,\s*/)
+    .map((p, i, all) => (i > 0 && i === all.length - 1 ? p.replace(/^and\s+/, "") : p).trim())
+    .filter(Boolean);
+  const readable = parts.map((p) =>
+    titles.get(p) ?? (KEY_PATTERN.test(p) && /[_-]/.test(p) ? humanizeTopicKey(p) : p),
+  );
   if (tail) readable.push(plural(Number(tail[1]), { one: "# more", other: "# more" }));
-  return formatList(readable);
+  return readable.length > 0 ? formatList(readable) : "General review";
+}
+
+/**
+ * A session's topics as one Intl list: the titles stored on the session
+ * (what Home and Plan list), else its stored scope.
+ */
+export function sessionTopicLine(
+  objectives: unknown,
+  scope: string,
+  titles: Map<string, string>,
+): string {
+  if (Array.isArray(objectives)) {
+    const named = objectives
+      .map((entry) => {
+        // Entries are { id, title }; older sessions may hold plain titles.
+        if (typeof entry === "string") return entry.trim() || null;
+        const id = (entry as { id?: unknown })?.id;
+        const title = (entry as { title?: unknown })?.title;
+        if (typeof title !== "string" || !title.trim()) return null;
+        // A title that is itself a key reads better through the title map.
+        if (typeof id === "string" && title === id && KEY_PATTERN.test(title)) return topicFor(id, titles).title;
+        return title.trim();
+      })
+      .filter((t): t is string => t !== null);
+    if (named.length > 0) return formatList(named);
+  }
+  return readableTopicScope(scope, titles);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,13 +261,29 @@ export function dominantErrorPhrase(types: readonly string[]): string | null {
   return topCount === types.length ? `all ${label}` : `mostly ${label}`;
 }
 
-export function errorRepairReason(errorTypes: readonly string[]): string {
+const RESOLVED_RULE = "An error is resolved after you answer it correctly on 2 different days.";
+
+/**
+ * Why Error repair: "4 unresolved errors, mostly misconceptions. An error
+ * is resolved …". With `withCount: false`, for a screen that already gives
+ * the count: "Most are misconceptions. An error is resolved …".
+ */
+export function errorRepairReason(
+  errorTypes: readonly string[],
+  { withCount = true }: { withCount?: boolean } = {},
+): string {
+  const phrase = dominantErrorPhrase(errorTypes);
+  if (!withCount) {
+    // "All are" needs at least two; Error repair is only recommended from 3.
+    if (!phrase || errorTypes.length < 2) return RESOLVED_RULE;
+    const [share, ...label] = phrase.split(" ");
+    return `${share === "all" ? "All" : "Most"} are ${label.join(" ")}. ${RESOLVED_RULE}`;
+  }
   const count = plural(errorTypes.length, {
     one: "# unresolved error",
     other: "# unresolved errors",
   });
-  const phrase = dominantErrorPhrase(errorTypes);
-  return `${count}${phrase ? `, ${phrase}` : ""}. An error is resolved after you answer it correctly on 2 different days.`;
+  return `${count}${phrase ? `, ${phrase}` : ""}. ${RESOLVED_RULE}`;
 }
 
 export function overdueReason(overdueCount: number, maxDaysOverdue: number): string {
@@ -250,23 +311,49 @@ export function firstSessionReason(courseName: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Streak
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Main function
 // ---------------------------------------------------------------------------
 
-const OPEN_ITEM_STATUSES = new Set(["SCHEDULED", "IN_PROGRESS"]);
+/**
+ * The course's active plan: the one for `examName` when its exam is still
+ * ahead, else the nearest exam that hasn't passed (newest plan first on a
+ * tie), the way Home picks a course's exam. The exam date decides, not
+ * endDate: plans store endDate as 7 days from the start, which in zones
+ * west of UTC stops counting during the evening of day 5 and would drop
+ * the plan before its last sessions.
+ */
+async function findActivePlan(
+  userId: string,
+  courseName: string,
+  examName: string | null,
+  todayKey: string,
+) {
+  const plans = await prisma.studyPlan.findMany({
+    where: { userId, courseName, examDate: { gte: dateColumnValue(todayKey) } },
+    include: { items: { orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }] } },
+    orderBy: [{ examDate: "asc" }, { createdAt: "desc" }],
+    take: 10,
+  });
+  return (examName ? plans.find((p) => p.examName === examName) : undefined) ?? plans[0] ?? null;
+}
 
+/**
+ * @param examName The exam chosen in the course switcher, if any. It picks
+ *   which plan's exam and sessions show; topics and errors stay course-wide.
+ */
 export async function getStudyRecommendations(
   userId: string,
   courseName: string,
+  examName: string | null = null,
 ): Promise<StudyRecommendations> {
   const now = new Date();
-  const tzPromise = getUserTimezone(userId);
+  // The same "today" as Home, Cards and Progress.
+  const zonePromise = resolveTimeZone(userId);
+  const planPromise = zonePromise.then((zone) =>
+    findActivePlan(userId, courseName, examName, dayKey(now, zone)),
+  );
 
-  const [dueObjectives, masterySummary, courseErrors, activePlan, recentSessions, userTz, streak] =
+  const [dueObjectives, masterySummary, courseErrors, activePlan, recentSessions, zone, streak] =
     await Promise.all([
       getDueObjectives(userId, courseName, 200, now),
       getMasterySummary(userId, courseName),
@@ -276,23 +363,18 @@ export async function getStudyRecommendations(
         orderBy: [{ confidenceRating: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
         select: { runId: true, promptIndex: true, errorType: true },
       }),
-      prisma.studyPlan.findFirst({
-        where: { userId, courseName, endDate: { gte: now } },
-        include: { items: { orderBy: [{ dayIndex: "asc" }, { startTime: "asc" }] } },
-        orderBy: { createdAt: "desc" },
-      }),
+      planPromise,
       prisma.session.findMany({
         where: { userId, courseName },
         select: { objectives: true },
         orderBy: { createdAt: "desc" },
         take: 30,
       }),
-      tzPromise,
+      zonePromise,
       // The same streak Home and Progress show
       getStreak(userId),
     ]);
 
-  const zone = userTz ?? activePlan?.timezone ?? null;
   const todayKey = dayKey(now, zone);
   const titles = buildTopicTitleMap(activePlan?.config ?? null, recentSessions);
 
@@ -331,8 +413,7 @@ export async function getStudyRecommendations(
   // ── Exam of the active plan ────────────────────────────────────
   let exam: ExamRef | null = null;
   if (activePlan) {
-    // examDate is a calendar date stored at UTC midnight.
-    const examKey = activePlan.examDate.toISOString().slice(0, 10);
+    const examKey = dateColumnKey(activePlan.examDate);
     exam = { name: activePlan.examName, date: examKey, days_until: daysBetween(todayKey, examKey) };
   }
   const examSoon = exam !== null && exam.days_until >= 0 && exam.days_until <= 3;
@@ -344,12 +425,17 @@ export async function getStudyRecommendations(
   let mode: RecommendedMode;
   let keys: string[];
   let reason: string;
+  let reasonWithoutCount: string | null = null;
 
   if (courseErrors.length >= 3) {
     mode = "ERROR_REPAIR";
     keys = await errorTopicKeys(courseErrors.slice(0, 10));
     if (keys.length === 0) keys = overdueObjectives.slice(0, 5).map((o) => o.objective_key);
     reason = errorRepairReason(courseErrors.map((e) => e.errorType));
+    reasonWithoutCount = errorRepairReason(
+      courseErrors.map((e) => e.errorType),
+      { withCount: false },
+    );
   } else if (overdueObjectives.length >= 5) {
     mode = "RETRIEVAL";
     keys = overdueObjectives.slice(0, 5).map((o) => o.objective_key);
@@ -395,6 +481,7 @@ export async function getStudyRecommendations(
     topics,
     topic_scope: buildTopicScope(topics.map((t) => t.title)),
     reason,
+    reason_without_count: reasonWithoutCount ?? reason,
   };
 
   // ── Planned sessions: today's, else the next one ───────────────
@@ -402,14 +489,15 @@ export async function getStudyRecommendations(
   let nextPlanned: PlannedSessionRef | null = null;
 
   if (activePlan) {
-    const open = activePlan.items.filter((item) => OPEN_ITEM_STATUSES.has(item.status));
+    // Sessions moved by Reschedule (RESCHEDULED) are still to do, as on Home and Plan.
+    const open = activePlan.items.filter((item) => isOpenPlanStatus(item.status));
     const todayItems = open
       .filter((item) => dayKey(item.startTime, zone) === todayKey)
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
     const laterItem =
       todayItems.length === 0
         ? open
-            .filter((item) => item.status === "SCHEDULED" && dayKey(item.startTime, zone) > todayKey)
+            .filter((item) => isUnstartedPlanStatus(item.status) && dayKey(item.startTime, zone) > todayKey)
             .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0]
         : undefined;
 
@@ -417,15 +505,15 @@ export async function getStudyRecommendations(
     if (wanted.length > 0) {
       const sessions = await prisma.session.findMany({
         where: { userId, sessionId: { in: wanted.map((item) => item.sessionId) } },
-        select: { sessionId: true, mode: true, topicScope: true },
+        select: { sessionId: true, mode: true, topicScope: true, objectives: true },
       });
       const bySessionId = new Map(sessions.map((s) => [s.sessionId, s]));
-      const timeZone = zone ?? "UTC";
+      const timeZone = zone;
 
       const toRef = (item: (typeof wanted)[number], when: "today" | "later"): PlannedSessionRef => {
         const session = bySessionId.get(item.sessionId);
         const modeLabel = session ? studyModeLabel(session.mode) : "Session";
-        const scope = session ? readableTopicScope(session.topicScope, titles) : "";
+        const scope = session ? sessionTopicLine(session.objectives, session.topicScope, titles) : "";
         const time = formatTime(item.startTime, { timeZone });
         const what = scope ? `${modeLabel} on ${scope}` : modeLabel;
         return {
@@ -503,21 +591,28 @@ export interface StudyCourseSummary {
   processingDocCount: number;
   failedDocCount: number;
   deckCount: number;
-  /** Cards due for review now. */
+  /** Reviewed cards due before the student's day ends, as Cards counts "due today". */
   dueReviewCount: number;
   /** Cards never reviewed. */
   newCardCount: number;
-  /** dueReviewCount + newCardCount (the older single count). */
+  /** dueReviewCount + newCardCount: the Cards screen's "due today". */
   dueCardCount: number;
   guideCount: number;
 }
 
-/** Per-course counts for the Study screen's course tools. */
-export async function getStudyCourses(userId: string): Promise<StudyCourseSummary[]> {
-  const docs = await prisma.contentDocument.findMany({
-    where: { userId, namespace: "COURSE", courseName: { not: null } },
-    select: { courseName: true, examName: true, status: true },
-  });
+/**
+ * Per-course counts for the Study screen's course tools. Pass the student's
+ * zone (resolveTimeZone) when it is already known, to skip the lookup.
+ */
+export async function getStudyCourses(userId: string, timeZone?: string): Promise<StudyCourseSummary[]> {
+  const now = new Date();
+  const [docs, zone] = await Promise.all([
+    prisma.contentDocument.findMany({
+      where: { userId, namespace: "COURSE", courseName: { not: null } },
+      select: { courseName: true, examName: true, status: true },
+    }),
+    timeZone ?? resolveTimeZone(userId),
+  ]);
 
   const byCourse = new Map<
     string,
@@ -535,7 +630,9 @@ export async function getStudyCourses(userId: string): Promise<StudyCourseSummar
   if (byCourse.size === 0) return [];
 
   const courseNames = [...byCourse.keys()];
-  const now = new Date();
+  // One definition of "due today" with the Cards screen (spaced-repetition
+  // isDueToday): reviewed cards due before midnight on the student's clock.
+  const todayEnds = endOfToday(zone, now);
   const [decks, newCards, dueCards, guides] = await Promise.all([
     prisma.flashcardDeck.findMany({
       where: { userId, courseName: { in: courseNames } },
@@ -548,7 +645,7 @@ export async function getStudyCourses(userId: string): Promise<StudyCourseSummar
     }),
     prisma.flashcard.groupBy({
       by: ["deckId"],
-      where: { deck: { userId, courseName: { in: courseNames } }, nextDueAt: { lte: now } },
+      where: { deck: { userId, courseName: { in: courseNames } }, nextDueAt: { lt: todayEnds } },
       _count: { id: true },
     }),
     prisma.studyGuide.groupBy({
@@ -640,7 +737,7 @@ export async function startStudySession(
       where: { userId, namespace: "COURSE", courseName },
       select: { examName: true, status: true },
     }),
-    getStudyRecommendations(userId, courseName),
+    getStudyRecommendations(userId, courseName, input.examName?.trim() || null),
   ]);
 
   if (docs.length === 0) {

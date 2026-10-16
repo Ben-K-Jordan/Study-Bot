@@ -36,8 +36,10 @@ interface TestState {
   gameState: { row: { timezone: string | null } | null };
   errors: { runId: string; promptIndex: number; errorType: string }[];
   plan: PlanRow | null;
+  /** More plans for the same course (other exams). */
+  otherPlans: PlanRow[];
   sessions: { objectives: unknown }[];
-  nudgeSessions: { sessionId: string; mode: string; topicScope: string }[];
+  nudgeSessions: { sessionId: string; mode: string; topicScope: string; objectives?: unknown }[];
   prompts: { runId: string; promptIndex: number; objectiveId: string | null }[];
   docs: { examName: string | null; status: string }[];
   existingSession: { sessionId: string } | null;
@@ -51,6 +53,7 @@ vi.mock("@/lib/db", () => {
     gameState: { row: null },
     errors: [],
     plan: null,
+    otherPlans: [],
     sessions: [],
     nudgeSessions: [],
     prompts: [],
@@ -63,9 +66,15 @@ vi.mock("@/lib/db", () => {
     prisma: {
       sessionRun: { findMany: vi.fn(async () => state.completedRuns) },
       sessionErrorLog: { findMany: vi.fn(async () => state.errors) },
-      studyPlan: { findFirst: vi.fn(async () => state.plan) },
-      // getUserTimezone reads UserGameState.timezone; null row = no timezone (UTC)
-      userGameState: { findUnique: vi.fn(async () => state.gameState.row) },
+      // Plans whose exam is today or later, nearest exam first (findActivePlan).
+      studyPlan: {
+        findMany: vi.fn(async (args: { where?: { examDate?: { gte?: Date } } }) => {
+          const from = args?.where?.examDate?.gte ?? new Date(0);
+          return [...(state.plan ? [state.plan] : []), ...state.otherPlans]
+            .filter((p) => p.examDate >= from)
+            .sort((a, b) => a.examDate.getTime() - b.examDate.getTime());
+        }),
+      },
       session: {
         findMany: vi.fn(async (args: { where?: { sessionId?: unknown } }) =>
           args?.where?.sessionId ? state.nudgeSessions : state.sessions,
@@ -85,9 +94,10 @@ vi.mock("@/lib/mastery", () => ({
   getMasterySummary: vi.fn(async () => ({ total: 0, objectives: [] })),
 }));
 
-// The streak comes from gamification (covered in gamification.test.ts)
+// The streak and the zone come from gamification (covered in gamification.test.ts)
 vi.mock("@/services/gamification", () => ({
   getStreak: vi.fn(async () => 0),
+  resolveTimeZone: vi.fn(async () => "UTC"),
 }));
 
 vi.mock("@/services/session", () => ({
@@ -101,16 +111,18 @@ vi.mock("@/services/session", () => ({
 import {
   buildTopicScope,
   dominantErrorPhrase,
+  errorRepairReason,
   getStudyRecommendations,
   humanizeTopicKey,
   readableTopicScope,
+  sessionTopicLine,
   startStudySession,
   StudyStartError,
 } from "@/services/study-recommendations";
 import { prisma } from "@/lib/db";
 import { getDueObjectives, getMasterySummary } from "@/lib/mastery";
 import { createSession } from "@/services/session";
-import { getStreak } from "@/services/gamification";
+import { getStreak, resolveTimeZone } from "@/services/gamification";
 
 const state = (prisma as unknown as { _test: TestState })._test;
 
@@ -180,6 +192,7 @@ beforeEach(() => {
   state.gameState.row = null;
   state.errors = [];
   state.plan = null;
+  state.otherPlans = [];
   state.sessions = [];
   state.nudgeSessions = [];
   state.prompts = [];
@@ -188,6 +201,10 @@ beforeEach(() => {
   state.plannedItem = null;
   vi.mocked(getDueObjectives).mockResolvedValue([]);
   setMastery([]);
+  // Settings, else the newest plan's zone, else UTC, as resolveTimeZone does.
+  vi.mocked(resolveTimeZone).mockImplementation(
+    async () => state.gameState.row?.timezone ?? state.plan?.timezone ?? "UTC",
+  );
 });
 
 afterEach(() => {
@@ -220,12 +237,42 @@ describe("topic titles", () => {
     expect(buildTopicScope(["A", "B", "C", "D", "E"])).toBe("A, B, C, and 2 more");
   });
 
-  it("rewrites stored key scopes and leaves titles alone", () => {
+  it("rewrites stored key scopes as one list", () => {
     const titles = new Map([["css_specificity", "CSS specificity"]]);
     expect(readableTopicScope("css_specificity, box_model (+2 more)", titles)).toBe(
       "CSS specificity, Box model, and 2 more",
     );
-    expect(readableTopicScope("Specificity, Box sizing", titles)).toBe("Specificity, Box sizing");
+    expect(readableTopicScope("", titles)).toBe("General review");
+  });
+
+  it("lists comma-joined titles the way Home and Plan do", () => {
+    const titles = new Map<string, string>();
+    // Plans store titles joined with ", " (research-plan-generator).
+    expect(readableTopicScope("CSS specificity, The box model", titles)).toBe("CSS specificity and The box model");
+    expect(readableTopicScope("Specificity, Box sizing, Flexbox", titles)).toBe(
+      "Specificity, Box sizing, and Flexbox",
+    );
+    // Already a list, or a single title: unchanged.
+    expect(readableTopicScope("A, B, and C", titles)).toBe("A, B, and C");
+    expect(readableTopicScope("Recursion and stacks", titles)).toBe("Recursion and stacks");
+    expect(readableTopicScope("Big-O", titles)).toBe("Big-O");
+  });
+
+  it("prefers the titles stored on the session", () => {
+    const titles = new Map([["cell_cycle", "Cell cycle"]]);
+    expect(
+      sessionTopicLine(
+        [
+          { id: "css_specificity", title: "CSS specificity" },
+          { id: "box_model", title: "The box model" },
+        ],
+        "css_specificity, box_model",
+        titles,
+      ),
+    ).toBe("CSS specificity and The box model");
+    expect(sessionTopicLine([{ id: "cell_cycle", title: "cell_cycle" }], "", titles)).toBe("Cell cycle");
+    expect(sessionTopicLine(["Recursion", "Stacks"], "", titles)).toBe("Recursion and Stacks");
+    expect(sessionTopicLine(null, "Recursion, Stacks", titles)).toBe("Recursion and Stacks");
   });
 
   it("maps mastery keys to plan and session titles in the recommendation", async () => {
@@ -278,7 +325,26 @@ describe("recommendation reasons", () => {
     expect(recs.next_session.reason).toBe(
       "4 unresolved errors, mostly misconceptions. An error is resolved after you answer it correctly on 2 different days.",
     );
+    // For the card, whose heading line already gives the count.
+    expect(recs.next_session.reason_without_count).toBe(
+      "Most are misconceptions. An error is resolved after you answer it correctly on 2 different days.",
+    );
     expect(recs.unresolved_errors.count).toBe(4);
+  });
+
+  it("can leave the count out of the error repair reason", () => {
+    const rule = "An error is resolved after you answer it correctly on 2 different days.";
+    expect(errorRepairReason(["MEMORY", "MEMORY", "MEMORY"], { withCount: false })).toBe(`All are memory gaps. ${rule}`);
+    expect(errorRepairReason(["PROCEDURE", "PROCEDURE", "CARELESS"], { withCount: false })).toBe(
+      `Most are wrong steps. ${rule}`,
+    );
+    expect(errorRepairReason(["CARELESS", "PROCEDURE", "MEMORY"], { withCount: false })).toBe(rule);
+    expect(errorRepairReason(["MEMORY"], { withCount: false })).toBe(rule);
+  });
+
+  it("keeps the same reason with and without a count for other modes", async () => {
+    const recs = await getStudyRecommendations("user1", "Biology");
+    expect(recs.next_session.reason_without_count).toBe(recs.next_session.reason);
   });
 
   it("names the dominant error type only when it is more than half", () => {
@@ -423,6 +489,89 @@ describe("planned sessions", () => {
     expect(recs.next_planned?.session_id).toBe("s-later");
     expect(recs.next_planned?.mode_label).toBe("Exam simulation");
     expect(recs.next_planned?.message).toBe("Exam simulation on Cell cycle");
+  });
+
+  it("lists a planned session's topics with Intl, as Home and Plan do", async () => {
+    state.gameState.row = { timezone: "America/New_York" };
+    state.plan = planWith([
+      {
+        sessionId: "s-today",
+        status: "SCHEDULED",
+        dayIndex: 0,
+        startTime: new Date("2026-07-15T18:00:00Z"),
+        endTime: new Date("2026-07-15T18:30:00Z"),
+      },
+    ]);
+    // A plan session: titles comma-joined in the scope, objectives stored too.
+    state.nudgeSessions = [
+      {
+        sessionId: "s-today",
+        mode: "RETRIEVAL",
+        topicScope: "CSS specificity, The box model",
+        objectives: [
+          { id: "css_specificity", title: "CSS specificity" },
+          { id: "the_box_model", title: "The box model" },
+        ],
+      },
+    ];
+
+    const recs = await getStudyRecommendations("user1", "INFO 1300");
+    const item = recs.plan_nudge!.items[0];
+    expect(item.topic_scope).toBe("CSS specificity and The box model");
+    expect(item.message).toMatch(/^Today at 2:00\sPM: Retrieval on CSS specificity and The box model$/);
+  });
+
+  it("counts rescheduled sessions as still to do", async () => {
+    state.gameState.row = { timezone: "America/New_York" };
+    state.plan = planWith([
+      {
+        sessionId: "s-moved",
+        status: "RESCHEDULED",
+        dayIndex: 3,
+        startTime: new Date("2026-07-18T14:00:00Z"),
+        endTime: new Date("2026-07-18T14:30:00Z"),
+      },
+    ]);
+    state.nudgeSessions = [{ sessionId: "s-moved", mode: "RETRIEVAL", topicScope: "Cell cycle" }];
+
+    const recs = await getStudyRecommendations("user1", "Biology");
+    expect(recs.next_planned?.session_id).toBe("s-moved");
+  });
+});
+
+describe("the course's exam", () => {
+  function plan(planId: string, examName: string, examDate: string): PlanRow {
+    return {
+      planId,
+      examName,
+      examDate: new Date(`${examDate}T00:00:00Z`),
+      timezone: "America/New_York",
+      config: {},
+      items: [],
+    };
+  }
+
+  it("uses the plan for the exam chosen in the course switcher", async () => {
+    state.plan = plan("p1", "Prelim 1", "2026-07-20");
+    state.otherPlans = [plan("p2", "Prelim 2", "2026-08-10")];
+
+    expect((await getStudyRecommendations("user1", "CS 2110", "Prelim 2")).exam?.name).toBe("Prelim 2");
+    // No exam chosen, or one without a plan: the nearest exam ahead.
+    expect((await getStudyRecommendations("user1", "CS 2110")).exam?.name).toBe("Prelim 1");
+    expect((await getStudyRecommendations("user1", "CS 2110", "Final")).exam?.name).toBe("Prelim 1");
+  });
+
+  it("drops a plan once its exam has passed, and keeps one whose exam is today", async () => {
+    state.gameState.row = { timezone: "America/New_York" };
+    state.plan = plan("old", "Prelim 1", "2026-07-14");
+    expect((await getStudyRecommendations("user1", "CS 2110")).exam).toBeNull();
+
+    state.plan = plan("today", "Prelim 1", "2026-07-15");
+    expect((await getStudyRecommendations("user1", "CS 2110")).exam).toEqual({
+      name: "Prelim 1",
+      date: "2026-07-15",
+      days_until: 0,
+    });
   });
 });
 

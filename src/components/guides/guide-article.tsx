@@ -2,15 +2,15 @@
 
 import { useEffect, useRef } from "react"
 import dynamic from "next/dynamic"
-import { DownloadIcon, PrinterIcon, SparklesIcon, Trash2Icon } from "lucide-react"
+import { DownloadIcon, PrinterIcon, Trash2Icon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { formatDate } from "@/lib/format"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { AiTag } from "@/components/app/ai-tag"
 import { ErrorBoundary } from "@/components/app/error-boundary"
 import {
   guideFileName,
@@ -130,10 +130,7 @@ export function GuideArticle({
             >
               {guide.title}
             </h2>
-            <Badge variant="secondary">
-              <SparklesIcon data-icon="inline-start" aria-hidden="true" />
-              AI-written
-            </Badge>
+            <AiTag />
           </div>
           <p className="type-body-m text-on-surface-variant tabular-nums">
             {format.label}

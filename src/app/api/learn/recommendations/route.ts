@@ -1,20 +1,23 @@
 /**
- * GET /api/learn/recommendations?course_name=...
+ * GET /api/learn/recommendations?course_name=...&exam_name=...
  *
  * The recommended next session for a course (mode, topics, reason), plus
  * overdue and weak topics, unresolved errors, the streak, today's planned
- * sessions and the course's exam.
+ * sessions and the course's exam. exam_name (optional) is the exam chosen
+ * in the course switcher: its plan supplies the exam and planned sessions
+ * when one exists.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
-import { generalLimiter } from "@/lib/rate-limit";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { getStudyRecommendations } from "@/services/study-recommendations";
-import { tooManyRequests, unauthorized } from "../responses";
+import { unauthorized } from "@/lib/http";
 
 const querySchema = z.object({
   course_name: z.string().trim().min(1).max(200),
+  exam_name: z.string().trim().max(200).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -26,6 +29,7 @@ export async function GET(request: NextRequest) {
 
   const parsed = querySchema.safeParse({
     course_name: request.nextUrl.searchParams.get("course_name") ?? "",
+    exam_name: request.nextUrl.searchParams.get("exam_name") || undefined,
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -36,7 +40,7 @@ export async function GET(request: NextRequest) {
 
   const courseName = parsed.data.course_name;
   try {
-    const recommendations = await getStudyRecommendations(userId, courseName);
+    const recommendations = await getStudyRecommendations(userId, courseName, parsed.data.exam_name || null);
     return NextResponse.json(recommendations);
   } catch (err) {
     logger.error("recommendations.fetch_failed", { userId, courseName, error: String(err) });

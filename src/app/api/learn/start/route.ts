@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
-import { generalLimiter } from "@/lib/rate-limit";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { startStudySession, StudyStartError } from "@/services/study-recommendations";
 import {
@@ -20,7 +20,7 @@ import {
   STUDY_MODE_KEYS,
   type SessionLength,
 } from "@/components/study/study-modes";
-import { tooManyRequests, unauthorized } from "../responses";
+import { unauthorized } from "@/lib/http";
 
 const startSchema = z.object({
   course_name: z.string().trim().min(1).max(200),
