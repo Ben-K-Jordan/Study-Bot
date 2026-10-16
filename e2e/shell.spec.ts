@@ -25,8 +25,9 @@ for (const { path, title } of DESTINATIONS) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
     await expect(page).toHaveTitle(`${title} · Study Bot`);
-    // Skeletons give way to the page's own content before axe looks.
-    await expect(page.getByRole("main").getByRole("status", { name: /Loading/ })).toHaveCount(0);
+    // Loading states ("Loading chat history…") give way to the page's own
+    // content before axe looks.
+    await expect(page.getByRole("main").getByRole("status").filter({ hasText: /^Loading/ })).toHaveCount(0);
 
     expect((await axeBuilder(page).analyze()).violations).toEqual([]);
   });
