@@ -48,6 +48,7 @@ describe("getFollowupPreview", () => {
     );
 
     expect(preview.status).toBe("no_plan");
+    expect(preview.plan_id).toBeNull();
     expect(preview.timezone).toBe("America/New_York");
     // Accuracy under 70% brings follow-ups 1 and 2 days after the run ended.
     expect(preview.items.map((i) => i.date)).toEqual(["2026-10-16", "2026-10-17"]);
@@ -76,6 +77,8 @@ describe("getFollowupPreview", () => {
 
     expect(preview.status).toBe("not_scheduled");
     expect(preview.exam_name).toBe("Prelim 2");
+    // "Open plan" links to the plan the follow-ups would go into.
+    expect(preview.plan_id).toBe("plan-1");
     // 95% gives days 3 and 6: Oct 18 fits, Oct 21 falls after the exam on Oct 19.
     expect(preview.items.map((i) => i.date)).toEqual(["2026-10-18"]);
     expect(preview.items[0].at).toBe("2026-10-18T18:00:00.000Z");
@@ -139,7 +142,7 @@ describe("getFollowupPreview", () => {
       {
         sessionId: "fu-1",
         startTime: new Date("2026-10-17T13:00:00Z"),
-        plan: { timezone: "America/New_York", examName: "Prelim 2" },
+        plan: { planId: "plan-1", timezone: "America/New_York", examName: "Prelim 2" },
       },
     ]);
 
@@ -151,6 +154,8 @@ describe("getFollowupPreview", () => {
     );
 
     expect(preview.status).toBe("scheduled");
+    // A reload still links "Open plan" to the plan that holds them.
+    expect(preview.plan_id).toBe("plan-1");
     expect(preview.items).toEqual([
       { date: "2026-10-17", at: "2026-10-17T13:00:00.000Z", days_from_now: 2, session_id: "fu-1" },
     ]);

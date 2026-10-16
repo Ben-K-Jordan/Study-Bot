@@ -44,8 +44,6 @@ export function FollowupsSection({
   const mounted = useMounted();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<SessionErrorCopy | null>(null);
-  // The plan the follow-ups went into, known once they are added here.
-  const [planId, setPlanId] = useState<string | null>(null);
   // No zone means the student has neither a time zone in Settings nor a
   // plan: the days are shown in the browser's zone, after hydration.
   const { timeZone, ready } = useZone(preview.timezone);
@@ -62,11 +60,11 @@ export function FollowupsSection({
       if (data.status === "no_plan") {
         onChange({ ...preview, status: "no_plan" });
       } else {
-        if (data.plan_id) setPlanId(data.plan_id);
         onChange({
           ...preview,
           status: "scheduled",
           timezone: data.timezone ?? preview.timezone,
+          plan_id: data.plan_id ?? preview.plan_id,
           items: (data.scheduled ?? []).map((s) => ({
             date: s.date,
             at: s.start_time,
@@ -126,7 +124,7 @@ export function FollowupsSection({
           <p className="type-body-l text-lesson-on-surface">
             {ready ? `Added to your plan: ${dayList}. ` : "Added to your plan. "}
             <Link
-              href={planId ? `/plan?plan=${encodeURIComponent(planId)}` : "/plan"}
+              href={preview.plan_id ? `/plan?plan=${encodeURIComponent(preview.plan_id)}` : "/plan"}
               className="font-bold text-lesson-primary underline underline-offset-4"
             >
               Open plan

@@ -426,13 +426,18 @@ export async function getFollowupPreview(
     const items = await prisma.studyPlanItem.findMany({
       where: { sessionId: { in: existing.map((s) => s.sessionId) }, plan: { userId } },
       orderBy: { startTime: "asc" },
-      select: { sessionId: true, startTime: true, plan: { select: { timezone: true, examName: true } } },
+      select: {
+        sessionId: true,
+        startTime: true,
+        plan: { select: { planId: true, timezone: true, examName: true } },
+      },
     });
     const timezone = items[0]?.plan.timezone ?? userTimezone ?? null;
     return {
       status: "scheduled",
       timezone,
       exam_name: items[0]?.plan.examName ?? null,
+      plan_id: items[0]?.plan.planId ?? null,
       items: items.map((item) => ({
         date: dayKey(item.startTime, timezone),
         at: item.startTime.toISOString(),
@@ -459,7 +464,7 @@ export async function getFollowupPreview(
         days_from_now: rec.days_from_now,
       };
     });
-    return { status: "no_plan", timezone, exam_name: null, items, skipped: [] };
+    return { status: "no_plan", timezone, exam_name: null, plan_id: null, items, skipped: [] };
   }
 
   const { planned, skipped } = computeFollowupSchedule({
@@ -477,6 +482,7 @@ export async function getFollowupPreview(
     status: "not_scheduled",
     timezone: plan.timezone,
     exam_name: plan.examName,
+    plan_id: plan.planId,
     items: planned.map((p) => ({
       date: p.date,
       at: p.start_time.toISOString(),

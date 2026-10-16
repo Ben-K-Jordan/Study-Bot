@@ -213,6 +213,8 @@ export interface FollowupPreview {
   timezone: string | null;
   /** The plan's exam, for "falls after Prelim 2". */
   exam_name: string | null;
+  /** The plan the follow-ups are in (or would go into), for "Open plan". Null with no plan. */
+  plan_id?: string | null;
   items: FollowupItem[];
   /** Recommended days that fall after the exam. */
   skipped: FollowupItem[];
