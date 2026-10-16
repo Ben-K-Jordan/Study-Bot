@@ -203,7 +203,7 @@ const INFO1300_OBJECTIVES: DemoObjective[] = [
   },
   {
     code: "B",
-    title: "The box model",
+    title: "Box model",
     recall:
       "Content, padding, border, margin from the inside out. With content-box the width is just the content; border-box includes padding and border.",
     weak: "Every element is a box with padding and margin around it. Not sure what box-sizing changes.",
@@ -338,7 +338,7 @@ const INFO1300_QUESTIONS: DemoQuestion[] = [
     explain:
       "Specificity is not a base-10 number. Each column is compared separately, so no number of classes can reach the ID column. (1,0,0) beats (0,11,0).",
   },
-  // The box model
+  // Box model
   {
     key: "b1",
     obj: "B",
@@ -1441,8 +1441,8 @@ export const DECKS: DemoDeck[] = [
       { front: "Do eleven classes beat one ID?", back: "No. Specificity columns never carry: (0,11,0) loses to (1,0,0).", tags: ["CSS specificity"], hardness: 0.9 },
       { front: "When does source order decide between two rules?", back: "Only when origin, importance, and specificity all tie.", tags: ["CSS specificity"], hardness: 0.8 },
       { front: "Specificity added by :where()", back: "Zero, whatever is inside it.", tags: ["CSS specificity"], hardness: 0.7 },
-      { front: "content-box width of width: 300px, padding: 20px, border: 2px", back: "344px on screen.", tags: ["The box model"], hardness: 0.3 },
-      { front: "What does box-sizing: border-box change?", back: "Width includes padding and border; the content area shrinks.", tags: ["The box model"], hardness: 0.2 },
+      { front: "content-box width of width: 300px, padding: 20px, border: 2px", back: "344px on screen.", tags: ["Box model"], hardness: 0.3 },
+      { front: "What does box-sizing: border-box change?", back: "Width includes padding and border; the content area shrinks.", tags: ["Box model"], hardness: 0.2 },
       { front: "Flexbox: center a child both ways", back: "Parent: display: flex; justify-content: center; align-items: center.", tags: ["Flexbox alignment"], hardness: 0.1 },
       { front: "flex: 1 expands to", back: "flex-grow: 1; flex-shrink: 1; flex-basis: 0%.", tags: ["Flexbox alignment"], hardness: 0.3 },
       { front: "grid-template-areas for header, sidebar + main, footer", back: "\"header header\"\n\"sidebar main\"\n\"footer footer\"", tags: ["Grid template areas"], hardness: 0.7 },

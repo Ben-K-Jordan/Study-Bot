@@ -10,7 +10,11 @@
  * decisions (spacing, interleaving, retrieval practice timing, etc.)
  *
  * Usage: npx tsx scripts/seed-research.ts
+ *
+ * tsx does not read .env the way Next does, so it is loaded first. Variables
+ * already set in the environment win over .env values.
  */
+import "dotenv/config";
 import { prisma } from "../src/lib/db";
 import { sha256 } from "../src/lib/storage";
 import { enqueueJob } from "../src/lib/jobs/queue";

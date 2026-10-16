@@ -334,7 +334,8 @@ async function main() {
   const { initBreakState } = await import("../src/lib/breaks");
   const { buildFeedbackQuery, searchChunks } = await import("../src/lib/search");
   const { resolveStoragePath } = await import("../src/lib/storage");
-  const { prependBudget } = await import("../src/services/run");
+  const { prependBudget, pretestQuestionText, reviewQuestionText, crossSessionRepairText, humanizeObjectiveKey } =
+    await import("../src/services/run");
   const { uploadDocument, processDocument } = await import("../src/services/content");
   const { buildObjectiveAnchors } = await import("../src/services/anchors");
   const { computeSM2 } = await import("../src/services/spaced-repetition");
@@ -672,6 +673,7 @@ async function main() {
     const runId = generateSessionId();
     const objectives = spec.objs.map((c) => objectiveInfo(course, c));
     const objCodeById = new Map(course.objectives.map((o) => [slugifyObjectiveTitle(o.title), o.code]));
+    const objTitleById = new Map(course.objectives.map((o) => [slugifyObjectiveTitle(o.title), o.title]));
     const examDate = calendarDate(course.examOffset);
     const startedAt = plusSeconds(start, 60 + Math.floor(rng() * 120));
 
@@ -713,12 +715,11 @@ async function main() {
             prompt: {
               id: `pretest_${i}`,
               objective_id: o.id,
-              text: `Diagnostic: Before we dive in \u2014 what do you already know about "${o.title}"? Explain as much as you can from memory.`,
+              text: pretestQuestionText(o.title),
               difficulty: 2,
               meta: { pack: "PRE_TEST" },
             },
           }));
-        const titleById = new Map(objectives.map((o) => [o.id, o.title]));
         const warmups: Injected[] = courseMastery
           .filter((m) => m.nextDueAt && m.nextDueAt <= startedAt)
           .sort((a, b) => a.nextDueAt!.getTime() - b.nextDueAt!.getTime() || a.order - b.order)
@@ -728,16 +729,16 @@ async function main() {
             const daysSince = m.lastStudiedAt
               ? Math.floor((startedAt.getTime() - m.lastStudiedAt.getTime()) / DAY_MS)
               : null;
-            const timeContext =
-              daysSince !== null ? ` (last studied ${daysSince} day${daysSince !== 1 ? "s" : ""} ago)` : "";
-            const title = titleById.get(m.key) || m.key;
+            // Same lookup order as generateWarmupPrompts: the course's own
+            // topic title, and only then the key made readable.
+            const title = objTitleById.get(m.key) ?? humanizeObjectiveKey(m.key);
             return {
               kind: "WARMUP",
               srcKey: objCodeById.get(m.key) ?? m.key,
               prompt: {
                 id: `warmup_${i}`,
                 objective_id: m.key,
-                text: `Quick review${timeContext}: From memory, explain the key concept behind "${title}". What are the most important things to remember?`,
+                text: reviewQuestionText(title, daysSince),
                 difficulty: Math.min(m.repetitions + 1, 3),
                 meta: { pack: "WARMUP" },
               },
@@ -760,7 +761,7 @@ async function main() {
               prompt: {
                 id: `repair_${i}`,
                 objective_id: undefined,
-                text: `Error repair (from ${daysSince}d ago): You made a ${e.errorType.toLowerCase()} error on: "${e.promptText}"\n\nFrom memory, state the correct rule and explain why the common mistake happens. Then give a new example where this rule applies.`,
+                text: crossSessionRepairText({ daysSince, originalText: e.promptText }),
                 difficulty: 2,
                 meta: {
                   pack: "CROSS_SESSION_REPAIR",

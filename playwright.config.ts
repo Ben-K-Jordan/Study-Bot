@@ -74,9 +74,10 @@ export default defineConfig({
         timeout: 30_000,
       }
     : {
+        // Loopback only: the server trusts the X-User-Id test header.
         command: isCI
-          ? `npm run build && npm run start -- -p ${E2E_PORT}`
-          : `npm run dev -- -p ${E2E_PORT}`,
+          ? `npm run build && npm run start -- -H 127.0.0.1 -p ${E2E_PORT}`
+          : `npm run dev -- -H 127.0.0.1 -p ${E2E_PORT}`,
         url: `${BASE_URL}/api/health`,
         // Playwright merges this over its own environment. CI=true comes from
         // the runner and is what lets `next start` accept test auth.

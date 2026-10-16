@@ -35,10 +35,6 @@ export const E2E_USER = {
 
 const AI_FREE_KEY = "dummy";
 const ZERO_KEY = "0".repeat(64);
-// Shows the Google Calendar controls. GOOGLE_PROVIDER=fake answers every
-// call in memory, so these never reach Google.
-const FAKE_GOOGLE_CLIENT_ID = "e2e-fake-client.apps.googleusercontent.com";
-const FAKE_GOOGLE_CLIENT_SECRET = "e2e-fake-secret";
 
 /**
  * Environment for a server the suite starts itself: offline providers,
@@ -48,9 +44,8 @@ const FAKE_GOOGLE_CLIENT_SECRET = "e2e-fake-secret";
 export function serverEnv(databaseUrl: string): Record<string, string> {
   return {
     AI_PROVIDER: "mock",
+    // Answers every Google Calendar call in memory, and shows the controls.
     GOOGLE_PROVIDER: "fake",
-    GOOGLE_CLIENT_ID: FAKE_GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: FAKE_GOOGLE_CLIENT_SECRET,
     EMAIL_PROVIDER: "console",
     OPENAI_API_KEY: AI_FREE_KEY,
     NEXTAUTH_SECRET: "e2e-test-secret",

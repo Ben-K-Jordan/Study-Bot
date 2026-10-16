@@ -50,10 +50,12 @@ The benefit is largest on *delayed* tests — which is what an exam is.
 sessions are decks of questions, not pages of notes: free-recall prompts and
 multiple-choice questions generated from your uploaded course materials (with
 misconception-based distractors), or deterministic prompt templates when no
-materials are uploaded. The answer is never shown before a committed attempt —
-there is no "flip to reveal" without answering first, and the runner's
-no-leakage guardrail ensures no excerpts, hints, or citations from your
-materials render before you submit (verified by an end-to-end test). Because
+materials are uploaded. The answer is never shown before a committed attempt.
+There is no "flip to reveal" without answering first, and the server withholds
+the answer key, the model answer, and any excerpts from your materials until
+you submit. Unit tests of the reveal gate, an integration test of the
+attempt response, and an end-to-end test of what the browser receives before
+an answer check this guardrail. Because
 MCQ practice without feedback actively teaches the distractors as facts
 (Roediger & Marsh 2005; Butler & Roediger 2008, *Memory & Cognition*), every
 MCQ item closes with confirmation of the correct answer plus a rationale for
@@ -86,13 +88,15 @@ and struggling learners, and feedback should come in small, focused units.
 
 **In Study-Bot.** Every practice item is a closed loop: a committed attempt, a
 score, elaborated feedback in the same interaction, and then an active
-correction step — a miss requires you to write a correction rule in your own
-words, and a variant question testing the same point is injected later into
-the same session (capped at four injected variants per session so the deck
-stays bounded). Feedback is generated and persisted per attempt, so it
-survives page refresh instead of being regenerated or lost. Prompt selection
-targets a difficulty band of roughly 70–85% success (section 12), which is
-the "slightly beyond current ability" condition made operational.
+correction step. A free-recall miss asks you to write a correction rule in
+your own words; a multiple-choice miss records the correct answer as its rule
+automatically. Either way, a variant question testing the same point is
+injected later into the same session (capped at four injected variants per
+session so the deck stays bounded). Feedback is generated and persisted per
+attempt, so it survives page refresh instead of being regenerated or lost.
+Prompt selection targets a difficulty band of roughly 70–85% success
+(section 12), which is the "slightly beyond current ability" condition made
+operational.
 
 **Boundary conditions.** Delayed feedback is used in exactly one place:
 `EXAM_SIM` mode, where scoring is withheld until the review phase because the
@@ -134,7 +138,10 @@ higher-order material, so the explanation budget is spent on misses and
 partial answers; confirming a correct simple fact does not trigger the full
 apparatus. Feedback is grounded in retrieved excerpts from your materials and
 cites them precisely so you can check the explanation against the source
-rather than trusting generated text.
+rather than trusting generated text. That grounding depends on the search
+finding a matching passage. When it finds none, the panel says your materials
+don't cover the question and shows no sources, and no unsourced explanation
+is presented as sourced.
 
 ## 4. Hypercorrection: confident errors are the highest-value corrections
 
@@ -147,15 +154,15 @@ correction salient (Fazio & Marsh 2009). But there is a catch: Butler, Fazio
 a delay, the original high-confidence errors tend to re-intrude — a single
 successful correction is not durable repair.
 
-**In Study-Bot.** The app captures a 1–5 confidence rating before you see the
-answer. Confidence is stored on the attempt and, when the answer is wrong, on
-the resulting error log, and it flows through three mechanisms. First,
-feedback framing: when you were confident (4–5) and wrong, the explanation
-opens by explicitly flagging the mismatch and delivers the fullest, most
-memorable correction — that is the hypercorrection window, used on purpose.
-Low-confidence misses are framed as expected gap-filling instead. Second,
-prioritization: confident misses are ordered first when building
-`ERROR_REPAIR` decks and when the per-session variant cap forces a choice
+**In Study-Bot.** Before you see the answer, the app asks how sure you are on
+a three-level scale: Guessing, Unsure, or Sure, stored as 1, 3, and 5. The
+rating is optional. Confidence is stored on the attempt and, when the answer
+is wrong, on the resulting error log, and it flows through three mechanisms.
+First, feedback framing: when you marked Sure and were wrong, the explanation
+opens by naming the mismatch and gives the fullest correction, using the
+hypercorrection window on purpose. Misses marked Guessing or Unsure are
+framed as expected gap-filling instead. Second, prioritization: confident
+misses are ordered first when building `ERROR_REPAIR` decks and when the per-session variant cap forces a choice
 about which errors get re-tested. Third, the SM-2 mastery engine penalizes
 the confident-but-wrong pattern (a "blind spot") so the objective resurfaces
 sooner.
@@ -519,7 +526,7 @@ without a link.
 ### Further reading
 
 The text above does not cite these papers, but `scripts/seed-research.ts`
-summarizes them for the in-app research notes.
+summarizes them for the plan generator's research context.
 
 - Agarwal, P. K., Nunes, L. D., & Blunt, J. R. (2021). Retrieval practice consistently benefits student learning: A systematic review of applied research in schools and classrooms. *Educational Psychology Review*, 33(4), 1409–1453. https://doi.org/10.1007/s10648-021-09595-9
 - Gollwitzer, P. M. (1999). Implementation intentions: Strong effects of simple plans. *American Psychologist*, 54(7), 493–503. https://doi.org/10.1037/0003-066X.54.7.493

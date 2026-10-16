@@ -14,7 +14,8 @@
  *     [--themes light,dark] [--viewports desktop,mobile] [--full-page]
  *     [--email demo@studybot.local] [--password study-bot-demo]
  *     [--test-auth <userId>]           fall back to the X-User-Id header if sign-in
- *                                      fails (server needs ALLOW_TEST_AUTH=true)
+ *                                      fails (server needs ALLOW_TEST_AUTH=true and a
+ *                                      localhost NEXTAUTH_URL; start it with -H 127.0.0.1)
  *     [--no-signin]                    skip the sign-in page, use --test-auth only
  *     [--session] [--session-id <id>]  also capture today's session: preflight,
  *                                      then the first question (this starts a run;

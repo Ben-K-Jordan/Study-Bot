@@ -25,7 +25,7 @@ Playwright tests against a running Study Bot. They use the offline providers (mo
    E2E_PORT=3300 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/studybot_e2e npx playwright test
    ```
 
-   The config starts the server with the right settings (`AI_PROVIDER=mock`, `GOOGLE_PROVIDER=fake` with placeholder Google ids, `ALLOW_TEST_AUTH=true`, and the URLs for the port) and stops it afterwards. `next` still reads `.env` for anything the config doesn't set.
+   The config starts the server with the right settings (`AI_PROVIDER=mock`, `GOOGLE_PROVIDER=fake`, `ALLOW_TEST_AUTH=true`, and the URLs for the port), listening on 127.0.0.1 only, and stops it afterwards. `next` still reads `.env` for anything the config doesn't set.
 
 ### Against a server you started
 
@@ -34,16 +34,15 @@ To run the suite many times without rebuilding, start `next start` yourself and 
 ```sh
 npm run build   # once, with the env below
 AI_PROVIDER=mock GOOGLE_PROVIDER=fake EMAIL_PROVIDER=console OPENAI_API_KEY=dummy \
-GOOGLE_CLIENT_ID=e2e-fake-client.apps.googleusercontent.com GOOGLE_CLIENT_SECRET=e2e-fake-secret \
 NEXTAUTH_SECRET=e2e-test-secret TOKEN_ENC_KEY=0000000000000000000000000000000000000000000000000000000000000000 \
 ALLOW_TEST_AUTH=true CI=true NEXTAUTH_URL=http://localhost:3300 BASE_URL=http://localhost:3300 \
 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/studybot_e2e \
-npx next start -p 3300
+npx next start -H 127.0.0.1 -p 3300
 
 E2E_PORT=3300 E2E_REUSE_SERVER=1 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/studybot_e2e npx playwright test
 ```
 
-`CI=true` on the server is what lets a production build accept the test header. Leave it off the test runner here, which would otherwise switch to CI behaviour (2 workers, a retry, the GitHub reporter). The placeholder Google ids show the Google Calendar controls; with `GOOGLE_PROVIDER=fake` nothing reaches Google.
+`CI=true` on the server is what lets a production build accept the test header. Leave it off the test runner here, which would otherwise switch to CI behaviour (2 workers, a retry, the GitHub reporter). `GOOGLE_PROVIDER=fake` shows the Google Calendar controls and answers every call in memory, so nothing reaches Google. Test auth also needs `NEXTAUTH_URL` on a loopback host, and `-H 127.0.0.1` keeps a server that trusts the test header off the network.
 
 Rate limits live in the server's memory. Each test sends its own made-up client address, so the per-address limits on sign-in and sign-up don't cross between tests; restarting the server resets them all.
 
