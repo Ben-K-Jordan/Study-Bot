@@ -23,15 +23,23 @@ const alertVariants = cva(
   }
 )
 
+/**
+ * A callout. Only `destructive` (something failed) is a live alert by
+ * default; info, success, warning and default notices are static, so a
+ * notice already on the page when it loads isn't read out over everything
+ * else. Pass `role="alert"` when another variant appears in response to an
+ * action, `role="status"` for a polite update, or `role="note"`.
+ */
 function Alert({
   className,
   variant,
+  role,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
   return (
     <div
       data-slot="alert"
-      role="alert"
+      role={role ?? (variant === "destructive" ? "alert" : undefined)}
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />

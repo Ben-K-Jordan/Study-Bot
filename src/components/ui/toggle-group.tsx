@@ -3,6 +3,7 @@
 import * as React from "react"
 import { type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
+import { CheckIcon } from "lucide-react"
 import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui"
 
 import { toggleVariants } from "@/components/ui/toggle"
@@ -64,6 +65,10 @@ function ToggleGroupItem({
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
   VariantProps<typeof toggleVariants>) {
   const context = React.useContext(ToggleGroupContext)
+  // Outline groups are M3 segmented buttons: the selected segment shows a
+  // check (in place of its own leading icon), so selection never rests on
+  // the container tint alone.
+  const segmented = (context.variant || variant) === "outline"
 
   return (
     <ToggleGroupPrimitive.Item
@@ -77,10 +82,15 @@ function ToggleGroupItem({
           variant: context.variant || variant,
           size: context.size || size,
         }),
+        segmented &&
+          "data-[state=on]:pl-3 group-data-[spacing=0]/toggle-group:data-[state=on]:pl-2.5 data-[state=on]:[&>svg[data-icon=inline-start]]:hidden",
         className
       )}
       {...props}
     >
+      {segmented ? (
+        <CheckIcon data-check="" aria-hidden="true" className="hidden group-data-[state=on]/toggle:block" />
+      ) : null}
       {children}
     </ToggleGroupPrimitive.Item>
   )

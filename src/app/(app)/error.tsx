@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 /** A page inside the app shell failed to render; the shell stays usable. */
 export default function AppError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  /** Refetches and re-renders the segment (reset would only re-render the failed payload). */
+  retry: () => void;
 }) {
   useEffect(() => {
     console.error(error);
@@ -28,7 +29,7 @@ export default function AppError({
       description="Your saved work is safe. Retry, or go back to Home."
       actions={
         <>
-          <Button onClick={reset}>
+          <Button onClick={() => retry()}>
             <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
             Retry
           </Button>

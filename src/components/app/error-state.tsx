@@ -32,7 +32,7 @@ export function ErrorState({
   className?: string
 }) {
   return (
-    <Alert variant="destructive" className={className}>
+    <Alert variant="destructive" role="alert" className={className}>
       <CircleAlertIcon aria-hidden="true" />
       <AlertTitle>{title}</AlertTitle>
       {description || reference ? (

@@ -19,6 +19,11 @@
 @custom-variant focus-visible (&:focus-visible, &[data-preview~="focus"]);
 @custom-variant active (&:active, &[data-preview~="active"]);
 
+/* Short windows: a phone in landscape, or a laptop at 200 to 400% zoom.
+   Sticky bars give their space back here (`short:static`), so the content
+   between them stays visible and focused controls aren't covered. */
+@custom-variant short (@media (max-height: 32rem));
+
 /* ==========================================================================
    Colour roles: Google Material 3 (GM3 web baseline), light theme.
    Every text and surface pair is contrast-checked in both themes.
@@ -78,10 +83,14 @@
   --lesson-selected-border: #1a73e8;
   --lesson-selected-lip: #185abc;
   --lesson-on-selected: #174ea6;
+  /* Hover fills move away from the label colour: darker under white labels
+     here, lighter under dark labels in the dark theme (contrast goes up). */
   --lesson-primary: #1a73e8;
+  --lesson-primary-hover: #1967d2;
   --lesson-primary-lip: #185abc;
   --lesson-on-primary: #ffffff;
   --lesson-check: #188038;
+  --lesson-check-hover: #137333;
   --lesson-check-lip: #0d652d;
   --lesson-on-check: #ffffff;
   --lesson-correct: #e6f4ea;
@@ -89,6 +98,7 @@
   --lesson-wrong: #fce8e6;
   --lesson-on-wrong: #a50e0e;
   --lesson-wrong-button: #c5221f;
+  --lesson-wrong-button-hover: #b31412;
   --lesson-wrong-lip: #a50e0e;
   --lesson-on-wrong-button: #ffffff;
   --lesson-neutral-text: #3c4043;
@@ -135,7 +145,11 @@
   --duration-short: 150ms;
   --duration-medium: 250ms;
   --duration-long: 350ms;
-  --duration-dial: 450ms;
+  /* The roundness dial: long and even enough to see, and it starts after the
+     first frame has painted square, so the change reads as a turn. */
+  --duration-dial: 600ms;
+  --delay-dial: 120ms;
+  --ease-dial: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Shell metrics */
   --app-bar-height: 4rem;
@@ -195,9 +209,11 @@
   --lesson-selected-lip: #669df6;
   --lesson-on-selected: #d2e3fc;
   --lesson-primary: #8ab4f8;
+  --lesson-primary-hover: #aecbfa;
   --lesson-primary-lip: #5e97f6;
   --lesson-on-primary: #062e6f;
   --lesson-check: #81c995;
+  --lesson-check-hover: #a8dab5;
   --lesson-check-lip: #4ca866;
   --lesson-on-check: #0d3a1f;
   --lesson-correct: #122a1b;
@@ -205,6 +221,7 @@
   --lesson-wrong: #3a1a18;
   --lesson-on-wrong: #f28b82;
   --lesson-wrong-button: #f28b82;
+  --lesson-wrong-button-hover: #f6aea9;
   --lesson-wrong-lip: #d9655b;
   --lesson-on-wrong-button: #601410;
   --lesson-neutral-text: #e8eaed;
@@ -297,9 +314,11 @@
   --color-lesson-selected-lip: var(--lesson-selected-lip);
   --color-lesson-on-selected: var(--lesson-on-selected);
   --color-lesson-primary: var(--lesson-primary);
+  --color-lesson-primary-hover: var(--lesson-primary-hover);
   --color-lesson-primary-lip: var(--lesson-primary-lip);
   --color-lesson-on-primary: var(--lesson-on-primary);
   --color-lesson-check: var(--lesson-check);
+  --color-lesson-check-hover: var(--lesson-check-hover);
   --color-lesson-check-lip: var(--lesson-check-lip);
   --color-lesson-on-check: var(--lesson-on-check);
   --color-lesson-correct: var(--lesson-correct);
@@ -307,6 +326,7 @@
   --color-lesson-wrong: var(--lesson-wrong);
   --color-lesson-on-wrong: var(--lesson-on-wrong);
   --color-lesson-wrong-button: var(--lesson-wrong-button);
+  --color-lesson-wrong-button-hover: var(--lesson-wrong-button-hover);
   --color-lesson-wrong-lip: var(--lesson-wrong-lip);
   --color-lesson-on-wrong-button: var(--lesson-on-wrong-button);
   --color-lesson-neutral-text: var(--lesson-neutral-text);
@@ -642,13 +662,79 @@
     background-color: var(--lesson-surface);
     color: var(--lesson-on-surface);
     transition:
-      font-variation-settings var(--duration-dial) var(--ease-emphasized),
-      font-weight var(--duration-dial) var(--ease-emphasized);
+      font-variation-settings var(--duration-dial) var(--ease-dial) var(--delay-dial),
+      font-weight var(--duration-dial) var(--ease-dial) var(--delay-dial);
 
     @starting-style {
       font-variation-settings: "ROND" 0;
       font-weight: 400;
     }
+  }
+
+  /* Menus, tooltips, dialogs and toasts portal out of .lesson to <body>,
+     so during a session they take the rounded type explicitly. */
+  body:has(.lesson)
+    :is(
+      [data-radix-popper-content-wrapper],
+      [data-sonner-toaster],
+      [role="dialog"],
+      [role="alertdialog"]
+    ) {
+    font-variation-settings: "ROND" 100;
+  }
+}
+
+/* ==========================================================================
+   Entering a session or a card review, the shell recedes: the navigation
+   rail slides out to the left, the top app bar slides up and the bottom
+   bar slides down while the lesson fades in (React <ViewTransition> in the
+   shell components names them). Coming back, they slide in again.
+   ========================================================================== */
+::view-transition {
+  /* Clicks during the short animation reach the live page */
+  pointer-events: none;
+}
+
+::view-transition-old(.shell-rail-recede) {
+  animation: shell-rail-out var(--duration-medium) var(--ease-emphasized-accelerate) both;
+}
+::view-transition-old(.shell-bar-recede) {
+  animation: shell-bar-out var(--duration-medium) var(--ease-emphasized-accelerate) both;
+}
+::view-transition-new(.shell-rail-recede) {
+  animation: shell-rail-out var(--duration-long) var(--ease-emphasized) reverse both;
+}
+::view-transition-new(.shell-bar-recede) {
+  animation: shell-bar-out var(--duration-long) var(--ease-emphasized) reverse both;
+}
+::view-transition-old(.shell-nav-recede) {
+  animation: shell-nav-out var(--duration-medium) var(--ease-emphasized-accelerate) both;
+}
+::view-transition-new(.shell-nav-recede) {
+  animation: shell-nav-out var(--duration-long) var(--ease-emphasized) reverse both;
+}
+
+@keyframes shell-rail-out {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes shell-bar-out {
+  to {
+    transform: translateY(-100%);
+  }
+}
+@keyframes shell-nav-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+
+/* Compact windows: the floating Start session button sits above the bottom
+   bar, so the page leaves room for it at the end. */
+@media (width < 37.5rem) {
+  body:has([data-slot="session-fab"][data-placement="floating"]) #main-content {
+    padding-bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom) + 5.5rem);
   }
 }
 
@@ -684,6 +770,13 @@
 
   .lesson {
     transition: none;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
 }
 

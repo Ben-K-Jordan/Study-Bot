@@ -9,6 +9,9 @@ import { LessonButton } from "@/components/lesson/lesson-button"
 
 export type FeedbackTone = "correct" | "wrong" | "neutral"
 
+/** Matches the `short` variant in globals.css. */
+const SHORT_WINDOW = "(max-height: 32rem)"
+
 const toneStyles: Record<FeedbackTone, { sheet: string; badge: string; icon: typeof CheckIcon }> = {
   correct: {
     sheet: "bg-lesson-correct text-lesson-on-correct",
@@ -31,9 +34,10 @@ const toneStyles: Record<FeedbackTone, { sheet: string; badge: string; icon: typ
  * The bar that slides up after an answer, in place of LessonFrame's footer.
  * The heading ("Correct", "Incorrect", or a neutral line such as "Model
  * answer shown") is announced through the lesson's live region (role
- * status); the body holds the
- * explanation and numbered sources; Continue is the one action and takes
- * focus so Enter moves on. The question stays visible above it.
+ * status); the body holds a short note such as the takeaway (longer
+ * feedback belongs in the page below the question); Continue is the one
+ * action and takes focus so Enter moves on. The question stays visible
+ * above it.
  */
 export function FeedbackSheet({
   tone,
@@ -45,13 +49,12 @@ export function FeedbackSheet({
   continueLoading = false,
   secondaryAction,
   autoFocusContinue = true,
-  scrollBody = false,
   className,
 }: {
   tone: FeedbackTone
   /** "Correct", "Incorrect", or a short neutral line. */
   title: string
-  /** Explanation, model answer, sources. Scrolls when long. */
+  /** A short note: the takeaway or one sentence. Scrolls when long. */
   children?: React.ReactNode
   continueLabel?: string
   onContinue: () => void
@@ -60,17 +63,13 @@ export function FeedbackSheet({
   /** One quieter action on the left, such as "Log the error". */
   secondaryAction?: React.ReactNode
   autoFocusContinue?: boolean
-  /**
-   * The children hold their own scroll region, so the sheet itself never
-   * scrolls and Continue stays in reach however long the body is.
-   */
-  scrollBody?: boolean
   className?: string
 }) {
   const styles = toneStyles[tone]
   const Icon = styles.icon
   const titleId = React.useId()
   const continueRef = React.useRef<HTMLButtonElement>(null)
+  const sheetRef = React.useRef<HTMLElement>(null)
   const announce = useLessonAnnounce()
 
   React.useEffect(() => {
@@ -78,11 +77,17 @@ export function FeedbackSheet({
   }, [announce, title])
 
   React.useEffect(() => {
+    // In short windows the frame's bars are not sticky, so the sheet sits at
+    // the end of the page; bring it into view before Continue takes focus.
+    if (window.matchMedia(SHORT_WINDOW).matches) {
+      sheetRef.current?.scrollIntoView({ block: "nearest" })
+    }
     if (autoFocusContinue) continueRef.current?.focus({ preventScroll: true })
   }, [autoFocusContinue])
 
   return (
     <section
+      ref={sheetRef}
       aria-labelledby={titleId}
       data-slot="feedback-sheet"
       data-tone={tone}
@@ -95,7 +100,10 @@ export function FeedbackSheet({
       <div
         className={cn(
           "mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-8 md:flex-row md:items-end md:gap-8 md:pt-6 md:pb-6",
-          !scrollBody && "max-h-[60dvh] overflow-y-auto"
+          // A backstop for long notes: at most about a third of a laptop
+          // screen. In short windows the whole page scrolls instead (see
+          // LessonFrame).
+          "max-h-[60dvh] overflow-y-auto md:max-h-[35dvh] short:max-h-none short:overflow-visible"
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-3">

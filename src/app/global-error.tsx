@@ -22,10 +22,11 @@ function subscribe(onChange: () => void) {
  */
 export default function GlobalError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  /** Refetches and re-renders the segment (reset would only re-render the failed payload). */
+  retry: () => void;
 }) {
   const dark = useSyncExternalStore(
     subscribe,
@@ -51,7 +52,7 @@ export default function GlobalError({
             description="Your saved work is safe. Retry, and if it keeps happening, reload the page."
             actions={
               <>
-                <Button onClick={reset}>
+                <Button onClick={() => retry()}>
                   <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
                   Retry
                 </Button>

@@ -152,13 +152,13 @@ export function AppComponents() {
             <StatLine items={[{ value: "No accuracy yet" }, { value: "0 XP" }]} />
           </div>
         </Block>
-        <Block title="Shell controls" description="CourseSwitcher reads your real course list; the theme and account controls are live.">
+        <Block title="Shell controls" description="CourseSwitcher reads your real course list; the theme control is live, and the account menu shows a sample student.">
           <div className="flex flex-col gap-5">
             <CourseSwitcher />
             <div className="flex flex-wrap items-center gap-3">
               <ThemeToggle />
               <ThemeToggle variant="segmented" />
-              <AccountMenu />
+              <AccountMenu account={{ name: "Sample Student", email: "student@example.com" }} />
             </div>
             <div className="flex items-center gap-2 type-body-m text-on-surface-variant">
               <KbdHint keys={["Mod", "Enter"]} /> KbdHint resolves Mod to Ctrl or Cmd

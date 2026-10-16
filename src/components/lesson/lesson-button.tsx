@@ -17,7 +17,9 @@ import { Spinner } from "@/components/ui/spinner"
 export const lessonButtonVariants = cva(
   [
     "lesson-lip relative inline-flex min-h-12 min-w-32 shrink-0 items-center justify-center gap-2 rounded-2xl border-2 px-6 py-2 text-base leading-6 font-bold tracking-[0.2px] whitespace-nowrap select-none outline-none",
-    "[--focus-ring-offset:6px] hover:brightness-[1.08]",
+    // Hover fills step away from the label colour (darker under white labels,
+    // lighter under dark ones), so the label keeps at least 4.5:1.
+    "[--focus-ring-offset:6px]",
     "disabled:pointer-events-none disabled:border-lesson-disabled disabled:bg-lesson-disabled disabled:text-lesson-on-disabled disabled:[--lip:var(--lesson-disabled)]",
     // Busy keeps its colours: the spinner and label say what is happening.
     "aria-busy:pointer-events-none aria-busy:cursor-progress",
@@ -27,15 +29,15 @@ export const lessonButtonVariants = cva(
     variants: {
       variant: {
         check:
-          "border-lesson-check bg-lesson-check text-lesson-on-check [--lip:var(--lesson-check-lip)]",
+          "border-lesson-check bg-lesson-check text-lesson-on-check [--lip:var(--lesson-check-lip)] hover:border-lesson-check-hover hover:bg-lesson-check-hover",
         correct:
-          "border-lesson-check bg-lesson-check text-lesson-on-check [--lip:var(--lesson-check-lip)]",
+          "border-lesson-check bg-lesson-check text-lesson-on-check [--lip:var(--lesson-check-lip)] hover:border-lesson-check-hover hover:bg-lesson-check-hover",
         wrong:
-          "border-lesson-wrong-button bg-lesson-wrong-button text-lesson-on-wrong-button [--lip:var(--lesson-wrong-lip)]",
+          "border-lesson-wrong-button bg-lesson-wrong-button text-lesson-on-wrong-button [--lip:var(--lesson-wrong-lip)] hover:border-lesson-wrong-button-hover hover:bg-lesson-wrong-button-hover",
         neutral:
-          "border-lesson-option-border bg-lesson-option text-lesson-neutral-text [--lip:var(--lesson-option-border)] hover:bg-lesson-option-hover hover:brightness-100",
+          "border-lesson-option-border bg-lesson-option text-lesson-neutral-text [--lip:var(--lesson-option-border)] hover:bg-lesson-option-hover",
         primary:
-          "border-lesson-primary bg-lesson-primary text-lesson-on-primary [--lip:var(--lesson-primary-lip)]",
+          "border-lesson-primary bg-lesson-primary text-lesson-on-primary [--lip:var(--lesson-primary-lip)] hover:border-lesson-primary-hover hover:bg-lesson-primary-hover",
       },
       width: {
         auto: "",

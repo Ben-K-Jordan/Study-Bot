@@ -15,16 +15,22 @@ export function FreeRecallInput({
   description = "Answer from memory before you check anything.",
   error,
   showSubmitHint = true,
+  describedBy,
   className,
   id: idProp,
   disabled,
   ...props
-}: Omit<React.ComponentProps<"textarea">, "placeholder"> & {
+}: Omit<React.ComponentProps<"textarea">, "placeholder" | "aria-describedby"> & {
   label?: string
   description?: string
   /** Shown under the field and linked with aria-describedby. */
   error?: string
   showSubmitHint?: boolean
+  /**
+   * Ids of other text that describes the field, such as the question. They
+   * come first, before the helper text and the error.
+   */
+  describedBy?: string
 }) {
   const generatedId = React.useId()
   const id = idProp ?? generatedId
@@ -46,9 +52,15 @@ export function FreeRecallInput({
         id={id}
         disabled={disabled}
         aria-invalid={error ? true : undefined}
-        aria-describedby={[description ? descriptionId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined}
+        aria-describedby={
+          [describedBy, description ? descriptionId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+          undefined
+        }
         className={cn(
-          "field-sizing-content min-h-40 w-full resize-y rounded-2xl border-2 border-lesson-option-border bg-lesson-option px-4 py-3 text-lg leading-7 font-medium text-lesson-on-surface outline-none",
+          "field-sizing-content min-h-28 w-full resize-none rounded-2xl border-2 border-lesson-option-border bg-lesson-option px-4 py-3 text-lg leading-7 font-medium text-lesson-on-surface outline-none",
+          // Grows with the answer (field-sizing), so it starts short enough to
+          // keep the confidence chips above the footer on a laptop screen.
+          "md:min-h-32",
           "transition-colors duration-150 ease-standard hover:border-lesson-muted",
           "focus-visible:border-lesson-selected-border data-[preview~=focus]:border-lesson-selected-border",
           "aria-invalid:border-lesson-wrong-button",

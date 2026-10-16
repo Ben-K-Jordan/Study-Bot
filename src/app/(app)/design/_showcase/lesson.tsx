@@ -186,7 +186,7 @@ export function LessonPrimitives() {
               label="Correction rule"
               description="The rule or fact that makes the answer right, in your own words."
               defaultValue="A base case returns without calling itself"
-              error="Answer not saved. Your text is still here. Retry"
+              error="Write the correction rule first."
               showSubmitHint={false}
             />
             <FreeRecallInput label="Your answer (disabled)" defaultValue="Locals and the return address" disabled />

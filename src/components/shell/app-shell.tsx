@@ -1,3 +1,4 @@
+import type { Account } from "@/components/app/account-menu"
 import { AppBarTitleProvider } from "@/components/shell/app-bar-title"
 import { BottomNav } from "@/components/shell/bottom-nav"
 import { NavigationRail } from "@/components/shell/navigation-rail"
@@ -9,14 +10,29 @@ import { TopAppBar } from "@/components/shell/top-app-bar"
  * bottom navigation bar (under 600px), top app bar, and the one <main>.
  * Pages render inside <main id="main-content">; wrap content in
  * <PageContainer> for the standard width and gutters.
+ *
+ * `account` (name and email) comes from the server session, so the account
+ * menu is complete in the first HTML. `railFab` and `floatingFab` hold the
+ * Start session button (TodaySessionFab inside Suspense) for the rail and
+ * for compact windows.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  account,
+  railFab,
+  floatingFab,
+  children,
+}: {
+  account: Account
+  railFab?: React.ReactNode
+  floatingFab?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <AppBarTitleProvider>
       <SkipLink />
-      <NavigationRail />
+      <NavigationRail fab={railFab} />
       <div className="flex min-h-dvh flex-col sm:pl-(--rail-width)">
-        <TopAppBar />
+        <TopAppBar account={account} />
         <main
           id="main-content"
           tabIndex={-1}
@@ -25,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      {floatingFab}
       <BottomNav />
     </AppBarTitleProvider>
   )

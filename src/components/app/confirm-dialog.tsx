@@ -16,6 +16,11 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
+import { firstConnected, resolveOpener } from "@/components/app/return-focus"
+
+function mainRegion(): HTMLElement | null {
+  return document.getElementById("main-content")
+}
 
 /**
  * Confirms a destructive or hard-to-undo action. Title is action plus
@@ -24,6 +29,13 @@ import { Spinner } from "@/components/ui/spinner"
  * With `confirmText`, the button stays disabled until the student types it.
  * The dialog stays open while `onConfirm` runs and shows `failedMessage`
  * if it throws.
+ *
+ * When it closes, focus goes back to whatever opened it (Radix only does
+ * that for its own trigger, so a controlled dialog would drop focus on
+ * <body>); an item in a menu hands it to the menu's button. Pass
+ * `returnFocus` for where focus goes after the action ran, such as the list
+ * when the confirmed action deletes the row that opened the dialog. Failing
+ * both, focus goes to the main region.
  */
 export function ConfirmDialog({
   trigger,
@@ -38,6 +50,7 @@ export function ConfirmDialog({
   confirmText,
   confirmTextLabel,
   failedMessage = "That didn't go through. Check your connection and retry.",
+  returnFocus,
   onConfirm,
 }: {
   /** The element that opens the dialog (a Button). Omit when controlled. */
@@ -56,6 +69,12 @@ export function ConfirmDialog({
   /** Label for that field: "Type your email address to confirm". */
   confirmTextLabel?: string
   failedMessage?: string
+  /**
+   * Where focus goes after the action ran (and whenever the opener is
+   * gone): the list, its heading, or the next row. Cancel and Escape still
+   * return to the opener.
+   */
+  returnFocus?: React.RefObject<HTMLElement | null>
   onConfirm: () => void | Promise<void>
 }) {
   const [openState, setOpenState] = React.useState(false)
@@ -65,6 +84,32 @@ export function ConfirmDialog({
   const [failed, setFailed] = React.useState(false)
   const inputId = React.useId()
   const errorId = React.useId()
+  const opener = React.useRef<HTMLElement | null>(null)
+  const confirmed = React.useRef(false)
+
+  // Remember the opener before the dialog's focus trap moves focus inside.
+  // Layout effects run before Radix's (passive) auto-focus effect.
+  React.useLayoutEffect(() => {
+    if (!open) return
+    confirmed.current = false
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    opener.current = resolveOpener(active, document.body, (id) => document.getElementById(id))
+  }, [open])
+
+  const restoreFocus = (event: Event) => {
+    // After the action ran, `returnFocus` wins (the opener is usually what
+    // was just deleted, even if it hasn't left the page yet); after Cancel or
+    // Escape, the opener does.
+    const preferred = confirmed.current
+      ? [returnFocus?.current, opener.current]
+      : [opener.current, returnFocus?.current]
+    const target = firstConnected([...preferred, mainRegion()])
+    opener.current = null
+    confirmed.current = false
+    if (!target) return
+    event.preventDefault()
+    target.focus()
+  }
 
   const setOpen = (next: boolean) => {
     if (pending) return
@@ -84,6 +129,7 @@ export function ConfirmDialog({
     setFailed(false)
     try {
       await onConfirm()
+      confirmed.current = true
       setPending(false)
       setTyped("")
       if (openProp === undefined) setOpenState(false)
@@ -97,7 +143,7 @@ export function ConfirmDialog({
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       {trigger ? <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger> : null}
-      <AlertDialogContent>
+      <AlertDialogContent onCloseAutoFocus={restoreFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

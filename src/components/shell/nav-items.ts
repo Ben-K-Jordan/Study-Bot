@@ -50,3 +50,29 @@ export function isActivePath(pathname: string, href: string): boolean {
 export function navItemFor(pathname: string): NavItem | undefined {
   return [...NAV_ITEMS, SETTINGS_ITEM].find((item) => isActivePath(pathname, item.href))
 }
+
+/**
+ * Pages below a destination whose app bar title is more specific than the
+ * destination's. Titles here render on the server, so the page's h1 is
+ * right before hydration and never changes after it.
+ */
+export const ROUTE_TITLES: Readonly<Record<string, string>> = {
+  "/plan/new": "New plan",
+  "/plan/materials": "Materials",
+  "/design": "Design system",
+}
+
+/** The top app bar title (the page's h1) for `pathname`. */
+export function titleFor(pathname: string): string {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname
+  return ROUTE_TITLES[path] ?? navItemFor(path)?.title ?? "Study Bot"
+}
+
+/**
+ * The one label for a link that leaves a flow for a destination: "Go to
+ * Home", "Go to Plan", "Go to Flashcards". Use "Open plan" for one specific
+ * plan, and "All plans" or "All decks" only as list headers' links.
+ */
+export function goToLabel(item: Pick<NavItem, "title">): string {
+  return `Go to ${item.title}`
+}

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { LogOutIcon, SettingsIcon, UserIcon } from "lucide-react"
-import { signOut, useSession } from "next-auth/react"
+import { signOut } from "next-auth/react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 function initialOf(name: string | null | undefined, email: string | null | undefined) {
@@ -23,19 +22,20 @@ function initialOf(name: string | null | undefined, email: string | null | undef
   return source ? source[0].toUpperCase() : null
 }
 
+/** The signed-in student as the account menu shows them. */
+export interface Account {
+  name: string | null
+  email: string | null
+}
+
 /**
  * The signed-in student's avatar in the top app bar. Opens a menu with
- * their name and email, Settings, and Sign out.
+ * their name and email, Settings, and Sign out. The (app) layout reads
+ * `account` from the session on the server, so the avatar is in the first
+ * HTML and no session request runs in the browser.
  */
-export function AccountMenu() {
-  const { data: session, status } = useSession()
-
-  if (status === "loading") {
-    return <Skeleton className="size-8 rounded-full" aria-hidden="true" />
-  }
-
-  const name = session?.user?.name ?? null
-  const email = session?.user?.email ?? null
+export function AccountMenu({ account }: { account: Account }) {
+  const { name, email } = account
   const initial = initialOf(name, email)
 
   return (

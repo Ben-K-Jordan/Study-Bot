@@ -46,9 +46,9 @@ export function CourseSwitcher({
 
   if (isLoading || (!options && !error)) {
     return (
-      <div className={cn("flex flex-col gap-2", className)}>
+      <div className={cn("flex w-full flex-col gap-2 sm:w-72", className)}>
         {hideLabel ? null : <Skeleton className="h-4 w-16" />}
-        <Skeleton className={cn("w-56 rounded-md", size === "sm" ? "h-10" : "h-12")} />
+        <Skeleton className={cn("w-full rounded-md sm:w-72", size === "sm" ? "h-10" : "h-12")} />
         <span className="sr-only" role="status">
           Loading courses…
         </span>
@@ -56,7 +56,9 @@ export function CourseSwitcher({
     )
   }
 
-  if (error) {
+  // A failed background refresh keeps the list it already has; only a
+  // first load that failed replaces the switcher.
+  if (error && !options) {
     return (
       <div className={cn("flex flex-wrap items-center gap-2 type-body-m text-error", className)} role="alert">
         Courses didn&apos;t load.
@@ -79,10 +81,12 @@ export function CourseSwitcher({
   }
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    // Full width on phones, one fixed width from 600px, so the field doesn't
+    // change size from page to page or course to course
+    <div className={cn("flex w-full flex-col gap-2 sm:w-72", className)}>
       {labelEl}
       <Select value={activeCourse ?? undefined} onValueChange={setActiveCourse}>
-        <SelectTrigger id={id} size={size} className="w-full min-w-56 sm:w-auto">
+        <SelectTrigger id={id} size={size} className="w-full sm:w-72">
           <SelectValue placeholder="Choose a course" />
         </SelectTrigger>
         <SelectContent position="popper" align="start">

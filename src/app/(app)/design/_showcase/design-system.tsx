@@ -1,6 +1,5 @@
 "use client"
 
-import { AppBarTitle } from "@/components/shell/app-bar-title"
 import { PageContainer } from "@/components/app/page-container"
 import { PageHeader } from "@/components/app/page-header"
 import { ThemeToggle } from "@/components/app/theme-toggle"
@@ -29,7 +28,6 @@ const SECTIONS = [
 export function DesignSystem() {
   return (
     <PageContainer size="wide" className="gap-12">
-      <AppBarTitle>Design system</AppBarTitle>
       <div className="flex flex-col gap-4">
         <PageHeader
           title="Study Bot design system"

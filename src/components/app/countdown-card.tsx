@@ -7,6 +7,7 @@ import {
   daysUntil,
   formatCountdown,
   formatDateWeekday,
+  formatNumber,
   plural,
   type DateInput,
 } from "@/lib/format"
@@ -24,7 +25,10 @@ const cardVariants = cva(
         false: "bg-card text-on-surface ring-1 ring-border",
       },
       interactive: {
-        true: "has-[a[data-card-link]:hover]:shadow-sm",
+        // The card link stretches over the whole card, so the card draws the
+        // focus ring: the link itself sits in a truncating heading that
+        // would clip a ring drawn around its text.
+        true: "has-[a[data-card-link]:hover]:shadow-sm has-[a[data-card-link]:focus-visible]:outline-2 has-[a[data-card-link]:focus-visible]:outline-offset-2 has-[a[data-card-link]:focus-visible]:outline-ring",
         false: "",
       },
     },
@@ -70,11 +74,12 @@ export function CountdownCard({
   const days = daysUntil(examDate, { timeZone, now })
   const message = formatCountdown(examName, examDate, { timeZone, now })
   const bigNumber = days > 0 ? days : days === 0 ? "Today" : null
-  const unit = days > 1 ? "days" : days === 1 ? "day" : null
+  // The number is drawn large on its own, so the unit is the plural form alone
+  const unit = days > 0 ? plural(days, { one: "day", other: "days" }) : null
   const hasProgress = sessionsTotal !== undefined && sessionsTotal > 0
   const progress = hasProgress ? Math.round(((sessionsDone ?? 0) / sessionsTotal) * 100) : 0
   const progressText = hasProgress
-    ? `${sessionsDone ?? 0} of ${plural(sessionsTotal, { one: "# session", other: "# sessions" })} done`
+    ? `${formatNumber(sessionsDone ?? 0)} of ${plural(sessionsTotal, { one: "# session", other: "# sessions" })} done`
     : null
 
   return (
@@ -90,7 +95,7 @@ export function CountdownCard({
               <Link
                 href={href}
                 data-card-link
-                className="outline-none after:absolute after:inset-0 after:rounded-2xl"
+                className="outline-none [--focus-ring-color:transparent] after:absolute after:inset-0 after:rounded-2xl"
               >
                 {examName}
               </Link>

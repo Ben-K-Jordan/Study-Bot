@@ -43,6 +43,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Toggle } from "@/components/ui/toggle"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { AiTag } from "@/components/app/ai-tag"
 import { KbdHint } from "@/components/app/kbd-hint"
 
 import { Block, ShowcaseSection, StateMatrix, previewState } from "./helpers"
@@ -137,7 +138,7 @@ export function Actions() {
               <Badge variant="success">Mastered</Badge>
               <Badge variant="warning">1 missed</Badge>
               <Badge variant="destructive">3 unresolved</Badge>
-              <Badge variant="outline">AI-written</Badge>
+              <AiTag />
             </div>
             <div className="max-w-48">
               <Badge variant="outline" className="max-w-full">

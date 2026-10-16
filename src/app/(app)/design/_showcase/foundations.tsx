@@ -130,7 +130,7 @@ const MOTION = [
   { token: "--duration-short", value: "150ms", use: "State layers, colour changes, presses" },
   { token: "--duration-medium", value: "250ms", use: "Progress, sheets opening" },
   { token: "--duration-long", value: "350ms", use: "Feedback sheet sliding up" },
-  { token: "--duration-dial", value: "450ms", use: "The roundness dial entering a session" },
+  { token: "--duration-dial", value: "600ms after 120ms", use: "The roundness dial entering a session" },
   { token: "ease-standard", value: "cubic-bezier(0.2, 0, 0, 1)", use: "State changes" },
   { token: "ease-emphasized", value: "cubic-bezier(0.05, 0.7, 0.1, 1)", use: "Entrances" },
 ]

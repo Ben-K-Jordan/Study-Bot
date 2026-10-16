@@ -4,9 +4,15 @@ import * as React from "react"
 import Link from "next/link"
 import { XIcon } from "lucide-react"
 
+import { formatNumber, plural } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { LessonAnnouncer } from "@/components/lesson/lesson-announcer"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+
+/** "0 of 1 question done", "3 of 12 questions done": the bar's value text. */
+export function lessonProgressText(done: number, total: number): string {
+  return `${formatNumber(done)} of ${plural(total, { one: "# question", other: "# questions" })} done`
+}
 
 /**
  * The thick lesson progress bar: a rounded grey track, a green fill, and a
@@ -23,14 +29,15 @@ export function LessonProgress({
   className?: string
 }) {
   const ratio = total > 0 ? Math.min(1, Math.max(0, current / total)) : 0
+  const done = Math.min(current, total)
   return (
     <div
       role="progressbar"
       aria-label="Session progress"
       aria-valuemin={0}
       aria-valuemax={total}
-      aria-valuenow={Math.min(current, total)}
-      aria-valuetext={`${Math.min(current, total)} of ${total} questions done`}
+      aria-valuenow={done}
+      aria-valuetext={lessonProgressText(done, total)}
       data-slot="lesson-progress"
       className={cn("relative h-4 w-full overflow-hidden rounded-full bg-lesson-progress-track", className)}
     >
@@ -108,7 +115,10 @@ export function LessonFrame({
   return (
     <LessonAnnouncer>
       <div data-slot="lesson-frame" className={cn("flex min-h-dvh flex-1 flex-col", className)}>
-        <div className="sticky top-0 z-10 bg-lesson-surface">
+        {/* The bars stay put while the question scrolls, except in short
+            windows (zoomed in, or a phone in landscape), where they would
+            cover the question and the focused option. */}
+        <div className="sticky top-0 z-10 bg-lesson-surface short:static">
           <div className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8 sm:py-6">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -125,19 +135,28 @@ export function LessonFrame({
               <TooltipContent side="bottom">{closeLabel}. Your answers are saved.</TooltipContent>
             </Tooltip>
             <LessonProgress current={current} total={total} className="flex-1" />
-            <p className="shrink-0 type-label-l font-bold text-lesson-muted tabular-nums">
-              <span className="sr-only sm:not-sr-only">Question </span>
-              {shown} of {total}
+            {/* The phase or mode rides with the counter ("Question 3 of 12 ·
+                Retrieval"), so nothing floats above the question. Under
+                600px it drops to a second line inside the same block. */}
+            <p className="flex max-w-[50%] shrink-0 flex-col items-end text-right type-label-l font-bold text-lesson-muted tabular-nums sm:flex-row sm:items-baseline sm:gap-1.5">
+              <span className="whitespace-nowrap">
+                <span className="sr-only sm:not-sr-only">Question </span>
+                {formatNumber(shown)} of {formatNumber(total)}
+              </span>
+              {status ? (
+                <>
+                  <span aria-hidden="true" className="hidden sm:inline">
+                    ·
+                  </span>
+                  <span className="sr-only">, </span>
+                  <span>{status}</span>
+                </>
+              ) : null}
             </p>
           </div>
-          {status ? (
-            <div className="mx-auto -mt-2 w-full max-w-4xl px-4 pb-2 type-label-l font-bold text-lesson-muted sm:px-8">
-              {status}
-            </div>
-          ) : null}
         </div>
 
-        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 pt-4 pb-10 sm:px-8 sm:pt-8">
+        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 pt-4 pb-10 sm:px-8 sm:pt-6">
           {question ? (
             <Heading
               id={questionId}
@@ -149,7 +168,7 @@ export function LessonFrame({
           {children}
         </div>
 
-        <div className="sticky bottom-0 z-10">
+        <div className="sticky bottom-0 z-10 short:static">
           {feedback ?? (footer ? (
             <div className="border-t-2 border-lesson-option-border bg-lesson-surface">
               <div className="mx-auto flex w-full max-w-4xl flex-col-reverse gap-3 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-6">

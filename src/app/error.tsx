@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 /** Errors outside the app shell: auth screens and study sessions. */
 export default function RootError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  /** Refetches and re-renders the segment (reset would only re-render the failed payload). */
+  retry: () => void;
 }) {
   useEffect(() => {
     console.error(error);
@@ -28,7 +29,7 @@ export default function RootError({
         description="Your saved work is safe. Retry, or go back to Home."
         actions={
           <>
-            <Button onClick={reset}>
+            <Button onClick={() => retry()}>
               <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
               Retry
             </Button>
