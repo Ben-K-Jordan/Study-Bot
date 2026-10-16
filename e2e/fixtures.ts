@@ -31,7 +31,6 @@ import {
   test as base,
   expect,
   type APIRequestContext,
-  type BrowserContextOptions,
   type ConsoleMessage,
   type Page,
 } from "@playwright/test";
@@ -100,11 +99,6 @@ function testClientIp(): string {
   return `${["192.0.2", "198.51.100", "203.0.113"][range % 3]}.${1 + (host % 254)}`;
 }
 
-/** The project's device settings, for contexts a fixture opens itself. */
-type DeviceOptions = Pick<
-  BrowserContextOptions,
-  "baseURL" | "viewport" | "userAgent" | "deviceScaleFactor" | "isMobile" | "hasTouch" | "locale" | "timezoneId"
->;
 
 /** Collect console errors and page errors; returns the list to check after the test. */
 function guardConsole(page: Page, allowed: RegExp[]): string[] {
@@ -151,13 +145,11 @@ export const test = base.extend<Options & Fixtures>({
     await api.dispose();
   },
 
-  testUserPage: async (
-    { browser, testUser, baseURL, viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, locale, timezoneId, allowConsoleErrors },
-    provide,
-  ) => {
-    // Same device as the project, no session cookie, and the test header.
-    const device: DeviceOptions = { baseURL, viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, locale, timezoneId };
-    const context = await browser.newContext({ ...device, extraHTTPHeaders: testUser.headers });
+  testUserPage: async ({ browser, testUser, allowConsoleErrors }, provide) => {
+    // browser.newContext() in a test starts from the project's `use` options:
+    // the device, baseURL, and the signed-in storageState, which would win
+    // over the test header. So drop the session cookie explicitly.
+    const context = await browser.newContext({ storageState: SIGNED_OUT, extraHTTPHeaders: testUser.headers });
     const page = await context.newPage();
     const problems = guardConsole(page, [...CONSOLE_ALLOWLIST, ...allowConsoleErrors]);
     await provide(page);
@@ -165,10 +157,7 @@ export const test = base.extend<Options & Fixtures>({
     assertNoConsoleProblems(problems);
   },
 
-  account: async (
-    { playwright, browser, baseURL, viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, locale, timezoneId, allowConsoleErrors },
-    provide,
-  ) => {
+  account: async ({ playwright, browser, baseURL, allowConsoleErrors }, provide) => {
     const email = `e2e-${randomBytes(5).toString("hex")}@studybot.test`;
     const headers = { "X-Forwarded-For": testClientIp() };
     const api = await playwright.request.newContext({ baseURL, extraHTTPHeaders: headers, storageState: SIGNED_OUT });
@@ -183,8 +172,8 @@ export const test = base.extend<Options & Fixtures>({
     const session = await (await api.get("/api/auth/session")).json();
     expect(session?.user?.email).toBe(email);
 
-    const device: DeviceOptions = { baseURL, viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, locale, timezoneId };
-    const context = await browser.newContext({ ...device, extraHTTPHeaders: headers, storageState: await api.storageState() });
+    // The project's device and baseURL, with this account's session instead of the shared one.
+    const context = await browser.newContext({ extraHTTPHeaders: headers, storageState: await api.storageState() });
     const page = await context.newPage();
     const problems = guardConsole(page, [...CONSOLE_ALLOWLIST, ...allowConsoleErrors]);
     await provide({ email, password: ACCOUNT_PASSWORD, api, page });
