@@ -20,44 +20,75 @@ export const RUNNABLE_MODES = [
 
 export type RunnableMode = (typeof RUNNABLE_MODES)[number];
 
+/**
+ * Most questions one session can hold. A run builds its whole deck in memory
+ * and writes it in one transaction, so the count has to be bounded. No
+ * screen asks for more: plans give at most max(5, 240 / 4) = 60, and the
+ * Study page and weak-spot buttons 10 or fewer.
+ */
+export const MAX_PROMPT_COUNT = 60;
+
+/** Questions in a session whose target outcome doesn't say. */
+export const DEFAULT_PROMPT_COUNT = 10;
+
+/**
+ * A stored or requested question count as a whole number from 1 to
+ * MAX_PROMPT_COUNT, falling back when it is missing or not a number. For
+ * reading `target_outcome.prompt_count` from rows saved before the schema
+ * bounded it.
+ */
+export function clampPromptCount(value: unknown, fallback: number = DEFAULT_PROMPT_COUNT): number {
+  const count = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
+  return Math.min(Math.max(count, 1), MAX_PROMPT_COUNT);
+}
+
+// Every free-form field is bounded: the whole body is stored on the session
+// row and read back on each run.
 export const createSessionSchema = z.object({
-  course_id: z.string().optional(),
-  course_name: z.string().min(1, "course_name is required"),
-  exam_id: z.string().optional(),
-  exam_name: z.string().min(1, "exam_name is required"),
+  course_id: z.string().max(200).optional(),
+  course_name: z.string().min(1, "course_name is required").max(200, "Use 200 characters or fewer."),
+  exam_id: z.string().max(200).optional(),
+  exam_name: z.string().min(1, "exam_name is required").max(200, "Use 200 characters or fewer."),
   mode: z.enum(SESSION_MODES),
-  topic_scope: z.string().min(1, "topic_scope is required"),
+  topic_scope: z.string().min(1, "topic_scope is required").max(2000, "Use 2,000 characters or fewer."),
   planned_minutes: z
     .number()
     .int()
     .min(15, "planned_minutes must be at least 15")
     .max(240, "planned_minutes must be at most 240"),
   objectives: z
-    .array(z.object({ id: z.string(), title: z.string() }))
+    .array(z.object({ id: z.string().max(200), title: z.string().max(500) }))
+    .max(50, "Choose 50 topics or fewer.")
     .optional(),
   target_outcome: z
     .object({
-      type: z.string().optional(),
-      prompt_count: z.number().optional(),
+      type: z.string().max(50).optional(),
+      prompt_count: z
+        .number()
+        .int("Choose a whole number of questions.")
+        .min(1, `Choose from 1 to ${MAX_PROMPT_COUNT} questions.`)
+        .max(MAX_PROMPT_COUNT, `Choose from 1 to ${MAX_PROMPT_COUNT} questions.`)
+        .optional(),
       target_accuracy: z.number().min(0).max(1).optional(),
       closed_book_required: z.boolean().optional(),
-      deliverables: z.array(z.string()).optional(),
+      deliverables: z.array(z.string().max(500)).max(20).optional(),
     })
     .optional(),
   break_protocol: z
     .object({
-      type: z.string().optional(),
-      cycles: z.number().int().min(1).optional(),
+      type: z.string().max(20).optional(),
+      cycles: z.number().int().min(1).max(16).optional(),
     })
     .optional(),
   resources: z
     .array(
       z.object({
-        type: z.string(),
-        ref: z.string(),
-        range: z.string().optional(),
+        type: z.string().max(50),
+        ref: z.string().max(2000),
+        range: z.string().max(200).optional(),
       })
     )
+    .max(20)
     .optional(),
 });
 

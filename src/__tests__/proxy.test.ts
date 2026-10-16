@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.stubEnv("ALLOW_TEST_AUTH", "");
   vi.stubEnv("CI", "");
   vi.stubEnv("NODE_ENV", "test");
+  vi.stubEnv("NEXTAUTH_URL", "");
 });
 
 afterEach(() => {
@@ -48,9 +49,43 @@ describe("test-auth gate", () => {
 
   it("is off in production builds unless CI=true", () => {
     vi.stubEnv("ALLOW_TEST_AUTH", "true");
+    vi.stubEnv("NEXTAUTH_URL", "http://localhost:3000");
     vi.stubEnv("NODE_ENV", "production");
     expect(isTestAuthEnabled()).toBe(false);
     vi.stubEnv("CI", "true");
+    expect(isTestAuthEnabled()).toBe(true);
+  });
+
+  // The header carries no secret, so a deployment that sets ALLOW_TEST_AUTH
+  // by mistake must still ignore it. A deployment's address is never local.
+  it("is off when the app's address is not on this machine", () => {
+    vi.stubEnv("ALLOW_TEST_AUTH", "true");
+    for (const url of ["https://studybot.example.com", "http://192.168.1.20:3000", "http://localhost.example.com", "not a url"]) {
+      vi.stubEnv("NEXTAUTH_URL", url);
+      vi.stubEnv("NODE_ENV", "development");
+      expect(isTestAuthEnabled(), url).toBe(false);
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("CI", "true");
+      expect(isTestAuthEnabled(), `${url} in CI`).toBe(false);
+      vi.stubEnv("CI", "");
+    }
+    expect(testAuthUserId(new Headers({ "x-user-id": "u1" }))).toBeNull();
+  });
+
+  it("accepts loopback addresses", () => {
+    vi.stubEnv("ALLOW_TEST_AUTH", "true");
+    for (const url of ["http://localhost:3000", "http://127.0.0.1:3100", "http://[::1]:3000", "http://e2e.localhost:3000"]) {
+      vi.stubEnv("NEXTAUTH_URL", url);
+      expect(isTestAuthEnabled(), url).toBe(true);
+    }
+  });
+
+  it("needs NEXTAUTH_URL in a production build", () => {
+    vi.stubEnv("ALLOW_TEST_AUTH", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("CI", "true");
+    expect(isTestAuthEnabled()).toBe(false);
+    vi.stubEnv("NODE_ENV", "development");
     expect(isTestAuthEnabled()).toBe(true);
   });
 
@@ -131,11 +166,15 @@ describe("cross-site writes", () => {
     getTokenMock.mockResolvedValue({ sub: "u1" });
   });
 
-  it("rejects API writes from another origin", async () => {
+  it("rejects API writes from another origin, with a code the client can map", async () => {
     const res = await proxy(
       req("/api/plans", { method: "POST", headers: { origin: "https://evil.example" } }),
     );
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: "Request blocked because it came from another site. Reload the page and retry.",
+      code: "CROSS_SITE_REQUEST",
+    });
   });
 
   it("rejects an opaque origin and cross-site fetch metadata", async () => {

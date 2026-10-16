@@ -5,7 +5,10 @@
  * An explicit LOG_LEVEL always wins. Without one, vitest runs are silent
  * (expected-failure tests would otherwise flood the output), other test
  * runs log errors only, and everything else logs info and up.
+ *
+ * Token-shaped strings are redacted from every line (src/lib/crypto/redact.ts).
  */
+import { sanitizeForLog } from "./crypto/redact";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 type MinLevel = LogLevel | "silent";
@@ -40,8 +43,15 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
+// Every string in the entry, nested ones included, is redacted on the way
+// out, so a token inside an error message (a failed Google Calendar call,
+// say) never reaches the log whole.
+function redactStrings(_key: string, value: unknown): unknown {
+  return typeof value === "string" ? sanitizeForLog(value) : value;
+}
+
 function emit(entry: LogEntry) {
-  const line = JSON.stringify(entry);
+  const line = JSON.stringify(entry, redactStrings);
   if (entry.level === "error") {
     console.error(line);
   } else {

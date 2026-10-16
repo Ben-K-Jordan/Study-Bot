@@ -3,7 +3,8 @@
  *
  * Responsibilities:
  * 1. Cache lookup (AiCache table) with SHA-256 key hashing
- * 2. Per-user daily cost budget enforcement
+ * 2. Cost budgets: per-user daily and monthly caps, plus an optional daily
+ *    ceiling across all accounts (AI_GLOBAL_DAILY_COST_CAP_USD)
  * 3. Provider dispatch (completeJson / embed)
  * 4. Call logging (AiCallLog table)
  * 5. Basic circuit-breaker semantics (consecutive failure tracking)
@@ -26,6 +27,10 @@ const AI_MONTHLY_COST_CAP_USD = parseFloat(process.env.AI_MONTHLY_COST_CAP_USD |
 // can't spend without limit. $0.10 is about 5M tokens with
 // text-embedding-3-small, roughly 20 MB of extracted text a day.
 const AI_DAILY_EMBED_COST_CAP_USD = parseFloat(process.env.AI_DAILY_EMBED_COST_CAP_USD || "0.10");
+// The caps above are per account, and sign-up is open, so new accounts each
+// bring a fresh daily budget. This optional ceiling covers every account
+// together; unset (the default) means no ceiling.
+const AI_GLOBAL_DAILY_COST_CAP_USD = optionalCap(process.env.AI_GLOBAL_DAILY_COST_CAP_USD);
 const AI_DISABLED = process.env.AI_DISABLED === "true";
 const CIRCUIT_BREAKER_THRESHOLD = 5; // consecutive failures before opening circuit
 const CIRCUIT_BREAKER_RESET_MS = 60_000; // 1 minute cooldown
@@ -33,6 +38,13 @@ const CIRCUIT_OPEN_MESSAGE = "AI circuit breaker is open after too many recent f
 
 /** AiCallLog task name for embedding calls (uploads and search queries). */
 export const EMBED_TASK = "EMBED_TEXTS";
+
+/** A dollar cap from the environment; null when unset or not a number. */
+function optionalCap(raw: string | undefined): number | null {
+  if (raw == null || raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
 
 // ---------------------------------------------------------------------------
 // Circuit breaker state (in-process, resets on restart)
@@ -78,17 +90,22 @@ interface BudgetCheckResult {
   spentUsd: number;
   capUsd: number;
   period: "daily" | "monthly";
+  /** "global" when the ceiling across every account was reached. */
+  scope?: "global";
 }
 
 // In-memory budget cache to avoid aggregate queries on every AI call
 const BUDGET_CACHE_TTL_MS = 60_000; // 1 minute
 const budgetCache = new Map<string, { result: BudgetCheckResult; expiresAt: number }>();
+// Today's spend across every account, shared by concurrent checks.
+let globalSpendCache: { spent: Promise<number>; expiresAt: number } | null = null;
 
 /** Reset circuit breaker and budget cache state (exposed for tests). */
 export function resetCircuitBreaker() {
   consecutiveFailures = 0;
   circuitOpenUntil = 0;
   budgetCache.clear();
+  globalSpendCache = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,14 +142,44 @@ function budgetResult(daily: number, dailyCap: number, monthly: number): BudgetC
 
 function budgetExceeded(budget: BudgetCheckResult, what = "AI"): GatewayError {
   const period = budget.period === "daily" ? "Daily" : "Monthly";
+  const subject = budget.scope === "global" ? "AI budget for all accounts" : `${what} budget`;
   return new GatewayError(
     "BUDGET_EXCEEDED",
-    `${period} ${what} budget reached: $${budget.spentUsd.toFixed(2)} of $${budget.capUsd.toFixed(2)} spent.`,
+    `${period} ${subject} reached: $${budget.spentUsd.toFixed(2)} of $${budget.capUsd.toFixed(2)} spent.`,
     false,
   );
 }
 
+/** Today's spend across every account, read at most once a minute. */
+function globalSpentToday(): Promise<number> {
+  const now = Date.now();
+  if (globalSpendCache && now < globalSpendCache.expiresAt) return globalSpendCache.spent;
+  const { startOfDay } = budgetWindows();
+  const spent = spentUsd({ createdAt: { gte: startOfDay } });
+  const entry = { spent, expiresAt: now + BUDGET_CACHE_TTL_MS };
+  globalSpendCache = entry;
+  // A failed read isn't kept, so the next call asks the database again.
+  spent.catch(() => {
+    if (globalSpendCache === entry) globalSpendCache = null;
+  });
+  return spent;
+}
+
+/**
+ * The ceiling across every account (AI_GLOBAL_DAILY_COST_CAP_USD), checked
+ * before each account's own caps. Null while it is unset or not reached.
+ */
+async function checkGlobalBudget(): Promise<BudgetCheckResult | null> {
+  if (AI_GLOBAL_DAILY_COST_CAP_USD == null) return null;
+  const spent = await globalSpentToday();
+  if (spent < AI_GLOBAL_DAILY_COST_CAP_USD) return null;
+  return { allowed: false, spentUsd: spent, capUsd: AI_GLOBAL_DAILY_COST_CAP_USD, period: "daily", scope: "global" };
+}
+
 async function checkBudget(userId: string): Promise<BudgetCheckResult> {
+  const global = await checkGlobalBudget();
+  if (global) return global;
+
   // Return cached result if still fresh
   const cached = budgetCache.get(userId);
   if (cached && Date.now() < cached.expiresAt) {
@@ -156,6 +203,9 @@ async function checkBudget(userId: string): Promise<BudgetCheckResult> {
  * each slice of a large upload sees the spend of the slices before it.
  */
 async function checkUploadEmbedBudget(userId: string): Promise<BudgetCheckResult> {
+  const global = await checkGlobalBudget();
+  if (global) return global;
+
   const { startOfDay, startOfMonth } = budgetWindows();
   const [daily, monthly] = await Promise.all([
     spentUsd({ userId, task: EMBED_TASK, createdAt: { gte: startOfDay } }),

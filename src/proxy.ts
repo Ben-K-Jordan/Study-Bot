@@ -27,6 +27,12 @@ const STATIC_FILE = /^\/[^/]+\.(?:avif|css|gif|ico|jpe?g|js|json|map|png|svg|txt
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/** Body of the 403 for a write sent from another site; clients branch on `code`. */
+const CROSS_SITE_BODY = {
+  error: "Request blocked because it came from another site. Reload the page and retry.",
+  code: "CROSS_SITE_REQUEST",
+} as const;
+
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
   try {
@@ -64,7 +70,7 @@ export async function proxy(request: NextRequest) {
   const isApi = pathname.startsWith("/api/");
 
   if (isApi && isCrossSiteWrite(request)) {
-    return NextResponse.json({ error: "Cross-site request rejected" }, { status: 403 });
+    return NextResponse.json(CROSS_SITE_BODY, { status: 403 });
   }
 
   // Allow public paths

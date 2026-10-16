@@ -182,14 +182,19 @@ export function getClientIp(request: Pick<Request, "headers">): string {
 }
 
 /**
- * Return a 429 response with a Retry-After header. The default text says how
- * long to wait; `message` replaces it for callers that can say which action
- * was limited.
+ * The app's one 429 response: a Retry-After header, and the same wait in
+ * whole seconds as `retry_after` in the body. The default text says how long
+ * to wait; `message` replaces it for callers that can say which action was
+ * limited.
  */
 export function tooManyRequests(retryAfterMs: number, message?: string): NextResponse {
   const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000));
   return NextResponse.json(
-    { error: message ?? `Too many requests. ${retryAfterText(retryAfterSec)}`, code: "RATE_LIMITED" },
+    {
+      error: message ?? `Too many requests. ${retryAfterText(retryAfterSec)}`,
+      code: "RATE_LIMITED",
+      retry_after: retryAfterSec,
+    },
     {
       status: 429,
       headers: { "Retry-After": String(retryAfterSec) },

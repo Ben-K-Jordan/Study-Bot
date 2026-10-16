@@ -83,6 +83,7 @@ describe("tooManyRequests", () => {
     const body = await res.json();
     expect(body.error).toBe("Too many requests. Retry in 2 seconds.");
     expect(body.code).toBe("RATE_LIMITED");
+    expect(body.retry_after).toBe(2);
   });
 
   it("rounds longer waits up to whole minutes", async () => {

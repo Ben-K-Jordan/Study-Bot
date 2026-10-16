@@ -35,19 +35,19 @@ describe.skipIf(!hasDb)("Payload Size Budget", () => {
     await prisma.$disconnect();
   });
 
-  it("start response with prompt_count=100 stays under 50KB when prompts field is excluded", async () => {
+  it("start response with the most questions a session allows stays under 50KB when prompts field is excluded", async () => {
     const sess = await createSession(USER, {
       course_name: COURSE,
       exam_name: "Big Exam",
       mode: "RETRIEVAL",
       topic_scope: "Comprehensive review",
       planned_minutes: 120,
-      target_outcome: { prompt_count: 100 },
+      target_outcome: { prompt_count: 60 },
     });
 
     const result = await startOrResumeRun(USER, sess.session_id);
     expect("data" in result).toBe(true);
-    expect(result.data.prompt_count).toBe(100);
+    expect(result.data.prompt_count).toBe(60);
     expect(result.data.current_prompt).toBeDefined();
     expect(result.data.current_prompt.prompt_index).toBe(0);
 
