@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-import { formatPercent, plural } from "@/lib/format";
+import { formatNumber, formatPercent, plural } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MIN_RATED, summarizeCalibration } from "./calibration";
@@ -51,10 +51,10 @@ export function CalibrationSection({
         <>
           <div className="flex flex-col gap-2 type-body-l text-pretty text-lesson-on-surface">
             <p>
-              {`Your confidence matched your result on ${summary.matched} of ${plural(summary.rated, {
-                one: "# rated question",
-                other: "# rated questions",
-              })}.`}
+              {plural(summary.rated, {
+                one: `Your confidence matched your result on ${formatNumber(summary.matched)} of # rated question.`,
+                other: `Your confidence matched your result on ${formatNumber(summary.matched)} of # rated questions.`,
+              })}
             </p>
             {summary.overconfident > 0 ? (
               <p>
@@ -68,15 +68,15 @@ export function CalibrationSection({
             {summary.underconfident > 0 ? (
               <p>
                 {plural(summary.underconfident, {
-                  one: "Underconfident on # question: you marked it Guessing and got it right.",
-                  other: "Underconfident on # questions: you marked them Guessing and got them right.",
+                  one: "Underconfident on # question: you marked it Guessing and it was correct.",
+                  other: "Underconfident on # questions: you marked them Guessing and they were correct.",
                 })}
               </p>
             ) : summary.guessedRight > 0 ? (
               <p>
                 {plural(summary.guessedRight, {
-                  one: "Right on # question you marked Guessing.",
-                  other: "Right on # questions you marked Guessing.",
+                  one: "Correct on # question you marked Guessing.",
+                  other: "Correct on # questions you marked Guessing.",
                 })}
               </p>
             ) : null}
@@ -84,7 +84,7 @@ export function CalibrationSection({
 
           <figure className="flex flex-col gap-3">
             <figcaption className="type-title-s font-bold text-lesson-muted">
-              How often you were right, by how sure you were
+              How often you were correct, by how sure you were
             </figcaption>
             <CalibrationChart levels={summary.levels} />
           </figure>

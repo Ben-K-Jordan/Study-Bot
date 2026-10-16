@@ -29,7 +29,7 @@ describe("sessionErrorCopy", () => {
   it("says what didn't happen, then the fix", () => {
     const copy = sessionErrorCopy(new ApiError("x", 500), "submit");
     expect(copy.title).toBe("Answer not saved.");
-    expect(copy.description).toBe("Your text is still here. Retry in a moment.");
+    expect(copy.description).toBe("Your answer is still here. Retry in a moment.");
   });
 
   it("offers sign-in when the session expired", () => {
@@ -54,6 +54,15 @@ describe("sessionErrorCopy", () => {
     const copy = sessionErrorCopy(new ApiError("x", 409, { expected: 3 }), "submit");
     expect(copy.reload).toBe(true);
     expect(copy.description).toBe("This question was answered in another tab. Reload to continue.");
+  });
+
+  it("says whose session it is on a 403 and that it is gone on a 404", () => {
+    expect(sessionErrorCopy(new ApiError("x", 403), "results").description).toBe(
+      "This session belongs to another account."
+    );
+    expect(sessionErrorCopy(new ApiError("x", 404), "results").description).toBe(
+      "This session doesn't exist anymore. It may have been deleted."
+    );
   });
 
   it("maps the follow-ups conflict to finishing first", () => {

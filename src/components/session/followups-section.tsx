@@ -5,13 +5,15 @@ import Link from "next/link";
 import { CalendarPlusIcon } from "lucide-react";
 
 import { apiPost } from "@/lib/client-api";
-import { daysUntil, formatDateTime, formatDateWeekday, formatList, formatRelativeDay, plural } from "@/lib/format";
+import { daysUntil, formatDateTime, formatDateWeekday, formatList, formatRelativeDay } from "@/lib/format";
 import { useMounted } from "@/hooks/use-mounted";
 import { ErrorState } from "@/components/app/error-state";
 import { LessonButton } from "@/components/lesson/lesson-button";
 import { sessionErrorCopy, type SessionErrorCopy } from "./errors";
+import { skippedText } from "./followup-copy";
 import { sessionModeCopy } from "./modes";
 import type { FollowupItem, FollowupPreview } from "./types";
+import { useZone } from "./use-zone";
 
 interface ScheduleResponse {
   status: "scheduled" | "already_scheduled" | "no_plan";
@@ -44,10 +46,12 @@ export function FollowupsSection({
   const [error, setError] = useState<SessionErrorCopy | null>(null);
   // The plan the follow-ups went into, known once they are added here.
   const [planId, setPlanId] = useState<string | null>(null);
-  const timeZone = preview.timezone;
+  // No zone means the student has neither a time zone in Settings nor a
+  // plan: the days are shown in the browser's zone, after hydration.
+  const { timeZone, ready } = useZone(preview.timezone);
   const scheduled = preview.status === "scheduled";
   const allPassed =
-    preview.items.length > 0 && preview.items.every((item) => daysUntil(item.at, { timeZone }) < 0);
+    ready && preview.items.length > 0 && preview.items.every((item) => daysUntil(item.at, { timeZone }) < 0);
 
   async function add() {
     if (adding) return;
@@ -79,6 +83,7 @@ export function FollowupsSection({
   }
 
   const relative = (item: FollowupItem) => (mounted ? ` (${formatRelativeDay(item.at, { timeZone })})` : "");
+  const day = (item: FollowupItem) => (ready ? `, ${formatDateWeekday(item.at, { timeZone })}` : "");
   const dayList = formatList(preview.items.map((item) => formatDateWeekday(item.at, { timeZone })));
 
   return (
@@ -98,29 +103,20 @@ export function FollowupsSection({
                     href={`/s/${item.session_id}`}
                     className="font-bold text-lesson-primary underline underline-offset-4"
                   >
-                    {`${FOLLOWUP_MODE} session, ${formatDateTime(item.at, { timeZone })}`}
+                    {`${FOLLOWUP_MODE} session${ready ? `, ${formatDateTime(item.at, { timeZone })}` : ""}`}
                   </Link>
                   {relative(item)}
                 </span>
               ) : (
-                <span>{`${FOLLOWUP_MODE} session, ${formatDateWeekday(item.at, { timeZone })}${relative(item)}`}</span>
+                <span>{`${FOLLOWUP_MODE} session${day(item)}${relative(item)}`}</span>
               )}
             </li>
           ))}
         </ul>
       ) : null}
 
-      {preview.skipped.length > 0 ? (
-        <p className="type-body-m text-lesson-muted">
-          {preview.items.length === 0
-            ? plural(preview.skipped.length, {
-                one: `The follow-up date falls after ${preview.exam_name ?? "your exam"}, so there's nothing to add.`,
-                other: `The follow-up dates fall after ${preview.exam_name ?? "your exam"}, so there's nothing to add.`,
-              })
-            : `${formatList(preview.skipped.map((item) => formatDateWeekday(item.at, { timeZone })))} ${
-                preview.skipped.length === 1 ? "falls" : "fall"
-              } after ${preview.exam_name ?? "your exam"}, so ${preview.skipped.length === 1 ? "it isn't" : "they aren't"} added.`}
-        </p>
+      {preview.skipped.length > 0 && ready ? (
+        <p className="type-body-m text-lesson-muted">{skippedText(preview, timeZone)}</p>
       ) : null}
 
       <p className="type-body-m text-lesson-muted">Lower accuracy brings follow-ups sooner.</p>
@@ -128,12 +124,12 @@ export function FollowupsSection({
       <div role="status" aria-live="polite" className="flex flex-col gap-3 empty:hidden">
         {scheduled && preview.items.length > 0 ? (
           <p className="type-body-l text-lesson-on-surface">
-            {`Added to your plan: ${dayList}. `}
+            {ready ? `Added to your plan: ${dayList}. ` : "Added to your plan. "}
             <Link
               href={planId ? `/plan?plan=${encodeURIComponent(planId)}` : "/plan"}
               className="font-bold text-lesson-primary underline underline-offset-4"
             >
-              View plan
+              Open plan
             </Link>
           </p>
         ) : null}
@@ -185,3 +181,4 @@ export function FollowupsSection({
     </section>
   );
 }
+

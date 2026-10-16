@@ -65,7 +65,7 @@ export function EndScreen({
         Start session again
       </LessonButton>
       <LessonButton variant="primary" width="full" className="sm:w-auto" asChild>
-        <Link href="/">Back to Home</Link>
+        <Link href="/">Go to Home</Link>
       </LessonButton>
     </>
   );
@@ -75,7 +75,7 @@ export function EndScreen({
       <SessionScreen
         footer={
           <LessonButton variant="primary" width="full" className="sm:ml-auto sm:w-auto" asChild>
-            <Link href="/">Back to Home</Link>
+            <Link href="/">Go to Home</Link>
           </LessonButton>
         }
       >
@@ -106,7 +106,7 @@ export function EndScreen({
         footer={
           <>
             <LessonButton variant="neutral" width="full" className="sm:w-auto" asChild>
-              <Link href="/">Back to Home</Link>
+              <Link href="/">Go to Home</Link>
             </LessonButton>
             <LessonButton variant="primary" width="full" className="sm:w-auto" onClick={onStartAgain}>
               Start session

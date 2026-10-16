@@ -8,9 +8,10 @@ import {
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
 import { computeFollowups } from "@/lib/spacing";
+import { dateColumnKey } from "@/lib/plan-dates";
 import { dayKey, getUserTimezone, zonedTimeToUtc } from "@/lib/timezone";
 import { getDeckPreview } from "@/services/run";
-import { computeFollowupSchedule } from "@/services/followups";
+import { computeFollowupSchedule, findFollowupPlan } from "@/services/followups";
 import { sessionModeCopy } from "@/components/session/modes";
 import type {
   ActiveRunSummary,
@@ -67,6 +68,11 @@ export async function createSession(userId: string, input: unknown) {
   });
 
   const calendarDescription = buildCalendarDescription({
+    courseName: parsed.course_name,
+    examName: parsed.exam_name,
+    mode: parsed.mode,
+    topics: parsed.objectives ?? null,
+    topicScope: parsed.topic_scope,
     outcome: parsed.target_outcome ?? null,
     planSteps: defaultPlanSteps(parsed.planned_minutes),
     rules: defaultRules(parsed.target_outcome?.closed_book_required),
@@ -212,9 +218,63 @@ export async function isSessionOwner(userId: string, sessionId: string): Promise
   return session?.userId === userId;
 }
 
+/**
+ * What the next run's deck will hold: read from the open run when there is
+ * one, else predicted. Never rejects; null when the prediction failed.
+ */
+function deckPreviewFor(
+  userId: string,
+  session: { sessionId: string; courseName: string; mode: string; objectives: unknown; targetOutcome: unknown },
+  openRun: { prompts: unknown; promptCount: number } | null,
+): Promise<DeckComposition | null> {
+  if (openRun) return Promise.resolve(compositionFromDeck(openRun.prompts, openRun.promptCount));
+  const outcome = (session.targetOutcome as Record<string, unknown> | null) ?? null;
+  return getDeckPreview(userId, {
+    courseName: session.courseName,
+    mode: session.mode,
+    objectives: (session.objectives as { id: string; title: string }[] | null) ?? null,
+    promptCount: typeof outcome?.prompt_count === "number" ? outcome.prompt_count : 10,
+  }).catch((err: unknown) => {
+    logger.warn("session.deck_preview_failed", { session_id: session.sessionId, error: String(err) });
+    return null;
+  });
+}
+
+/**
+ * The deck preview on its own, for the intro shown after Start session
+ * again (the page skips it when it opens on results). Owner only.
+ */
+export async function getSessionDeckPreview(
+  userId: string,
+  sessionId: string,
+): Promise<{ error: "not_found" } | { data: DeckComposition | null }> {
+  const session = await prisma.session.findUnique({
+    where: { sessionId },
+    select: {
+      sessionId: true,
+      userId: true,
+      courseName: true,
+      mode: true,
+      objectives: true,
+      targetOutcome: true,
+      runs: {
+        where: { status: { in: ["CREATED", "ACTIVE"] } },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { prompts: true, promptCount: true },
+      },
+    },
+  });
+  if (!session || session.userId !== userId) return { error: "not_found" };
+  return { data: await deckPreviewFor(userId, session, session.runs[0] ?? null) };
+}
+
 export interface SessionScreenData {
   session: SessionData;
-  /** Streams to the preflight; never rejects. */
+  /**
+   * Streams to the preflight; never rejects. Null without a query when the
+   * page opens on results: Start session again loads it then.
+   */
   deckPreview: Promise<DeckComposition | null>;
   /** Results of the last finished run when the page opens on them. */
   results: SessionResults | null;
@@ -272,25 +332,16 @@ export async function getSessionScreen(
       }
     : null;
 
-  const deckPreview: Promise<DeckComposition | null> = openRun
-    ? Promise.resolve(compositionFromDeck(openRun.prompts, openRun.promptCount))
-    : getDeckPreview(userId, {
-        courseName: session.courseName,
-        mode: session.mode,
-        objectives,
-        promptCount: typeof outcome?.prompt_count === "number" ? outcome.prompt_count : 10,
-      }).catch((err: unknown) => {
-        logger.warn("session.deck_preview_failed", { session_id: sessionId, error: String(err) });
-        return null;
-      });
+  // A finished session opens on its results, which don't need the preview.
+  const opensOnResults = lastCompleted != null && !openRun;
+  const deckPreview = opensOnResults ? Promise.resolve(null) : deckPreviewFor(userId, session, openRun);
 
-  const results =
-    lastCompleted && !openRun
-      ? await buildRunResults(userId, lastCompleted.runId, timezone).catch((err: unknown) => {
-          logger.error("session.results_failed", { session_id: sessionId, error: String(err) });
-          return null;
-        })
-      : null;
+  const results = opensOnResults
+    ? await buildRunResults(userId, lastCompleted.runId, timezone).catch((err: unknown) => {
+        logger.error("session.results_failed", { session_id: sessionId, error: String(err) });
+        return null;
+      })
+    : null;
 
   const data: SessionData = {
     session_id: session.sessionId,
@@ -345,6 +396,9 @@ function normalizeMetrics(value: unknown): RunMetrics {
   };
 }
 
+/** The plan follow-ups go into; shared with the scheduler. */
+export { findFollowupPlan };
+
 /**
  * Follow-up sessions for a finished run, with the dates the scheduler will
  * use (or used): the plan's dates and times when a plan exists, else the
@@ -374,7 +428,7 @@ export async function getFollowupPreview(
       orderBy: { startTime: "asc" },
       select: { sessionId: true, startTime: true, plan: { select: { timezone: true, examName: true } } },
     });
-    const timezone = items[0]?.plan.timezone ?? userTimezone ?? "UTC";
+    const timezone = items[0]?.plan.timezone ?? userTimezone ?? null;
     return {
       status: "scheduled",
       timezone,
@@ -389,21 +443,19 @@ export async function getFollowupPreview(
     };
   }
 
-  // The plan scheduleFollowups adds to: this course's plan with the nearest
-  // upcoming exam.
-  const plan = await prisma.studyPlan.findFirst({
-    where: { userId, courseName, examDate: { gte: new Date() } },
-    orderBy: { examDate: "asc" },
-  });
+  const plan = await findFollowupPlan(userId, courseName);
   const endedAt = run.endedAt ?? new Date();
 
   if (!plan) {
-    const timezone = userTimezone ?? "UTC";
+    const timezone = userTimezone;
     const items: FollowupItem[] = computeFollowups(run.accuracy, endedAt).map((rec) => {
-      const date = dayKey(new Date(endedAt.getTime() + rec.days_from_now * DAY_MS), timezone);
+      const instant = new Date(endedAt.getTime() + rec.days_from_now * DAY_MS);
+      const date = dayKey(instant, timezone);
       return {
         date,
-        at: zonedTimeToUtc(date, "12:00", timezone).toISOString(),
+        // With no zone the server can't know the student's day, so it sends
+        // the instant and the browser shows the day in its own zone.
+        at: timezone ? zonedTimeToUtc(date, "12:00", timezone).toISOString() : instant.toISOString(),
         days_from_now: rec.days_from_now,
       };
     });
@@ -414,8 +466,9 @@ export async function getFollowupPreview(
     accuracy: run.accuracy,
     endedAt,
     timezone: plan.timezone,
-    examDate: plan.examDate.toISOString().split("T")[0],
-    planStartDate: dayKey(plan.startDate, plan.timezone),
+    // DATE columns: read the stored day, never through a zone (plan-dates.ts).
+    examDate: dateColumnKey(plan.examDate),
+    planStartDate: dateColumnKey(plan.startDate),
     availability: (plan.config as { availability?: { start: string; end: string }[] } | null)
       ?.availability,
   });
@@ -557,6 +610,13 @@ async function loadRunResults(
  * belong to the session in the URL.
  */
 export async function getSessionResults(userId: string, sessionId: string, runId: string) {
-  const userTimezone = await getUserTimezone(userId);
-  return loadRunResults(userId, runId, userTimezone, sessionId);
+  // The same zone the session page uses: Settings, else the session's plan.
+  const [userTimezone, planItem] = await Promise.all([
+    getUserTimezone(userId),
+    prisma.studyPlanItem.findFirst({
+      where: { sessionId, plan: { userId } },
+      select: { plan: { select: { timezone: true } } },
+    }),
+  ]);
+  return loadRunResults(userId, runId, userTimezone ?? planItem?.plan.timezone ?? null, sessionId);
 }

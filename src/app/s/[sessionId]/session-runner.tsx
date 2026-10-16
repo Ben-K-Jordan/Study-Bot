@@ -7,19 +7,22 @@ import { preload } from "swr";
 
 import { ApiError, apiGet, apiPost } from "@/lib/client-api";
 import { fetcher } from "@/lib/swr";
-import { fetchPrompt, promptToView, resultsUrl } from "@/components/session/api";
+import { loadDeckPreview, promptToView, resultsUrl } from "@/components/session/api";
+import { fetchPrompt, promptUrl, runUrl } from "@/components/session/runner/api";
 import {
   breakStateFromRejection,
   sessionErrorCopy,
   toSessionError,
   type SessionErrorCopy,
 } from "@/components/session/errors";
+import { nextLoads } from "@/components/session/next-loads";
 import { QuestionSkeleton } from "@/components/session/skeletons";
 import type {
   ActiveRunSummary,
   AttemptSubmitResult,
   BreakState,
   DeckComposition,
+  PromptView,
   RunData,
   SessionData,
   SessionResults,
@@ -217,7 +220,11 @@ interface Props {
  * Contract with the question screen (RunnerScreen):
  * - onSubmit(attempt) resolves with the server's answer, null when a break
  *   started before the answer arrived (nothing was saved), and rejects with
- *   an ApiError whose message is already written for the student.
+ *   an ApiError whose message is already written for the student. Outside
+ *   exam answering it resolves before the next question has loaded: the
+ *   answered question stays on screen with its feedback, and the next one
+ *   arrives as run.current_prompt, or through the runner's own GET of the
+ *   same SWR key if it is still on its way.
  * - When an answer finishes the run or starts a break, onSubmit only updates
  *   the run, so the screen can show that answer's feedback first. It then
  *   calls onFinish() ("See results") or onBreak().
@@ -227,6 +234,9 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
   const router = useRouter();
   const [state, dispatch] = useReducer(reducer, session, initialState);
   const sessionId = session.session_id;
+  // The intro's deck preview: streamed with the page, or loaded again for
+  // Start session again (the page skips it when it opens on results).
+  const [preview, setPreview] = useState(deckPreview);
 
   // Handlers read the latest run through a ref, so their identities stay
   // stable for the runner and an answer never builds on a stale run.
@@ -243,6 +253,17 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
     runRef.current = run;
     dispatch({ type: "run_updated", run });
   }, []);
+
+  /** Puts a question that loaded in the background into the run, if it is still the one due. */
+  const attachPrompt = useCallback(
+    (runId: string, index: number, prompt: PromptView | null) => {
+      const latest = runRef.current;
+      if (!prompt || !latest || latest.run_id !== runId) return;
+      if (latest.current_index !== index || latest.current_prompt) return;
+      updateRun({ ...latest, current_prompt: prompt });
+    },
+    [updateRun]
+  );
 
   const preloadRunner = useCallback(() => {
     void loadRunner();
@@ -264,7 +285,7 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
       // Scoring in exam simulation shows each saved answer, so load them.
       let attempts: RunData["attempts"];
       if (data.phase === "REVIEW" && data.resumed) {
-        attempts = await apiGet(`/api/runs/${encodeURIComponent(data.run_id)}`)
+        attempts = await apiGet(runUrl(data.run_id))
           .then((full) => full.attempts)
           .catch(() => undefined);
       }
@@ -317,18 +338,19 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
         const deckPrompt = current.prompts?.[newIndex];
         return deckPrompt ? promptToView(deckPrompt, newIndex) : null;
       };
+      const { nextIndex, awaitNext, scoringBegins } = nextLoads({
+        completed,
+        index: newIndex,
+        promptCount,
+        phase,
+        previousPhase: current.phase,
+      });
 
-      // The next question and (when scoring begins) the saved answers load together.
-      const [nextPrompt, attempts] = await Promise.all([
-        !completed && newIndex < promptCount
-          ? fetchPrompt(current.run_id, newIndex).catch(fallbackPrompt)
-          : Promise.resolve(null),
-        phase === "REVIEW" && current.phase === "EXAM"
-          ? apiGet(`/api/runs/${encodeURIComponent(current.run_id)}`)
-              .then((full) => full.attempts as RunData["attempts"])
-              .catch(() => current.attempts)
-          : Promise.resolve(current.attempts),
-      ]);
+      // An exam answer gets no feedback, so the next question replaces it at
+      // once: load it first. Every other answer shows feedback first, and
+      // the next question loads while the student reads it.
+      const nextPrompt =
+        nextIndex !== null && awaitNext ? await fetchPrompt(current.run_id, nextIndex).catch(fallbackPrompt) : null;
 
       // Finishing the run or starting a break doesn't switch screens here:
       // the runner shows this answer's feedback, then calls onFinish or onBreak.
@@ -344,11 +366,25 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
         answered_count: data.answered_count ?? current.answered_count,
         scored_count: data.scored_count ?? current.scored_count,
         last_attempt_id: data.attempt_id ?? current.last_attempt_id,
-        attempts,
+        // Scoring reads the saved answers; the runner loads them under runUrl.
+        attempts: scoringBegins ? undefined : current.attempts,
       });
+
+      // Same SWR keys as the runner's own loads, so a question or answer
+      // list still on its way when the runner needs it is reused, not
+      // requested twice. GET /prompt for the current question can adapt its
+      // difficulty, which is why the runner must not fetch it a second time.
+      if (nextIndex !== null && !awaitNext) {
+        void preload(promptUrl(current.run_id, nextIndex), fetcher<PromptView>).then(
+          (prompt) => attachPrompt(current.run_id, nextIndex, prompt),
+          () => attachPrompt(current.run_id, nextIndex, fallbackPrompt())
+        );
+      }
+      if (scoringBegins) void preload(runUrl(current.run_id), fetcher).catch(() => undefined);
+
       return data as AttemptSubmitResult;
     },
-    [updateRun]
+    [updateRun, attachPrompt]
   );
 
   const finish = useCallback(async () => {
@@ -364,7 +400,9 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
       // A failure here is shown by the results screen, with Retry.
       await preload(resultsUrl(sessionId, current.run_id), fetcher).catch(() => undefined);
       dispatch({ type: "finished", runId: current.run_id });
-      // Refresh the page's server data (deck preview, last result) for Start session again.
+      // Refresh the page's server data, so the intro's "Last time" line and a
+      // later Back navigation show this run. The page now opens on results,
+      // which skips the deck preview, so this reloads the results only.
       startTransition(() => router.refresh());
     } catch (error) {
       dispatch({ type: "finish_failed", runId: current.run_id, error: sessionErrorCopy(error, "finish") });
@@ -396,10 +434,10 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
   }, []);
 
   const startAgain = useCallback(() => {
+    // The deck changes with every run, so the intro asks for a fresh preview.
+    setPreview(loadDeckPreview(sessionId));
     dispatch({ type: "start_again" });
-    // The page's data predates this visit's run: refresh the deck preview.
-    if (session.active_run) startTransition(() => router.refresh());
-  }, [router, session.active_run]);
+  }, [sessionId]);
 
   const course = session.course_name;
   const title =
@@ -463,7 +501,7 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
   return (
     <PreflightScreen
       session={session}
-      deckPreview={deckPreview}
+      deckPreview={preview}
       resumable={state.resumable}
       lastResult={lastResult}
       starting={state.starting}

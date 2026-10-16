@@ -64,7 +64,7 @@ export function SessionScreen({
   return (
     <div data-slot="session-screen" className={cn("flex min-h-dvh flex-1 flex-col", className)}>
       {topBar ? (
-        <div className="sticky top-0 z-10 bg-lesson-surface">
+        <div className="sticky top-0 z-10 bg-lesson-surface short:static">
           <div className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8 sm:py-6">
             {topBar}
           </div>
@@ -84,7 +84,9 @@ export function SessionScreen({
         <div
           className={cn(
             "bottom-0 z-10 border-t-2 border-lesson-option-border bg-lesson-surface",
-            stickyFooter === "always" ? "sticky" : "sm:sticky"
+            stickyFooter === "always" ? "sticky" : "sm:sticky",
+            // Short windows (high zoom) give the bars' space back to the content
+            "short:static"
           )}
         >
           <div className="mx-auto flex w-full max-w-4xl flex-col-reverse gap-3 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-6">

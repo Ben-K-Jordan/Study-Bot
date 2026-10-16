@@ -5,7 +5,15 @@ import Link from "next/link";
 import { BookLockIcon, BookOpenIcon, ClockIcon, CoffeeIcon, ListChecksIcon, TargetIcon } from "lucide-react";
 
 import { breakSchedule } from "@/lib/breaks";
-import { formatCountdown, formatDate, formatDuration, formatList, formatPercent, plural } from "@/lib/format";
+import {
+  formatCountdown,
+  formatDate,
+  formatDuration,
+  formatList,
+  formatNumber,
+  formatPercent,
+  plural,
+} from "@/lib/format";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/app/error-state";
@@ -167,11 +175,14 @@ export function PreflightScreen({
         ) : null}
         {breaks ? (
           <Fact icon={CoffeeIcon} label="Breaks">
-            {`${plural(breaks.blocks, { one: "# block", other: "# blocks" })} of ${formatDuration(breaks.workMinutes)}, with a ${formatDuration(breaks.breakMinutes)} break between blocks`}
+            {plural(breaks.blocks, {
+              one: `# block of ${formatDuration(breaks.workMinutes)}`,
+              other: `# blocks of ${formatDuration(breaks.workMinutes)}, with a ${formatDuration(breaks.breakMinutes)} break between blocks`,
+            })}
           </Fact>
         ) : null}
         {topics.length > 0 ? (
-          <Fact icon={BookOpenIcon} label={topics.length === 1 ? "Topic" : "Topics"}>
+          <Fact icon={BookOpenIcon} label={plural(topics.length, { one: "Topic", other: "Topics" })}>
             {formatList(topics)}
           </Fact>
         ) : null}
@@ -214,13 +225,23 @@ function ResumeProgress({ run, isExamSim }: { run: ActiveRunSummary; isExamSim: 
   const total = run.prompt_count;
   const scoring = isExamSim && run.phase === "REVIEW";
   const answered = scoring ? run.current_index : (run.answered_count ?? run.current_index);
+  const done = formatNumber(answered);
   let message: string;
   if (scoring && answered === 0) {
-    message = `${plural(total, { one: "The question is", other: "All # questions are" })} answered. Next, score ${total === 1 ? "it" : "each one"} against its model answer.`;
+    message = plural(total, {
+      one: "The question is answered. Next, score it against its model answer.",
+      other: "All # questions are answered. Next, score each one against its model answer.",
+    });
   } else if (scoring) {
-    message = `${answered} of ${plural(total, { one: "# answer", other: "# answers" })} scored. Your answers are saved.`;
+    message = plural(total, {
+      one: `${done} of # answer scored. Your answers are saved.`,
+      other: `${done} of # answers scored. Your answers are saved.`,
+    });
   } else {
-    message = `${answered} of ${plural(total, { one: "# question", other: "# questions" })} answered. Your answers are saved.`;
+    message = plural(total, {
+      one: `${done} of # question answered. Your answers are saved.`,
+      other: `${done} of # questions answered. Your answers are saved.`,
+    });
   }
   return (
     <div className="flex flex-col gap-3">
@@ -263,9 +284,11 @@ function PretestNote({ deckPreview }: { deckPreview: Promise<DeckComposition | n
     <Alert variant="info" role="note">
       <AlertTitle>{plural(count, { one: "# pretest question", other: "# pretest questions" })}</AlertTitle>
       <AlertDescription>
-        {count === 1
-          ? "It covers a topic you haven't studied yet, so answer what you can. A wrong answer is expected and doesn't count toward accuracy."
-          : "They cover topics you haven't studied yet, so answer what you can. Wrong answers are expected and don't count toward accuracy."}
+        {plural(count, {
+          one: "It covers a topic you haven't studied yet, so answer what you can. A wrong answer is expected and doesn't count toward accuracy.",
+          other:
+            "They cover topics you haven't studied yet, so answer what you can. Wrong answers are expected and don't count toward accuracy.",
+        })}
       </AlertDescription>
     </Alert>
   );

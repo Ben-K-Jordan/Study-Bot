@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 /** The session page failed to render. Answers already submitted are saved on the server. */
 export default function SessionError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  /** Refetches and re-renders the segment (reset would only re-render the failed payload). */
+  retry: () => void;
 }) {
   useEffect(() => {
     console.error(error);
@@ -27,7 +28,7 @@ export default function SessionError({
       description="Your submitted answers are saved. Retry, or go back to Home."
       actions={
         <>
-          <Button onClick={reset}>
+          <Button onClick={() => retry()}>
             <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
             Retry
           </Button>

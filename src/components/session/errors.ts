@@ -31,7 +31,7 @@ const NOT_DONE: Record<SessionAction, string> = {
 /** What is safe despite the failure, said before the fix. */
 const KEPT: Record<SessionAction, string> = {
   start: "",
-  submit: "Your text is still here. ",
+  submit: "Your answer is still here. ",
   finish: "Your answers are saved. ",
   endBreak: "",
   results: "Your answers are saved. ",
@@ -78,11 +78,10 @@ export function sessionErrorCopy(error: unknown, action: SessionAction): Session
         signIn: true,
       };
     case 403:
+      // The session was never in this account, so don't say it left it.
+      return { title, description: "This session belongs to another account." };
     case 404:
-      return {
-        title,
-        description: "This session isn't in your account any more. It may have been deleted.",
-      };
+      return { title, description: "This session doesn't exist anymore. It may have been deleted." };
     case 429:
       return { title, description: `Too many requests in a short time. ${kept}Wait a minute, then retry.` };
     case 400:

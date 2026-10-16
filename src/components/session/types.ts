@@ -190,9 +190,12 @@ export interface RatedAnswer {
 }
 
 export interface FollowupItem {
-  /** YYYY-MM-DD in the preview's time zone. */
+  /** YYYY-MM-DD in the preview's time zone (UTC when it has none). */
   date: string;
-  /** An instant on that day: the scheduled start, or noon when nothing is scheduled. */
+  /**
+   * An instant on that day: the scheduled start, or noon when nothing is
+   * scheduled. With no zone, the moment whole days after the session ended.
+   */
   at: string;
   days_from_now: number | null;
   /** The follow-up session, once it is in the plan. */
@@ -202,7 +205,12 @@ export interface FollowupItem {
 export interface FollowupPreview {
   /** no_plan: nothing to add to; not_scheduled: Add follow-ups to plan; scheduled: already in the plan. */
   status: "no_plan" | "not_scheduled" | "scheduled";
-  timezone: string;
+  /**
+   * The zone the dates belong to: the plan's, else the student's from
+   * Settings. Null when neither is known; each `at` is then an instant
+   * whole days after the session ended, shown in the browser's zone.
+   */
+  timezone: string | null;
   /** The plan's exam, for "falls after Prelim 2". */
   exam_name: string | null;
   items: FollowupItem[];

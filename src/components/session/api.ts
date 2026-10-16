@@ -1,16 +1,21 @@
 "use client";
 
 import { apiGet } from "@/lib/client-api";
-import type { Prompt, PromptView } from "./types";
+import type { DeckComposition, Prompt, PromptView } from "./types";
 
 /** SWR key and URL for a finished run's results. */
 export function resultsUrl(sessionId: string, runId: string): string {
   return `/api/sessions/${encodeURIComponent(sessionId)}/runs/${encodeURIComponent(runId)}/results`;
 }
 
-/** One question of a run by index. */
-export function fetchPrompt(runId: string, index: number): Promise<PromptView> {
-  return apiGet(`/api/runs/${encodeURIComponent(runId)}/prompt?index=${index}`);
+/**
+ * What the next run will hold, for the intro after Start session again.
+ * Never rejects: a failed load reads as "not known", like the page's own.
+ */
+export function loadDeckPreview(sessionId: string): Promise<DeckComposition | null> {
+  return apiGet(`/api/sessions/${encodeURIComponent(sessionId)}/deck-preview`)
+    .then((body: { deck?: DeckComposition | null }) => body.deck ?? null)
+    .catch(() => null);
 }
 
 /**

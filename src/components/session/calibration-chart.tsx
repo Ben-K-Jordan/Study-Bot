@@ -2,12 +2,12 @@
 
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
 
-import { formatPercent, plural } from "@/lib/format";
+import { formatNumber, formatPercent, plural } from "@/lib/format";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { LevelSummary } from "./calibration";
 
 const chartConfig = {
-  correctRate: { label: "How often right", color: "var(--lesson-primary)" },
+  correctRate: { label: "How often correct", color: "var(--lesson-primary)" },
 } satisfies ChartConfig;
 
 interface Row {
@@ -66,7 +66,10 @@ export default function CalibrationChart({ levels }: { levels: readonly LevelSum
                     <span className="text-foreground">
                       {row.count === 0
                         ? "Not used"
-                        : `${row.correct} of ${plural(row.count, { one: "# answer", other: "# answers" })} correct`}
+                        : plural(row.count, {
+                            one: `${formatNumber(row.correct)} of # answer correct`,
+                            other: `${formatNumber(row.correct)} of # answers correct`,
+                          })}
                     </span>
                   );
                 }}
