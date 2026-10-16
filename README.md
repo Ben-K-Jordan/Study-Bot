@@ -13,7 +13,7 @@ Study Bot plans studying around real exam dates and turns your own lecture files
 
 - Plans a week of sessions for a course and exam inside your study hours, exports the plan as .ics or publishes it to Google Calendar, and previews new times before it moves a missed session.
 - Runs sessions like short lessons: a start screen, one question per screen, then an end screen with accuracy, confidence results and follow-up dates. The modes are Retrieval, Interleaved practice, Exam simulation, Error repair and Worked examples.
-- Gives feedback right after each answer. The server grades multiple choice; you score free recall against a model answer. Feedback cites numbered passages from your uploaded files when the search finds one, and says so when it doesn't.
+- Gives feedback right after each answer. Multiple choice is checked against the answer key; you score free recall against a model answer. Feedback cites numbered passages from your uploaded files when the search finds one, and says so when it doesn't.
 - Logs each miss with a correction rule in your words and brings it back as a repair question, later in the session and in later ones, until you answer it correctly on two different days.
 - Reviews topics and flashcards on an SM-2 schedule that tightens as the exam gets closer.
 - Includes flashcards (with a deck built from your errors), study guides, chat over your files with cited sources, and a Progress page with mastery by topic, streaks, XP and achievements.
@@ -29,7 +29,7 @@ Each mechanic comes from a result in the learning research. [docs/LEARNING_SCIEN
 - The best gap between reviews depends on how far off the test is (Cepeda et al. 2006, 2008). Intervals are capped by the days left, with daily review in the last three days.
 - Durable learning takes correct answers spread over several sessions (Rawson & Dunlosky 2011), hence the two-different-days rule.
 - Mixing related topics works better than practicing them in blocks when they are easy to confuse (Rohrer & Taylor 2007; Brunmair & Richter 2019), so Interleaved practice deals questions round-robin across one course's topics.
-- A failed attempt before studying still helps later learning (Richland, Kornell & Kao 2009). New topics open with a pretest question that doesn't count toward accuracy.
+- A failed attempt before studying still helps later learning (Richland, Kornell & Kao 2009). In Retrieval and Interleaved practice, a topic you haven't studied yet opens with a pretest question that doesn't count toward accuracy.
 - Students tend to be overconfident (Dunlosky & Rawson 2012). The end screen and Progress show how often you were right at each confidence level.
 
 ## Quick start
