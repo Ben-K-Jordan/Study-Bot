@@ -63,11 +63,8 @@ const components: Components = {
   li: ({ children }) => <li className="pl-1">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold text-on-surface">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-4">
-      {children}
-    </a>
-  ),
+  // Guides are AI-written, so a link could point anywhere: show its text only.
+  a: ({ children }) => <span className="underline decoration-current/40 underline-offset-2">{children}</span>,
   blockquote: ({ children }) => (
     <blockquote className="flex flex-col gap-2 border-l border-outline pl-4 text-on-surface-variant">{children}</blockquote>
   ),

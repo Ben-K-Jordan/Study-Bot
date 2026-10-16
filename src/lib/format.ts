@@ -220,6 +220,17 @@ export function plural(count: number, forms: PluralForms): string {
 }
 
 /**
+ * A list of topic titles that stays short: "Recursion, Stacks, and Big-O";
+ * past `max`, the first `max` and a count ("A, B, C, and 2 more"). One topic
+ * over the cap is named, since "and 1 more" is no shorter than the topic.
+ */
+export function formatTopicList(topics: readonly string[], max = 3): string {
+  if (topics.length <= max + 1) return formatList(topics);
+  const rest = topics.length - max;
+  return formatList([...topics.slice(0, max), plural(rest, { one: "# more", other: "# more" })]);
+}
+
+/**
  * How long to wait after a 429, from its Retry-After seconds: "Retry in 30
  * seconds.", "Retry in 12 minutes.", or "Retry in a few minutes." when unknown.
  */

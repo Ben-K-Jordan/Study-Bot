@@ -19,7 +19,7 @@ import {
   normalizeGuideSections,
   type GuideSection,
   type GuideType,
-} from "@/components/guides/guide-format"
+} from "@/lib/guide-format"
 import type { StudyGuide } from "@/components/guides/types"
 
 // The Markdown renderer (react-markdown, remark-gfm) loads with the first guide.

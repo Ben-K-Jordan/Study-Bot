@@ -113,12 +113,12 @@ import {
   dominantErrorPhrase,
   errorRepairReason,
   getStudyRecommendations,
-  humanizeTopicKey,
   readableTopicScope,
   sessionTopicLine,
   startStudySession,
   StudyStartError,
 } from "@/services/study-recommendations";
+import { humanizeObjectiveKey } from "@/lib/objective-keys";
 import { prisma } from "@/lib/db";
 import { getDueObjectives, getMasterySummary } from "@/lib/mastery";
 import { createSession } from "@/services/session";
@@ -225,9 +225,9 @@ describe("streak", () => {
 
 describe("topic titles", () => {
   it("humanizes keys", () => {
-    expect(humanizeTopicKey("photosynthesis_light_reactions")).toBe("Photosynthesis light reactions");
-    expect(humanizeTopicKey("big-o")).toBe("Big o");
-    expect(humanizeTopicKey("__")).toBe("Untitled topic");
+    expect(humanizeObjectiveKey("photosynthesis_light_reactions")).toBe("Photosynthesis light reactions");
+    expect(humanizeObjectiveKey("big-o")).toBe("Big o");
+    expect(humanizeObjectiveKey("__")).toBe("Untitled topic");
   });
 
   it("joins up to three titles and counts the rest", () => {
@@ -489,6 +489,42 @@ describe("planned sessions", () => {
     expect(recs.next_planned?.session_id).toBe("s-later");
     expect(recs.next_planned?.mode_label).toBe("Exam simulation");
     expect(recs.next_planned?.message).toBe("Exam simulation on Cell cycle");
+    // Today had a session and it is done, so Study says so instead of "none today".
+    expect(recs.today_planned).toBe(1);
+    expect(recs.today_done).toBe(1);
+  });
+
+  it("counts today's sessions in every status, so none planned differs from none left", async () => {
+    state.gameState.row = { timezone: "America/New_York" };
+    state.plan = planWith([
+      // 10am Jul 15 in New York: today, missed
+      {
+        sessionId: "s-missed",
+        status: "MISSED",
+        dayIndex: 0,
+        startTime: new Date("2026-07-15T14:00:00Z"),
+        endTime: new Date("2026-07-15T14:30:00Z"),
+      },
+      {
+        sessionId: "s-later",
+        status: "SCHEDULED",
+        dayIndex: 2,
+        startTime: new Date("2026-07-17T18:00:00Z"),
+        endTime: new Date("2026-07-17T18:30:00Z"),
+      },
+    ]);
+    state.nudgeSessions = [{ sessionId: "s-later", mode: "RETRIEVAL", topicScope: "Cell cycle" }];
+
+    const missed = await getStudyRecommendations("user1", "Biology");
+    expect(missed.plan_nudge).toBeNull();
+    expect(missed.next_planned?.session_id).toBe("s-later");
+    expect([missed.today_planned, missed.today_done]).toEqual([1, 0]);
+
+    // Nothing on today's date at all.
+    state.plan = planWith(state.plan.items.filter((i) => i.sessionId === "s-later"));
+    const none = await getStudyRecommendations("user1", "Biology");
+    expect(none.next_planned?.session_id).toBe("s-later");
+    expect([none.today_planned, none.today_done]).toEqual([0, 0]);
   });
 
   it("lists a planned session's topics with Intl, as Home and Plan do", async () => {

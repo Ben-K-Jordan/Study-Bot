@@ -11,7 +11,7 @@ import {
   normalizeGuideSections,
   type GuideSection,
   type GuideType,
-} from "@/components/guides/guide-format";
+} from "@/lib/guide-format";
 
 export type { GuideSection, GuideType };
 

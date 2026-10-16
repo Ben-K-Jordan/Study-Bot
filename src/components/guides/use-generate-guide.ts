@@ -5,7 +5,7 @@ import { useSWRConfig } from "swr"
 
 import { ApiError } from "@/lib/client-api"
 import { describeRequestError } from "@/components/study/request-errors"
-import type { GuideType } from "@/components/guides/guide-format"
+import type { GuideType } from "@/lib/guide-format"
 import type { GuidesResponse, StudyGuide } from "@/components/guides/types"
 
 export type GuideJob = { status: "pending" } | { status: "failed"; message: string }

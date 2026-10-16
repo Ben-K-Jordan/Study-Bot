@@ -1,9 +1,10 @@
 /**
  * Study guides (/guides): Generate guide with the mock AI, the three format
  * tabs (keyboard included) with their sections rendered as headings and
- * text, the ?format= deep link, Export guide (.md), and Delete guide with
- * its confirmation. Each test seeds its own identity, which also gives it
- * its own AI rate limit (5 a minute).
+ * text, the ?format= deep link, Export guide (.md), Delete guide with its
+ * confirmation, and the course it opens on when none is chosen. Each test
+ * seeds its own identity, which also gives it its own AI rate limit (5 a
+ * minute).
  *
  * Already covered elsewhere: section cleanup, Markdown export and file
  * names in src/__tests__/guide-format.test.ts, and listing in
@@ -12,7 +13,7 @@
  */
 import { readFile } from "node:fs/promises";
 import type { APIRequestContext } from "@playwright/test";
-import { test, expect, createGuide, toasts, unique, uploadMaterial } from "./fixtures";
+import { test, expect, createGuide, createPlan, toasts, unique, uploadMaterial } from "./fixtures";
 
 const NOTES = "Recursion: a function that calls itself on a smaller input until it reaches a base case.";
 
@@ -160,4 +161,21 @@ test("Cancel or Escape on Delete guide returns focus to the Delete guide button"
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(remove).toBeFocused();
+});
+
+test("with no course chosen, Study guides open on the course with the nearest exam, not the latest upload", async ({
+  testUserPage: page,
+  testUser,
+}) => {
+  const examCourse = unique("E2E Exam soon");
+  const latestCourse = unique("E2E Latest upload");
+  await uploadMaterial(testUser.api, { course: examCourse, text: NOTES });
+  await createPlan(testUser.api, { course_name: examCourse, exam_in_days: 7 });
+  // Uploaded last, so it heads the course list.
+  await uploadMaterial(testUser.api, { course: latestCourse, text: NOTES });
+
+  await page.goto("/guides");
+  await expect(page.getByRole("combobox", { name: "Course" })).toHaveText(examCourse);
+  const panel = page.getByRole("tabpanel", { name: "Key concepts" });
+  await expect(panel.getByRole("heading", { level: 2, name: `No key concepts guide for ${examCourse} yet` })).toBeVisible();
 });

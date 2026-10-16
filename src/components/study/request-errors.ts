@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/client-api"
+import { ApiError, SIGNED_OUT_MESSAGE, sharedFailureReason } from "@/lib/client-api"
 
 /**
  * A failed request as the sentence that follows "{Object} not {verb}."
@@ -11,10 +11,10 @@ export function describeRequestError(
   fallback = "Check your connection and retry."
 ): string {
   if (error instanceof ApiError) {
-    if (error.status === 401) return "Your sign-in expired. Sign in again."
+    if (error.status === 401) return SIGNED_OUT_MESSAGE
     if (error.code && error.message) return error.message
-    if (error.status === 429) return "Too many requests. Retry in 30 seconds."
-    return fallback
+    // With the real wait from Retry-After when the server sent one.
+    return sharedFailureReason(error) ?? fallback
   }
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return "The server took too long to answer. Retry."

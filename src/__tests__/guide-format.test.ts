@@ -6,7 +6,7 @@ import {
   guideTypeFromSlug,
   normalizeGuideSections,
   toGuideText,
-} from "@/components/guides/guide-format";
+} from "@/lib/guide-format";
 
 describe("toGuideText", () => {
   it("keeps strings and stringifies scalars", () => {

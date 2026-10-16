@@ -18,10 +18,12 @@ import { StatLine, type StatItem } from "@/components/app/stat-line"
 import { CourseTools } from "@/components/study/course-tools"
 import { NextSessionCard } from "@/components/study/next-session-card"
 import { PlannedSessions } from "@/components/study/planned-sessions"
+import type { CoursePreference } from "@/components/study/course-preference"
 import { describeRequestError } from "@/components/study/request-errors"
-import { examCountdown } from "@/components/study/study-copy"
+import { examCountdown } from "@/lib/study-copy"
 import { NextSessionSkeleton, SideListSkeleton, StudySkeleton } from "@/components/study/study-skeleton"
 import type { LearnResponse, StudyRecommendations } from "@/components/study/types"
+import { usePreferredCourse } from "@/components/study/use-preferred-course"
 
 function ExamLine({ exam }: { exam: NonNullable<StudyRecommendations["exam"]> }) {
   // A calendar date: format it at noon UTC so no zone moves it a day.
@@ -62,15 +64,26 @@ export function recommendationsUrl(courseName: string, examName: string | null):
  * Every request is keyed by its URL, so a course switch can never show the
  * previous course's recommendation.
  *
+ * With no course chosen it opens on the course with today's session, else
+ * the nearest exam (usePreferredCourse).
+ *
  * The page seeds the course list and course counts from the server. The
  * active course lives in the browser, so the course's own content waits
  * for hydration (skeleton until then, never another course's content), and
  * its request starts right away instead of after the course list.
  */
-export function StudyView({ timeZone }: { timeZone?: string }) {
+export function StudyView({
+  timeZone,
+  coursePreferences,
+}: {
+  timeZone?: string
+  /** Courses to open on when none is chosen: today's session first, then the nearest exams. */
+  coursePreferences?: CoursePreference[]
+}) {
   const mounted = useMounted()
   const courses = useCourseOptions()
-  const { course } = useActiveCourse(courses.keys)
+  const keys = usePreferredCourse(courses.keys, coursePreferences)
+  const { course } = useActiveCourse(keys)
   const ready = mounted && course !== null
   const courseName = ready ? course.courseName : null
 
@@ -99,7 +112,7 @@ export function StudyView({ timeZone }: { timeZone?: string }) {
             icon={FolderUpIcon}
             headingLevel="h2"
             title="No courses yet"
-            description="Upload your course files and set your exam date. Study Bot schedules practice questions from them up to the exam."
+            description="Study starts practice sessions from a course's files. Upload materials for a course to begin."
             action={
               <Button asChild>
                 <Link href="/plan/materials">Upload materials</Link>

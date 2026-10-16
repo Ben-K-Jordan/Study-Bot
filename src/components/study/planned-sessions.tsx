@@ -7,6 +7,7 @@ import { formatDateTime, formatTimeRange } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { SectionHeader } from "@/components/app/section-header"
+import { nothingLeftTodayLine } from "@/lib/study-copy"
 import type { PlannedSessionRef, StudyRecommendations } from "@/components/study/types"
 
 function PlannedRow({ item, timeZone }: { item: PlannedSessionRef; timeZone?: string }) {
@@ -30,8 +31,8 @@ function PlannedRow({ item, timeZone }: { item: PlannedSessionRef; timeZone?: st
 
 /**
  * Today's planned sessions for the course, each one click from starting.
- * With nothing left today it names the next planned session; with no plan
- * it points to Plan.
+ * With nothing left today it says whether today had any and names the next
+ * planned session; with no plan it points to Plan.
  */
 export function PlannedSessions({
   recs,
@@ -67,11 +68,15 @@ export function PlannedSessions({
             <CalendarClockIcon className="mt-0.5 size-5 shrink-0 text-on-surface-variant" aria-hidden="true" />
             <div className="flex min-w-0 flex-col gap-2">
               <p className="type-body-m text-pretty text-on-surface">
-                {recs.next_planned
-                  ? `No sessions left today. Next: ${recs.next_planned.mode_label}, ${formatDateTime(recs.next_planned.start_time, { timeZone: zone })}.`
-                  : hasPlan
-                    ? `No more sessions planned for ${courseName}.`
-                    : `No plan for ${courseName} yet. A plan schedules sessions up to your exam date.`}
+                {hasPlan
+                  ? nothingLeftTodayLine(
+                      courseName,
+                      { planned: recs.today_planned, done: recs.today_done },
+                      recs.next_planned
+                        ? `${recs.next_planned.mode_label}, ${formatDateTime(recs.next_planned.start_time, { timeZone: zone })}`
+                        : null,
+                    )
+                  : `No plan for ${courseName} yet. A plan schedules sessions up to your exam date.`}
               </p>
               {hasPlan ? null : (
                 <Button asChild variant="outline" size="sm" className="self-start">

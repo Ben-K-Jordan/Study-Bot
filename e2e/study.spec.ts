@@ -1,15 +1,16 @@
 /**
  * Study (/learn): the recommended session card with its mode and reason in
- * plain words, the mode and length pickers, and Start session (one session
- * even on a double click). Each test seeds its own identity, because Study
- * picks its course from the account's materials.
+ * plain words, the mode and length pickers, Start session (one session
+ * even on a double click), and the course it opens on when none is chosen.
+ * Each test seeds its own identity, because Study picks its course from the
+ * account's materials and plans.
  *
  * Already covered elsewhere: the recommendation rules and reason copy in
  * src/__tests__/study-recommendations.test.ts, and the session screens in
  * the session-*.spec.ts files.
  */
 import type { Page, Request } from "@playwright/test";
-import { test, expect, createSession, finishSession, unique, uploadMaterial } from "./fixtures";
+import { test, expect, createPlan, createSession, finishSession, unique, uploadMaterial } from "./fixtures";
 
 /** The recommendation card: the one section with the Start session button. */
 function sessionCard(page: Page) {
@@ -110,4 +111,29 @@ test("Start session makes one session on a double click and opens it", { tag: "@
   });
   expect(again.status(), await again.text()).toBe(200);
   expect(await again.json()).toMatchObject({ session_id: sessionId, reused: true });
+});
+
+test("with no course chosen, Study opens on the course with the nearest exam, not the latest upload", async ({
+  testUserPage: page,
+  testUser,
+}) => {
+  test.slow();
+  const examCourse = unique("E2E Exam soon");
+  const latestCourse = unique("E2E Latest upload");
+  await uploadMaterial(testUser.api, { course: examCourse, text: "Recursion: a function that calls itself." });
+  await createPlan(testUser.api, { course_name: examCourse, exam_in_days: 7 });
+  // Uploaded last, so it heads the course list.
+  await uploadMaterial(testUser.api, { course: latestCourse, text: "Supply and demand set the price." });
+
+  await page.goto("/learn");
+  const switcher = page.getByRole("combobox", { name: "Course" });
+  await expect(switcher).toHaveText(examCourse);
+  await expect(page.getByRole("main")).toContainText("Final exam is in 7 days");
+
+  // A course the student picks wins from then on.
+  await switcher.click();
+  await page.getByRole("option", { name: latestCourse }).click();
+  await expect(switcher).toHaveText(latestCourse);
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Course" })).toHaveText(latestCourse);
 });

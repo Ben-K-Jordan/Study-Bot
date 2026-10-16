@@ -19,7 +19,7 @@ import {
   studyModeLabel,
   type SessionLength,
   type StudyModeKey,
-} from "@/components/study/study-modes"
+} from "@/lib/study-modes"
 import type { StudyCourseSummary, StudyRecommendations } from "@/components/study/types"
 import { useStartSession } from "@/components/study/use-start-session"
 

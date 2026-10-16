@@ -12,7 +12,7 @@ import { GatewayError } from "@/lib/ai/gateway";
 import { logger } from "@/lib/logger";
 import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
 import { generateStudyGuide, listStudyGuides, NoGuideMaterialsError } from "@/services/study-guides";
-import { GUIDE_TYPES } from "@/components/guides/guide-format";
+import { GUIDE_TYPES } from "@/lib/guide-format";
 import { unauthorized } from "@/lib/http";
 
 const generateSchema = z.object({

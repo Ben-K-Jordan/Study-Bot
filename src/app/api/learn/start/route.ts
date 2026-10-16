@@ -19,7 +19,7 @@ import {
   isSessionLength,
   STUDY_MODE_KEYS,
   type SessionLength,
-} from "@/components/study/study-modes";
+} from "@/lib/study-modes";
 import { unauthorized } from "@/lib/http";
 
 const startSchema = z.object({

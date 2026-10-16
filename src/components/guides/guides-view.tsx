@@ -16,9 +16,11 @@ import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
 import { LoadingRegion } from "@/components/app/skeletons"
 import { PageContainer } from "@/components/app/page-container"
+import type { CoursePreference } from "@/components/study/course-preference"
 import { describeRequestError } from "@/components/study/request-errors"
+import { usePreferredCourse } from "@/components/study/use-preferred-course"
 import { DeleteGuideDialog } from "@/components/guides/delete-guide-dialog"
-import { GUIDE_FORMATS, guideFormat, isGuideType, type GuideType } from "@/components/guides/guide-format"
+import { GUIDE_FORMATS, guideFormat, isGuideType, type GuideType } from "@/lib/guide-format"
 import { GuidePanel } from "@/components/guides/guide-panel"
 import { GuidePrintStyles } from "@/components/guides/guide-print-styles"
 import { GuideSkeleton, GuidesSkeleton } from "@/components/guides/guides-skeleton"
@@ -37,7 +39,8 @@ function syncUrl(type: GuideType, guideId: string | null) {
 /**
  * Study guides for the active course and exam: one tab per format, the
  * guide rendered as a document, Generate guide with progress and errors,
- * export, print and delete.
+ * export, print and delete. With no course chosen it opens on the course
+ * with today's session, else the nearest exam (usePreferredCourse).
  *
  * The page seeds the course list from the server. The active course lives
  * in the browser, so the guides wait for hydration (skeleton until then,
@@ -48,14 +51,18 @@ export function GuidesView({
   initialType,
   initialGuideId,
   timeZone,
+  coursePreferences,
 }: {
   initialType: GuideType
   initialGuideId: string | null
   timeZone?: string
+  /** Courses to open on when none is chosen: today's session first, then the nearest exams. */
+  coursePreferences?: CoursePreference[]
 }) {
   const mounted = useMounted()
   const courses = useCourseOptions()
-  const { activeCourse, course } = useActiveCourse(courses.keys)
+  const keys = usePreferredCourse(courses.keys, coursePreferences)
+  const { activeCourse, course } = useActiveCourse(keys)
   const listUrl = mounted && course
     ? `/api/guides?${new URLSearchParams({
         course_name: course.courseName,

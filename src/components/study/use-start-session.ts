@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 
 import { apiPost } from "@/lib/client-api"
 import { describeRequestError } from "@/components/study/request-errors"
-import type { SessionLength, StudyModeKey } from "@/components/study/study-modes"
+import type { SessionLength, StudyModeKey } from "@/lib/study-modes"
 import type { StartSessionResponse } from "@/components/study/types"
 
 export interface StartSessionInput {

@@ -18,7 +18,7 @@ import { FieldError } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { closeFocusOrder, firstConnected, resolveOpener } from "@/components/app/return-focus"
 import { describeRequestError } from "@/components/study/request-errors"
-import { normalizeGuideSections } from "@/components/guides/guide-format"
+import { normalizeGuideSections } from "@/lib/guide-format"
 import type { StudyGuide } from "@/components/guides/types"
 
 /**

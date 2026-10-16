@@ -14,19 +14,20 @@ import { logger } from "@/lib/logger";
 import { dayKey, daysBetween } from "@/lib/timezone";
 import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
 import { buildObjectiveIdMap } from "@/lib/plan-generator";
-import { formatList, formatTime, plural } from "@/lib/format";
+import { humanizeObjectiveKey } from "@/lib/objective-keys";
+import { formatList, formatTime, formatTopicList, plural } from "@/lib/format";
 import { getStreak, resolveTimeZone } from "@/services/gamification";
 import { createSession } from "@/services/session";
 import { endOfToday } from "@/services/spaced-repetition";
-import { isOpenPlanStatus, isUnstartedPlanStatus } from "@/components/home/home-model";
+import { isOpenPlanStatus, isUnstartedPlanStatus } from "@/lib/home-model";
 import {
   breakProtocolFor,
   questionCountFor,
   studyModeLabel,
   type SessionLength,
   type StudyModeKey,
-} from "@/components/study/study-modes";
-import { examCountdown } from "@/components/study/study-copy";
+} from "@/lib/study-modes";
+import { examCountdown } from "@/lib/study-copy";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,8 +115,16 @@ export interface StudyRecommendations {
   streak: number;
   /** Sessions planned for today that haven't been done. */
   plan_nudge: PlanNudge | null;
-  /** The next planned session after today, when nothing is planned today. */
+  /** The next planned session after today, when nothing is left to start today. */
   next_planned: PlannedSessionRef | null;
+  /**
+   * Sessions of the active plan on today's date in any status (done,
+   * missed and skipped included), so the screen can tell "none planned
+   * today" from "none left today".
+   */
+  today_planned: number;
+  /** How many of those are done. */
+  today_done: number;
   /**
    * The exam of the course's active plan: the plan for the chosen exam when
    * it is still ahead, else the nearest exam that hasn't passed.
@@ -130,13 +139,6 @@ export interface StudyRecommendations {
 // ---------------------------------------------------------------------------
 
 const KEY_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/;
-
-/** "photosynthesis_light_reactions" -> "Photosynthesis light reactions" */
-export function humanizeTopicKey(key: string): string {
-  const words = key.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!words) return "Untitled topic";
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 /**
  * Titles for mastery keys, from the plan's objective list (whose ids are
@@ -170,7 +172,7 @@ export function buildTopicTitleMap(
 }
 
 function topicFor(key: string, titles: Map<string, string>): StudyTopic {
-  return { key, title: titles.get(key) ?? humanizeTopicKey(key) };
+  return { key, title: titles.get(key) ?? humanizeObjectiveKey(key) };
 }
 
 /** "General review", "A", "A and B", "A, B, and C", "A, B, C, and 2 more". */
@@ -199,7 +201,7 @@ export function readableTopicScope(scope: string, titles: Map<string, string>): 
     .map((p, i, all) => (i > 0 && i === all.length - 1 ? p.replace(/^and\s+/, "") : p).trim())
     .filter(Boolean);
   const readable = parts.map((p) =>
-    titles.get(p) ?? (KEY_PATTERN.test(p) && /[_-]/.test(p) ? humanizeTopicKey(p) : p),
+    titles.get(p) ?? (KEY_PATTERN.test(p) && /[_-]/.test(p) ? humanizeObjectiveKey(p) : p),
   );
   if (tail) readable.push(plural(Number(tail[1]), { one: "# more", other: "# more" }));
   return readable.length > 0 ? formatList(readable) : "General review";
@@ -227,7 +229,7 @@ export function sessionTopicLine(
         return title.trim();
       })
       .filter((t): t is string => t !== null);
-    if (named.length > 0) return formatList(named);
+    if (named.length > 0) return formatTopicList(named);
   }
   return readableTopicScope(scope, titles);
 }
@@ -487,8 +489,15 @@ export async function getStudyRecommendations(
   // ── Planned sessions: today's, else the next one ───────────────
   let planNudge: PlanNudge | null = null;
   let nextPlanned: PlannedSessionRef | null = null;
+  let todayPlanned = 0;
+  let todayDone = 0;
 
   if (activePlan) {
+    for (const item of activePlan.items) {
+      if (dayKey(item.startTime, zone) !== todayKey) continue;
+      todayPlanned++;
+      if (item.status === "DONE") todayDone++;
+    }
     // Sessions moved by Reschedule (RESCHEDULED) are still to do, as on Home and Plan.
     const open = activePlan.items.filter((item) => isOpenPlanStatus(item.status));
     const todayItems = open
@@ -555,6 +564,8 @@ export async function getStudyRecommendations(
     streak,
     plan_nudge: planNudge,
     next_planned: nextPlanned,
+    today_planned: todayPlanned,
+    today_done: todayDone,
     exam,
     time_zone: zone,
   };

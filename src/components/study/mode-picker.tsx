@@ -15,7 +15,7 @@ import {
   STUDY_MODES,
   type SessionLength,
   type StudyModeKey,
-} from "@/components/study/study-modes"
+} from "@/lib/study-modes"
 
 /**
  * The five study modes as an M3 list of radio rows, each with its one-line
