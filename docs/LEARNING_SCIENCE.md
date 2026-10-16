@@ -38,13 +38,13 @@ Contents:
 **The research.** Actively recalling information strengthens memory far more
 than re-exposure to it. Roediger & Karpicke (2006) showed practice testing
 beat repeated studying by roughly 50% in relative retention at a one-week
-delay — even though the restudy group *predicted* they would do better.
+delay, even though the restudy group *predicted* they would do better.
 Dunlosky, Rawson, Marsh, Nathan & Willingham (2013, *Psychological Science in
 the Public Interest*) rated practice testing one of only two "high utility"
 techniques out of ten reviewed. Meta-analytically, Adesope, Trevisan &
 Sundararajan (2017, *Review of Educational Research*; 272 effects across 188
 experiments) found g = 0.61 overall, and +0.51 against restudy specifically.
-The benefit is largest on *delayed* tests — which is what an exam is.
+The benefit is largest on *delayed* tests, and an exam is a delayed test.
 
 **In Study Bot.** Retrieval is the default interaction everywhere. A study
 session is a set of questions: free recall and multiple choice questions
@@ -77,17 +77,17 @@ a question ends only after you answer it.
 ## 2. Deliberate practice and the feedback loop
 
 **The research.** Ericsson, Krampe & Tesch-Römer (1993, *Psychological Review*
-100(3), 363–406) defined deliberate practice as well-defined tasks slightly
+100(3), 363-406) defined deliberate practice as well-defined tasks slightly
 beyond current ability, with informative feedback and opportunities for
 repetition and error correction. The popularized "10,000 hours" framing drops
 the load-bearing part: hours only count when structured as feedback-bearing
 loops. On timing, Kulik & Kulik's (1988, *Review of Educational Research*
-58(1), 79–97) meta-analysis of 53 studies found that in applied settings with
+58(1), 79-97) meta-analysis of 53 studies found that in applied settings with
 real materials, *immediate* feedback wins; the oft-cited lab advantage for
 delayed feedback is largely a methodological artifact of artificial
 list-learning paradigms. Corbett & Anderson's cognitive-tutor experiments
 (CHI 2001) showed immediate feedback minimizes time-to-mastery at no cost to
-final performance. Shute (2008, *Review of Educational Research* 78, 153–189)
+final performance. Shute (2008, *Review of Educational Research* 78, 153-189)
 adds the moderators: immediate feedback is most valuable for difficult tasks
 and struggling learners, and feedback should come in small, focused units.
 
@@ -121,10 +121,10 @@ session, then repair questions and reviews of due topics in later sessions.
 Van der Kleij, Feskens & Eggen's (2015, *Review of Educational Research*
 85(4)) meta-analysis of computer-based learning found elaborated feedback
 (explaining *why*) produced g = 0.49, versus 0.32 for showing the correct
-answer and only 0.05 for bare right/wrong verification — roughly an order of
+answer and only 0.05 for bare right/wrong verification, roughly an order of
 magnitude difference between explanation and verification. Shute (2008)
 reaches the same conclusion. Kluger & DeNisi (1996, *Psychological Bulletin*
-119, 254–284; 607 effect sizes) supply the critical warning: over a third of
+119, 254-284; 607 effect sizes) supply the critical warning: over a third of
 feedback interventions *decrease* performance, reliably the ones that direct
 attention to the self (praise, grades, person-level judgment) rather than the
 task.
@@ -158,12 +158,12 @@ is presented as sourced.
 ## 4. Hypercorrection: confident errors are the highest-value corrections
 
 **The research.** Butterfield & Metcalfe (2001, *JEP: Learning, Memory &
-Cognition* 27, 1491–1494) found that errors committed with *high* confidence
-are, after corrective feedback, better corrected than low-confidence errors —
+Cognition* 27, 1491-1494) found that errors committed with *high* confidence
+are, after corrective feedback, better corrected than low-confidence errors:
 the surprise of being confidently wrong captures attention and makes the
 correction salient (Fazio & Marsh 2009). But there is a catch: Butler, Fazio
-& Marsh (2011, *Psychonomic Bulletin & Review* 18, 1238–1244) showed that at
-a delay, the original high-confidence errors tend to re-intrude — a single
+& Marsh (2011, *Psychonomic Bulletin & Review* 18, 1238-1244) showed that at
+a delay, the original high-confidence errors tend to re-intrude, so a single
 successful correction is not durable repair.
 
 **In Study Bot.** Before you see the answer, the app asks "How sure are
@@ -182,7 +182,7 @@ in a session and your average confidence on it is above 3.4 on the 1 to 5
 scale, its quality score drops by one, so the topic comes back sooner.
 
 **Boundary conditions.** Because hypercorrected errors resurface at a delay,
-a confident miss is never considered fixed after one correction — it enters
+a confident miss is never considered fixed after one correction. It enters
 the same successive-relearning criterion as every other error (two correct
 retrievals on different days, section 6), and its priority ordering means it
 actually receives those re-encounters. Confidence is never fabricated: if you
@@ -196,9 +196,9 @@ mastery adjustment.
 (2013) two "high utility" techniques. Cepeda, Pashler, Vul, Wixted & Rohrer's
 (2006) meta-analysis found spaced practice beats massed practice across 254
 studies. Cepeda et al. (2008, *Psychological Science*) established the
-practical rule: the optimal gap between sessions is roughly 10–20% of the
+practical rule: the optimal gap between sessions is roughly 10 to 20% of the
 desired retention interval, gaps that are too short cost more than gaps that
-are too long — and, importantly, if the test is within about a day,
+are too long, and if the test is within about a day,
 compressed review actually wins.
 
 **In Study Bot.** Spacing runs on an SM-2-style scheduler at the level of
@@ -227,9 +227,8 @@ tested that taper; the rule is adapted from athletic training research.
 
 **Boundary conditions.** Spacing is deliberately abandoned when it would
 hurt: the exam-aware compression means that the night before a test the
-scheduler stops stretching intervals and pulls everything into daily review —
-cramming genuinely wins for a test within ~24 hours, and pretending otherwise
-would be ideology, not science. A gap so long that retrieval fails outright
+scheduler stops stretching intervals and pulls everything into daily review,
+because cramming wins for a test within about 24 hours. A gap so long that retrieval fails outright
 is wasted time unless followed by relearning, which is why failed reviews
 reset to short intervals rather than continuing to stretch.
 
@@ -300,10 +299,10 @@ matters.
 ## 8. Pretesting
 
 **The research.** Attempting to answer questions *before* studying the
-material — even when the guesses are wrong — improves subsequent learning
+material, even when the guesses are wrong, improves subsequent learning
 compared to spending the same time studying (Richland, Kornell & Kao 2009,
-*JEP: Applied* 15, 243–257; Kornell, Hays & Bjork 2009, *JEP: LMC* 35,
-989–998). The failed attempt appears to prime the learner for the correct
+*JEP: Applied* 15, 243-257; Kornell, Hays & Bjork 2009, *JEP: LMC* 35,
+989-998). The failed attempt appears to prime the learner for the correct
 answer. The technique depends entirely on prompt corrective feedback:
 errorful guessing without seeing the right answer is risky.
 
@@ -325,18 +324,18 @@ you've never seen), and they are excluded from the accuracy metrics that
 drive adaptive difficulty and from the mastery/scheduling machinery. The
 quarantine is enforced server-side against the stored prompt metadata, not
 trusted from the client. Without this quarantine, pretesting would punish
-exactly the productive errors it depends on — dragging difficulty down,
+exactly the productive errors it depends on: dragging difficulty down,
 minting spurious flashcards, and teaching users that pretesting "hurts their
 score," a misjudgment learners are already prone to (Pan & Sana 2021).
 
 ## 9. Worked examples with backward fading
 
 **The research.** For novices learning procedures, studying a fully worked
-solution beats solving the equivalent problem — the worked-example effect
+solution beats solving the equivalent problem. This is the worked-example effect
 (Sweller & Cooper 1985), a core prediction of cognitive load theory. Renkl,
 Atkinson and colleagues (2002, 2004) showed the best transition off examples is
 *backward fading*: remove the final solution step first and have the learner
-supply it, then the final two, and so on — rather than jumping abruptly from
+supply it, then the final two, and so on, instead of jumping abruptly from
 example to full problem. Kalyuga, Ayres, Chandler & Sweller (2003,
 *Educational Psychologist*) documented the expertise-reversal effect: the
 same worked examples that help novices actively *hurt* learners with higher
@@ -345,7 +344,7 @@ prior knowledge, for whom retrieval and problem solving are superior.
 **In Study Bot.** The Worked examples mode (`WORKED_EXAMPLES`) generates
 example sets grounded in your uploaded course materials, up to three sets per
 session. Each set follows the backward-fading sequence
-in full: (1) a complete worked example with 3–5 ordered solution steps, each
+in full: (1) a complete worked example with 3 to 5 ordered solution steps, each
 stating both the action and the principle from the material that licenses it;
 (2) a completion problem of the same structure with the *final* step missing;
 (3) a completion problem with the final *two* steps missing; (4) a novel
@@ -357,8 +356,8 @@ most of their benefit. Without an AI provider, or when your materials have
 fewer than two passages on the session's topics, the mode falls back to
 Retrieval questions so the session still runs.
 
-**Boundary conditions.** Worked examples are a novice-phase tool, not a
-review mode — this is the expertise-reversal boundary taken seriously. The
+**Boundary conditions.** Worked examples are a novice-phase tool. The
+expertise-reversal effect is why they are not a review mode. The
 fading sequence itself walks you off the scaffolding within a single session,
 ending at unaided problem solving; and once material has been studied,
 retrieval-based modes remain the default for review. The mode targets
@@ -373,8 +372,7 @@ the ones who spontaneously explained each step to themselves; Chi et al.
 (1994) showed that *prompting* self-explanation confers the benefit on
 everyone else. Bisra, Liu, Nesbit, Salimi & Winne's (2018, *Educational
 Psychology Review*) meta-analysis estimates g ≈ 0.55. Dunlosky et al. (2013)
-rate it moderate utility — promising, with the caveat that it is
-time-expensive.
+rate it moderate utility: promising, but time-expensive.
 
 **In Study Bot.** Under the feedback, a link reads "Explain it in your own
 words." It opens optional fields that are saved with the attempt when you
@@ -435,8 +433,8 @@ still possible (see section 14).
 ## 12. Desirable difficulties
 
 **The research.** Bjork & Bjork's desirable-difficulties framework (1992,
-2011) holds that conditions that slow apparent learning — spacing,
-interleaving, testing, generation — often improve long-term retention, while
+2011) holds that conditions that slow apparent learning (spacing,
+interleaving, testing, generation) often improve long-term retention, while
 conditions that feel fluent (rereading, blocked drill) inflate confidence
 without durable learning. Roediger & Karpicke (2006) captured it directly:
 the restudy group predicted better performance and did worse. Learners
@@ -539,61 +537,61 @@ implementation do not support.
 Links point to each paper's DOI. Book chapters without a DOI are cited
 without a link.
 
-- Adesope, O. O., Trevisan, D. A., & Sundararajan, N. (2017). Rethinking the use of tests: A meta-analysis of practice testing. *Review of Educational Research*, 87(3), 659–701. https://doi.org/10.3102/0034654316689306
-- Bisra, K., Liu, Q., Nesbit, J. C., Salimi, F., & Winne, P. H. (2018). Inducing self-explanation: A meta-analysis. *Educational Psychology Review*, 30(3), 703–725. https://doi.org/10.1007/s10648-018-9434-x
-- Bjork, E. L., & Bjork, R. A. (2011). Making things hard on yourself, but in a good way: Creating desirable difficulties to enhance learning. In M. A. Gernsbacher, R. W. Pew, L. M. Hough, & J. R. Pomerantz (Eds.), *Psychology and the real world* (pp. 56–64). Worth.
-- Bjork, R. A., & Bjork, E. L. (1992). A new theory of disuse and an old theory of stimulus fluctuation. In A. F. Healy, S. M. Kosslyn, & R. M. Shiffrin (Eds.), *From learning processes to cognitive processes: Essays in honor of William K. Estes* (Vol. 2, pp. 35–67). Erlbaum.
-- Brunmair, M., & Richter, T. (2019). Similarity matters: A meta-analysis of interleaved learning and its moderators. *Psychological Bulletin*, 145(11), 1029–1052. https://doi.org/10.1037/bul0000209
-- Butler, A. C., Fazio, L. K., & Marsh, E. J. (2011). The hypercorrection effect persists over a week, but high-confidence errors return. *Psychonomic Bulletin & Review*, 18(6), 1238–1244. https://doi.org/10.3758/s13423-011-0173-y
-- Butler, A. C., & Roediger, H. L. (2008). Feedback enhances the positive effects and reduces the negative effects of multiple-choice testing. *Memory & Cognition*, 36(3), 604–616. https://doi.org/10.3758/MC.36.3.604
-- Butterfield, B., & Metcalfe, J. (2001). Errors committed with high confidence are hypercorrected. *Journal of Experimental Psychology: Learning, Memory, and Cognition*, 27(6), 1491–1494. https://doi.org/10.1037/0278-7393.27.6.1491
-- Cepeda, N. J., Pashler, H., Vul, E., Wixted, J. T., & Rohrer, D. (2006). Distributed practice in verbal recall tasks: A review and quantitative synthesis. *Psychological Bulletin*, 132(3), 354–380. https://doi.org/10.1037/0033-2909.132.3.354
-- Cepeda, N. J., Vul, E., Rohrer, D., Wixted, J. T., & Pashler, H. (2008). Spacing effects in learning: A temporal ridgeline of optimal retention. *Psychological Science*, 19(11), 1095–1102. https://doi.org/10.1111/j.1467-9280.2008.02209.x
-- Chi, M. T. H., Bassok, M., Lewis, M. W., Reimann, P., & Glaser, R. (1989). Self-explanations: How students study and use examples in learning to solve problems. *Cognitive Science*, 13(2), 145–182. https://doi.org/10.1207/s15516709cog1302_1
-- Chi, M. T. H., de Leeuw, N., Chiu, M.-H., & LaVancher, C. (1994). Eliciting self-explanations improves understanding. *Cognitive Science*, 18(3), 439–477. https://doi.org/10.1207/s15516709cog1803_3
-- Corbett, A. T., & Anderson, J. R. (2001). Locus of feedback control in computer-based tutoring: Impact on learning rate, achievement and attitudes. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI 2001)*, 245–252. https://doi.org/10.1145/365024.365111
-- Cowan, N. (2001). The magical number 4 in short-term memory: A reconsideration of mental storage capacity. *Behavioral and Brain Sciences*, 24(1), 87–114. https://doi.org/10.1017/S0140525X01003922
-- Dunlosky, J., & Rawson, K. A. (2012). Overconfidence produces underachievement: Inaccurate self evaluations undermine students' learning and retention. *Learning and Instruction*, 22(4), 271–280. https://doi.org/10.1016/j.learninstruc.2011.08.003
-- Dunlosky, J., Rawson, K. A., Marsh, E. J., Nathan, M. J., & Willingham, D. T. (2013). Improving students' learning with effective learning techniques: Promising directions from cognitive and educational psychology. *Psychological Science in the Public Interest*, 14(1), 4–58. https://doi.org/10.1177/1529100612453266
-- Ericsson, K. A., Krampe, R. T., & Tesch-Römer, C. (1993). The role of deliberate practice in the acquisition of expert performance. *Psychological Review*, 100(3), 363–406. https://doi.org/10.1037/0033-295X.100.3.363
-- Fazio, L. K., & Marsh, E. J. (2009). Surprising feedback improves later memory. *Psychonomic Bulletin & Review*, 16(1), 88–92. https://doi.org/10.3758/PBR.16.1.88
-- Kalyuga, S., Ayres, P., Chandler, P., & Sweller, J. (2003). The expertise reversal effect. *Educational Psychologist*, 38(1), 23–31. https://doi.org/10.1207/S15326985EP3801_4
+- Adesope, O. O., Trevisan, D. A., & Sundararajan, N. (2017). Rethinking the use of tests: A meta-analysis of practice testing. *Review of Educational Research*, 87(3), 659-701. https://doi.org/10.3102/0034654316689306
+- Bisra, K., Liu, Q., Nesbit, J. C., Salimi, F., & Winne, P. H. (2018). Inducing self-explanation: A meta-analysis. *Educational Psychology Review*, 30(3), 703-725. https://doi.org/10.1007/s10648-018-9434-x
+- Bjork, E. L., & Bjork, R. A. (2011). Making things hard on yourself, but in a good way: Creating desirable difficulties to enhance learning. In M. A. Gernsbacher, R. W. Pew, L. M. Hough, & J. R. Pomerantz (Eds.), *Psychology and the real world* (pp. 56-64). Worth.
+- Bjork, R. A., & Bjork, E. L. (1992). A new theory of disuse and an old theory of stimulus fluctuation. In A. F. Healy, S. M. Kosslyn, & R. M. Shiffrin (Eds.), *From learning processes to cognitive processes: Essays in honor of William K. Estes* (Vol. 2, pp. 35-67). Erlbaum.
+- Brunmair, M., & Richter, T. (2019). Similarity matters: A meta-analysis of interleaved learning and its moderators. *Psychological Bulletin*, 145(11), 1029-1052. https://doi.org/10.1037/bul0000209
+- Butler, A. C., Fazio, L. K., & Marsh, E. J. (2011). The hypercorrection effect persists over a week, but high-confidence errors return. *Psychonomic Bulletin & Review*, 18(6), 1238-1244. https://doi.org/10.3758/s13423-011-0173-y
+- Butler, A. C., & Roediger, H. L. (2008). Feedback enhances the positive effects and reduces the negative effects of multiple-choice testing. *Memory & Cognition*, 36(3), 604-616. https://doi.org/10.3758/MC.36.3.604
+- Butterfield, B., & Metcalfe, J. (2001). Errors committed with high confidence are hypercorrected. *Journal of Experimental Psychology: Learning, Memory, and Cognition*, 27(6), 1491-1494. https://doi.org/10.1037/0278-7393.27.6.1491
+- Cepeda, N. J., Pashler, H., Vul, E., Wixted, J. T., & Rohrer, D. (2006). Distributed practice in verbal recall tasks: A review and quantitative synthesis. *Psychological Bulletin*, 132(3), 354-380. https://doi.org/10.1037/0033-2909.132.3.354
+- Cepeda, N. J., Vul, E., Rohrer, D., Wixted, J. T., & Pashler, H. (2008). Spacing effects in learning: A temporal ridgeline of optimal retention. *Psychological Science*, 19(11), 1095-1102. https://doi.org/10.1111/j.1467-9280.2008.02209.x
+- Chi, M. T. H., Bassok, M., Lewis, M. W., Reimann, P., & Glaser, R. (1989). Self-explanations: How students study and use examples in learning to solve problems. *Cognitive Science*, 13(2), 145-182. https://doi.org/10.1207/s15516709cog1302_1
+- Chi, M. T. H., de Leeuw, N., Chiu, M.-H., & LaVancher, C. (1994). Eliciting self-explanations improves understanding. *Cognitive Science*, 18(3), 439-477. https://doi.org/10.1207/s15516709cog1803_3
+- Corbett, A. T., & Anderson, J. R. (2001). Locus of feedback control in computer-based tutoring: Impact on learning rate, achievement and attitudes. *Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI 2001)*, 245-252. https://doi.org/10.1145/365024.365111
+- Cowan, N. (2001). The magical number 4 in short-term memory: A reconsideration of mental storage capacity. *Behavioral and Brain Sciences*, 24(1), 87-114. https://doi.org/10.1017/S0140525X01003922
+- Dunlosky, J., & Rawson, K. A. (2012). Overconfidence produces underachievement: Inaccurate self evaluations undermine students' learning and retention. *Learning and Instruction*, 22(4), 271-280. https://doi.org/10.1016/j.learninstruc.2011.08.003
+- Dunlosky, J., Rawson, K. A., Marsh, E. J., Nathan, M. J., & Willingham, D. T. (2013). Improving students' learning with effective learning techniques: Promising directions from cognitive and educational psychology. *Psychological Science in the Public Interest*, 14(1), 4-58. https://doi.org/10.1177/1529100612453266
+- Ericsson, K. A., Krampe, R. T., & Tesch-Römer, C. (1993). The role of deliberate practice in the acquisition of expert performance. *Psychological Review*, 100(3), 363-406. https://doi.org/10.1037/0033-295X.100.3.363
+- Fazio, L. K., & Marsh, E. J. (2009). Surprising feedback improves later memory. *Psychonomic Bulletin & Review*, 16(1), 88-92. https://doi.org/10.3758/PBR.16.1.88
+- Kalyuga, S., Ayres, P., Chandler, P., & Sweller, J. (2003). The expertise reversal effect. *Educational Psychologist*, 38(1), 23-31. https://doi.org/10.1207/S15326985EP3801_4
 - Kirk-Johnson, A., Galla, B. M., & Fraundorf, S. H. (2019). Perceiving effort as poor learning: The misinterpreted-effort hypothesis of how experienced effort and perceived learning relate to study strategy choice. *Cognitive Psychology*, 115, 101237. https://doi.org/10.1016/j.cogpsych.2019.101237
-- Kluger, A. N., & DeNisi, A. (1996). The effects of feedback interventions on performance: A historical review, a meta-analysis, and a preliminary feedback intervention theory. *Psychological Bulletin*, 119(2), 254–284. https://doi.org/10.1037/0033-2909.119.2.254
-- Kornell, N., & Bjork, R. A. (2008). Learning concepts and categories: Is spacing the "enemy of induction"? *Psychological Science*, 19(6), 585–592. https://doi.org/10.1111/j.1467-9280.2008.02127.x
-- Kornell, N., Hays, M. J., & Bjork, R. A. (2009). Unsuccessful retrieval attempts enhance subsequent learning. *Journal of Experimental Psychology: Learning, Memory, and Cognition*, 35(4), 989–998. https://doi.org/10.1037/a0015729
-- Kruger, J., & Dunning, D. (1999). Unskilled and unaware of it: How difficulties in recognizing one's own incompetence lead to inflated self-assessments. *Journal of Personality and Social Psychology*, 77(6), 1121–1134. https://doi.org/10.1037/0022-3514.77.6.1121
-- Kulik, J. A., & Kulik, C.-L. C. (1988). Timing of feedback and verbal learning. *Review of Educational Research*, 58(1), 79–97. https://doi.org/10.3102/00346543058001079
-- Metcalfe, J., Kornell, N., & Finn, B. (2009). Delayed versus immediate feedback in children's and adults' vocabulary learning. *Memory & Cognition*, 37(8), 1077–1087. https://doi.org/10.3758/MC.37.8.1077
-- Nelson, T. O., & Dunlosky, J. (1991). When people's judgments of learning (JOLs) are extremely accurate at predicting subsequent recall: The "delayed-JOL effect." *Psychological Science*, 2(4), 267–271. https://doi.org/10.1111/j.1467-9280.1991.tb00147.x
-- Pan, S. C., & Sana, F. (2021). Pretesting versus posttesting: Comparing the pedagogical benefits of errorful generation and retrieval practice. *Journal of Experimental Psychology: Applied*, 27(2), 237–257. https://doi.org/10.1037/xap0000345
-- Rawson, K. A., & Dunlosky, J. (2011). Optimizing schedules of retrieval practice for durable and efficient learning: How much is enough? *Journal of Experimental Psychology: General*, 140(3), 283–302. https://doi.org/10.1037/a0023956
-- Rawson, K. A., Dunlosky, J., & Sciartelli, S. M. (2013). The power of successive relearning: Improving performance on course exams and long-term retention. *Educational Psychology Review*, 25(4), 523–548. https://doi.org/10.1007/s10648-013-9240-4
-- Renkl, A., Atkinson, R. K., & Große, C. S. (2004). How fading worked solution steps works: A cognitive load perspective. *Instructional Science*, 32(1–2), 59–82. https://doi.org/10.1023/B:TRUC.0000021815.74806.f6
-- Renkl, A., Atkinson, R. K., Maier, U. H., & Staley, R. (2002). From example study to problem solving: Smooth transitions help learning. *The Journal of Experimental Education*, 70(4), 293–315. https://doi.org/10.1080/00220970209599510
-- Rey, G. D. (2012). A review of research and a meta-analysis of the seductive detail effect. *Educational Research Review*, 7(3), 216–237. https://doi.org/10.1016/j.edurev.2012.05.003
-- Richland, L. E., Kornell, N., & Kao, L. S. (2009). The pretesting effect: Do unsuccessful retrieval attempts enhance learning? *Journal of Experimental Psychology: Applied*, 15(3), 243–257. https://doi.org/10.1037/a0016496
-- Roediger, H. L., & Karpicke, J. D. (2006). Test-enhanced learning: Taking memory tests improves long-term retention. *Psychological Science*, 17(3), 249–255. https://doi.org/10.1111/j.1467-9280.2006.01693.x
-- Roediger, H. L., & Marsh, E. J. (2005). The positive and negative consequences of multiple-choice testing. *Journal of Experimental Psychology: Learning, Memory, and Cognition*, 31(5), 1155–1159. https://doi.org/10.1037/0278-7393.31.5.1155
-- Rohrer, D., Dedrick, R. F., Hartwig, M. K., & Cheung, C.-N. (2020). A randomized controlled trial of interleaved mathematics practice. *Journal of Educational Psychology*, 112(1), 40–52. https://doi.org/10.1037/edu0000367
-- Rohrer, D., & Taylor, K. (2006). The effects of overlearning and distributed practise on the retention of mathematics knowledge. *Applied Cognitive Psychology*, 20(9), 1209–1224. https://doi.org/10.1002/acp.1266
-- Rohrer, D., & Taylor, K. (2007). The shuffling of mathematics problems improves learning. *Instructional Science*, 35(6), 481–498. https://doi.org/10.1007/s11251-007-9015-8
-- Shute, V. J. (2008). Focus on formative feedback. *Review of Educational Research*, 78(1), 153–189. https://doi.org/10.3102/0034654307313795
-- Sundararajan, N., & Adesope, O. (2020). Keep it coherent: A meta-analysis of the seductive details effect. *Educational Psychology Review*, 32(3), 707–734. https://doi.org/10.1007/s10648-020-09522-4
-- Sweller, J. (1988). Cognitive load during problem solving: Effects on learning. *Cognitive Science*, 12(2), 257–285. https://doi.org/10.1207/s15516709cog1202_4
-- Sweller, J., & Cooper, G. A. (1985). The use of worked examples as a substitute for problem solving in learning algebra. *Cognition and Instruction*, 2(1), 59–89. https://doi.org/10.1207/s1532690xci0201_3
-- Van der Kleij, F. M., Feskens, R. C. W., & Eggen, T. J. H. M. (2015). Effects of feedback in a computer-based learning environment on students' learning outcomes: A meta-analysis. *Review of Educational Research*, 85(4), 475–511. https://doi.org/10.3102/0034654314564881
+- Kluger, A. N., & DeNisi, A. (1996). The effects of feedback interventions on performance: A historical review, a meta-analysis, and a preliminary feedback intervention theory. *Psychological Bulletin*, 119(2), 254-284. https://doi.org/10.1037/0033-2909.119.2.254
+- Kornell, N., & Bjork, R. A. (2008). Learning concepts and categories: Is spacing the "enemy of induction"? *Psychological Science*, 19(6), 585-592. https://doi.org/10.1111/j.1467-9280.2008.02127.x
+- Kornell, N., Hays, M. J., & Bjork, R. A. (2009). Unsuccessful retrieval attempts enhance subsequent learning. *Journal of Experimental Psychology: Learning, Memory, and Cognition*, 35(4), 989-998. https://doi.org/10.1037/a0015729
+- Kruger, J., & Dunning, D. (1999). Unskilled and unaware of it: How difficulties in recognizing one's own incompetence lead to inflated self-assessments. *Journal of Personality and Social Psychology*, 77(6), 1121-1134. https://doi.org/10.1037/0022-3514.77.6.1121
+- Kulik, J. A., & Kulik, C.-L. C. (1988). Timing of feedback and verbal learning. *Review of Educational Research*, 58(1), 79-97. https://doi.org/10.3102/00346543058001079
+- Metcalfe, J., Kornell, N., & Finn, B. (2009). Delayed versus immediate feedback in children's and adults' vocabulary learning. *Memory & Cognition*, 37(8), 1077-1087. https://doi.org/10.3758/MC.37.8.1077
+- Nelson, T. O., & Dunlosky, J. (1991). When people's judgments of learning (JOLs) are extremely accurate at predicting subsequent recall: The "delayed-JOL effect." *Psychological Science*, 2(4), 267-271. https://doi.org/10.1111/j.1467-9280.1991.tb00147.x
+- Pan, S. C., & Sana, F. (2021). Pretesting versus posttesting: Comparing the pedagogical benefits of errorful generation and retrieval practice. *Journal of Experimental Psychology: Applied*, 27(2), 237-257. https://doi.org/10.1037/xap0000345
+- Rawson, K. A., & Dunlosky, J. (2011). Optimizing schedules of retrieval practice for durable and efficient learning: How much is enough? *Journal of Experimental Psychology: General*, 140(3), 283-302. https://doi.org/10.1037/a0023956
+- Rawson, K. A., Dunlosky, J., & Sciartelli, S. M. (2013). The power of successive relearning: Improving performance on course exams and long-term retention. *Educational Psychology Review*, 25(4), 523-548. https://doi.org/10.1007/s10648-013-9240-4
+- Renkl, A., Atkinson, R. K., & Große, C. S. (2004). How fading worked solution steps works: A cognitive load perspective. *Instructional Science*, 32(1-2), 59-82. https://doi.org/10.1023/B:TRUC.0000021815.74806.f6
+- Renkl, A., Atkinson, R. K., Maier, U. H., & Staley, R. (2002). From example study to problem solving: Smooth transitions help learning. *The Journal of Experimental Education*, 70(4), 293-315. https://doi.org/10.1080/00220970209599510
+- Rey, G. D. (2012). A review of research and a meta-analysis of the seductive detail effect. *Educational Research Review*, 7(3), 216-237. https://doi.org/10.1016/j.edurev.2012.05.003
+- Richland, L. E., Kornell, N., & Kao, L. S. (2009). The pretesting effect: Do unsuccessful retrieval attempts enhance learning? *Journal of Experimental Psychology: Applied*, 15(3), 243-257. https://doi.org/10.1037/a0016496
+- Roediger, H. L., & Karpicke, J. D. (2006). Test-enhanced learning: Taking memory tests improves long-term retention. *Psychological Science*, 17(3), 249-255. https://doi.org/10.1111/j.1467-9280.2006.01693.x
+- Roediger, H. L., & Marsh, E. J. (2005). The positive and negative consequences of multiple-choice testing. *Journal of Experimental Psychology: Learning, Memory, and Cognition*, 31(5), 1155-1159. https://doi.org/10.1037/0278-7393.31.5.1155
+- Rohrer, D., Dedrick, R. F., Hartwig, M. K., & Cheung, C.-N. (2020). A randomized controlled trial of interleaved mathematics practice. *Journal of Educational Psychology*, 112(1), 40-52. https://doi.org/10.1037/edu0000367
+- Rohrer, D., & Taylor, K. (2006). The effects of overlearning and distributed practise on the retention of mathematics knowledge. *Applied Cognitive Psychology*, 20(9), 1209-1224. https://doi.org/10.1002/acp.1266
+- Rohrer, D., & Taylor, K. (2007). The shuffling of mathematics problems improves learning. *Instructional Science*, 35(6), 481-498. https://doi.org/10.1007/s11251-007-9015-8
+- Shute, V. J. (2008). Focus on formative feedback. *Review of Educational Research*, 78(1), 153-189. https://doi.org/10.3102/0034654307313795
+- Sundararajan, N., & Adesope, O. (2020). Keep it coherent: A meta-analysis of the seductive details effect. *Educational Psychology Review*, 32(3), 707-734. https://doi.org/10.1007/s10648-020-09522-4
+- Sweller, J. (1988). Cognitive load during problem solving: Effects on learning. *Cognitive Science*, 12(2), 257-285. https://doi.org/10.1207/s15516709cog1202_4
+- Sweller, J., & Cooper, G. A. (1985). The use of worked examples as a substitute for problem solving in learning algebra. *Cognition and Instruction*, 2(1), 59-89. https://doi.org/10.1207/s1532690xci0201_3
+- Van der Kleij, F. M., Feskens, R. C. W., & Eggen, T. J. H. M. (2015). Effects of feedback in a computer-based learning environment on students' learning outcomes: A meta-analysis. *Review of Educational Research*, 85(4), 475-511. https://doi.org/10.3102/0034654314564881
 
 ### Further reading
 
 The text above does not cite these papers, but `scripts/seed-research.ts`
 summarizes them for the plan generator's research context.
 
-- Agarwal, P. K., Nunes, L. D., & Blunt, J. R. (2021). Retrieval practice consistently benefits student learning: A systematic review of applied research in schools and classrooms. *Educational Psychology Review*, 33(4), 1409–1453. https://doi.org/10.1007/s10648-021-09595-9
-- Gollwitzer, P. M. (1999). Implementation intentions: Strong effects of simple plans. *American Psychologist*, 54(7), 493–503. https://doi.org/10.1037/0003-066X.54.7.493
-- Gollwitzer, P. M., & Brandstätter, V. (1997). Implementation intentions and effective goal pursuit. *Journal of Personality and Social Psychology*, 73(1), 186–199. https://doi.org/10.1037/0022-3514.73.1.186
-- Karpicke, J. D. (2025). Retrieval-based learning. In *Learning and memory: A comprehensive reference* (3rd ed., pp. 411–441). Elsevier. https://doi.org/10.1016/B978-0-443-15754-7.00074-2
-- Karpicke, J. D., & Blunt, J. R. (2011). Retrieval practice produces more learning than elaborative studying with concept mapping. *Science*, 331(6018), 772–775. https://doi.org/10.1126/science.1199327
-- Pan, S. C., & Rickard, T. C. (2018). Transfer of test-enhanced learning: Meta-analytic review and synthesis. *Psychological Bulletin*, 144(7), 710–756. https://doi.org/10.1037/bul0000151
-- Steel, P. (2007). The nature of procrastination: A meta-analytic and theoretical review of quintessential self-regulatory failure. *Psychological Bulletin*, 133(1), 65–94. https://doi.org/10.1037/0033-2909.133.1.65
-- Zimmerman, B. J. (2002). Becoming a self-regulated learner: An overview. *Theory Into Practice*, 41(2), 64–70. https://doi.org/10.1207/s15430421tip4102_2
+- Agarwal, P. K., Nunes, L. D., & Blunt, J. R. (2021). Retrieval practice consistently benefits student learning: A systematic review of applied research in schools and classrooms. *Educational Psychology Review*, 33(4), 1409-1453. https://doi.org/10.1007/s10648-021-09595-9
+- Gollwitzer, P. M. (1999). Implementation intentions: Strong effects of simple plans. *American Psychologist*, 54(7), 493-503. https://doi.org/10.1037/0003-066X.54.7.493
+- Gollwitzer, P. M., & Brandstätter, V. (1997). Implementation intentions and effective goal pursuit. *Journal of Personality and Social Psychology*, 73(1), 186-199. https://doi.org/10.1037/0022-3514.73.1.186
+- Karpicke, J. D. (2025). Retrieval-based learning. In *Learning and memory: A comprehensive reference* (3rd ed., pp. 411-441). Elsevier. https://doi.org/10.1016/B978-0-443-15754-7.00074-2
+- Karpicke, J. D., & Blunt, J. R. (2011). Retrieval practice produces more learning than elaborative studying with concept mapping. *Science*, 331(6018), 772-775. https://doi.org/10.1126/science.1199327
+- Pan, S. C., & Rickard, T. C. (2018). Transfer of test-enhanced learning: Meta-analytic review and synthesis. *Psychological Bulletin*, 144(7), 710-756. https://doi.org/10.1037/bul0000151
+- Steel, P. (2007). The nature of procrastination: A meta-analytic and theoretical review of quintessential self-regulatory failure. *Psychological Bulletin*, 133(1), 65-94. https://doi.org/10.1037/0033-2909.133.1.65
+- Zimmerman, B. J. (2002). Becoming a self-regulated learner: An overview. *Theory Into Practice*, 41(2), 64-70. https://doi.org/10.1207/s15430421tip4102_2
