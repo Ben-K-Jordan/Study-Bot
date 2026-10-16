@@ -4,6 +4,10 @@ import {
   PlanBlock,
   slugifyObjectiveTitle,
   buildObjectiveIdMap,
+  isCalendarDay,
+  layoutBlocks,
+  nextQuarterHour,
+  rollBlocksForward,
 } from "@/lib/plan-generator";
 
 // ---------------------------------------------------------------------------
@@ -308,5 +312,155 @@ describe("plan-generator: edge cases", () => {
     }
     // Should still produce some blocks
     expect(blocks.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Laying blocks out in time
+// ---------------------------------------------------------------------------
+
+describe("nextQuarterHour", () => {
+  it("rounds up to the next quarter hour and keeps exact ones", () => {
+    expect(new Date(nextQuarterHour(Date.parse("2026-10-15T20:01:00Z"))).toISOString()).toBe("2026-10-15T20:15:00.000Z");
+    expect(new Date(nextQuarterHour(Date.parse("2026-10-15T20:15:00Z"))).toISOString()).toBe("2026-10-15T20:15:00.000Z");
+  });
+});
+
+describe("layoutBlocks", () => {
+  const HOUR = 3_600_000;
+  const DAY0 = Date.parse("2026-10-15T13:00:00Z"); // 9:00 AM New York
+  // 09:00 to 17:00 every day
+  const window = (day: number) => ({ start: DAY0 + day * 24 * HOUR, end: DAY0 + day * 24 * HOUR + 8 * HOUR });
+  const block = (dayIndex: number, plannedMinutes: number) => ({ dayIndex, plannedMinutes });
+  // Day 0 always opens with a 20 and a 70 minute block
+  const blocks = [block(0, 20), block(0, 70), block(1, 30), block(1, 60)];
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it("lays a morning plan end to end from the window start", () => {
+    const placed = layoutBlocks(blocks, { window, earliest: DAY0 - HOUR, dailyCapMinutes: 180 });
+    expect(placed.map((p) => p && [p.dayIndex, iso(p.start)])).toEqual([
+      [0, "2026-10-15T13:00:00.000Z"],
+      [0, "2026-10-15T13:20:00.000Z"],
+      [1, "2026-10-16T13:00:00.000Z"],
+      [1, "2026-10-16T13:30:00.000Z"],
+    ]);
+  });
+
+  it("starts today's blocks no earlier than now in the afternoon", () => {
+    const earliest = nextQuarterHour(Date.parse("2026-10-15T18:05:00Z")); // 2:05 PM
+    const placed = layoutBlocks(blocks, { window, earliest, dailyCapMinutes: 180 });
+    expect(iso(placed[0]!.start)).toBe("2026-10-15T18:15:00.000Z");
+    expect(iso(placed[1]!.start)).toBe("2026-10-15T18:35:00.000Z");
+  });
+
+  it("moves today's blocks to tomorrow, after tomorrow's own, when the plan is made in the evening", () => {
+    const earliest = nextQuarterHour(Date.parse("2026-10-16T00:00:00Z")); // 8:00 PM
+    const placed = layoutBlocks(blocks, { window, earliest, dailyCapMinutes: 180 });
+    for (const p of placed) expect(p!.start).toBeGreaterThanOrEqual(earliest);
+    expect(placed.map((p) => p && [p.dayIndex, iso(p.start)])).toEqual([
+      [1, "2026-10-16T14:30:00.000Z"],
+      [1, "2026-10-16T14:50:00.000Z"],
+      [1, "2026-10-16T13:00:00.000Z"],
+      [1, "2026-10-16T13:30:00.000Z"],
+    ]);
+  });
+
+  it("goes past a full day to the next one with room, and drops what fits nowhere", () => {
+    const earliest = Date.parse("2026-10-16T00:00:00Z");
+    // Day 1 is already at its 90 minute cap; day 2 has room for one more block
+    const placed = layoutBlocks([block(0, 20), block(0, 70), block(1, 90), block(2, 60)], {
+      window,
+      earliest,
+      dailyCapMinutes: 90,
+      lastDayIndex: 2,
+    });
+    expect(placed[0]).toMatchObject({ dayIndex: 2, start: Date.parse("2026-10-17T14:00:00Z") });
+    expect(placed[1]).toBeNull();
+  });
+
+  it("never overlaps two blocks on one day", () => {
+    const earliest = Date.parse("2026-10-15T20:30:00Z"); // 4:30 PM: the 20 fits today, the 70 doesn't
+    const placed = layoutBlocks(blocks, { window, earliest, dailyCapMinutes: 180 });
+    expect(placed[0]!.dayIndex).toBe(0);
+    expect(placed[1]!.dayIndex).toBe(1);
+    const day1 = placed.filter((p) => p!.dayIndex === 1).sort((a, b) => a!.start - b!.start);
+    for (let i = 1; i < day1.length; i++) expect(day1[i]!.start).toBeGreaterThanOrEqual(day1[i - 1]!.end);
+  });
+});
+
+describe("rollBlocksForward", () => {
+  const HOUR = 3_600_000;
+  const DAY0 = Date.parse("2026-10-15T13:00:00Z");
+  type Block = { id: string; dayIndex: number; plannedMinutes: number };
+  const block = (id: string, dayIndex: number, plannedMinutes: number): Block => ({ id, dayIndex, plannedMinutes });
+
+  /**
+   * Each day has `free[day]` minutes of free time from 9:00, filled first come
+   * first served (Google Calendar free time, busy events already taken out).
+   * Records which blocks each day was asked to fit.
+   */
+  function fitter(free: Record<number, number>) {
+    const asked: Record<number, string[]> = {};
+    const fitDay = (day: number, dayBlocks: readonly Block[]) => {
+      asked[day] = dayBlocks.map((b) => b.id);
+      let cursor = DAY0 + day * 24 * HOUR;
+      let left = free[day] ?? 0;
+      return dayBlocks.map((b) => {
+        if (b.plannedMinutes > left) return null;
+        const slot = { start: cursor, end: cursor + b.plannedMinutes * 60_000 };
+        cursor = slot.end;
+        left -= b.plannedMinutes;
+        return slot;
+      });
+    };
+    return { fitDay, asked };
+  }
+
+  it("moves a block from any busy day to the next day with room instead of dropping it", () => {
+    // Day 3 is fully booked; days 0 to 2 and 4 have room
+    const { fitDay, asked } = fitter({ 0: 180, 1: 180, 2: 180, 3: 0, 4: 180 });
+    const blocks = [block("a", 0, 50), block("b", 3, 50), block("c", 4, 50)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 6, dailyCapMinutes: 180, fitDay });
+    expect(placed.map((p) => p?.dayIndex)).toEqual([0, 4, 4]);
+    // Day 4's own block goes first; the one that rolled follows it
+    expect(asked[4]).toEqual(["c", "b"]);
+    expect(placed[1]!.start).toBe(placed[2]!.end);
+  });
+
+  it("keeps rolling past full days within the daily cap", () => {
+    // Day 1 has free time but is already at its 90 minute cap
+    const { fitDay } = fitter({ 0: 0, 1: 300, 2: 300 });
+    const blocks = [block("a", 0, 50), block("b", 1, 90)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 6, dailyCapMinutes: 90, fitDay });
+    expect(placed.map((p) => p?.dayIndex)).toEqual([2, 1]);
+  });
+
+  it("leaves out what fits nowhere up to the last day", () => {
+    const { fitDay, asked } = fitter({ 0: 30, 1: 30, 2: 30 });
+    const blocks = [block("a", 0, 50), block("b", 1, 20)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 2, dailyCapMinutes: 180, fitDay });
+    expect(placed[0]).toBeNull();
+    expect(placed[1]).toMatchObject({ dayIndex: 1 });
+    // Never asks about a day after the last one (the exam day)
+    expect(Object.keys(asked)).toEqual(["0", "1", "2"]);
+  });
+
+  it("tries the earliest rolled block first", () => {
+    const { fitDay, asked } = fitter({ 0: 0, 1: 0, 2: 60 });
+    const blocks = [block("a", 0, 50), block("b", 1, 50)];
+    const placed = rollBlocksForward(blocks, { lastDayIndex: 2, dailyCapMinutes: 180, fitDay });
+    expect(asked[2]).toEqual(["a", "b"]);
+    expect(placed.map((p) => p?.dayIndex ?? null)).toEqual([2, null]);
+  });
+});
+
+describe("isCalendarDay", () => {
+  it("accepts real days only", () => {
+    expect(isCalendarDay("2026-10-15")).toBe(true);
+    expect(isCalendarDay("2028-02-29")).toBe(true);
+    expect(isCalendarDay("2026-02-31")).toBe(false);
+    expect(isCalendarDay("2026-13-01")).toBe(false);
+    expect(isCalendarDay("2026-00-10")).toBe(false);
+    expect(isCalendarDay("10/15/2026")).toBe(false);
   });
 });

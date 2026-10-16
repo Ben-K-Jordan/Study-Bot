@@ -9,7 +9,11 @@
  *   JOB_WORKER_CONCURRENCY — max concurrent jobs (default: 2)
  *   JOB_POLL_INTERVAL_MS   — poll interval in ms (default: 2000)
  *   AI_PROVIDER            — "mock" for testing, "openai" for production
+ *
+ * tsx does not read .env the way Next does, so it is loaded first. Variables
+ * already set in the environment win over .env values.
  */
+import "dotenv/config";
 import { claimJobs, succeedJob, failJob, recoverStaleJobs, type ClaimedJob } from "../src/lib/jobs/queue";
 import { handleEmbedChunkBatch } from "../src/lib/jobs/handlers/embed-chunks";
 import { createProvider } from "../src/lib/ai/provider-factory";

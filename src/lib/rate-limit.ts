@@ -88,15 +88,39 @@ export function createRateLimiter(name: string, config: RateLimitConfig) {
 
 // ── Pre-configured limiters ──────────────────────────────────────────────────
 
-/** Auth endpoints: 10 attempts per 15 minutes per IP */
+// A development server sees every browser, test run and screenshot harness on
+// the machine as one client ("unknown" IP), so the auth limits there are
+// loose enough not to lock the developer out. Production keeps the real ones.
+const isProduction = process.env.NODE_ENV === "production";
+
+/**
+ * Sign-in: 10 attempts per 15 minutes per IP (every next-auth POST, which
+ * includes sign-out). Used by /api/auth/[...nextauth].
+ */
 export const authLimiter = createRateLimiter("auth", {
-  maxRequests: 10,
+  maxRequests: isProduction ? 10 : 100,
+  windowMs: 15 * 60 * 1000,
+});
+
+/**
+ * Auth emails (password reset links, verification links): 10 per 15 minutes
+ * per IP. Kept apart from sign-in so asking for a link doesn't use up
+ * sign-in attempts.
+ */
+export const authEmailLimiter = createRateLimiter("auth-email", {
+  maxRequests: isProduction ? 10 : 100,
+  windowMs: 15 * 60 * 1000,
+});
+
+/** Using an emailed link (reset password, verify email): 10 per 15 minutes per IP. */
+export const authTokenLimiter = createRateLimiter("auth-token", {
+  maxRequests: isProduction ? 10 : 100,
   windowMs: 15 * 60 * 1000,
 });
 
 /** Signup: 3 accounts per hour per IP */
 export const signupLimiter = createRateLimiter("signup", {
-  maxRequests: 3,
+  maxRequests: isProduction ? 3 : 30,
   windowMs: 60 * 60 * 1000,
 });
 
@@ -112,12 +136,6 @@ export const aiLimiter = createRateLimiter("ai", {
   windowMs: 60 * 1000,
 });
 
-/** Push subscribe: 10 per hour per user */
-export const pushLimiter = createRateLimiter("push", {
-  maxRequests: 10,
-  windowMs: 60 * 60 * 1000,
-});
-
 /** General API: 120 requests per minute per user */
 export const generalLimiter = createRateLimiter("general", {
   maxRequests: 120,
@@ -126,27 +144,57 @@ export const generalLimiter = createRateLimiter("general", {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { retryAfterText } from "@/lib/format";
 
-/** Extract a rate-limit key from a request (IP or forwarded-for) */
-export function getClientIp(request: NextRequest): string {
-  // X-Forwarded-For: use the RIGHTMOST entry — it's the one appended by the
-  // nearest trusted proxy. Leftmost entries are client-supplied, so an attacker
-  // could prepend arbitrary values to rotate rate-limit buckets on every request.
+/**
+ * How many reverse proxies in front of the app append to X-Forwarded-For
+ * (TRUSTED_PROXY_HOPS, default 1). Each appends the address it saw, so the
+ * client's real address is that many entries from the right; everything to
+ * its left was sent by the client and can be anything.
+ */
+function trustedProxyHops(): number {
+  const hops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "", 10);
+  return Number.isInteger(hops) && hops >= 1 ? hops : 1;
+}
+
+/**
+ * Extract a rate-limit key from a request (IP or forwarded-for). Production
+ * must run behind a reverse proxy that appends X-Forwarded-For: Next fills
+ * the header only when the client sent none, so without a proxy the value is
+ * whatever the client chose.
+ */
+export function getClientIp(request: Pick<Request, "headers">): string {
+  // Count TRUSTED_PROXY_HOPS entries from the right: those were appended by
+  // the proxies. Entries further left are client-supplied, so an attacker
+  // could prepend arbitrary values to rotate rate-limit buckets.
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    const entries = forwardedFor.split(",");
-    const rightmost = entries[entries.length - 1]?.trim();
-    if (rightmost) return rightmost;
+    const entries = forwardedFor.split(",").map((entry) => entry.trim());
+    const hops = trustedProxyHops();
+    // A shorter header than expected: the leftmost entry is still the one
+    // the outermost proxy saw.
+    const index = Math.max(0, entries.length - hops);
+    const client = entries[index];
+    if (client) return client;
   }
   return request.headers.get("x-real-ip") || "unknown";
 }
 
-/** Return a 429 response with Retry-After header */
-export function tooManyRequests(retryAfterMs: number): NextResponse {
-  const retryAfterSec = Math.ceil(retryAfterMs / 1000);
+/**
+ * The app's one 429 response: a Retry-After header, and the same wait in
+ * whole seconds as `retry_after` in the body. The default text says how long
+ * to wait; `message` replaces it for callers that can say which action was
+ * limited.
+ */
+export function tooManyRequests(retryAfterMs: number, message?: string): NextResponse {
+  const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000));
   return NextResponse.json(
-    { error: "Too many requests. Please try again later." },
+    {
+      error: message ?? `Too many requests. ${retryAfterText(retryAfterSec)}`,
+      code: "RATE_LIMITED",
+      retry_after: retryAfterSec,
+    },
     {
       status: 429,
       headers: { "Retry-After": String(retryAfterSec) },

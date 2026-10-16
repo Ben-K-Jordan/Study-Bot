@@ -1,41 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { logger } from "@/lib/logger";
+import { readGoogleStatus } from "@/services/google-status";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
-  const integration = await prisma.googleIntegration.findUnique({
-    where: { userId },
-  });
-
-  if (!integration || integration.status === "DISCONNECTED") {
-    return NextResponse.json({
-      status: "DISCONNECTED",
-      connected: false,
-      scopes: [],
-      default_calendar_id: "primary",
-      busy_calendar_ids: ["primary"],
-    });
+  try {
+    return NextResponse.json(await readGoogleStatus(userId));
+  } catch (err) {
+    logger.error("google.status_failed", { user_id: userId, error: String(err) });
+    return NextResponse.json(
+      { error: "Google Calendar status didn't load. Retry." },
+      { status: 500 },
+    );
   }
-
-  return NextResponse.json({
-    status: integration.status,
-    connected: integration.status === "CONNECTED",
-    connected_email: integration.connectedEmail,
-    scopes: integration.scopeString.split(" ").filter(Boolean),
-    default_calendar_id: integration.calendarIdSelected,
-    busy_calendar_ids: integration.busyCalendarIds.split(",").filter(Boolean),
-    timezone: integration.timezone,
-    last_healthy_at: integration.lastHealthyAt?.toISOString() ?? null,
-    last_error: integration.lastErrorCode
-      ? { code: integration.lastErrorCode, message: integration.lastErrorMessage }
-      : null,
-    // Legacy fields for backward compat
-    selected_calendar_id: integration.calendarIdSelected,
-    token_expiry: Number(integration.tokenExpiryMs),
-  });
 }

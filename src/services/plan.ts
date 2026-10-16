@@ -1,8 +1,16 @@
 import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
-import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
+import { z } from "zod";
+import { buildCalendarTitle, buildCalendarDescription, sessionTopics } from "@/lib/calendar";
 import { createPlanSchema, SessionMode } from "@/lib/validation";
-import { generatePlan, PlanBlock } from "@/lib/plan-generator";
+import {
+  isCalendarDay,
+  layoutBlocks,
+  nextQuarterHour,
+  rollBlocksForward,
+  type BlockPlacement,
+  type PlanBlock,
+} from "@/lib/plan-generator";
 import { generatePlanWithResearch, StudyPreferences } from "@/lib/research-plan-generator";
 import { generateIcs, IcsEvent } from "@/lib/ics";
 import { logger } from "@/lib/logger";
@@ -23,26 +31,68 @@ import {
   type SessionMode as IntelMode,
 } from "@/lib/schedule-intelligence";
 import { getBaseUrl } from "@/lib/config";
+import {
+  addDays,
+  dayKey,
+  daysBetween,
+  getUserTimezone,
+  isValidTimezone,
+  zonedTimeToUtc,
+} from "@/lib/timezone";
+import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
+import { plural } from "@/lib/format";
+import { classifyPlanItem, countPlanItems, runStateFromStatuses, type PlanItemCounts, type PlanItemState, type RunState } from "@/lib/plan-status";
+import { calendarErrorMessage, unpublishPlanFromGoogle } from "@/services/publish";
 
+/** Used when neither the request nor the user's settings name a timezone. */
+const DEFAULT_PLAN_TIMEZONE = "America/New_York";
+
+/** Where a new plan's topics came from. */
+export type TopicsSource = "typed" | "materials" | "fallback";
+
+/**
+ * Availability windows ("09:00") are wall-clock times in the plan's timezone.
+ * Day 0 is the calendar day the plan starts on, in that same zone.
+ */
 function computeStartTime(
-  startDate: Date,
+  startDay: string,
   dayIndex: number,
   timeStr: string,
+  timeZone: string,
 ): Date {
-  const d = new Date(startDate);
-  d.setDate(d.getDate() + dayIndex);
-  const [h, m] = timeStr.split(":").map(Number);
-  d.setHours(h, m, 0, 0);
-  return d;
+  return zonedTimeToUtc(addDays(startDay, dayIndex), timeStr, timeZone);
 }
 
 export async function createPlan(userId: string, input: unknown) {
   const parsed = createPlanSchema.parse(input);
 
-  const planId = generateSessionId();
+  // The plan's timezone: the one sent with the request, else the user's
+  // setting, else the default. Invalid names are skipped.
+  const timeZone =
+    [parsed.timezone, await getUserTimezone(userId)].find(
+      (tz): tz is string => !!tz && isValidTimezone(tz),
+    ) ?? DEFAULT_PLAN_TIMEZONE;
+
   const startDate = new Date();
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() + 6);
+  const startDay = dayKey(startDate, timeZone);
+
+  // The schema only checks the shape. Refuse a day that doesn't exist
+  // (2026-02-31) now, as a field error, not as a failed write after the AI
+  // and calendar work. Past days stay allowed for API callers; the New plan
+  // form doesn't offer them.
+  if (!isCalendarDay(parsed.exam_date)) {
+    throw new z.ZodError([{ code: "custom", path: ["exam_date"], message: "Choose the exam date." }]);
+  }
+
+  const planId = generateSessionId();
+  // Day 0 is today: no session starts before the next quarter hour, so a
+  // plan made in the evening never schedules sessions that already passed
+  const earliest = nextQuarterHour(startDate.getTime());
+  // The plan covers 7 calendar days: day 0 through day 6. Both are DATE
+  // columns, so write the calendar day itself, never an instant (an evening
+  // instant is already tomorrow in UTC).
+  const startDateColumn = dateColumnValue(startDay);
+  const endDateColumn = dateColumnValue(addDays(startDay, 6));
 
   // Build AI gateway context (null if mock — will use deterministic fallback)
   let gatewayCtx: GatewayContext | null = null;
@@ -57,14 +107,24 @@ export async function createPlan(userId: string, input: unknown) {
     studyStyle: parsed.study_style,
   };
 
-  // If no manual objectives, extract them from uploaded content via AI
+  // If no manual objectives, extract them from uploaded content via AI.
+  // topicsSource tells the screen whether the materials supplied the topics
+  // or general review topics stood in (it must say so).
   let objectives = parsed.objectives;
+  let topicsSource: TopicsSource = "typed";
   if (objectives.length === 0 && parsed.document_ids.length > 0) {
+    topicsSource = "materials";
     try {
-      const suggested = await extractObjectivesFromContent(userId, parsed.course_name, parsed.exam_name);
-      objectives = suggested.map((s) => s.title);
+      const suggested = await extractObjectivesFromContent(
+        userId,
+        parsed.course_name,
+        parsed.exam_name,
+        parsed.document_ids,
+      );
+      objectives = suggested.map((s) => s.title).filter(Boolean);
       if (objectives.length < 3) {
         // Pad with generic fallbacks so the plan generator has enough to work with
+        topicsSource = "fallback";
         const fallbacks = ["Review key concepts", "Practice problem solving", "Consolidate understanding"];
         while (objectives.length < 3) {
           objectives.push(fallbacks[objectives.length] || `Study topic ${objectives.length + 1}`);
@@ -78,13 +138,19 @@ export async function createPlan(userId: string, input: unknown) {
     } catch (err) {
       logger.warn("plan.objectives_extraction_failed", { user_id: userId, error: String(err) });
       objectives = ["Review key concepts", "Practice problem solving", "Consolidate understanding"];
+      topicsSource = "fallback";
     }
   }
 
   // Check if the user has uploaded content for this course and enrich the plan input
   let contentContext: string | undefined;
   try {
-    const contentMeta = await buildContentAwarePlanInput(userId, parsed.course_name, parsed.exam_name);
+    const contentMeta = await buildContentAwarePlanInput(
+      userId,
+      parsed.course_name,
+      parsed.exam_name,
+      parsed.document_ids,
+    );
     if (contentMeta.hasContent) {
       contentContext = contentMeta.contentContext;
       logger.info("plan.content_aware", {
@@ -114,11 +180,9 @@ export async function createPlan(userId: string, input: unknown) {
   // --- Schedule Intelligence: taper + dynamic duration ---
 
   // 1. Apply pre-exam taper (reduce volume in final 48h before exam)
-  // Parse exam_date (YYYY-MM-DD) as LOCAL midnight — new Date(string) parses
-  // it as UTC midnight, which is the previous local day in behind-UTC timezones
-  const [examYear, examMonth, examDay] = parsed.exam_date.split("-").map(Number);
-  const examDateObj = new Date(examYear, examMonth - 1, examDay);
-  let blocks = applyPreExamTaper(planResult.blocks, examDateObj, startDate);
+  // exam_date (YYYY-MM-DD) is a calendar day in the plan's timezone
+  const examDateObj = zonedTimeToUtc(parsed.exam_date, "00:00", timeZone);
+  let blocks = applyPreExamTaper(planResult.blocks, examDateObj, startDate, timeZone);
 
   // 2. Apply dynamic session duration caps by cognitive load
   blocks = blocks.map((b) => ({
@@ -163,11 +227,9 @@ export async function createPlan(userId: string, input: unknown) {
         allCalendarIds = [...new Set([calendarId, ...busyCalendarIds])];
       }
 
-      // Query 7-day window
+      // Query the 7-day window, from now until midnight after day 6
       const timeMin = startDate.toISOString();
-      const windowEnd = new Date(startDate);
-      windowEnd.setDate(windowEnd.getDate() + 7);
-      const timeMax = windowEnd.toISOString();
+      const timeMax = zonedTimeToUtc(addDays(startDay, 7), "00:00", timeZone).toISOString();
 
       try {
         // Fetch events from ALL calendars (for exercise/meeting/fatigue detection)
@@ -202,25 +264,27 @@ export async function createPlan(userId: string, input: unknown) {
           }));
 
         // Estimate bedtime from event patterns
-        inferredBedtime = estimateBedtime(allEvents);
+        inferredBedtime = estimateBedtime(allEvents, timeZone);
 
         // Group events by day index
         googleEventsByDay = new Map();
         for (const event of allEvents) {
-          const eventDate = new Date(event.start);
-          const dayIdx = Math.floor((eventDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+          const dayIdx = daysBetween(startDay, dayKey(new Date(event.start), timeZone));
           if (dayIdx < 0 || dayIdx >= 7) continue;
           if (!googleEventsByDay.has(dayIdx)) googleEventsByDay.set(dayIdx, []);
           googleEventsByDay.get(dayIdx)!.push(event);
         }
 
-        // Compute free slots per day using buffered busy intervals
+        // Compute free slots per day using buffered busy intervals. Today's
+        // start no earlier than now: the part of today that passed has no
+        // events in the fetch above, so it would look free.
         googleFreeSlotsByDay = new Map();
         for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
           const dayAvail = parsed.availability[dayIdx];
-          const dayStart = computeStartTime(startDate, dayIdx, dayAvail.start);
-          const dayEnd = computeStartTime(startDate, dayIdx, dayAvail.end);
-          const freeSlots = computeFreeSlots(dayStart.getTime(), dayEnd.getTime(), busyIntervals);
+          const dayStart = computeStartTime(startDay, dayIdx, dayAvail.start, timeZone).getTime();
+          const dayEnd = computeStartTime(startDay, dayIdx, dayAvail.end, timeZone).getTime();
+          const from = dayIdx === 0 ? Math.max(dayStart, earliest) : dayStart;
+          const freeSlots = from < dayEnd ? computeFreeSlots(from, dayEnd, busyIntervals) : [];
           googleFreeSlotsByDay.set(dayIdx, freeSlots);
         }
 
@@ -239,9 +303,6 @@ export async function createPlan(userId: string, input: unknown) {
     }
   }
 
-  // Track cumulative start offset per day for multiple blocks on same day
-  const dayOffsets: Record<number, number> = {};
-
   // Pre-compute all items before any DB writes
   const items: {
     sessionId: string;
@@ -253,104 +314,103 @@ export async function createPlan(userId: string, input: unknown) {
     block: PlanBlock;
   }[] = [];
 
-  // If using Google availability, group blocks by day and use scored fitting
-  if (googleFreeSlotsByDay) {
-    // Group blocks by day
-    const blocksByDay = new Map<number, PlanBlock[]>();
-    for (const block of blocks) {
-      if (!blocksByDay.has(block.dayIndex)) blocksByDay.set(block.dayIndex, []);
-      blocksByDay.get(block.dayIndex)!.push(block);
-    }
-
-    for (const [dayIdx, dayBlocks] of blocksByDay.entries()) {
-      const freeSlots = googleFreeSlotsByDay.get(dayIdx) || [];
-      const durations = dayBlocks.map((b) => b.plannedMinutes * 60000);
-      const dayEvents = googleEventsByDay?.get(dayIdx) || [];
-
-      // Use cognitively-scored slot fitting when we have event data
-      const scheduled = dayEvents.length > 0
-        ? fitBlocksScored({
-            blockDurationsMs: durations,
-            blockModes: dayBlocks.map((b) => b.mode as IntelMode),
-            freeSlots,
-            chronotype: (parsed.chronotype || "flexible") as Chronotype,
-            dayEvents,
-            bedtimeHour: inferredBedtime,
-            courseName: parsed.course_name,
-            blockTopicScopes: dayBlocks.map((b) => b.topicScope),
-          })
-        : fitBlocksIntoSlots(durations, freeSlots);
-
-      for (let i = 0; i < dayBlocks.length; i++) {
-        const block = dayBlocks[i];
-        const slot = scheduled[i];
-        if (!slot) continue; // Block doesn't fit — skip it
-
-        const sessionId = generateSessionId();
-        const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
-
-        const calendarTitle = buildCalendarTitle({
+  const addItem = (block: PlanBlock, dayIndex: number, startTime: Date, endTime: Date) => {
+    const sessionId = generateSessionId();
+    const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
+    items.push({
+      sessionId,
+      sessionUrl,
+      dayIndex,
+      startTime,
+      endTime,
+      calendar: {
+        title: buildCalendarTitle({
           courseName: parsed.course_name,
           examName: parsed.exam_name,
           mode: block.mode as SessionMode,
           topicScope: block.topicScope,
-        });
-
-        const calendarDescription = buildCalendarDescription({
+          objectives: block.objectives,
+        }),
+        description: buildCalendarDescription({
+          courseName: parsed.course_name,
+          examName: parsed.exam_name,
+          mode: block.mode,
+          topics: block.objectives,
+          topicScope: block.topicScope,
           outcome: block.targetOutcome,
-          sessionUrl,
           breaks: { type: parsed.break_protocol_default, cycles: 1 },
-        });
-
-        items.push({
-          sessionId,
           sessionUrl,
-          dayIndex: block.dayIndex,
-          startTime: new Date(slot.start),
-          endTime: new Date(slot.end),
-          calendar: { title: calendarTitle, description: calendarDescription },
-          block,
-        });
-      }
-    }
+        }),
+      },
+      block,
+    });
+  };
+
+  // A session that doesn't fit its day moves to a later one, but never onto
+  // the exam day or past the plan's last day (the taper above already keeps
+  // the plan's own sessions off the exam day). An exam that has already
+  // passed (allowed for API callers) leaves the whole week.
+  const examDayIndex = daysBetween(startDay, parsed.exam_date);
+  const lastDayIndex =
+    examDayIndex > 0
+      ? Math.min(parsed.availability.length - 1, examDayIndex - 1)
+      : parsed.availability.length - 1;
+  let placements: (BlockPlacement | null)[];
+
+  if (googleFreeSlotsByDay) {
+    // Fit each day's blocks into its free time, cognitively scored when
+    // there are events to score against
+    const freeSlotsByDay = googleFreeSlotsByDay;
+    placements = rollBlocksForward(blocks, {
+      lastDayIndex,
+      dailyCapMinutes: parsed.daily_study_cap_minutes,
+      fitDay: (dayIdx, dayBlocks) => {
+        const freeSlots = freeSlotsByDay.get(dayIdx) || [];
+        const durations = dayBlocks.map((b) => b.plannedMinutes * 60000);
+        const dayEvents = googleEventsByDay?.get(dayIdx) || [];
+        return dayEvents.length > 0
+          ? fitBlocksScored({
+              blockDurationsMs: durations,
+              blockModes: dayBlocks.map((b) => b.mode as IntelMode),
+              freeSlots,
+              chronotype: (parsed.chronotype || "flexible") as Chronotype,
+              dayEvents,
+              bedtimeHour: inferredBedtime,
+              courseName: parsed.course_name,
+              blockTopicScopes: dayBlocks.map((b) => b.topicScope),
+              timeZone,
+            })
+          : fitBlocksIntoSlots(durations, freeSlots);
+      },
+    });
   } else {
-    // Original scheduling: sequential blocks within availability windows
-    for (const block of blocks) {
-      const sessionId = generateSessionId();
-      const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
-
-      const calendarTitle = buildCalendarTitle({
-        courseName: parsed.course_name,
-        examName: parsed.exam_name,
-        mode: block.mode as SessionMode,
-        topicScope: block.topicScope,
-      });
-
-      const calendarDescription = buildCalendarDescription({
-        outcome: block.targetOutcome,
-        sessionUrl,
-        breaks: { type: parsed.break_protocol_default, cycles: 1 },
-      });
-
-      // Compute start/end times
-      const dayAvail = parsed.availability[block.dayIndex];
-      const offsetMinutes = dayOffsets[block.dayIndex] || 0;
-      const baseStart = computeStartTime(startDate, block.dayIndex, dayAvail.start);
-      const startTime = new Date(baseStart.getTime() + offsetMinutes * 60000);
-      const endTime = new Date(startTime.getTime() + block.plannedMinutes * 60000);
-      dayOffsets[block.dayIndex] = offsetMinutes + block.plannedMinutes;
-
-      items.push({
-        sessionId,
-        sessionUrl,
-        dayIndex: block.dayIndex,
-        startTime,
-        endTime,
-        calendar: { title: calendarTitle, description: calendarDescription },
-        block,
-      });
-    }
+    // Sequential blocks from the start of each day's window (today's from
+    // now); a block that no longer fits today moves to a later day
+    placements = layoutBlocks(blocks, {
+      window: (dayIdx) => {
+        const dayAvail = parsed.availability[dayIdx];
+        return {
+          start: computeStartTime(startDay, dayIdx, dayAvail.start, timeZone).getTime(),
+          end: computeStartTime(startDay, dayIdx, dayAvail.end, timeZone).getTime(),
+        };
+      },
+      earliest,
+      dailyCapMinutes: parsed.daily_study_cap_minutes,
+      lastDayIndex,
+    });
   }
+
+  // Blocks with no room anywhere before the exam are left out, and the
+  // response counts them so the form can say so
+  let skippedCount = 0;
+  blocks.forEach((block, i) => {
+    const placement = placements[i];
+    if (!placement) {
+      skippedCount++;
+      return;
+    }
+    addItem(block, placement.dayIndex, new Date(placement.start), new Date(placement.end));
+  });
 
   // Transactional: create all sessions + plan + items atomically
   await prisma.$transaction(async (tx) => {
@@ -380,10 +440,10 @@ export async function createPlan(userId: string, input: unknown) {
         courseName: parsed.course_name,
         examId: parsed.exam_id ?? "",
         examName: parsed.exam_name,
-        examDate: new Date(parsed.exam_date),
-        timezone: parsed.timezone,
-        startDate,
-        endDate,
+        examDate: dateColumnValue(parsed.exam_date),
+        timezone: timeZone,
+        startDate: startDateColumn,
+        endDate: endDateColumn,
         config: {
           objectives: parsed.objectives,
           availability: parsed.availability,
@@ -409,6 +469,7 @@ export async function createPlan(userId: string, input: unknown) {
     user_id: userId,
     plan_id: planId,
     items_count: items.length,
+    skipped_count: skippedCount,
   });
 
   // Fire-and-forget: pre-build objective anchors so the feedback fast path
@@ -444,16 +505,20 @@ export async function createPlan(userId: string, input: unknown) {
   }
 
   const baseUrl = getBaseUrl();
-  const feedUrl = `${baseUrl}/api/plans/${planId}/feed`;
-  const webcalUrl = feedUrl.replace(/^https?:\/\//, "webcal://");
 
   return {
     plan_id: planId,
+    course_name: parsed.course_name,
+    exam_name: parsed.exam_name,
+    exam_date: parsed.exam_date,
+    timezone: timeZone,
     ai_generated: planResult.aiGenerated,
     reasoning: planResult.reasoning ?? null,
+    /** "typed", "materials", or "fallback" (general review topics stood in). */
+    topics_source: topicsSource,
+    /** Sessions the plan called for that found no free time before the exam. */
+    skipped_count: skippedCount,
     ics_download_url: `${baseUrl}/api/plans/${planId}/ics`,
-    feed_url: feedUrl,
-    webcal_url: webcalUrl,
     items: items.map((item) => ({
       day_index: item.dayIndex,
       start_time: item.startTime.toISOString(),
@@ -474,6 +539,15 @@ export async function createPlan(userId: string, input: unknown) {
   };
 }
 
+/**
+ * A plan's last day (YYYY-MM-DD): day 6, as createPlan writes it. Older
+ * plans stored the end as an evening instant, which the DATE column keeps as
+ * the next UTC day, so the end is derived from the first day, not read.
+ */
+export function planEndDateKey(startDate: Date): string {
+  return addDays(dateColumnKey(startDate), 6);
+}
+
 export async function getPlan(userId: string, planId: string) {
   const plan = await prisma.studyPlan.findUnique({
     where: { planId },
@@ -491,7 +565,6 @@ export async function getPlan(userId: string, planId: string) {
   const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
 
   const base = getBaseUrl();
-  const feedUrl = `${base}/api/plans/${plan.planId}/feed`;
 
   // Pre-compute calendar title + description per session (avoids recomputing in the item loop)
   const calendarMeta = new Map<string, { title: string; description: string }>();
@@ -502,8 +575,14 @@ export async function getPlan(userId: string, planId: string) {
         examName: session.examName,
         mode: session.mode as SessionMode,
         topicScope: session.topicScope,
+        objectives: session.objectives,
       }),
       description: buildCalendarDescription({
+        courseName: session.courseName,
+        examName: session.examName,
+        mode: session.mode,
+        topics: session.objectives,
+        topicScope: session.topicScope,
         outcome: session.targetOutcome as Record<string, unknown> | null,
         sessionUrl: `${base}/s/${session.sessionId}`,
         breaks: session.breakProtocol as Record<string, unknown> | null,
@@ -516,14 +595,12 @@ export async function getPlan(userId: string, planId: string) {
       plan_id: plan.planId,
       user_id: plan.userId,
       ics_download_url: `${base}/api/plans/${plan.planId}/ics`,
-      feed_url: feedUrl,
-      webcal_url: feedUrl.replace(/^https?:\/\//, "webcal://"),
       course_name: plan.courseName,
       exam_name: plan.examName,
-      exam_date: plan.examDate.toISOString().split("T")[0],
+      exam_date: dateColumnKey(plan.examDate),
       timezone: plan.timezone,
-      start_date: plan.startDate.toISOString().split("T")[0],
-      end_date: plan.endDate.toISOString().split("T")[0],
+      start_date: dateColumnKey(plan.startDate),
+      end_date: planEndDateKey(plan.startDate),
       config: plan.config,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {
@@ -563,17 +640,324 @@ export async function getPlan(userId: string, planId: string) {
   };
 }
 
-export async function generatePlanIcs(userId: string, planId: string) {
+export async function generatePlanIcs(
+  userId: string,
+  planId: string,
+): Promise<{ data: string; filename: string } | { error: "not_found" | "forbidden" }> {
   const result = await getPlan(userId, planId);
-  if ("error" in result) return result;
+  if (!result.data) return { error: result.error ?? "not_found" };
 
-  const events: IcsEvent[] = result.data.items.map((item) => ({
-    uid: `${planId}-${item.session_id}-${item.start_time}`,
-    summary: item.calendar?.title ?? `Study: ${item.topic_scope}`,
-    description: item.calendar?.description ?? item.session_url,
-    dtstart: new Date(item.start_time),
-    dtend: new Date(item.end_time),
+  // Sessions Reschedule skipped are off the schedule, so they leave the file
+  const events: IcsEvent[] = result.data.items
+    .filter((item) => item.status !== "SKIPPED")
+    .map((item) => ({
+      uid: `${planId}-${item.session_id}-${item.start_time}`,
+      summary: item.calendar?.title ?? `Study: ${item.topic_scope}`,
+      description: item.calendar?.description ?? item.session_url,
+      dtstart: new Date(item.start_time),
+      dtend: new Date(item.end_time),
+    }));
+
+  const slug = `${result.data.course_name} ${result.data.exam_name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+
+  return { data: generateIcs(events), filename: `${slug || "study-plan"}-plan.ics` };
+}
+
+// ---------------------------------------------------------------------------
+// Plan screen reads and writes
+// ---------------------------------------------------------------------------
+
+/** Run state per session id, from the sessions' run statuses. */
+async function runStatesFor(sessionIds: string[]): Promise<Map<string, RunState>> {
+  if (sessionIds.length === 0) return new Map();
+  const runs = await prisma.sessionRun.findMany({
+    where: { sessionId: { in: sessionIds } },
+    select: { sessionId: true, status: true },
+  });
+  const bySession = new Map<string, string[]>();
+  for (const run of runs) {
+    const list = bySession.get(run.sessionId) ?? [];
+    list.push(run.status);
+    bySession.set(run.sessionId, list);
+  }
+  return new Map([...bySession].map(([id, statuses]) => [id, runStateFromStatuses(statuses)]));
+}
+
+export interface PlanSummary {
+  plan_id: string;
+  course_name: string;
+  exam_name: string;
+  /** YYYY-MM-DD */
+  exam_date: string;
+  timezone: string;
+  created_at: string;
+  counts: PlanItemCounts;
+  /** Whether the plan has events in Google Calendar. */
+  in_google_calendar: boolean;
+}
+
+/**
+ * The student's plans with session counts, newest first. Light: no session
+ * payloads, one query for plans and items and one for run states.
+ */
+export async function listPlanSummaries(userId: string, now: Date = new Date()): Promise<PlanSummary[]> {
+  const plans = await prisma.studyPlan.findMany({
+    where: { userId },
+    select: {
+      planId: true,
+      courseName: true,
+      examName: true,
+      examDate: true,
+      timezone: true,
+      createdAt: true,
+      items: { select: { sessionId: true, status: true, endTime: true } },
+      publications: { select: { status: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const runStates = await runStatesFor(plans.flatMap((p) => p.items.map((i) => i.sessionId)));
+
+  return plans.map((plan) => ({
+    plan_id: plan.planId,
+    course_name: plan.courseName,
+    exam_name: plan.examName,
+    exam_date: dateColumnKey(plan.examDate),
+    timezone: plan.timezone,
+    created_at: plan.createdAt.toISOString(),
+    counts: countPlanItems(
+      plan.items.map((item) =>
+        classifyPlanItem(item, runStates.get(item.sessionId) ?? "none", now, plan.timezone),
+      ),
+    ),
+    in_google_calendar: plan.publications.some(
+      (p) => p.status === "PUBLISHED" || p.status === "PARTIAL",
+    ),
   }));
+}
 
-  return { data: generateIcs(events) };
+export interface PlanViewItem {
+  id: string;
+  session_id: string;
+  start_time: string;
+  end_time: string;
+  /** Derived state: done, in_progress, missed, skipped, or scheduled. */
+  state: PlanItemState;
+  /** The stored status (SCHEDULED, RESCHEDULED, ...). */
+  status: string;
+  locked: boolean;
+  mode: string;
+  topics: string[];
+  planned_minutes: number;
+  /** Where the session was before a reschedule moved it, else null. */
+  original_start_time: string | null;
+}
+
+export interface PlanView {
+  plan_id: string;
+  course_name: string;
+  exam_name: string;
+  exam_date: string;
+  timezone: string;
+  start_date: string;
+  created_at: string;
+  items: PlanViewItem[];
+  counts: PlanItemCounts;
+}
+
+/** One plan for the Plan screen, items in time order with derived states. */
+export async function getPlanView(
+  userId: string,
+  planId: string,
+  now: Date = new Date(),
+): Promise<{ data: PlanView } | { error: "not_found" | "forbidden" }> {
+  const plan = await prisma.studyPlan.findUnique({
+    where: { planId },
+    include: { items: { orderBy: [{ startTime: "asc" }, { dayIndex: "asc" }] } },
+  });
+  if (!plan) return { error: "not_found" };
+  if (plan.userId !== userId) return { error: "forbidden" };
+
+  const sessionIds = plan.items.map((i) => i.sessionId);
+  const [sessions, runStates] = await Promise.all([
+    prisma.session.findMany({
+      where: { sessionId: { in: sessionIds } },
+      select: { sessionId: true, mode: true, topicScope: true, objectives: true, plannedMinutes: true },
+    }),
+    runStatesFor(sessionIds),
+  ]);
+  const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
+
+  const items: PlanViewItem[] = plan.items.map((item) => {
+    const session = sessionMap.get(item.sessionId);
+    return {
+      id: item.id,
+      session_id: item.sessionId,
+      start_time: item.startTime.toISOString(),
+      end_time: item.endTime.toISOString(),
+      state: classifyPlanItem(item, runStates.get(item.sessionId) ?? "none", now, plan.timezone),
+      status: item.status,
+      locked: item.locked,
+      mode: session?.mode ?? "",
+      topics: session ? sessionTopics(session.objectives, session.topicScope) : [],
+      planned_minutes: session?.plannedMinutes ?? 0,
+      original_start_time: item.originalStartAt?.toISOString() ?? null,
+    };
+  });
+
+  return {
+    data: {
+      plan_id: plan.planId,
+      course_name: plan.courseName,
+      exam_name: plan.examName,
+      exam_date: dateColumnKey(plan.examDate),
+      timezone: plan.timezone,
+      start_date: dateColumnKey(plan.startDate),
+      created_at: plan.createdAt.toISOString(),
+      items,
+      counts: countPlanItems(items.map((i) => i.state)),
+    },
+  };
+}
+
+export type DeletePlanResult =
+  | { data: { plan_id: string; calendar_events_removed: number | null } }
+  | { error: "not_found" }
+  | {
+      error: "calendar_failed";
+      code: string;
+      message: string;
+      removed?: number;
+      failed?: number;
+    };
+
+/**
+ * Delete a plan and its items. Sessions, answers and progress stay. With
+ * removeCalendarEvents, its Google Calendar events are removed first, and
+ * the plan is kept when any of them can't be removed (so the student can
+ * retry instead of losing track of them).
+ */
+export async function deletePlan(
+  userId: string,
+  planId: string,
+  options: { removeCalendarEvents?: boolean } = {},
+): Promise<DeletePlanResult> {
+  const plan = await prisma.studyPlan.findUnique({
+    where: { planId },
+    select: { userId: true },
+  });
+  if (!plan || plan.userId !== userId) return { error: "not_found" };
+
+  let calendarEventsRemoved: number | null = null;
+  if (options.removeCalendarEvents) {
+    const mappings = await prisma.planItemExternalEvent.count({
+      where: { provider: "GOOGLE", planId },
+    });
+    if (mappings > 0) {
+      const result = await unpublishPlanFromGoogle(userId, planId);
+      if ("error" in result) {
+        return {
+          error: "calendar_failed",
+          code: result.error,
+          message: calendarErrorMessage(result.error),
+        };
+      }
+      if (result.data.failed > 0) {
+        return {
+          error: "calendar_failed",
+          code: "partial",
+          // One whole message per form: the verb follows the failed count
+          message: plural(result.data.failed, {
+            one: "# Google Calendar event wasn't removed, so the plan was kept. Retry.",
+            other: "# Google Calendar events weren't removed, so the plan was kept. Retry.",
+          }),
+          removed: result.data.deleted,
+          failed: result.data.failed,
+        };
+      }
+      calendarEventsRemoved = result.data.deleted;
+    } else {
+      calendarEventsRemoved = 0;
+    }
+  }
+
+  // Delete in an order that respects the foreign keys
+  await prisma.$transaction([
+    prisma.planItemExternalEvent.deleteMany({ where: { planId } }),
+    prisma.planCalendarPublication.deleteMany({ where: { planId } }),
+    prisma.planReflowAudit.deleteMany({ where: { planId } }),
+    prisma.studyPlanItem.deleteMany({ where: { planId } }),
+    prisma.studyPlan.delete({ where: { planId } }),
+  ]);
+
+  logger.info("plan.deleted", {
+    user_id: userId,
+    plan_id: planId,
+    calendar_events_removed: calendarEventsRemoved,
+  });
+
+  return { data: { plan_id: planId, calendar_events_removed: calendarEventsRemoved } };
+}
+
+export type ReplacedPlan =
+  | { plan_id: string; deleted: true; calendar_events_removed: number | null }
+  | { plan_id: string; deleted: false; message: string };
+
+/**
+ * Create a plan, then delete the plan it replaces (same course and exam).
+ * The old plan is deleted only after the new one exists, so a failed create
+ * never loses it; a failed delete leaves both and says so in `replaced`.
+ */
+export async function createPlanWithReplace(userId: string, input: unknown) {
+  const parsed = createPlanSchema.parse(input);
+
+  // Check the plan being replaced before doing any work. A missing plan (or
+  // another account's) means there is nothing to replace.
+  const target = parsed.replace_plan_id
+    ? await prisma.studyPlan.findUnique({
+        where: { planId: parsed.replace_plan_id },
+        select: { planId: true, userId: true },
+      })
+    : null;
+  const replaceId = target && target.userId === userId ? target.planId : null;
+
+  const created = await createPlan(userId, input);
+  let replaced: ReplacedPlan | null = null;
+
+  if (replaceId) {
+    try {
+      const deletion = await deletePlan(userId, replaceId, {
+        removeCalendarEvents: parsed.remove_replaced_calendar_events,
+      });
+      replaced =
+        "data" in deletion
+          ? {
+              plan_id: replaceId,
+              deleted: true,
+              calendar_events_removed: deletion.data.calendar_events_removed,
+            }
+          : {
+              plan_id: replaceId,
+              deleted: false,
+              message:
+                deletion.error === "calendar_failed"
+                  ? deletion.message
+                  : "The old plan wasn't deleted.",
+            };
+    } catch (err) {
+      logger.error("plan.replace_delete_failed", {
+        user_id: userId,
+        plan_id: replaceId,
+        error: String(err),
+      });
+      replaced = { plan_id: replaceId, deleted: false, message: "The old plan wasn't deleted." };
+    }
+  }
+
+  return { ...created, replaced };
 }

@@ -11,6 +11,7 @@ import {
   resetGoogleClientFactory,
   type BusyInterval,
 } from "@/lib/google/calendar-client";
+import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone";
 
 const hasDb = !!process.env.DATABASE_URL;
 
@@ -114,22 +115,23 @@ describe.skipIf(!hasDb)("Integration: Google Calendar", () => {
   });
 
   it("avoids busy slots when use_google_availability is true", async () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0);
-    const busyEnd = new Date(tomorrow);
-    busyEnd.setHours(13, 0, 0, 0);
+    // Busy 09:00-13:00 on plan day 1, as wall-clock times in the plan's zone
+    const timeZone = "America/New_York";
+    const tomorrow = addDays(dayKey(new Date(), timeZone), 1);
+    const busyStart = zonedTimeToUtc(tomorrow, "09:00", timeZone);
+    const busyEnd = zonedTimeToUtc(tomorrow, "13:00", timeZone);
 
     fakeClient.setBusy([
       {
         calendarId: "primary",
-        start: tomorrow.toISOString(),
+        start: busyStart.toISOString(),
         end: busyEnd.toISOString(),
       },
     ]);
 
     const result = await createPlan(userId, {
       ...basePlanInput,
+      timezone: timeZone,
       use_google_availability: true,
     });
 

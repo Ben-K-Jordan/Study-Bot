@@ -11,6 +11,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // but local midnight serializes to the PREVIOUS UTC day.
 process.env.TZ = "Asia/Tokyo";
 
+// next/server's after() throws outside a request scope, as in scripts and
+// tests. A test can switch `inRequest` on to collect the scheduled work.
+const nextServer = vi.hoisted(() => ({ inRequest: false, tasks: [] as Array<() => Promise<void>> }));
+vi.mock("next/server", () => ({
+  after: (task: () => Promise<void>) => {
+    if (!nextServer.inRequest) throw new Error("`after` was called outside a request scope.");
+    nextServer.tasks.push(task);
+  },
+}));
+
 interface XpEventRow {
   id: string;
   userId: string;
@@ -34,6 +44,8 @@ type Where = Record<string, unknown>;
 vi.mock("@/lib/db", () => {
   const xpEvents: XpEventRow[] = [];
   const gameStates = new Map<string, GameStateRow>();
+  const planZones: string[] = [];
+  const achievements: string[] = [];
   let nextId = 1;
 
   // Prisma's scalar `not:` filter is NULL-excluding — reproduce that here so
@@ -73,11 +85,19 @@ vi.mock("@/lib/db", () => {
 
   function matchesXpWhere(row: XpEventRow, where: Where): boolean {
     if (where.userId !== undefined && row.userId !== where.userId) return false;
-    if (where.action !== undefined && row.action !== where.action) return false;
+    if (where.action !== undefined) {
+      const cond = where.action as string | { in?: string[]; notIn?: string[] };
+      if (typeof cond === "string") {
+        if (row.action !== cond) return false;
+      } else if (cond.notIn?.includes(row.action) || (cond.in && !cond.in.includes(row.action))) {
+        return false;
+      }
+    }
     if (where.sourceId !== undefined && row.sourceId !== where.sourceId) return false;
     if (where.createdAt !== undefined) {
-      const cond = where.createdAt as { gte?: Date };
+      const cond = where.createdAt as { gte?: Date; lt?: Date };
       if (cond.gte !== undefined && row.createdAt < cond.gte) return false;
+      if (cond.lt !== undefined && row.createdAt >= cond.lt) return false;
     }
     return true;
   }
@@ -157,24 +177,46 @@ vi.mock("@/lib/db", () => {
       studyPlanItem: {
         findMany: vi.fn(async () => []),
       },
+      studyPlan: {
+        // Newest plan first, as the service asks for it.
+        findFirst: vi.fn(async () => (planZones.length > 0 ? { timezone: planZones[0] } : null)),
+      },
       achievement: {
-        findMany: vi.fn(async () => []),
-        createMany: vi.fn(async ({ data }: { data: unknown[] }) => ({ count: data.length })),
+        findMany: vi.fn(async () => achievements.map((badgeType) => ({ badgeType, earnedAt: new Date() }))),
+        createMany: vi.fn(async ({ data }: { data: { badgeType: string }[] }) => {
+          for (const row of data) if (!achievements.includes(row.badgeType)) achievements.push(row.badgeType);
+          return { count: data.length };
+        }),
       },
       cardReview: {
         count: vi.fn(async () => 0),
       },
-      _test: { xpEvents, gameStates },
+      _test: { xpEvents, gameStates, planZones, achievements },
     },
   };
 });
 
-import { consumeStreakFreeze, computeStreak, getGameState } from "@/services/gamification";
+import {
+  awardXp,
+  bucketActivity,
+  consumeStreakFreeze,
+  computeStreak,
+  getGameState,
+  getStreak,
+  resolveTimeZone,
+  streakFromDays,
+  syncProgress,
+} from "@/services/gamification";
 import { prisma } from "@/lib/db";
 
 const testPrisma = (
   prisma as unknown as {
-    _test: { xpEvents: XpEventRow[]; gameStates: Map<string, GameStateRow> };
+    _test: {
+      xpEvents: XpEventRow[];
+      gameStates: Map<string, GameStateRow>;
+      planZones: string[];
+      achievements: string[];
+    };
   }
 )._test;
 
@@ -209,12 +251,15 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   testPrisma.xpEvents.length = 0;
   testPrisma.gameStates.clear();
+  testPrisma.planZones.length = 0;
+  testPrisma.achievements.length = 0;
   vi.clearAllMocks();
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
+
 
 describe("consumeStreakFreeze", () => {
   it("consumes a freeze when streakFreezeUsedDate is NULL (never used before)", async () => {
@@ -239,7 +284,7 @@ describe("consumeStreakFreeze", () => {
 
     const result = await consumeStreakFreeze("user1");
 
-    expect(result).toEqual({ success: false, freezesRemaining: 2 });
+    expect(result).toEqual({ success: false, freezesRemaining: 2, reason: "already_used_today" });
     expect(testPrisma.xpEvents).toHaveLength(0);
   });
 
@@ -248,8 +293,18 @@ describe("consumeStreakFreeze", () => {
 
     const result = await consumeStreakFreeze("user1");
 
-    expect(result).toEqual({ success: false, freezesRemaining: 0 });
+    expect(result).toEqual({ success: false, freezesRemaining: 0, reason: "no_freezes" });
     expect(testPrisma.xpEvents).toHaveLength(0);
+  });
+
+  it("refuses when the student already studied today, keeping the freeze", async () => {
+    setGameState({ streakFreezes: 1 });
+    addXpEvent({ createdAt: new Date("2026-07-15T08:00:00Z") });
+
+    const result = await consumeStreakFreeze("user1");
+
+    expect(result).toEqual({ success: false, freezesRemaining: 1, reason: "already_active" });
+    expect(testPrisma.gameStates.get("user1")?.streakFreezes).toBe(1);
   });
 
   it("records the bridged day as a durable zero-XP STREAK_FREEZE_USED event", async () => {
@@ -264,11 +319,31 @@ describe("consumeStreakFreeze", () => {
   });
 });
 
+describe("streakFromDays", () => {
+  it("counts back from today when today is active", () => {
+    expect(streakFromDays(new Set(["2026-07-15", "2026-07-14", "2026-07-13"]), "2026-07-15")).toBe(3);
+  });
+
+  it("counts back from yesterday when today has no activity yet", () => {
+    expect(streakFromDays(new Set(["2026-07-14", "2026-07-13"]), "2026-07-15")).toBe(2);
+  });
+
+  it("is 0 when neither today nor yesterday is active", () => {
+    expect(streakFromDays(new Set(["2026-07-13"]), "2026-07-15")).toBe(0);
+  });
+
+  it("walks across month and daylight saving boundaries by calendar day", () => {
+    // US clocks fall back on 2026-11-01.
+    const days = new Set(["2026-11-02", "2026-11-01", "2026-10-31", "2026-10-30"]);
+    expect(streakFromDays(days, "2026-11-02")).toBe(4);
+  });
+});
+
 describe("computeStreak", () => {
   it("counts today's activity even under a positive UTC offset", async () => {
     // Regression: the walk previously started from LOCAL midnight, which
-    // serializes to yesterday's UTC key in Tokyo — streak showed 0 right
-    // after studying.
+    // serializes to yesterday's UTC key in Tokyo, so the streak showed 0
+    // right after studying.
     addXpEvent({ createdAt: new Date("2026-07-15T09:00:00Z") });
 
     expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
@@ -302,6 +377,30 @@ describe("computeStreak", () => {
     expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(0);
   });
 
+  it("counts streaks longer than 90 days", async () => {
+    for (let i = 0; i < 120; i++) {
+      addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    }
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(120);
+  });
+
+  it("reads only the recent window for a short streak", async () => {
+    for (let i = 0; i < 5; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    // An older run of study outside the short window doesn't matter here.
+    for (let i = 60; i < 70; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(5);
+    expect(prisma.xpEvent.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads further back when the streak reaches the edge of the short window", async () => {
+    for (let i = 0; i < 45; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(45);
+    expect(prisma.xpEvent.findMany).toHaveBeenCalledTimes(2);
+  });
+
   it("bridges gaps using durable STREAK_FREEZE_USED events (sourceId = bridged date)", async () => {
     addXpEvent({ createdAt: new Date("2026-07-15T09:00:00Z") });
     addXpEvent({ createdAt: new Date("2026-07-13T09:00:00Z") });
@@ -328,9 +427,6 @@ describe("computeStreak", () => {
   });
 
   it("preserves days bridged by earlier freezes when a second freeze is consumed", async () => {
-    // Freeze bridged 2026-07-13; user studied on the 14th; a second freeze
-    // was consumed on the 15th, overwriting streakFreezeUsedDate. The durable
-    // event keeps the 13th active.
     addXpEvent({ createdAt: new Date("2026-07-14T09:00:00Z") });
     addXpEvent({ createdAt: new Date("2026-07-12T09:00:00Z") });
     addXpEvent({
@@ -348,6 +444,17 @@ describe("computeStreak", () => {
     expect(streak).toBe(4);
   });
 
+  it("does not count a day that holds only retired guide or chat XP", async () => {
+    // Before guides and chat stopped earning XP, they wrote these rows. They
+    // still count toward XP totals, but a day with nothing else isn't study.
+    addXpEvent({ createdAt: new Date("2026-07-15T09:00:00Z") });
+    addXpEvent({ action: "GUIDE_GENERATED", xpAmount: 5, createdAt: new Date("2026-07-14T09:00:00Z") });
+    addXpEvent({ action: "CHAT_QUESTION", xpAmount: 1, createdAt: new Date("2026-07-13T09:00:00Z") });
+    addXpEvent({ createdAt: new Date("2026-07-12T09:00:00Z") });
+
+    expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
+  });
+
   it("does not treat STREAK_FREEZE_AWARD marker events as study activity", async () => {
     addXpEvent({ createdAt: new Date("2026-07-14T09:00:00Z") });
     addXpEvent({
@@ -357,7 +464,6 @@ describe("computeStreak", () => {
       createdAt: new Date("2026-07-15T09:00:00Z"),
     });
 
-    // Only yesterday is genuinely active — the award marker must not extend it
     expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
   });
 });
@@ -366,9 +472,6 @@ describe("computeStreak with a user timezone", () => {
   const NY_STATE = { ...NO_FREEZE_STATE, timezone: "America/New_York" };
 
   it("keys a 9pm ET session to the local day 2026-07-15, not the UTC day 2026-07-16", async () => {
-    // 2026-07-16T01:00:00Z is 9pm on July 15 in New York. At NOW (July 15
-    // UTC/ET) the ET user sees today's activity; UTC keys file the same
-    // event under the 16th — tomorrow — so the streak would read 0.
     addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") });
 
     expect(await computeStreak("user1", NY_STATE)).toBe(1);
@@ -378,20 +481,35 @@ describe("computeStreak with a user timezone", () => {
   it("keeps a two-day local streak unbroken when a late-night session crosses the UTC boundary", async () => {
     vi.setSystemTime(new Date("2026-07-16T01:30:00Z")); // 9:30pm July 15 ET
 
-    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") }); // 9pm Jul 15 ET (UTC day Jul 16)
-    addXpEvent({ createdAt: new Date("2026-07-14T15:00:00Z") }); // 11am Jul 14 ET (UTC day Jul 14)
+    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") });
+    addXpEvent({ createdAt: new Date("2026-07-14T15:00:00Z") });
 
-    // ET days: Jul 14 + Jul 15 — consecutive
     expect(await computeStreak("user1", NY_STATE)).toBe(2);
-    // UTC days: Jul 14 + Jul 16 — broken at Jul 15
     expect(await computeStreak("user1", NO_FREEZE_STATE)).toBe(1);
   });
 
   it("reads the timezone from the game state row when none is passed in", async () => {
     setGameState({ timezone: "America/New_York" });
-    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") }); // 9pm Jul 15 ET
+    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") });
 
     expect(await computeStreak("user1")).toBe(1);
+  });
+});
+
+describe("getStreak", () => {
+  it("counts days in the newest plan's zone when Settings has none, like getGameState", async () => {
+    vi.setSystemTime(new Date("2026-07-16T01:30:00Z")); // 9:30pm July 15 ET
+    setGameState({ timezone: null });
+    testPrisma.planZones.push("America/New_York");
+    addXpEvent({ createdAt: new Date("2026-07-16T01:00:00Z") }); // July 15 ET
+    addXpEvent({ createdAt: new Date("2026-07-14T15:00:00Z") }); // July 14 ET
+
+    expect(await getStreak("user1")).toBe(2);
+    expect((await getGameState("user1")).streak).toBe(2);
+  });
+
+  it("is 0 for a student with no activity", async () => {
+    expect(await getStreak("user1")).toBe(0);
   });
 });
 
@@ -411,28 +529,88 @@ describe("consumeStreakFreeze with a user timezone", () => {
   });
 
   it("refuses a second freeze on the same LOCAL day even after the UTC date rolls over", async () => {
-    vi.setSystemTime(new Date("2026-07-16T01:00:00Z")); // still July 15 in ET
+    vi.setSystemTime(new Date("2026-07-16T01:00:00Z"));
     setGameState({ streakFreezes: 2, streakFreezeUsedDate: "2026-07-15", timezone: "America/New_York" });
 
     const result = await consumeStreakFreeze("user1");
 
-    expect(result).toEqual({ success: false, freezesRemaining: 2 });
+    expect(result).toEqual({ success: false, freezesRemaining: 2, reason: "already_used_today" });
     expect(testPrisma.xpEvents).toHaveLength(0);
+  });
+
+  it("falls back to the newest plan's zone when Settings has none", async () => {
+    vi.setSystemTime(new Date("2026-07-16T01:00:00Z")); // still July 15 in New York
+    setGameState({ streakFreezes: 1, timezone: null });
+    testPrisma.planZones.push("America/New_York");
+
+    await consumeStreakFreeze("user1");
+
+    expect(testPrisma.gameStates.get("user1")?.streakFreezeUsedDate).toBe("2026-07-15");
   });
 });
 
-describe("streak freeze milestone award (via getGameState)", () => {
-  function seedSevenDayStreak(): void {
+describe("resolveTimeZone", () => {
+  it("prefers the Settings zone", async () => {
+    testPrisma.planZones.push("Europe/Paris");
+    expect(await resolveTimeZone("user1", "America/Chicago")).toBe("America/Chicago");
+  });
+
+  it("uses the newest plan's zone when Settings has none", async () => {
+    testPrisma.planZones.push("Europe/Paris");
+    expect(await resolveTimeZone("user1", null)).toBe("Europe/Paris");
+  });
+
+  it("ignores an invalid zone and ends at UTC", async () => {
+    expect(await resolveTimeZone("user1", "Not/AZone")).toBe("UTC");
+  });
+});
+
+describe("getGameState", () => {
+  it("counts XP today from the student's midnight, not the server's", async () => {
+    // The server runs in Tokyo (TZ above). At 9:30pm July 15 in New York,
+    // Tokyo midnight was 11am ET, so a server-local "today" would drop the
+    // 8am ET review.
+    vi.setSystemTime(new Date("2026-07-16T01:30:00Z"));
+    setGameState({ timezone: "America/New_York" });
+    addXpEvent({ createdAt: new Date("2026-07-15T12:00:00Z"), xpAmount: 2 }); // 8am ET Jul 15
+    addXpEvent({ createdAt: new Date("2026-07-15T03:00:00Z"), xpAmount: 2 }); // 11pm ET Jul 14
+
+    const state = await getGameState("user1");
+
+    expect(state.timeZone).toBe("America/New_York");
+    expect(state.xpToday).toBe(2);
+    expect(state.xpTotal).toBe(4);
+    expect(state.activeToday).toBe(true);
+    expect(state.streak).toBe(2);
+  });
+
+  it("never writes: no game state row, freeze or achievement is created on read", async () => {
     for (let i = 0; i < 7; i++) {
+      addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    }
+
+    const state = await getGameState("user1");
+
+    expect(state.streak).toBe(7);
+    expect(state.newAchievements).toEqual([]);
+    expect(testPrisma.gameStates.size).toBe(0);
+    expect(testPrisma.achievements).toEqual([]);
+    expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(0);
+  });
+});
+
+describe("syncProgress (the write path)", () => {
+  function seedDays(count: number): void {
+    for (let i = 0; i < count; i++) {
       addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
     }
   }
 
   it("awards exactly one freeze per milestone across repeated calls", async () => {
-    seedSevenDayStreak();
+    seedDays(7);
     setGameState({ streakFreezes: 0 });
 
-    const first = await getGameState("user1");
+    const first = await syncProgress("user1");
     expect(first.streak).toBe(7);
     expect(first.streakFreezes).toBe(1);
 
@@ -440,35 +618,224 @@ describe("streak freeze milestone award (via getGameState)", () => {
     expect(awards()).toHaveLength(1);
     expect(awards()[0]).toMatchObject({ xpAmount: 0, sourceId: "7" });
 
-    // Opening the dashboard again on the same milestone day must not re-award
-    const second = await getGameState("user1");
-    expect(second.streak).toBe(7);
+    const second = await syncProgress("user1");
     expect(second.streakFreezes).toBe(1);
-    expect(awards()).toHaveLength(1);
-
-    const third = await getGameState("user1");
-    expect(third.streakFreezes).toBe(1);
     expect(awards()).toHaveLength(1);
   });
 
-  it("does not award on non-milestone days", async () => {
-    for (let i = 0; i < 5; i++) {
-      addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+  it("awards a freeze again when a later streak reaches 7 days", async () => {
+    // First streak: June 1 to 7, then a missed day (June 8).
+    for (let day = 1; day <= 7; day++) {
+      addXpEvent({ createdAt: new Date(`2026-06-0${day}T09:00:00Z`) });
     }
+    vi.setSystemTime(new Date("2026-06-07T10:00:00Z"));
     setGameState({ streakFreezes: 0 });
 
-    const state = await getGameState("user1");
-    expect(state.streak).toBe(5);
-    expect(state.streakFreezes).toBe(0);
-    expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(0);
+    const first = await syncProgress("user1");
+    expect(first).toMatchObject({ streak: 7, streakFreezes: 1 });
+
+    // Second streak: June 9 to 15. The June 7 marker belongs to the old streak.
+    for (let day = 9; day <= 15; day++) {
+      addXpEvent({ createdAt: new Date(`2026-06-${String(day).padStart(2, "0")}T09:00:00Z`) });
+    }
+    vi.setSystemTime(new Date("2026-06-15T10:00:00Z"));
+
+    const second = await syncProgress("user1");
+    expect(second).toMatchObject({ streak: 7, streakFreezes: 2 });
+    expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(2);
+
+    // Still one award per milestone within the second streak.
+    const again = await syncProgress("user1");
+    expect(again.streakFreezes).toBe(2);
+  });
+
+  it("still finds a milestone marker written earlier in the same streak", async () => {
+    // Rows written before markers were scoped to a streak keep blocking a repeat award.
+    seedDays(7);
+    addXpEvent({ action: "STREAK_FREEZE_AWARD", xpAmount: 0, sourceId: "7", createdAt: new Date(NOW.getTime() - 60 * 60_000) });
+    setGameState({ streakFreezes: 1 });
+
+    const result = await syncProgress("user1");
+    expect(result.streakFreezes).toBe(1);
+    expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(1);
+  });
+
+  it("does not award a freeze on non-milestone days", async () => {
+    seedDays(5);
+    setGameState({ streakFreezes: 0 });
+
+    const result = await syncProgress("user1");
+    expect(result.streak).toBe(5);
+    expect(result.streakFreezes).toBe(0);
   });
 
   it("does not award beyond the cap of 3", async () => {
-    seedSevenDayStreak();
+    seedDays(7);
     setGameState({ streakFreezes: 3 });
 
-    const state = await getGameState("user1");
-    expect(state.streakFreezes).toBe(3);
+    const result = await syncProgress("user1");
+    expect(result.streakFreezes).toBe(3);
     expect(testPrisma.xpEvents.filter((e) => e.action === "STREAK_FREEZE_AWARD")).toHaveLength(0);
+  });
+
+  it("awards each reached achievement once", async () => {
+    seedDays(3);
+
+    const first = await syncProgress("user1");
+    expect(first.newAchievements).toEqual(["STREAK_3"]);
+
+    const second = await syncProgress("user1");
+    expect(second.newAchievements).toEqual([]);
+    expect(testPrisma.achievements).toEqual(["STREAK_3"]);
+  });
+
+  it("awards the perfect-deck achievement from PERFECT_DECK events, not review counts", async () => {
+    addXpEvent({ action: "PERFECT_DECK", xpAmount: 3, createdAt: NOW });
+
+    const result = await syncProgress("user1");
+    expect(result.newAchievements).toContain("FIRST_PERFECT");
+  });
+
+  it("skips the streak work when the event isn't the first study of the day", async () => {
+    // Six earlier days plus a review this morning: the 7-day milestone was
+    // reached by this morning's review, so a second one changes nothing.
+    for (let i = 1; i < 7; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 60 * 60_000) });
+    addXpEvent({ createdAt: NOW });
+    setGameState({ streakFreezes: 0 });
+
+    const result = await syncProgress("user1", { createdAt: NOW });
+    expect(result.streak).toBeNull();
+    expect(result.streakFreezes).toBe(0);
+    expect(result.newAchievements).not.toContain("STREAK_7");
+    expect(prisma.studyPlanItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it("checks the streak on the first study of the day", async () => {
+    for (let i = 0; i < 7; i++) addXpEvent({ createdAt: new Date(NOW.getTime() - i * 86_400_000) });
+    setGameState({ streakFreezes: 0 });
+
+    const result = await syncProgress("user1", { createdAt: NOW });
+    expect(result.streak).toBe(7);
+    expect(result.streakFreezes).toBe(1);
+    expect(result.newAchievements).toContain("STREAK_7");
+  });
+
+  it("still checks the streak when only a freeze came earlier today", async () => {
+    addXpEvent({ action: "STREAK_FREEZE_USED", xpAmount: 0, sourceId: "2026-07-14", createdAt: new Date(NOW.getTime() - 86_400_000) });
+    addXpEvent({ action: "STREAK_FREEZE_USED", xpAmount: 0, sourceId: "2026-07-15", createdAt: new Date(NOW.getTime() - 60 * 60_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 2 * 86_400_000) });
+    addXpEvent({ createdAt: NOW });
+
+    const result = await syncProgress("user1", { createdAt: NOW });
+    expect(result.streak).toBe(3);
+    expect(result.newAchievements).toContain("STREAK_3");
+  });
+});
+
+describe("awardXp", () => {
+  it("records the event and awards what it unlocks", async () => {
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 86_400_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 2 * 86_400_000) });
+
+    // Outside a Next request there is no response to wait for, so the
+    // awarding finishes before awardXp returns.
+    await awardXp("user1", "FLASHCARD_REVIEW", undefined, "card-1");
+
+    expect(testPrisma.xpEvents.filter((e) => e.sourceId === "card-1")).toHaveLength(1);
+    expect(testPrisma.achievements).toContain("STREAK_3");
+  });
+
+  it("awards after the response when called inside a request", async () => {
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 86_400_000) });
+    addXpEvent({ createdAt: new Date(NOW.getTime() - 2 * 86_400_000) });
+    nextServer.inRequest = true;
+    nextServer.tasks.length = 0;
+    try {
+      const result = await awardXp("user1", "FLASHCARD_REVIEW", undefined, "card-2");
+
+      // The XP is recorded before the response; the awarding waits for after().
+      expect(result.xpAmount).toBe(2);
+      expect(testPrisma.xpEvents.filter((e) => e.sourceId === "card-2")).toHaveLength(1);
+      expect(testPrisma.achievements).not.toContain("STREAK_3");
+      expect(nextServer.tasks).toHaveLength(1);
+
+      await nextServer.tasks[0]();
+      expect(testPrisma.achievements).toContain("STREAK_3");
+    } finally {
+      nextServer.inRequest = false;
+      nextServer.tasks.length = 0;
+    }
+  });
+
+  it("gives no XP for guides or chat, which aren't practice", async () => {
+    expect(await awardXp("user1", "GUIDE_GENERATED")).toEqual({ id: "", xpAmount: 0 });
+    expect(await awardXp("user1", "CHAT_QUESTION")).toEqual({ id: "", xpAmount: 0 });
+    expect(testPrisma.xpEvents).toHaveLength(0);
+  });
+
+  it("skips zero amounts", async () => {
+    const result = await awardXp("user1", "STREAK_MILESTONE");
+    expect(result).toEqual({ id: "", xpAmount: 0 });
+    expect(testPrisma.xpEvents).toHaveLength(0);
+  });
+});
+
+describe("bucketActivity", () => {
+  const ZONE = "America/New_York";
+
+  it("files each event under the student's day and counts what it is", () => {
+    const days = bucketActivity(
+      [
+        { action: "SESSION_COMPLETED", xpAmount: 10, sourceId: "run-1", createdAt: new Date("2026-07-15T01:00:00Z") },
+        { action: "FLASHCARD_REVIEW", xpAmount: 2, sourceId: "c1", createdAt: new Date("2026-07-15T02:00:00Z") },
+        { action: "FLASHCARD_REVIEW", xpAmount: 2, sourceId: "c2", createdAt: new Date("2026-07-15T14:00:00Z") },
+        { action: "STREAK_FREEZE_AWARD", xpAmount: 0, sourceId: "7", createdAt: new Date("2026-07-15T14:00:00Z") },
+      ],
+      [],
+      ZONE,
+    );
+
+    // 9pm and 10pm ET on July 14; 10am ET on July 15
+    expect(days.get("2026-07-14")).toMatchObject({ sessions: 1, reviews: 1, xp: 12 });
+    expect(days.get("2026-07-15")).toMatchObject({ sessions: 0, reviews: 1, xp: 2 });
+  });
+
+  it("does not count a finished plan item twice when its run has an event", () => {
+    const days = bucketActivity(
+      [{ action: "SESSION_COMPLETED", xpAmount: 10, sourceId: "run-1", createdAt: new Date("2026-07-15T15:00:00Z") }],
+      [
+        { completedAt: new Date("2026-07-15T15:00:00Z"), startTime: new Date("2026-07-15T14:30:00Z"), completedRunId: "run-1" },
+        { completedAt: new Date("2026-07-15T18:00:00Z"), startTime: new Date("2026-07-15T17:30:00Z"), completedRunId: null },
+      ],
+      ZONE,
+    );
+
+    expect(days.get("2026-07-15")?.sessions).toBe(2);
+  });
+
+  it("leaves retired guide and chat XP off the heatmap", () => {
+    const days = bucketActivity(
+      [
+        { action: "GUIDE_GENERATED", xpAmount: 5, sourceId: "g1", createdAt: new Date("2026-07-13T15:00:00Z") },
+        { action: "CHAT_QUESTION", xpAmount: 1, sourceId: null, createdAt: new Date("2026-07-14T15:00:00Z") },
+        { action: "FLASHCARD_REVIEW", xpAmount: 2, sourceId: "c1", createdAt: new Date("2026-07-14T16:00:00Z") },
+      ],
+      [],
+      ZONE,
+    );
+
+    expect(days.has("2026-07-13")).toBe(false);
+    expect(days.get("2026-07-14")).toMatchObject({ reviews: 1, xp: 2 });
+  });
+
+  it("marks days a freeze bridged without counting them as study", () => {
+    const days = bucketActivity(
+      [{ action: "STREAK_FREEZE_USED", xpAmount: 0, sourceId: "2026-07-13", createdAt: new Date("2026-07-14T02:00:00Z") }],
+      [],
+      ZONE,
+    );
+
+    expect(days.get("2026-07-13")).toMatchObject({ freezeUsed: true, sessions: 0, reviews: 0, xp: 0 });
   });
 });

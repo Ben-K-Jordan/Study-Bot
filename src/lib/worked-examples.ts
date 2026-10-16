@@ -86,18 +86,30 @@ function isValidSet(set: WorkedExampleSet | null | undefined): set is WorkedExam
   );
 }
 
+/** "Use the chain rule." becomes "Use the chain rule" (the template adds the period). */
+function trimEndPunctuation(text: string): string {
+  return text.trim().replace(/[.;:,\s]+$/, "");
+}
+
+/** The study prompt: the problem, each step with its reason, then a question. */
 function buildStudyText(set: WorkedExampleSet): string {
   const stepLines = set.steps.map(
-    (s, i) => `Step ${i + 1}: ${s.action} — why: ${s.why}`,
+    (s, i) => `Step ${i + 1}: ${trimEndPunctuation(s.action)}. Why: ${trimEndPunctuation(s.why)}.`,
   );
   return [
     set.problem,
     "",
     ...stepLines,
     "",
-    `In your own words: why does step ${set.steps.length} follow from the previous steps?`,
+    `In your own words, why does step ${set.steps.length} follow from the steps before it?`,
   ].join("\n");
 }
+
+/** Closing line of a completion problem, naming how many steps to supply. */
+export const COMPLETION_TRAILERS = {
+  WE_COMPLETION_1: "The last step is missing. Write it and say why it follows.",
+  WE_COMPLETION_2: "The last two steps are missing. Write them and say why each follows.",
+} as const;
 
 /**
  * Expand one worked-example set into its 4-prompt backward-fading sequence.
@@ -116,18 +128,18 @@ function buildSetPrompts(set: WorkedExampleSet, startIndex: number): Prompt[] {
     {
       id: `p_${startIndex + 1}`,
       objective_id: set.objective_id,
-      text: `${set.completion_problem_1}\n(The final step is missing — supply it and state why it follows.)`,
+      text: `${set.completion_problem_1}\n\n${COMPLETION_TRAILERS.WE_COMPLETION_1}`,
       difficulty: 3,
       format: "FREE_RECALL",
-      meta: { pack: "WE_COMPLETION_1" },
+      meta: { pack: "WE_COMPLETION_1", step_count: set.steps.length },
     },
     {
       id: `p_${startIndex + 2}`,
       objective_id: set.objective_id,
-      text: `${set.completion_problem_2}\n(The final two steps are missing — supply them.)`,
+      text: `${set.completion_problem_2}\n\n${COMPLETION_TRAILERS.WE_COMPLETION_2}`,
       difficulty: 3,
       format: "FREE_RECALL",
-      meta: { pack: "WE_COMPLETION_2" },
+      meta: { pack: "WE_COMPLETION_2", step_count: set.steps.length },
     },
     {
       id: `p_${startIndex + 3}`,
@@ -162,6 +174,7 @@ export async function generateWorkedExampleDeck(
     "WORKED_EXAMPLES",
     objectives.map((o) => o.title),
     15, // fetch up to 15 relevant chunks
+    { examName }, // the exam's own files rank first
   );
 
   // Not enough content to ground meaningful worked examples

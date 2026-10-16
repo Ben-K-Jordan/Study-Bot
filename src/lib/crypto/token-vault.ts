@@ -3,9 +3,9 @@
  *
  * Security requirements:
  *   - Tokens encrypted at rest (AES-256-GCM with random IV + auth tag).
- *   - TOKEN_ENC_KEY required in production.
- *   - In dev/test: TOKEN_ENC_KEY or TEST_TOKEN_ENC_KEY accepted.
- *   - NEVER log plaintext tokens.
+ *   - TOKEN_ENC_KEY is required (npm run setup generates one).
+ *   - NEVER log plaintext tokens. The logger also redacts token-shaped
+ *     strings (./redact) in case one slips through.
  *   - Format: base64(iv + authTag + ciphertext) — compatible with existing stored tokens.
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
@@ -19,18 +19,13 @@ const ALGO = "aes-256-gcm";
  * Accepts 64-char hex or 44-char base64 encoding.
  */
 function getKey(): Buffer {
-  const raw =
-    process.env.TOKEN_ENC_KEY ||
-    process.env.GOOGLE_TOKEN_ENC_KEY ||
-    (process.env.NODE_ENV !== "production" ? process.env.TEST_TOKEN_ENC_KEY : undefined);
+  const raw = process.env.TOKEN_ENC_KEY;
 
   if (!raw) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("TOKEN_ENC_KEY env var is required in production");
     }
-    throw new Error(
-      "TOKEN_ENC_KEY (or GOOGLE_TOKEN_ENC_KEY / TEST_TOKEN_ENC_KEY) env var is not set",
-    );
+    throw new Error("TOKEN_ENC_KEY env var is not set");
   }
 
   // Accept hex (64 chars) or base64 (44 chars)
@@ -72,38 +67,4 @@ export function decryptToken(encoded: string): string {
   decipher.setAuthTag(tag);
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return decrypted.toString("utf8");
-}
-
-/**
- * Check if a string looks like it was produced by encryptToken.
- * Validates base64 format and minimum length (iv + tag = 28 bytes).
- */
-export function isTokenEncryptedFormat(s: string): boolean {
-  if (!s || typeof s !== "string") return false;
-  // Must be valid base64 and decode to at least iv + tag length
-  try {
-    const buf = Buffer.from(s, "base64");
-    // Verify re-encoding matches (not arbitrary string)
-    if (buf.toString("base64") !== s) return false;
-    return buf.length >= IV_LEN + TAG_LEN;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Log sanitizer: redact anything that looks like a token or encrypted token.
- * Best-effort — catches common patterns:
- *   - OAuth access tokens (ya29.*)
- *   - Refresh tokens (1//*)
- *   - Base64 strings > 40 chars (likely encrypted tokens)
- */
-export function sanitizeForLog(input: string): string {
-  // OAuth access tokens
-  let sanitized = input.replace(/ya29\.[A-Za-z0-9_-]+/g, "ya29.[REDACTED]");
-  // Refresh tokens
-  sanitized = sanitized.replace(/1\/\/[A-Za-z0-9_-]+/g, "1//[REDACTED]");
-  // Long base64 strings (likely encrypted blobs)
-  sanitized = sanitized.replace(/[A-Za-z0-9+/]{40,}={0,2}/g, "[ENCRYPTED_REDACTED]");
-  return sanitized;
 }

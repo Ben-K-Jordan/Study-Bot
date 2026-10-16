@@ -27,7 +27,7 @@ function makeRequest(userId: string | null = "user-1"): NextRequest {
   }) as unknown as NextRequest;
 }
 
-const PARAMS = { params: { attemptId: "attempt-1" } };
+const PARAMS = { params: Promise.resolve({ attemptId: "attempt-1" }) };
 
 describe("GET /api/attempts/[attemptId]/feedback", () => {
   beforeEach(() => {
@@ -77,6 +77,6 @@ describe("GET /api/attempts/[attemptId]/feedback", () => {
     const res = await GET(makeRequest(), PARAMS);
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Internal server error" });
+    expect(await res.json()).toEqual({ error: "Feedback didn't load. Retry." });
   });
 });

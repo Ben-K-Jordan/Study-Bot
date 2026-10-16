@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { encrypt } from "@/lib/crypto";
+import { encryptToken } from "@/lib/crypto/token-vault";
 import { logger } from "@/lib/logger";
+import { getBaseUrl } from "@/lib/config";
+
+// The OAuth flow starts from the settings page, so every outcome lands back
+// there: ?google=connected on success, ?google=error&reason=<code> otherwise.
+function settingsRedirect(outcome: { connected: true } | { error: string }) {
+  const params = new URLSearchParams(
+    "error" in outcome
+      ? { google: "error", reason: outcome.error }
+      : { google: "connected" },
+  );
+  return NextResponse.redirect(`${getBaseUrl()}/settings?${params.toString()}`, 302);
+}
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -9,27 +22,32 @@ export async function GET(request: NextRequest) {
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
 
-  const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+  const baseUrl = getBaseUrl();
 
   if (error) {
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=${error}`, 302);
+    return settingsRedirect({ error });
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=missing_params`, 302);
+    return settingsRedirect({ error: "missing_params" });
   }
 
-  // Validate state
-  const oauthState = await prisma.oAuthState.findUnique({ where: { state } });
-  if (!oauthState || oauthState.expiresAt < new Date()) {
-    // Clean up expired state
-    if (oauthState) await prisma.oAuthState.delete({ where: { id: oauthState.id } });
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=invalid_state`, 302);
+  // The tokens belong to whoever is signed in here, never to whoever started
+  // the flow: otherwise an attacker could send a victim their own consent
+  // link (carrying the attacker's state) and receive the victim's calendar.
+  const userId = await getUserId(request);
+  if (!userId) {
+    return settingsRedirect({ error: "invalid_state" });
   }
 
-  const userId = oauthState.userId;
-  // Delete state (one-time use)
-  await prisma.oAuthState.delete({ where: { id: oauthState.id } });
+  // Claim the state in one statement: it must exist, be unexpired and have
+  // been issued to this same user. Two concurrent callbacks can't both win.
+  const { count } = await prisma.oAuthState.deleteMany({
+    where: { state, userId, expiresAt: { gt: new Date() } },
+  });
+  if (count !== 1) {
+    return settingsRedirect({ error: "invalid_state" });
+  }
 
   // Exchange code for tokens
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -38,7 +56,7 @@ export async function GET(request: NextRequest) {
     || `${baseUrl}/api/integrations/google/callback`;
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=not_configured`, 302);
+    return settingsRedirect({ error: "not_configured" });
   }
 
   try {
@@ -52,12 +70,13 @@ export async function GET(request: NextRequest) {
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!tokenRes.ok) {
       const errBody = await tokenRes.text();
       logger.error("google_token_exchange_failed", { error: String(errBody) });
-      return NextResponse.redirect(`${baseUrl}/settings/calendar?error=token_exchange_failed`, 302);
+      return settingsRedirect({ error: "token_exchange_failed" });
     }
 
     const tokens = await tokenRes.json();
@@ -67,7 +86,7 @@ export async function GET(request: NextRequest) {
     const scope = (tokens.scope as string) || "";
 
     if (!refreshToken) {
-      return NextResponse.redirect(`${baseUrl}/settings/calendar?error=no_refresh_token`, 302);
+      return settingsRedirect({ error: "no_refresh_token" });
     }
 
     // Fetch connected email via userinfo
@@ -75,18 +94,19 @@ export async function GET(request: NextRequest) {
     try {
       const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(5_000),
       });
       if (userinfoRes.ok) {
         const info = await userinfoRes.json();
         connectedEmail = (info.email as string) || null;
       }
     } catch {
-      // Non-critical — email is cosmetic
+      // Non-critical: the email is only shown in Settings.
     }
 
     // Encrypt and store tokens
-    const accessTokenEncrypted = encrypt(accessToken);
-    const refreshTokenEncrypted = encrypt(refreshToken);
+    const accessTokenEncrypted = encryptToken(accessToken);
+    const refreshTokenEncrypted = encryptToken(refreshToken);
     const tokenExpiryMs = BigInt(Date.now() + expiresIn * 1000);
 
     await prisma.googleIntegration.upsert({
@@ -114,9 +134,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?connected=1`, 302);
+    return settingsRedirect({ connected: true });
   } catch (err) {
     logger.error("google_oauth_callback_failed", { error: String(err) });
-    return NextResponse.redirect(`${baseUrl}/settings/calendar?error=internal`, 302);
+    return settingsRedirect({ error: "internal" });
   }
 }

@@ -25,20 +25,26 @@ vi.mock("@/services/spaced-repetition", () => ({
   isDeckPerfect: vi.fn(),
 }));
 
-vi.mock("@/services/gamification", () => ({
-  awardXp: vi.fn(),
-}));
+vi.mock("@/services/gamification", async () => {
+  const { zonedTimeToUtc, dayKey } = await import("@/lib/timezone");
+  return {
+    awardXp: vi.fn(),
+    resolveTimeZone: vi.fn(async () => "UTC"),
+    startOfDay: (now: Date, timeZone: string) => zonedTimeToUtc(dayKey(now, timeZone), "00:00", timeZone),
+  };
+});
 
 import { POST } from "@/app/api/flashcards/[deckId]/review/route";
 import { prisma } from "@/lib/db";
 import { reviewCard, isDeckPerfect } from "@/services/spaced-repetition";
-import { awardXp } from "@/services/gamification";
+import { awardXp, resolveTimeZone } from "@/services/gamification";
 
 const mockedFindDeck = vi.mocked(prisma.flashcardDeck.findUnique);
 const mockedFindXpEvent = vi.mocked(prisma.xpEvent.findFirst);
 const mockedReviewCard = vi.mocked(reviewCard);
 const mockedIsDeckPerfect = vi.mocked(isDeckPerfect);
 const mockedAwardXp = vi.mocked(awardXp);
+const mockedResolveTimeZone = vi.mocked(resolveTimeZone);
 
 const REVIEW_RESULT = {
   cardId: "card1",
@@ -47,6 +53,8 @@ const REVIEW_RESULT = {
   repetitions: 1,
   nextDueAt: "2026-07-16T04:00:00.000Z",
   rating: "GOOD",
+  status: "review" as const,
+  previews: { AGAIN: 0, HARD: 1, GOOD: 2, EASY: 3 },
 };
 
 function makeRequest(
@@ -167,6 +175,65 @@ describe("POST /api/flashcards/[deckId]/review", () => {
     });
   });
 
+  it("counts today in the student's time zone", async () => {
+    mockDeck("user1", true);
+    mockedIsDeckPerfect.mockResolvedValue(true);
+    mockedResolveTimeZone.mockResolvedValueOnce("America/New_York");
+
+    await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(mockedIsDeckPerfect).toHaveBeenCalledWith("user1", "deck1", "America/New_York", expect.any(Date));
+    // 2026-07-15 starts at 04:00 UTC in New York (EDT)
+    expect(mockedFindXpEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ createdAt: { gte: new Date("2026-07-15T04:00:00.000Z") } }),
+      }),
+    );
+  });
+
+  it("looks up the zone once, alongside the deck check, and schedules the card in it", async () => {
+    let deckChecked = false;
+    mockedFindDeck.mockImplementation((async () => {
+      deckChecked = true;
+      return { userId: "user1", cards: [{ id: "card1" }] };
+    }) as never);
+    mockedResolveTimeZone.mockImplementationOnce(async () => {
+      // Started before the deck query has answered
+      expect(deckChecked).toBe(false);
+      return "America/New_York";
+    });
+
+    await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(mockedResolveTimeZone).toHaveBeenCalledTimes(1);
+    const zone = mockedReviewCard.mock.calls[0][3];
+    await expect(zone).resolves.toBe("America/New_York");
+    expect(mockedIsDeckPerfect).toHaveBeenCalledWith("user1", "deck1", "America/New_York", expect.any(Date));
+  });
+
+  it("answers a missing deck even when the zone lookup fails", async () => {
+    mockedFindDeck.mockResolvedValue(null as never);
+    mockedResolveTimeZone.mockRejectedValueOnce(new Error("db down"));
+
+    const res = await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("does not save a rating it can't schedule when the zone lookup fails", async () => {
+    mockDeck("user1", true);
+    mockedResolveTimeZone.mockRejectedValueOnce(new Error("db down"));
+    mockedReviewCard.mockImplementationOnce(async (_u, _c, _r, zone) => {
+      await zone;
+      return REVIEW_RESULT;
+    });
+
+    const res = await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(res.status).toBe(500);
+    expect(mockedAwardXp).not.toHaveBeenCalled();
+  });
+
   it("does not re-award the bonus when it was already granted today", async () => {
     mockDeck("user1", true);
     mockedIsDeckPerfect.mockResolvedValue(true);
@@ -201,6 +268,25 @@ describe("POST /api/flashcards/[deckId]/review", () => {
 
     mockedReviewCard.mockRejectedValueOnce(new Error("Forbidden"));
     expect((await callRoute({ card_id: "card1", rating: "GOOD" })).status).toBe(403);
+  });
+
+  it("returns the card's new status and next interval previews", async () => {
+    mockDeck("user1", true);
+
+    const json = await (await callRoute({ card_id: "card1", rating: "GOOD" })).json();
+
+    expect(json.status).toBe("review");
+    expect(json.previews).toEqual({ AGAIN: 0, HARD: 1, GOOD: 2, EASY: 3 });
+    expect(json.nextDueAt).toBe("2026-07-16T04:00:00.000Z");
+  });
+
+  it("answers errors with copy for the student and a code", async () => {
+    mockedFindDeck.mockResolvedValue(null as never);
+
+    const json = await (await callRoute({ card_id: "card1", rating: "GOOD" })).json();
+
+    expect(json.code).toBe("DECK_NOT_FOUND");
+    expect(json.error).not.toMatch(/not found$/);
   });
 
   it("returns 400 for an invalid body", async () => {

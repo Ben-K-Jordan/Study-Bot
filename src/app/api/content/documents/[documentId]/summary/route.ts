@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { unauthorized } from "@/lib/http";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { documentId: string } }
+  { params }: { params: Promise<{ documentId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   const { documentId } = await params;
@@ -25,11 +26,12 @@ export async function GET(
     },
   });
 
-  if (!doc) {
-    return NextResponse.json({ error: "Document not found" }, { status: 404 });
-  }
-  if (doc.userId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!doc || doc.userId !== userId) {
+    // Another account's file reads as missing, so ids can't be probed
+    return NextResponse.json(
+      { error: "This file isn't in your materials anymore.", code: "not_found" },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json({

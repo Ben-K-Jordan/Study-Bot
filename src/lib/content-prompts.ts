@@ -74,6 +74,7 @@ export async function generateContentAwarePrompts(
     mode,
     objectives.map((o) => o.title),
     15, // fetch up to 15 relevant chunks
+    { examName }, // the exam's own files rank first
   );
 
   // Not enough content to generate meaningful questions

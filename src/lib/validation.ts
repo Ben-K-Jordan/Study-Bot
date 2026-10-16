@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const SESSION_MODES = [
   "RETRIEVAL",
@@ -20,44 +20,75 @@ export const RUNNABLE_MODES = [
 
 export type RunnableMode = (typeof RUNNABLE_MODES)[number];
 
+/**
+ * Most questions one session can hold. A run builds its whole deck in memory
+ * and writes it in one transaction, so the count has to be bounded. No
+ * screen asks for more: plans give at most max(5, 240 / 4) = 60, and the
+ * Study page and weak-spot buttons 10 or fewer.
+ */
+export const MAX_PROMPT_COUNT = 60;
+
+/** Questions in a session whose target outcome doesn't say. */
+export const DEFAULT_PROMPT_COUNT = 10;
+
+/**
+ * A stored or requested question count as a whole number from 1 to
+ * MAX_PROMPT_COUNT, falling back when it is missing or not a number. For
+ * reading `target_outcome.prompt_count` from rows saved before the schema
+ * bounded it.
+ */
+export function clampPromptCount(value: unknown, fallback: number = DEFAULT_PROMPT_COUNT): number {
+  const count = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
+  return Math.min(Math.max(count, 1), MAX_PROMPT_COUNT);
+}
+
+// Every free-form field is bounded: the whole body is stored on the session
+// row and read back on each run.
 export const createSessionSchema = z.object({
-  course_id: z.string().optional(),
-  course_name: z.string().min(1, "course_name is required"),
-  exam_id: z.string().optional(),
-  exam_name: z.string().min(1, "exam_name is required"),
+  course_id: z.string().max(200).optional(),
+  course_name: z.string().min(1, "course_name is required").max(200, "Use 200 characters or fewer."),
+  exam_id: z.string().max(200).optional(),
+  exam_name: z.string().min(1, "exam_name is required").max(200, "Use 200 characters or fewer."),
   mode: z.enum(SESSION_MODES),
-  topic_scope: z.string().min(1, "topic_scope is required"),
+  topic_scope: z.string().min(1, "topic_scope is required").max(2000, "Use 2,000 characters or fewer."),
   planned_minutes: z
     .number()
     .int()
     .min(15, "planned_minutes must be at least 15")
     .max(240, "planned_minutes must be at most 240"),
   objectives: z
-    .array(z.object({ id: z.string(), title: z.string() }))
+    .array(z.object({ id: z.string().max(200), title: z.string().max(500) }))
+    .max(50, "Choose 50 topics or fewer.")
     .optional(),
   target_outcome: z
     .object({
-      type: z.string().optional(),
-      prompt_count: z.number().optional(),
+      type: z.string().max(50).optional(),
+      prompt_count: z
+        .number()
+        .int("Choose a whole number of questions.")
+        .min(1, `Choose from 1 to ${MAX_PROMPT_COUNT} questions.`)
+        .max(MAX_PROMPT_COUNT, `Choose from 1 to ${MAX_PROMPT_COUNT} questions.`)
+        .optional(),
       target_accuracy: z.number().min(0).max(1).optional(),
       closed_book_required: z.boolean().optional(),
-      deliverables: z.array(z.string()).optional(),
+      deliverables: z.array(z.string().max(500)).max(20).optional(),
     })
     .optional(),
   break_protocol: z
     .object({
-      type: z.string().optional(),
-      cycles: z.number().int().min(1).optional(),
+      type: z.string().max(20).optional(),
+      cycles: z.number().int().min(1).max(16).optional(),
     })
     .optional(),
   resources: z
     .array(
       z.object({
-        type: z.string(),
-        ref: z.string(),
-        range: z.string().optional(),
+        type: z.string().max(50),
+        ref: z.string().max(2000),
+        range: z.string().max(200).optional(),
       })
     )
+    .max(20)
     .optional(),
 });
 
@@ -71,10 +102,30 @@ export const ERROR_TYPES = [
   "MEMORY",
   "UNKNOWN",
 ] as const;
+
+/**
+ * Longest answer the server accepts, the same limit as POST /reveal. The text
+ * goes into AI prompts in full, so an unbounded answer could overflow the
+ * model's context window, and those provider failures count toward the AI
+ * circuit breaker that every student shares (src/lib/ai/gateway.ts).
+ */
+export const MAX_ANSWER_CHARS = 20_000;
+
+const answerText = z
+  .string()
+  .min(1, "Answer is required")
+  .max(MAX_ANSWER_CHARS, "Shorten your answer to 20,000 characters.");
+
 const errorLogSchema = z.object({
   error_type: z.enum(ERROR_TYPES),
-  correction_rule: z.string().min(1, "Correction rule is required"),
-  variant_question: z.string().optional(),
+  correction_rule: z
+    .string()
+    .min(1, "Correction rule is required")
+    .max(MAX_ANSWER_CHARS, "Shorten your correction rule to 20,000 characters."),
+  variant_question: z
+    .string()
+    .max(MAX_ANSWER_CHARS, "Shorten your similar question to 20,000 characters.")
+    .optional(),
 });
 
 /**
@@ -87,7 +138,7 @@ const errorLogSchema = z.object({
 export const submitAttemptSchema = z
   .object({
     prompt_index: z.number().int().min(0),
-    user_answer: z.string().min(1, "Answer is required"),
+    user_answer: answerText,
     self_score: z.enum(SELF_SCORES).optional(),
     mcq_choice_index: z.number().int().min(0).max(3).optional(),
     // Pretest items are diagnostic — errors are expected and are not logged.
@@ -126,7 +177,7 @@ export type SubmitAttemptInput = z.infer<typeof submitAttemptSchema>;
 export const examAnswerSchema = z.object({
   prompt_index: z.number().int().min(0),
   kind: z.literal("ANSWER"),
-  user_answer: z.string().min(1, "Answer is required"),
+  user_answer: answerText,
   mcq_choice_index: z.number().int().min(0).max(3).optional(),
   time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
   confidence_rating: z.number().int().min(1).max(5).optional(),
@@ -174,8 +225,6 @@ export const updateAttemptMetaSchema = z
     { message: "Provide self_explanation, generated_example, or socratic_answer" }
   );
 
-export type UpdateAttemptMetaInput = z.infer<typeof updateAttemptMetaSchema>;
-
 /**
  * Unified attempt schema: accepts legacy (no kind) or new (kind=ANSWER|SCORE).
  * Use parseAttemptPayload() to normalize.
@@ -202,24 +251,28 @@ export function parseAttemptPayload(body: unknown): AttemptPayload {
 }
 
 // --- Plan validation ---
+//
+// Messages are written for the student: the New plan form shows them next to
+// the field named by each issue's path.
 
 const PLAN_BREAK_TYPES = ["25_5", "50_10", "90_15"] as const;
 
 const dayAvailabilitySchema = z.object({
-  start: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
-  end: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format"),
+  start: z.string().regex(/^\d{2}:\d{2}$/, "Choose a start time."),
+  end: z.string().regex(/^\d{2}:\d{2}$/, "Choose an end time."),
 });
 
 export const createPlanSchema = z
   .object({
-    course_name: z.string().min(1, "course_name is required"),
+    course_name: z.string().trim().min(1, "Enter a course name.").max(120, "Use 120 characters or fewer."),
     course_id: z.string().optional(),
-    exam_name: z.string().min(1, "exam_name is required"),
+    exam_name: z.string().trim().min(1, "Enter an exam name.").max(120, "Use 120 characters or fewer."),
     exam_id: z.string().optional(),
-    exam_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
-    timezone: z.string().optional().default("America/New_York"),
+    exam_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the exam date."),
+    // IANA timezone; createPlan falls back to the user's setting, then a default
+    timezone: z.string().max(100).optional(),
     objectives: z
-      .array(z.string().min(1))
+      .array(z.string().trim().min(1))
       .optional()
       .default([]),
     document_ids: z
@@ -256,16 +309,23 @@ export const createPlanSchema = z
       .enum(["intensive", "balanced", "relaxed"])
       .optional()
       .default("balanced"),
+    /**
+     * The plan this one replaces (same course and exam). It is deleted only
+     * after the new plan is created, so a failed create never loses it.
+     */
+    replace_plan_id: z.string().min(1).max(100).optional(),
+    /** Also remove the replaced plan's events from Google Calendar. */
+    remove_replaced_calendar_events: z.boolean().optional().default(false),
   })
   .refine(
     (data) => {
       return data.availability.every((day) => day.start < day.end);
     },
-    { message: "Each day's end time must be after start time" }
+    { message: "Choose an end time after the start time.", path: ["availability"] }
   )
   .refine(
     (data) => {
       return data.objectives.length >= 3 || data.document_ids.length > 0;
     },
-    { message: "Provide at least 3 objectives or upload course content" }
+    { message: "Upload materials or type at least 3 topics, one per line.", path: ["objectives"] }
   );

@@ -1,9 +1,8 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
-import { sha256, saveFile, resolveStoragePath } from "@/lib/storage";
-import { extractDocumentText } from "@/lib/extractor";
+import { sha256, saveFile, resolveStoragePath, deleteStoredFile } from "@/lib/storage";
+import { DocumentTooLongError, extractDocumentText } from "@/lib/extractor";
 import { chunkText } from "@/lib/chunker";
-import { searchChunks, buildFeedbackQuery, type SearchResult } from "@/lib/search";
 import { enqueueJob } from "@/lib/jobs/queue";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-reporter";
@@ -18,6 +17,12 @@ export interface UploadResult {
   document_id: string;
   status: string;
   deduped: boolean;
+  /**
+   * On a dedupe hit, the course and exam the existing file belongs to, so
+   * the screen can say "already in your AEM 2210 materials".
+   */
+  course_name?: string | null;
+  exam_name?: string | null;
 }
 
 export async function uploadDocument(
@@ -42,6 +47,8 @@ export async function uploadDocument(
       document_id: existing.id,
       status: existing.status,
       deduped: true,
+      course_name: existing.courseName,
+      exam_name: existing.examName,
     };
   }
 
@@ -86,6 +93,8 @@ export async function uploadDocument(
           document_id: winner.id,
           status: winner.status,
           deduped: true,
+          course_name: winner.courseName,
+          exam_name: winner.examName,
         };
       }
     }
@@ -108,6 +117,37 @@ export async function uploadDocument(
 
 // ---- Document Processing ----
 
+/**
+ * A file reads as PROCESSING while one request extracts and summarizes it.
+ * A run that died (a server restart) would leave it there, so after this
+ * long the claim lapses: another request may take it over, and lists show
+ * the file as Uploaded again so the student can finish processing.
+ */
+export const PROCESSING_CLAIM_MS = 10 * 60 * 1000;
+
+/** The status to show for a stored one: a lapsed PROCESSING claim reads as UPLOADED. */
+export function visibleDocumentStatus(status: string, updatedAt: Date, now: Date = new Date()): string {
+  if (status === "PROCESSING" && now.getTime() - updatedAt.getTime() > PROCESSING_CLAIM_MS) return "UPLOADED";
+  return status;
+}
+
+async function processedResult(documentId: string) {
+  const chunkCount = await prisma.contentChunk.count({ where: { documentId } });
+  return {
+    data: {
+      document_id: documentId,
+      status: "PROCESSED",
+      chunk_count: chunkCount,
+    },
+  };
+}
+
+/**
+ * Read a file into sections, then write its AI summary. Answers PROCESSED,
+ * FAILED, or PROCESSING when another request is already reading it (a second
+ * click, another tab); that request finishes the job, so the caller checks
+ * back instead of starting a second extraction.
+ */
 export async function processDocument(userId: string, documentId: string) {
   const doc = await prisma.contentDocument.findUnique({
     where: { id: documentId },
@@ -117,17 +157,29 @@ export async function processDocument(userId: string, documentId: string) {
   if (doc.userId !== userId) return { error: "forbidden" as const };
 
   // Idempotent: if already processed, return counts
-  if (doc.status === "PROCESSED") {
-    const chunkCount = await prisma.contentChunk.count({
-      where: { documentId: doc.id },
+  if (doc.status === "PROCESSED") return processedResult(doc.id);
+
+  // Claim the file first, so two requests never extract it at once (the
+  // second run's chunk rewrite could collide with the first and mark a
+  // processed file FAILED)
+  const claimed = await prisma.contentDocument.updateMany({
+    where: {
+      id: doc.id,
+      OR: [
+        { status: { in: ["UPLOADED", "FAILED"] } },
+        { status: "PROCESSING", updatedAt: { lt: new Date(Date.now() - PROCESSING_CLAIM_MS) } },
+      ],
+    },
+    data: { status: "PROCESSING", errorMessage: null },
+  });
+  if (claimed.count === 0) {
+    const current = await prisma.contentDocument.findUnique({
+      where: { id: doc.id },
+      select: { status: true },
     });
-    return {
-      data: {
-        document_id: doc.id,
-        status: "PROCESSED",
-        chunk_count: chunkCount,
-      },
-    };
+    if (current?.status === "PROCESSED") return processedResult(doc.id);
+    if (!current) return { error: "not_found" as const };
+    return { data: { document_id: doc.id, status: "PROCESSING", chunk_count: 0 } };
   }
 
   try {
@@ -196,15 +248,55 @@ export async function processDocument(userId: string, documentId: string) {
       where: { id: doc.id },
       data: { status: "FAILED", errorMessage: msg },
     });
-    captureException(err, { user_id: userId, document_id: doc.id });
+    // A file over the reading limits is the student's to fix, not a fault
+    const tooLong = err instanceof DocumentTooLongError;
+    if (tooLong) {
+      logger.warn("document.too_long", { user_id: userId, document_id: doc.id });
+    } else {
+      captureException(err, { user_id: userId, document_id: doc.id });
+    }
     return {
       data: {
         document_id: doc.id,
         status: "FAILED",
         chunk_count: 0,
+        /** too_long: over the reading limits, so split the file; unreadable: anything else. */
+        reason: tooLong ? ("too_long" as const) : ("unreadable" as const),
       },
     };
   }
+}
+
+// ---- Delete Document ----
+
+/**
+ * Delete one of the student's course files: its row, its sections (chunks,
+ * with their anchors and citations, by cascade) and the stored file. Decks
+ * made from it stay and lose the link. Research papers can't be deleted here.
+ */
+export async function deleteDocument(userId: string, documentId: string) {
+  const doc = await prisma.contentDocument.findUnique({
+    where: { id: documentId },
+    select: { id: true, userId: true, namespace: true, storageKey: true, title: true },
+  });
+
+  if (!doc) return { error: "not_found" as const };
+  if (doc.userId !== userId) return { error: "forbidden" as const };
+  if (doc.namespace !== "COURSE") return { error: "not_course_material" as const };
+
+  const chunkCount = await prisma.contentChunk.count({ where: { documentId } });
+  await prisma.contentDocument.delete({ where: { id: documentId } });
+
+  try {
+    await deleteStoredFile(doc.storageKey, doc.id);
+  } catch (err) {
+    // The row is gone, so nothing reads the file; log and move on
+    logger.warn("document.file_delete_failed", { document_id: documentId, error: String(err) });
+  }
+
+  logger.info("document.deleted", { user_id: userId, document_id: documentId, chunk_count: chunkCount });
+
+  return { data: { document_id: documentId, deleted: true, chunk_count: chunkCount } };
 }
 
 // ---- List Documents ----
@@ -233,7 +325,8 @@ export async function listDocuments(
     exam_name: d.examName,
     title: d.title,
     original_filename: d.originalFilename,
-    status: d.status,
+    mime_type: d.mimeType,
+    status: visibleDocumentStatus(d.status, d.updatedAt),
     chunk_count: d._count.chunks,
     summary: d.summary ?? null,
     suggested_questions: (d.suggestedQuestions as string[] | null) ?? null,
@@ -251,53 +344,6 @@ export interface FeedbackExcerpt {
   rank: number;
 }
 
-/**
- * Fetch post-score feedback excerpts from the user's course materials.
- * Only called for PARTIAL/INCORRECT scores.
- * Search + citation storage happens OUTSIDE the attempt transaction.
- */
-export async function fetchFeedbackExcerpts(
-  userId: string,
-  attemptId: string,
-  promptText: string,
-  courseName: string,
-  examName: string,
-  correctionRule?: string,
-  objectiveTitle?: string
-): Promise<FeedbackExcerpt[]> {
-  try {
-    const query = buildFeedbackQuery(promptText, correctionRule, objectiveTitle);
-
-    const results: SearchResult[] = await searchChunks({
-      userId,
-      q: query,
-      namespace: "COURSE",
-      courseName,
-      examName,
-      topK: 5,
-    });
-
-    if (results.length === 0) {
-      // Try without exam_name filter for broader results
-      const broaderResults = await searchChunks({
-        userId,
-        q: query,
-        namespace: "COURSE",
-        courseName,
-        topK: 5,
-      });
-      if (broaderResults.length === 0) return [];
-      return await storeCitations(attemptId, broaderResults);
-    }
-
-    return await storeCitations(attemptId, results);
-  } catch (err: unknown) {
-    // Feedback failure must not fail the attempt
-    captureException(err, { user_id: userId, attempt_id: attemptId, action: "fetchFeedback" });
-    logger.error("feedback.failed", { user_id: userId, attempt_id: attemptId, error: String(err) });
-    return [];
-  }
-}
 
 // ---- Document Summary Generation ----
 
@@ -354,38 +400,4 @@ async function generateDocumentSummary(
       questions_count: result.output.suggested_questions.length,
     });
   }
-}
-
-async function storeCitations(
-  attemptId: string,
-  results: SearchResult[]
-): Promise<FeedbackExcerpt[]> {
-  // Run all upserts in parallel
-  await Promise.all(
-    results.map((r, i) =>
-      prisma.attemptCitation.upsert({
-        where: {
-          attemptId_chunkId: { attemptId, chunkId: r.chunk_id },
-        },
-        create: {
-          attemptId,
-          chunkId: r.chunk_id,
-          rank: i + 1,
-          snippet: r.snippet,
-        },
-        update: {
-          rank: i + 1,
-          snippet: r.snippet,
-        },
-      })
-    )
-  );
-
-  return results.map((r, i) => ({
-    chunk_id: r.chunk_id,
-    doc_title: r.doc_title,
-    page_number: r.page_number,
-    snippet: r.snippet,
-    rank: i + 1,
-  }));
 }

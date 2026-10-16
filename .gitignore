@@ -1,41 +1,41 @@
-# dependencies
+# Dependencies
 /node_modules
 /.pnp
 .pnp.js
 
-# testing
-/coverage
-/test-results
-/playwright-report
-
-# next.js
+# Build output
 /.next/
 /out/
-
-# production
 /build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# local env files
-.env*.local
-.env
-
-# vercel
-.vercel
-
-# typescript
 *.tsbuildinfo
 next-env.d.ts
 
+# Generated code
 /generated/prisma
 
-# uploaded content
-/data/uploads
+# Tests
+/coverage
+playwright-report/
+test-results/
+# Signed-in browser state saved by the e2e setup project
+e2e/.auth/
+
+# Local data (uploads and other runtime files)
+data/
+
+# Environment and secrets
+.env
+.env*.local
+*.pem
+
+# Logs
+*.log
+
+# Editors, OS files and local tool state
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel

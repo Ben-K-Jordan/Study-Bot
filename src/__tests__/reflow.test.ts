@@ -15,6 +15,8 @@
 import { describe, it, expect } from "vitest";
 import {
   computeReflow,
+  isMissedItem,
+  subtractIntervals,
   ReflowItem,
   ReflowConfig,
   ALGORITHM_VERSION,
@@ -351,7 +353,6 @@ describe("computeReflow", () => {
       for (const change of result.changes) {
         if (change.after) {
           const start = new Date(change.after.startTime).getTime();
-          const doneEnd = new Date("2025-06-02T10:00:00Z").getTime();
           const missedEnd = new Date("2025-06-02T11:00:00Z").getTime();
           // Should not overlap with fixed intervals on day 0
           if (change.after.dayIndex === 0) {
@@ -423,5 +424,424 @@ describe("computeReflow", () => {
       expect(new Date(result.changes[0].after!.startTime).getTime())
         .toBeGreaterThanOrEqual(new Date("2025-06-02T12:00:00Z").getTime());
     });
+  });
+
+  describe("plan timezone", () => {
+    it("reads availability windows as wall-clock times in the plan's timezone", () => {
+      // Plan day 0 is 2025-06-02 in New York (EDT, UTC-4), so the 09:00-17:00
+      // window is 13:00-21:00 UTC wherever the server runs.
+      const items: ReflowItem[] = [
+        makeItem({
+          id: "1",
+          sessionId: "s1",
+          dayIndex: 0,
+          startTime: new Date("2025-06-02T22:00:00Z"),
+          endTime: new Date("2025-06-02T23:00:00Z"),
+          plannedMinutes: 60,
+        }),
+      ];
+
+      const result = computeReflow(
+        items,
+        defaultConfig,
+        new Date("2025-06-02T12:00:00Z"),
+        earlyNow,
+        [],
+        "America/New_York",
+      );
+
+      expect(result.changes).toHaveLength(1);
+      expect(result.changes[0].action).toBe("MOVED");
+      expect(result.changes[0].after).toEqual({
+        dayIndex: 0,
+        startTime: "2025-06-02T13:00:00.000Z",
+        endTime: "2025-06-02T14:00:00.000Z",
+      });
+    });
+
+    it("counts day indices by calendar day in the plan's timezone", () => {
+      // 01:00 UTC on 06-03 is still 06-02 (21:00) in New York, so a fixed item
+      // there uses day 0's cap, not day 1's.
+      const config: ReflowConfig = {
+        availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "23:00" })),
+        daily_study_cap_minutes: 60,
+      };
+      const items: ReflowItem[] = [
+        makeItem({
+          id: "fixed",
+          sessionId: "s-fixed",
+          dayIndex: 0,
+          startTime: new Date("2025-06-03T01:00:00Z"),
+          endTime: new Date("2025-06-03T02:00:00Z"),
+          status: "DONE",
+        }),
+        makeItem({
+          id: "1",
+          sessionId: "s1",
+          dayIndex: 0,
+          startTime: new Date("2025-06-02T14:00:00Z"),
+          endTime: new Date("2025-06-02T15:00:00Z"),
+          plannedMinutes: 60,
+        }),
+      ];
+
+      const result = computeReflow(
+        items,
+        config,
+        new Date("2025-06-02T12:00:00Z"),
+        earlyNow,
+        [],
+        "America/New_York",
+      );
+
+      const moved = result.changes.find((c) => c.itemId === "1");
+      expect(moved?.action).toBe("MOVED");
+      // Day 0's 60 minute cap is used up, so the item moves to day 1 at 09:00 EDT
+      expect(moved?.after).toEqual({
+        dayIndex: 1,
+        startTime: "2025-06-03T13:00:00.000Z",
+        endTime: "2025-06-03T14:00:00.000Z",
+      });
+    });
+  });
+});
+
+describe("missed sessions and the horizon", () => {
+  const NY = "America/New_York";
+  // Plan day 0 is 2025-06-02 in New York; noon there is inside that day
+  const start = new Date("2025-06-02T16:00:00Z");
+  // Wed 2025-06-04, 10:00 New York
+  const now = new Date("2025-06-04T14:00:00Z");
+
+  it("leaves missed sessions alone by default", () => {
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-02T13:00:00Z"),
+        endTime: new Date("2025-06-02T14:00:00Z"),
+        status: "MISSED",
+      }),
+      makeItem({
+        id: "past",
+        sessionId: "sp",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T14:00:00Z"),
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, start, now, [], NY);
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it("moves missed and unstarted past sessions into free time with includeMissed", () => {
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-02T13:00:00Z"),
+        endTime: new Date("2025-06-02T14:00:00Z"),
+        status: "MISSED",
+      }),
+      makeItem({
+        id: "past",
+        sessionId: "sp",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T14:00:00Z"),
+      }),
+      makeItem({
+        id: "done",
+        sessionId: "sd",
+        startTime: new Date("2025-06-03T15:00:00Z"),
+        endTime: new Date("2025-06-03T16:00:00Z"),
+        status: "DONE",
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, start, now, [], NY, { includeMissed: true });
+    const byId = new Map(result.changes.map((c) => [c.itemId, c]));
+    expect(byId.has("done")).toBe(false);
+    for (const id of ["missed", "past"]) {
+      const change = byId.get(id)!;
+      expect(change.action).toBe("MOVED");
+      expect(change.missed).toBe(true);
+      expect(new Date(change.after!.startTime).getTime()).toBeGreaterThanOrEqual(now.getTime());
+    }
+  });
+
+  it("starts a session moved into today's window at the next quarter hour", () => {
+    // Wed 2025-06-04, 2:07:33 PM New York, inside the 9:00 to 17:00 window
+    const midWindow = new Date("2025-06-04T18:07:33Z");
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T13:50:00Z"),
+        plannedMinutes: 50,
+        status: "MISSED",
+      }),
+      makeItem({
+        id: "missed-2",
+        sessionId: "sm2",
+        startTime: new Date("2025-06-03T14:00:00Z"),
+        endTime: new Date("2025-06-03T14:30:00Z"),
+        plannedMinutes: 30,
+        status: "MISSED",
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, start, midWindow, [], NY, { includeMissed: true });
+    const after = (id: string) => result.changes.find((c) => c.itemId === id)!.after!;
+    // 2:15 PM, not 2:07:33; the next session follows on the same grid
+    expect(after("missed")).toMatchObject({
+      startTime: "2025-06-04T18:15:00.000Z",
+      endTime: "2025-06-04T19:05:00.000Z",
+    });
+    expect(after("missed-2").startTime).toBe("2025-06-04T19:05:00.000Z");
+  });
+
+  it("skips today when the rest of its window is under a quarter hour", () => {
+    // 4:50 PM New York: the next quarter hour is 5:00 PM, when the window closes
+    const lateNow = new Date("2025-06-04T20:50:00Z");
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T13:30:00Z"),
+        plannedMinutes: 30,
+        status: "MISSED",
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, start, lateNow, [], NY, { includeMissed: true });
+    // Thursday 9:00 AM New York
+    expect(result.changes[0].after!.startTime).toBe("2025-06-05T13:00:00.000Z");
+  });
+
+  it("schedules past day 6 for plans older than a week", () => {
+    // Plan started 10 days before now: the first 7 days are all in the past
+    const oldStart = new Date("2025-05-25T16:00:00Z");
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "future",
+        sessionId: "sf",
+        dayIndex: 12,
+        startTime: new Date("2025-06-06T22:00:00Z"),
+        endTime: new Date("2025-06-06T23:00:00Z"),
+      }),
+    ];
+    const result = computeReflow(items, defaultConfig, oldStart, now, [], NY);
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0].action).not.toBe("DROPPED");
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it("keeps sessions before lastDay and skips those that don't fit", () => {
+    const tight: ReflowConfig = {
+      availability: Array.from({ length: 7 }, () => ({ start: "09:00", end: "10:00" })),
+      daily_study_cap_minutes: 60,
+    };
+    const items: ReflowItem[] = ["a", "b", "c"].map((id, i) =>
+      makeItem({
+        id,
+        sessionId: `s-${id}`,
+        dayIndex: 3 + i,
+        startTime: new Date(`2025-06-0${5 + i}T13:00:00Z`),
+        endTime: new Date(`2025-06-0${5 + i}T14:00:00Z`),
+      })
+    );
+    // Only Jun 5 and Jun 6 are allowed (the exam is Jun 7)
+    const result = computeReflow(items, tight, start, now, [], NY, {
+      includeMissed: true,
+      lastDay: "2025-06-06",
+    });
+    const dropped = result.changes.filter((c) => c.action === "DROPPED")
+    const placed = result.changes.filter((c) => c.action !== "DROPPED")
+    expect(placed).toHaveLength(2);
+    expect(dropped.map((c) => c.itemId)).toEqual(["c"]);
+    for (const change of placed) {
+      expect(change.after!.startTime < "2025-06-07").toBe(true);
+    }
+  });
+
+  it("repeats the weekly availability past day 6", () => {
+    const config: ReflowConfig = {
+      availability: [
+        { start: "09:00", end: "10:00" },
+        ...Array.from({ length: 6 }, () => ({ start: "18:00", end: "19:00" })),
+      ],
+      daily_study_cap_minutes: 60,
+    };
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "x",
+        sessionId: "sx",
+        dayIndex: 7,
+        startTime: new Date("2025-06-09T20:00:00Z"),
+        endTime: new Date("2025-06-09T21:00:00Z"),
+      }),
+    ];
+    // Busy every evening, so only the 09:00 windows (day 0, 7, 14) are open
+    const busy = Array.from({ length: 14 }, (_, d) => {
+      const day = new Date(Date.UTC(2025, 5, 2 + d, 22, 0));
+      return { start: day.getTime(), end: day.getTime() + 60 * 60_000 };
+    });
+    const result = computeReflow(items, config, start, now, busy, NY, { lastDay: "2025-06-10" });
+    expect(result.changes[0].after?.startTime).toBe("2025-06-09T13:00:00.000Z");
+  });
+
+  it("keeps future sessions where they are with includeMissed, unless busy time covers them", () => {
+    const NY2 = "America/New_York";
+    const start2 = new Date("2025-06-02T16:00:00Z");
+    const now2 = new Date("2025-06-04T14:00:00Z");
+    const items: ReflowItem[] = [
+      makeItem({
+        id: "missed",
+        sessionId: "sm",
+        startTime: new Date("2025-06-03T13:00:00Z"),
+        endTime: new Date("2025-06-03T14:00:00Z"),
+        status: "MISSED",
+      }),
+      makeItem({
+        id: "stays",
+        sessionId: "ss",
+        dayIndex: 4,
+        startTime: new Date("2025-06-06T20:00:00Z"),
+        endTime: new Date("2025-06-06T21:00:00Z"),
+      }),
+      makeItem({
+        id: "clash",
+        sessionId: "sc",
+        dayIndex: 5,
+        startTime: new Date("2025-06-07T14:00:00Z"),
+        endTime: new Date("2025-06-07T15:00:00Z"),
+      }),
+    ];
+    const busy = [{ start: Date.parse("2025-06-07T13:30:00Z"), end: Date.parse("2025-06-07T16:00:00Z") }];
+    const result = computeReflow(items, defaultConfig, start2, now2, busy, NY2, { includeMissed: true });
+    const byId = new Map(result.changes.map((c) => [c.itemId, c]));
+    expect(byId.get("stays")?.action).toBe("KEPT");
+    expect(byId.get("missed")?.action).toBe("MOVED");
+    expect(byId.get("clash")?.action).toBe("MOVED");
+    // The missed session doesn't land on top of the one that stays
+    const moved = byId.get("missed")!.after!;
+    const overlaps =
+      Date.parse(moved.startTime) < Date.parse("2025-06-06T21:00:00Z") &&
+      Date.parse(moved.endTime) > Date.parse("2025-06-06T20:00:00Z");
+    expect(overlaps).toBe(false);
+  });
+});
+
+describe("the plan's own Google Calendar events", () => {
+  const NY = "America/New_York";
+  // Plan day 0 is Mon 2026-10-12 in New York
+  const start = new Date("2026-10-12T16:00:00Z");
+  // Thu 2026-10-15, 10:00 New York
+  const now = new Date("2026-10-15T14:00:00Z");
+  const items: ReflowItem[] = [
+    makeItem({
+      id: "missed",
+      sessionId: "sm",
+      dayIndex: 2,
+      startTime: new Date("2026-10-14T13:00:00Z"),
+      endTime: new Date("2026-10-14T14:00:00Z"),
+    }),
+    makeItem({
+      id: "future1",
+      sessionId: "s1",
+      dayIndex: 4,
+      startTime: new Date("2026-10-16T13:00:00Z"),
+      endTime: new Date("2026-10-16T14:00:00Z"),
+    }),
+    // Back to back with future1's day: 20 + 70 minutes, like day 0 of a new plan
+    makeItem({
+      id: "future2",
+      sessionId: "s2",
+      dayIndex: 4,
+      startTime: new Date("2026-10-16T14:00:00Z"),
+      endTime: new Date("2026-10-16T15:10:00Z"),
+      plannedMinutes: 70,
+    }),
+  ];
+  // Free/busy returns the published sessions themselves, merged into one block
+  const freeBusy = [{ start: Date.parse("2026-10-16T13:00:00Z"), end: Date.parse("2026-10-16T15:10:00Z") }];
+  const buffer = 10 * 60_000;
+
+  it("keeps future sessions once their own events are cut out of free/busy", () => {
+    const own = items.slice(1).map((i) => ({ start: i.startTime.getTime(), end: i.endTime.getTime() }));
+    const raw = subtractIntervals(freeBusy, own);
+    expect(raw).toEqual([]);
+    const buffered = raw.map((b) => ({ start: b.start - buffer, end: b.end + buffer }));
+    const result = computeReflow(items, defaultConfig, start, now, buffered, NY, {
+      includeMissed: true,
+      lastDay: "2026-10-21",
+      clashIntervals: raw,
+    });
+    const byId = new Map(result.changes.map((c) => [c.itemId, c]));
+    expect(byId.get("missed")?.action).toBe("MOVED");
+    expect(byId.get("future1")?.action).toBe("KEPT");
+    expect(byId.get("future2")?.action).toBe("KEPT");
+  });
+
+  it("moves them all when they aren't cut out (the old behavior)", () => {
+    const buffered = freeBusy.map((b) => ({ start: b.start - buffer, end: b.end + buffer }));
+    const result = computeReflow(items, defaultConfig, start, now, buffered, NY, { includeMissed: true });
+    expect(result.changes.filter((c) => c.action === "MOVED").map((c) => c.itemId).sort()).toEqual([
+      "future1",
+      "future2",
+      "missed",
+    ]);
+  });
+
+  it("moves a kept session only for a real overlap, not for the buffer around a neighbouring event", () => {
+    // A real event ends exactly when future1 starts
+    const raw = [{ start: Date.parse("2026-10-16T12:00:00Z"), end: Date.parse("2026-10-16T13:00:00Z") }];
+    const buffered = raw.map((b) => ({ start: b.start - buffer, end: b.end + buffer }));
+    const result = computeReflow(items, defaultConfig, start, now, buffered, NY, {
+      includeMissed: true,
+      clashIntervals: raw,
+    });
+    expect(result.changes.find((c) => c.itemId === "future1")?.action).toBe("KEPT");
+  });
+});
+
+describe("subtractIntervals", () => {
+  const iv = (start: number, end: number) => ({ start, end });
+
+  it("cuts own slots out of merged busy blocks", () => {
+    expect(subtractIntervals([iv(0, 100)], [iv(20, 40), iv(60, 80)])).toEqual([iv(0, 20), iv(40, 60), iv(80, 100)]);
+  });
+
+  it("removes a block an own slot covers and leaves the rest alone", () => {
+    expect(subtractIntervals([iv(0, 10), iv(20, 30)], [iv(-5, 15)])).toEqual([iv(20, 30)]);
+  });
+
+  it("ignores slots outside every block", () => {
+    expect(subtractIntervals([iv(10, 20)], [iv(0, 5), iv(25, 30)])).toEqual([iv(10, 20)]);
+  });
+});
+
+describe("a session from earlier today", () => {
+  const NY = "America/New_York";
+  const start = new Date("2026-10-12T16:00:00Z");
+  // Thu 2026-10-15, 4:00 PM New York
+  const now = new Date("2026-10-15T20:00:00Z");
+  const earlierToday = makeItem({
+    id: "today",
+    sessionId: "st",
+    dayIndex: 3,
+    startTime: new Date("2026-10-15T13:00:00Z"),
+    endTime: new Date("2026-10-15T14:00:00Z"),
+  });
+
+  it("isn't missed until its day ends in the plan's zone, as the Plan screen shows it", () => {
+    expect(isMissedItem(earlierToday, now, NY)).toBe(false);
+    expect(isMissedItem(earlierToday, new Date("2026-10-16T05:00:00Z"), NY)).toBe(true);
+    // Without a zone only the time counts
+    expect(isMissedItem(earlierToday, now)).toBe(true);
+  });
+
+  it("stays put on Reschedule, so its Start session button still works", () => {
+    const result = computeReflow([earlierToday], defaultConfig, start, now, [], NY, { includeMissed: true });
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0].action).toBe("KEPT");
   });
 });

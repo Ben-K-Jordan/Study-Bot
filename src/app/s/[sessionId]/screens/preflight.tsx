@@ -1,154 +1,299 @@
 "use client";
 
-import type { SessionData } from "../session-runner";
+import { Suspense, use, useEffect, useRef } from "react";
+import Link from "next/link";
+import { BookLockIcon, BookOpenIcon, ClockIcon, CoffeeIcon, ListChecksIcon, TargetIcon } from "lucide-react";
+
+import { breakSchedule } from "@/lib/breaks";
+import {
+  formatCountdown,
+  formatDate,
+  formatDuration,
+  formatList,
+  formatNumber,
+  formatPercent,
+  plural,
+} from "@/lib/format";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/app/error-state";
+import { LessonButton } from "@/components/lesson/lesson-button";
+import { LessonProgress } from "@/components/lesson/lesson-frame";
+import type { SessionErrorCopy } from "@/components/session/errors";
+import { objectiveTitles, sessionHeading } from "@/components/session/session-heading";
+import { Fact, FactList, SessionCloseButton, SessionScreen } from "@/components/session/session-screen";
+import type { ActiveRunSummary, DeckComposition, SessionData } from "@/lib/session-types";
+import { useHeadingFocus } from "@/components/session/use-heading-focus";
+import { useZone } from "@/components/session/use-zone";
 
 interface Props {
   session: SessionData;
+  /** Streamed from the server; resolves to null when the preview failed. */
+  deckPreview: Promise<DeckComposition | null>;
+  /** The open run to resume, or null to start a new one. */
+  resumable: ActiveRunSummary | null;
+  /** The last finished run, for "Last time: 80% accuracy". */
+  lastResult: { accuracy: number; endedAt: string | null } | null;
+  starting: boolean;
+  error: SessionErrorCopy | null;
   onStart: () => void;
-  loading: boolean;
-  hasActiveRun: boolean;
+  /** Warm up the question screen's code before it is needed. */
+  onPreload: () => void;
+  /**
+   * Move focus to the heading (after coming back from the results). It also
+   * moves there when the page opens with nothing focused, as after a link.
+   */
+  focusOnMount?: boolean;
 }
 
-export function PreflightScreen({ session, onStart, loading, hasActiveRun }: Props) {
+/** The lesson intro: what this session is, how big it is, and one big Start session button. */
+export function PreflightScreen({
+  session,
+  deckPreview,
+  resumable,
+  lastResult,
+  starting,
+  error,
+  onStart,
+  onPreload,
+  focusOnMount = false,
+}: Props) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const { timeZone, ready } = useZone(session.timezone);
   const outcome = session.target_outcome;
-  const breaks = session.break_protocol;
+  const plannedCount =
+    resumable?.prompt_count ?? (typeof outcome?.prompt_count === "number" ? outcome.prompt_count : null);
+  const targetAccuracy = typeof outcome?.target_accuracy === "number" ? outcome.target_accuracy : null;
+  const closedBook = outcome?.closed_book_required === true;
+  const breaks = breakSchedule(session.break_protocol as { type?: string; cycles?: number } | null);
+  const topics = objectiveTitles(session.objectives);
+  const heading = sessionHeading(session.mode_label, session.topic_scope, topics);
+
+  useHeadingFocus(headingRef, focusOnMount);
+
+  // Enter starts the session, as it checks an answer on the question screens.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Enter" || event.repeat || event.defaultPrevented) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest("a, button, input, textarea, select, [role='button'], [contenteditable='true']")) return;
+      event.preventDefault();
+      onStart();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onStart]);
+
+  // Load the question screen's code while the student reads this one.
+  useEffect(() => {
+    const idle = window.requestIdleCallback?.(onPreload) ?? window.setTimeout(onPreload, 1500);
+    return () => {
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
+      else window.clearTimeout(idle);
+    };
+  }, [onPreload]);
+
+  const countdown =
+    session.exam_date && ready
+      ? formatCountdown(session.exam_name, session.exam_date, { timeZone })
+      : session.exam_name;
 
   return (
-    <div>
-      <h1 style={{ fontSize: "2.1rem", margin: "0 0 0.35rem", fontFamily: "var(--font-display)", color: "var(--color-primary)" }}>
-        {session.course_name} | {session.exam_name}
-      </h1>
-      <p style={{ color: "var(--color-text-muted)", margin: "0 0 1.75rem", fontSize: "1.05rem" }}>
-        {session.mode_label}: {session.topic_scope}
-      </p>
+    <SessionScreen
+      topBar={
+        <SessionCloseButton hint={resumable ? "Your answers are saved." : undefined} />
+      }
+      footer={
+        <>
+          <p role="status" aria-live="polite" className="type-body-m text-lesson-muted">
+            {starting ? "Preparing questions. This can take up to a minute." : ""}
+          </p>
+          <LessonButton
+            variant="primary"
+            width="full"
+            className="sm:w-auto"
+            kbd="Enter"
+            loading={starting}
+            loadingLabel={resumable ? "Resuming session…" : "Starting session…"}
+            onClick={onStart}
+            onPointerEnter={onPreload}
+            onFocus={onPreload}
+          >
+            {resumable ? "Resume session" : "Start session"}
+          </LessonButton>
+        </>
+      }
+    >
+      <header className="flex flex-col gap-3">
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="type-headline-s font-bold text-balance text-lesson-on-surface wrap-break-word outline-none sm:type-headline-m sm:font-bold"
+        >
+          {heading.text}
+        </h1>
+        <p className="type-title-m text-lesson-muted wrap-break-word">
+          {session.course_name}
+          <span aria-hidden="true"> · </span>
+          <span className="sr-only">, </span>
+          {countdown}
+        </p>
+        {session.mode_description ? (
+          <p className="type-body-l text-pretty text-lesson-on-surface">{session.mode_description}</p>
+        ) : null}
+      </header>
 
-      {/* Meta stats: 4-across on desktop, 2x2 on phones (auto-fit grid) */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: "0.75rem",
-          marginBottom: "1.75rem",
-        }}
-      >
-        {outcome?.prompt_count != null && (
-          <div style={metaCell}>
-            <span style={metaLabel}>Prompts</span>
-            <span style={metaValue}>{outcome.prompt_count as number}</span>
-          </div>
-        )}
-        {outcome?.target_accuracy != null && (
-          <div style={metaCell}>
-            <span style={metaLabel}>Target</span>
-            <span style={metaValue}>{((outcome.target_accuracy as number) * 100).toFixed(0)}%</span>
-          </div>
-        )}
-        <div style={metaCell}>
-          <span style={metaLabel}>Duration</span>
-          <span style={metaValue}>{session.planned_minutes} min</span>
-        </div>
-        {breaks && (
-          <div style={metaCell}>
-            <span style={metaLabel}>Breaks</span>
-            <span style={metaValue}>
-              {breaks.type === "25_5" ? "25/5" : breaks.type === "50_10" ? "50/10" : breaks.type === "90_15" ? "90/15" : breaks.type === "12_3" ? "12/3" : String(breaks.type)}
-              {breaks.cycles ? ` x${breaks.cycles}` : ""}
-            </span>
-          </div>
-        )}
-      </div>
+      {resumable ? <ResumeProgress run={resumable} isExamSim={session.mode === "EXAM_SIM"} /> : null}
 
-      {/* Deck composition contract: the student sees exactly what the deck
-          holds before starting — no surprise session growth. */}
-      {session.deck_preview && (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1.75rem", alignItems: "center" }}>
-          <span style={{ ...metaLabel, marginBottom: 0 }}>Deck</span>
-          {session.deck_preview.new_count > 0 && (
-            <span style={deckChip("var(--color-info)")}>
-              {session.deck_preview.new_count} new
-            </span>
+      <FactList>
+        <Fact
+          icon={ListChecksIcon}
+          label="Questions"
+          detail={
+            <Suspense fallback={<Skeleton aria-hidden="true" className="h-4 w-48 max-w-full" />}>
+              <DeckDetail deckPreview={deckPreview} />
+            </Suspense>
+          }
+        >
+          {plannedCount != null ? (
+            plural(plannedCount, { one: "# question", other: "# questions" })
+          ) : (
+            <Suspense fallback={<Skeleton aria-hidden="true" className="h-5 w-28" />}>
+              <DeckTotal deckPreview={deckPreview} />
+            </Suspense>
           )}
-          {session.deck_preview.review_count > 0 && (
-            <span style={deckChip("var(--color-success)")}>
-              {session.deck_preview.review_count} review
-            </span>
-          )}
-          {session.deck_preview.diagnostic_count > 0 && (
-            <span style={deckChip("var(--color-warning)")}>
-              {session.deck_preview.diagnostic_count} diagnostic
-            </span>
-          )}
-          {session.deck_preview.repair_count > 0 && (
-            <span style={deckChip("var(--color-error)")}>
-              {session.deck_preview.repair_count} repair
-            </span>
-          )}
-        </div>
-      )}
+        </Fact>
+        <Fact icon={ClockIcon} label="Planned time">
+          {formatDuration(session.planned_minutes)}
+        </Fact>
+        {targetAccuracy != null ? (
+          <Fact icon={TargetIcon} label="Target accuracy">
+            {formatPercent(targetAccuracy)}
+          </Fact>
+        ) : null}
+        {closedBook ? (
+          <Fact icon={BookLockIcon} label="Notes">
+            Closed until you check each answer
+          </Fact>
+        ) : null}
+        {breaks ? (
+          <Fact icon={CoffeeIcon} label="Breaks">
+            {plural(breaks.blocks, {
+              one: `# block of ${formatDuration(breaks.workMinutes)}`,
+              other: `# blocks of ${formatDuration(breaks.workMinutes)}, with a ${formatDuration(breaks.breakMinutes)} break between blocks`,
+            })}
+          </Fact>
+        ) : null}
+        {topics.length > 0 && !heading.namesAllTopics ? (
+          <Fact icon={BookOpenIcon} label={plural(topics.length, { one: "Topic", other: "Topics" })}>
+            {formatList(topics)}
+          </Fact>
+        ) : null}
+      </FactList>
 
-      {session.mode === "EXAM_SIM" && (
-        <div style={examBanner}>
-          Exam Simulation: answer all prompts first, then self-score. No feedback until review.
-        </div>
-      )}
+      <Suspense fallback={null}>
+        <PretestNote deckPreview={deckPreview} />
+      </Suspense>
 
-      <button onClick={onStart} disabled={loading} style={{ ...buttonStyle, opacity: loading ? 0.5 : 1, cursor: loading ? "wait" : "pointer" }}>
-        {loading ? "Starting..." : hasActiveRun ? "Resume Session" : "Start Session"}
-      </button>
+      {lastResult && !resumable ? (
+        <p className="type-body-m text-lesson-muted">
+          {lastResult.endedAt && ready
+            ? `Last time: ${formatPercent(lastResult.accuracy)} accuracy, ${formatDate(lastResult.endedAt, { timeZone })}.`
+            : `Last time: ${formatPercent(lastResult.accuracy)} accuracy.`}
+        </p>
+      ) : null}
+
+      {error ? (
+        <ErrorState
+          title={error.title}
+          description={
+            error.signIn ? (
+              <>
+                {error.description}{" "}
+                <Link href={`/auth/signin?callbackUrl=${encodeURIComponent(`/s/${session.session_id}`)}`}>
+                  Sign in
+                </Link>
+              </>
+            ) : (
+              error.description
+            )
+          }
+        />
+      ) : null}
+    </SessionScreen>
+  );
+}
+
+function ResumeProgress({ run, isExamSim }: { run: ActiveRunSummary; isExamSim: boolean }) {
+  const total = run.prompt_count;
+  const scoring = isExamSim && run.phase === "REVIEW";
+  const answered = scoring ? run.current_index : (run.answered_count ?? run.current_index);
+  const done = formatNumber(answered);
+  let message: string;
+  if (scoring && answered === 0) {
+    message = plural(total, {
+      one: "The question is answered. Next, score it against its model answer.",
+      other: "All # questions are answered. Next, score each one against its model answer.",
+    });
+  } else if (scoring) {
+    message = plural(total, {
+      one: `${done} of # answer scored. Your answers are saved.`,
+      other: `${done} of # answers scored. Your answers are saved.`,
+    });
+  } else {
+    message = plural(total, {
+      one: `${done} of # question answered. Your answers are saved.`,
+      other: `${done} of # questions answered. Your answers are saved.`,
+    });
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <LessonProgress current={answered} total={total} />
+      <p className="type-body-m text-lesson-muted">{message}</p>
     </div>
   );
 }
 
-const metaLabel: React.CSSProperties = {
-  color: "var(--color-text-dim)",
-  fontSize: "0.8rem",
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  display: "block",
-  marginBottom: "0.3rem",
-};
+/** "7 new, 2 due for review, 1 pretest, and 1 repair" */
+function compositionParts(deck: DeckComposition): string[] {
+  const parts: string[] = [];
+  if (deck.new_count > 0) parts.push(`${deck.new_count} new`);
+  if (deck.review_count > 0) parts.push(`${deck.review_count} due for review`);
+  if (deck.diagnostic_count > 0) parts.push(`${deck.diagnostic_count} pretest`);
+  if (deck.repair_count > 0) parts.push(`${deck.repair_count} repair`);
+  return parts;
+}
 
-const metaCell: React.CSSProperties = {
-  background: "var(--color-bg-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)",
-  padding: "1rem 1.25rem",
-};
+function DeckDetail({ deckPreview }: { deckPreview: Promise<DeckComposition | null> }) {
+  const deck = use(deckPreview);
+  if (!deck) return null;
+  const parts = compositionParts(deck);
+  // A deck of only new questions needs no breakdown.
+  if (parts.length < 2) return null;
+  return <>{formatList(parts)}</>;
+}
 
-const metaValue: React.CSSProperties = {
-  fontSize: "1.35rem",
-  fontWeight: 600,
-  fontFamily: "var(--font-display)",
-};
+function DeckTotal({ deckPreview }: { deckPreview: Promise<DeckComposition | null> }) {
+  const deck = use(deckPreview);
+  if (!deck) return <>Set when the session starts</>;
+  return <>{plural(deck.total, { one: "# question", other: "# questions" })}</>;
+}
 
-const deckChip = (color: string): React.CSSProperties => ({
-  padding: "0.3rem 0.8rem",
-  fontSize: "0.85rem",
-  color,
-  border: `1px solid ${color}`,
-  borderRadius: "999px",
-  background: "transparent",
-});
-
-const examBanner: React.CSSProperties = {
-  background: "var(--color-bg-review-tint)",
-  border: "1px solid var(--color-review)",
-  borderRadius: "var(--radius)",
-  padding: "1rem 1.25rem",
-  marginBottom: "1.75rem",
-  fontSize: "1rem",
-  color: "var(--color-review)",
-};
-
-const buttonStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "1rem 1.5rem",
-  fontSize: "1.15rem",
-  fontFamily: "var(--font-body)",
-  fontWeight: 600,
-  background: "var(--color-primary)",
-  color: "var(--color-bg-darkest)",
-  border: "none",
-  borderRadius: "var(--radius)",
-  cursor: "pointer",
-};
+function PretestNote({ deckPreview }: { deckPreview: Promise<DeckComposition | null> }) {
+  const deck = use(deckPreview);
+  const count = deck?.diagnostic_count ?? 0;
+  if (count === 0) return null;
+  return (
+    <Alert variant="info" role="note">
+      <AlertTitle>{plural(count, { one: "# pretest question", other: "# pretest questions" })}</AlertTitle>
+      <AlertDescription>
+        {plural(count, {
+          one: "It covers a topic you haven't studied yet, so answer what you can. A wrong answer is expected and doesn't count toward accuracy.",
+          other:
+            "They cover topics you haven't studied yet, so answer what you can. Wrong answers are expected and don't count toward accuracy.",
+        })}
+      </AlertDescription>
+    </Alert>
+  );
+}

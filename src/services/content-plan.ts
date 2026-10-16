@@ -5,7 +5,7 @@
  * can design study sessions grounded in actual course material.
  */
 import { prisma } from "@/lib/db";
-import { searchChunks, type SearchResult } from "@/lib/search";
+import { searchChunks, type SearchParams, type SearchResult } from "@/lib/search";
 import { runTask } from "@/lib/ai/gateway";
 import type { GatewayContext } from "@/lib/ai/gateway";
 import { AiTask } from "@/lib/ai/types";
@@ -38,6 +38,48 @@ export interface ContentAwareMeta {
 }
 
 // ---------------------------------------------------------------------------
+// Which documents a plan reads
+// ---------------------------------------------------------------------------
+
+/**
+ * The processed documents a plan should read. The files picked for the plan
+ * (`documentIds`) win, so a file first uploaded under another course still
+ * counts. Without them: the course's files for this exam, else all of the
+ * course's files, since many students tag files with the course only.
+ */
+async function findPlanDocuments(
+  userId: string,
+  courseName: string,
+  examName: string | undefined,
+  documentIds: string[] | undefined,
+): Promise<{ id: string; title: string }[]> {
+  const select = { id: true, title: true } as const;
+  if (documentIds && documentIds.length > 0) {
+    const picked = await prisma.contentDocument.findMany({
+      where: { userId, id: { in: documentIds }, status: "PROCESSED" },
+      orderBy: { createdAt: "desc" },
+      select,
+    });
+    if (picked.length > 0) return picked;
+  }
+
+  const base = { userId, namespace: "COURSE", courseName, status: "PROCESSED" };
+  if (examName) {
+    const forExam = await prisma.contentDocument.findMany({
+      where: { ...base, examName },
+      orderBy: { createdAt: "desc" },
+      select,
+    });
+    if (forExam.length > 0) return forExam;
+  }
+  return prisma.contentDocument.findMany({
+    where: base,
+    orderBy: { createdAt: "desc" },
+    select,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 1. extractObjectivesFromContent
 // ---------------------------------------------------------------------------
 
@@ -50,21 +92,9 @@ export async function extractObjectivesFromContent(
   userId: string,
   courseName: string,
   examName?: string,
+  documentIds?: string[],
 ): Promise<SuggestedObjective[]> {
-  // Find processed documents for this user + course
-  const where: Record<string, unknown> = {
-    userId,
-    namespace: "COURSE",
-    courseName,
-    status: "PROCESSED",
-  };
-  if (examName) where.examName = examName;
-
-  const documents = await prisma.contentDocument.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    select: { id: true },
-  });
+  const documents = await findPlanDocuments(userId, courseName, examName, documentIds);
 
   if (documents.length === 0) return [];
 
@@ -121,49 +151,122 @@ export async function extractObjectivesFromContent(
 // 2. getContentContextForSession
 // ---------------------------------------------------------------------------
 
+/** Objectives searched for one session, so a long list can't fan out into dozens of queries. */
+const MAX_OBJECTIVES_SEARCHED = 8;
+/** Words tried one at a time when an objective's full title matches nothing. */
+const MAX_FALLBACK_WORDS = 3;
+const STOP_WORDS = new Set([
+  "and", "the", "for", "with", "from", "into", "onto", "that", "this", "their", "your",
+  "how", "what", "when", "why", "use", "using", "understand", "understanding", "explain", "describe",
+  "apply", "identify", "review", "basics", "intro", "introduction", "about", "its",
+]);
+
+/** An objective title's most specific words (longest first), for the any-word fallback. */
+export function fallbackWords(title: string): string[] {
+  const words = title
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word));
+  return [...new Set(words)].sort((a, b) => b.length - a.length).slice(0, MAX_FALLBACK_WORDS);
+}
+
 /**
- * Given a session's mode and objectives, search the user's uploaded content
- * chunks to find the most relevant content. Returns formatted context that
- * can be used to generate practice questions.
+ * Chunks for one objective. Full-text search ANDs every word, so the whole
+ * title is tried first: in the exam's files when there is an exam, then in
+ * all of the course's files. When nothing matches, each of its main words is
+ * searched on its own across the course, and a chunk matching more of them
+ * ranks higher (an any-word match). At most 5 queries per objective.
+ */
+async function searchObjective(
+  base: Omit<SearchParams, "q" | "topK" | "examName">,
+  title: string,
+  topK: number,
+  examName: string | undefined,
+): Promise<SearchResult[]> {
+  if (examName) {
+    const scoped = await searchChunks({ ...base, examName, q: title, topK });
+    if (scoped.length > 0) return scoped;
+  }
+  const exact = await searchChunks({ ...base, q: title, topK });
+  if (exact.length > 0) return exact;
+
+  const perWord = await Promise.all(
+    fallbackWords(title).map((word) => searchChunks({ ...base, q: word, topK })),
+  );
+  const scored = new Map<string, SearchResult>();
+  for (const results of perWord) {
+    for (const result of results) {
+      const seen = scored.get(result.chunk_id);
+      scored.set(
+        result.chunk_id,
+        seen ? { ...seen, rank_score: seen.rank_score + result.rank_score } : result,
+      );
+    }
+  }
+  return [...scored.values()].sort((a, b) => b.rank_score - a.rank_score).slice(0, topK);
+}
+
+/** Takes one result from each list in turn, skipping chunks already taken, up to `limit`. */
+export function mergeRoundRobin(lists: readonly SearchResult[][], limit: number): SearchResult[] {
+  const merged: SearchResult[] = [];
+  const seen = new Set<string>();
+  const longest = Math.max(0, ...lists.map((list) => list.length));
+  for (let i = 0; i < longest && merged.length < limit; i++) {
+    for (const list of lists) {
+      const result = list[i];
+      if (!result || seen.has(result.chunk_id)) continue;
+      seen.add(result.chunk_id);
+      merged.push(result);
+      if (merged.length >= limit) break;
+    }
+  }
+  return merged;
+}
+
+/**
+ * The course passages a session's questions are written from. Each
+ * objective is searched on its own: one search over every objective title
+ * would need a single chunk to hold every word, which almost never happens,
+ * and the session then fell back to template questions. Results are taken
+ * from each objective in turn, without repeats, up to `topK`. With an exam,
+ * an objective is searched in that exam's files first and in all of the
+ * course's files when they have nothing on it, as feedback does.
+ *
+ * `mode` no longer changes the search: words like "exam practice" only
+ * narrowed an already narrow match.
  */
 export async function getContentContextForSession(
   userId: string,
   courseName: string,
-  mode: string,
+  _mode: string,
   objectives: string[],
   topK: number = 5,
+  options: { examName?: string } = {},
 ): Promise<ContentContext> {
-  // Build a combined query from mode + objectives
-  const queryParts = [...objectives];
-  if (mode === "ERROR_REPAIR") {
-    queryParts.push("common mistakes errors");
-  } else if (mode === "EXAM_SIM") {
-    queryParts.push("exam practice assessment");
-  } else if (mode === "WORKED_EXAMPLES") {
-    queryParts.push("examples step-by-step solutions");
-  }
+  const titles = [...new Set(objectives.map((o) => o.trim()).filter(Boolean))].slice(
+    0,
+    MAX_OBJECTIVES_SEARCHED,
+  );
+  const perObjective = titles.length > 0 ? Math.max(2, Math.ceil(topK / titles.length)) : 0;
+  const base = { userId, namespace: "COURSE" as const, courseName };
+  const examName = options.examName?.trim() || undefined;
 
-  const query = queryParts.join(" ").slice(0, 200);
-
-  const results: SearchResult[] = await searchChunks({
-    userId,
-    q: query,
-    namespace: "COURSE",
-    courseName,
-    topK,
-  });
-
-  // Also count total chunks for the course (useful for metadata)
-  const totalChunks = await prisma.contentChunk.count({
-    where: {
-      document: {
-        userId,
-        namespace: "COURSE",
-        courseName,
-        status: "PROCESSED",
+  const [lists, totalChunks] = await Promise.all([
+    Promise.all(titles.map((title) => searchObjective(base, title, perObjective, examName))),
+    // Also count total chunks for the course (useful for metadata)
+    prisma.contentChunk.count({
+      where: {
+        document: {
+          userId,
+          namespace: "COURSE",
+          courseName,
+          status: "PROCESSED",
+        },
       },
-    },
-  });
+    }),
+  ]);
+
+  const results = mergeRoundRobin(lists, topK);
 
   return {
     snippets: results.map((r) => ({
@@ -190,20 +293,9 @@ export async function buildContentAwarePlanInput(
   userId: string,
   courseName: string,
   examName?: string,
+  documentIds?: string[],
 ): Promise<ContentAwareMeta> {
-  // Find processed documents
-  const where: Record<string, unknown> = {
-    userId,
-    namespace: "COURSE",
-    courseName,
-    status: "PROCESSED",
-  };
-  if (examName) where.examName = examName;
-
-  const documents = await prisma.contentDocument.findMany({
-    where,
-    select: { id: true, title: true },
-  });
+  const documents = await findPlanDocuments(userId, courseName, examName, documentIds);
 
   if (documents.length === 0) {
     return {

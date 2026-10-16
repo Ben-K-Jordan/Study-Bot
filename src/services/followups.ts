@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
 import { computeFollowups } from "@/lib/spacing";
-import { dayKey } from "@/lib/timezone";
+import { nextQuarterHour } from "@/lib/plan-generator";
+import { addDays, dayKey, daysBetween, zonedTimeToUtc } from "@/lib/timezone";
 import { getBaseUrl } from "@/lib/config";
+import { dateColumnKey, dateColumnValue } from "@/lib/plan-dates";
 import { logger } from "@/lib/logger";
 
 /**
@@ -12,7 +14,9 @@ import { logger } from "@/lib/logger";
  *
  * Conventions mirror src/services/plan.ts: one Session row per plan item
  * (unique planId+sessionId), RETRIEVAL mode, objectives copied from the
- * source session, times anchored to the plan's availability windows.
+ * source session (and its topic scope, unchanged: the follow-up marker lives
+ * in resources, so calendar titles and headings name only the topics),
+ * times anchored to the plan's availability windows.
  * Idempotency: each created Session carries a `followup_of_run_id` marker in
  * its resources JSON — a second call for the same run returns the existing
  * items instead of double-inserting.
@@ -35,7 +39,11 @@ export interface SkippedFollowup {
   /** YYYY-MM-DD in the plan's timezone. */
   date: string;
   days_from_now: number;
-  reason: "past_exam";
+  /**
+   * past_exam: the day falls after the exam. past: the day is over, or it is
+   * today and its study window has no room left for the session.
+   */
+  reason: "past_exam" | "past";
 }
 
 export interface PlannedFollowupItem {
@@ -60,62 +68,28 @@ export interface FollowupScheduleInput {
   planStartDate: string;
   /** Per-day availability windows from the plan config (indexed by dayIndex). */
   availability?: { start: string; end: string }[] | null;
-}
-
-/** Difference in calendar days between two YYYY-MM-DD strings. */
-function daysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
-}
-
-/**
- * Convert a wall-clock time in an IANA timezone to a UTC instant.
- * Two-pass correction handles DST transitions; an invalid timezone falls
- * back to the server's local clock (same behavior as dayKey).
- */
-function wallTimeToUtc(dateStr: string, timeStr: string, timeZone: string): Date {
-  const [y, mo, d] = dateStr.split("-").map(Number);
-  const [h, mi] = timeStr.split(":").map(Number);
-  const target = Date.UTC(y, mo - 1, d, h, mi, 0);
-  try {
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    let ts = target;
-    for (let i = 0; i < 2; i++) {
-      const parts: Record<string, string> = {};
-      for (const p of dtf.formatToParts(new Date(ts))) parts[p.type] = p.value;
-      const wall = Date.UTC(
-        Number(parts.year),
-        Number(parts.month) - 1,
-        Number(parts.day),
-        parts.hour === "24" ? 0 : Number(parts.hour),
-        Number(parts.minute),
-      );
-      const diff = wall - target;
-      if (diff === 0) break;
-      ts -= diff;
-    }
-    return new Date(ts);
-  } catch {
-    return new Date(y, mo - 1, d, h, mi, 0, 0);
-  }
+  /**
+   * The current time. Days before today in the plan's zone are skipped as
+   * "past", and a follow-up today starts no earlier than the next quarter
+   * hour. Defaults to the real time.
+   */
+  now?: Date;
 }
 
 /**
  * Pure scheduling core: map a run's accuracy + end time onto concrete plan
- * dates. Deterministic — the same run always yields the same schedule.
+ * dates. The days come from when the run ended, so a reload shows the same
+ * ones; `now` only decides which of them can still be added. Opening the
+ * results two days late, the first follow-up's day has passed: it is
+ * skipped, never added as a session that is already missed.
  */
 export function computeFollowupSchedule(input: FollowupScheduleInput): {
   planned: PlannedFollowupItem[];
   skipped: SkippedFollowup[];
 } {
   const recommendations = computeFollowups(input.accuracy, input.endedAt);
+  const now = (input.now ?? new Date()).getTime();
+  const todayKey = dayKey(new Date(now), input.timezone);
   const planned: PlannedFollowupItem[] = [];
   const skipped: SkippedFollowup[] = [];
 
@@ -130,20 +104,38 @@ export function computeFollowupSchedule(input: FollowupScheduleInput): {
       skipped.push({ date, days_from_now: rec.days_from_now, reason: "past_exam" });
       continue;
     }
+    if (date < todayKey) {
+      skipped.push({ date, days_from_now: rec.days_from_now, reason: "past" });
+      continue;
+    }
 
     const dayIndex = daysBetween(input.planStartDate, date);
     // Days beyond the plan window reuse the same weekday's window.
     const avail =
       input.availability?.[dayIndex] ??
       input.availability?.[((dayIndex % 7) + 7) % 7];
-    const startTime = wallTimeToUtc(date, avail?.start ?? DEFAULT_START_TIME, input.timezone);
+    let start = zonedTimeToUtc(date, avail?.start ?? DEFAULT_START_TIME, input.timezone).getTime();
+
+    if (date === todayKey) {
+      // Today's window may be under way: start at the next quarter hour,
+      // and skip the day once the session no longer fits before it closes
+      // (midnight when the plan has no window for it).
+      const windowEnd = avail?.end
+        ? zonedTimeToUtc(date, avail.end, input.timezone).getTime()
+        : zonedTimeToUtc(addDays(date, 1), "00:00", input.timezone).getTime();
+      start = Math.max(start, nextQuarterHour(now));
+      if (start + FOLLOWUP_DURATION_MINUTES * 60000 > windowEnd) {
+        skipped.push({ date, days_from_now: rec.days_from_now, reason: "past" });
+        continue;
+      }
+    }
 
     planned.push({
       days_from_now: rec.days_from_now,
       date,
       day_index: dayIndex,
-      start_time: startTime,
-      end_time: new Date(startTime.getTime() + FOLLOWUP_DURATION_MINUTES * 60000),
+      start_time: new Date(start),
+      end_time: new Date(start + FOLLOWUP_DURATION_MINUTES * 60000),
     });
   }
 
@@ -151,11 +143,45 @@ export function computeFollowupSchedule(input: FollowupScheduleInput): {
 }
 
 /**
+ * The first plan (by exam date) whose exam is today or later on that plan's
+ * own calendar. An exam that is today still counts: follow-ups after it are
+ * skipped, but the plan is the one to report on.
+ */
+export function activePlan<P extends { examDate: Date; timezone: string }>(
+  plans: readonly P[],
+  now: Date,
+): P | undefined {
+  return plans.find((p) => dateColumnKey(p.examDate) >= dayKey(now, p.timezone));
+}
+
+/**
+ * The plan follow-ups go into: this course's plan with the nearest exam that
+ * is today or later in the plan's own zone, so a plan stays eligible on its
+ * exam day. examDate is a DATE column (midnight UTC), so the query keeps
+ * every exam from yesterday (UTC) on, the earliest "today" any zone can
+ * have, and the plan's zone decides. The end screen's preview and the
+ * scheduler both use this, so the preview never offers days that aren't added.
+ */
+export async function findFollowupPlan(userId: string, courseName: string, now: Date = new Date()) {
+  const candidates = await prisma.studyPlan.findMany({
+    where: {
+      userId,
+      courseName,
+      examDate: { gte: dateColumnValue(addDays(dayKey(now, "UTC"), -1)) },
+    },
+    orderBy: [{ examDate: "asc" }, { createdAt: "desc" }],
+    // Only an exam from the day before can fail the zone check.
+    take: 10,
+  });
+  return activePlan(candidates, now) ?? null;
+}
+
+/**
  * Insert the recommended follow-ups for a completed run into the user's
  * active study plan. Idempotent per run: repeated calls return the already
  * scheduled items ("already_scheduled") instead of inserting duplicates.
  */
-export async function scheduleFollowups(userId: string, runId: string) {
+export async function scheduleFollowups(userId: string, runId: string, now: Date = new Date()) {
   const run = await prisma.sessionRun.findUnique({
     where: { runId },
     select: {
@@ -176,12 +202,7 @@ export async function scheduleFollowups(userId: string, runId: string) {
   });
   if (!session) return { error: "not_found" as const };
 
-  // Active plan: the course's plan with the nearest upcoming exam (same
-  // convention as the exam-aware mastery lookup in run.ts).
-  const plan = await prisma.studyPlan.findFirst({
-    where: { userId, courseName: session.courseName, examDate: { gte: new Date() } },
-    orderBy: { examDate: "asc" },
-  });
+  const plan = await findFollowupPlan(userId, session.courseName, now);
   if (!plan) return { data: { status: "no_plan" as const } };
 
   const metrics = run.metrics as { accuracy?: number } | null;
@@ -189,10 +210,11 @@ export async function scheduleFollowups(userId: string, runId: string) {
     accuracy: metrics?.accuracy ?? 0,
     endedAt: run.endedAt ?? new Date(),
     timezone: plan.timezone,
-    examDate: plan.examDate.toISOString().split("T")[0],
-    planStartDate: plan.startDate.toISOString().split("T")[0],
+    examDate: dateColumnKey(plan.examDate),
+    planStartDate: dateColumnKey(plan.startDate),
     availability: (plan.config as { availability?: { start: string; end: string }[] } | null)
       ?.availability,
+    now,
   });
 
   const base = getBaseUrl();
@@ -246,7 +268,10 @@ export async function scheduleFollowups(userId: string, runId: string) {
           examId: session.examId,
           examName: session.examName,
           mode: "RETRIEVAL",
-          topicScope: `Follow-up: ${session.topicScope}`,
+          // The same topics as the session it follows up. The follow-up
+          // marker is resources.followup_of_run_id, never the topic scope,
+          // which calendar titles and session headings read as topics.
+          topicScope: session.topicScope,
           objectives: session.objectives ?? undefined,
           targetOutcome: {
             type: "accuracy",

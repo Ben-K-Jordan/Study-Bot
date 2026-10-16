@@ -6,6 +6,8 @@
  * in session_runs.prompts — no DB randomness needed at runtime.
  */
 
+import { clampPromptCount } from "./validation";
+
 export type PromptFormat = "FREE_RECALL" | "MCQ";
 
 export interface Prompt {
@@ -35,6 +37,17 @@ export interface Prompt {
     model_answer?: string;
     /** Bullet points a correct answer must contain (self-scoring standard). */
     key_points?: string[];
+    /**
+     * Worked-example completion problems: steps in the full solution, so the
+     * session can show how many are given and how many are missing.
+     */
+    step_count?: number;
+    /**
+     * Free recall: the answer the student committed to see the model answer.
+     * Stored on the question row by the reveal endpoint; the attempt records
+     * this answer, never a later edit.
+     */
+    committed_answer?: string;
   };
 }
 
@@ -45,8 +58,19 @@ interface Objective {
 
 // ---- Shared helpers ----
 
+/**
+ * A topic title as it reads inside a sentence. Titles are stored in
+ * sentence case, so a leading article would keep its capital mid-sentence
+ * ("Define The box model..."): lower-case "The", "A" or "An" and leave the
+ * rest as written, so names and acronyms keep theirs ("the French
+ * Revolution", "CSS specificity").
+ */
+export function inSentence(title: string): string {
+  return title.replace(/^(?:The|An|A)(?=\s)/, (article) => article.toLowerCase());
+}
+
 const RETRIEVAL_VARIANTS = [
-  (title: string) => `From memory: explain ${title} in 3–5 bullets.`,
+  (title: string) => `From memory: explain ${title} in 3 to 5 bullets.`,
   (title: string) => `Define ${title} and give one concrete example.`,
   (title: string) => `List the key steps involved in ${title}.`,
   (title: string) => `What are the most common pitfalls when applying ${title}?`,
@@ -62,11 +86,12 @@ function resolveObjectives(
   return [{ id: "topic_0", title: topicScope ?? "General" }];
 }
 
+/** The stored count, held to 1 to 60 even for rows written before the schema bound it. */
 function resolvePromptCount(
   targetOutcome?: { prompt_count?: number } | null,
   fallback = 10
 ): number {
-  return targetOutcome?.prompt_count ?? fallback;
+  return clampPromptCount(targetOutcome?.prompt_count, fallback);
 }
 
 // ---- RETRIEVAL ----
@@ -86,7 +111,7 @@ export function generateRetrievalPrompts(session: {
     prompts.push({
       id: `p_${i}`,
       objective_id: obj.id,
-      text: variantFn(obj.title),
+      text: variantFn(inSentence(obj.title)),
       difficulty: 1,
     });
   }
@@ -133,7 +158,7 @@ export function generateInterleavedPrompts(session: {
       list.push({
         id: `p_${globalIdx}`,
         objective_id: obj.id,
-        text: variantFn(obj.title),
+        text: variantFn(inSentence(obj.title)),
         difficulty: 1,
         meta: { pack: `obj_${objIdx}` },
       });
@@ -308,11 +333,13 @@ export function generateErrorRepairPrompts(
     // prompt renders as the same generic sentence and the student cannot
     // tell which error is being repaired.
     const original = log.prompt_text?.trim();
+    // The question to answer comes first; the instruction follows as its own
+    // paragraph. Every form keeps "From memory".
     const text = variant
-      ? `From memory: state the correct rule and answer the variant: ${variant}`
+      ? `${variant}\n\nFrom memory: answer this similar question you wrote, then state the correction rule.`
       : original
-        ? `You previously missed: "${original}" — From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`
-        : `From memory: state the correct rule for this error and give a near-transfer example where this rule applies.`;
+        ? `${original}\n\nYou answered this incorrectly before. From memory: state the correction rule and give a new example where it applies.`
+        : `From memory: state the correction rule for this error and give a new example where it applies.`;
 
     return {
       id: `p_${i}`,

@@ -73,4 +73,14 @@ describe("logger", () => {
     const infoLogged = JSON.parse((console.log as ReturnType<typeof vi.fn>).mock.calls[0][0]);
     expect(infoLogged.event).toBe("test.garbage.info");
   });
+
+  it("stays silent under vitest when LOG_LEVEL is unset", async () => {
+    delete process.env.LOG_LEVEL;
+    const { logger } = await import("@/lib/logger");
+    logger.error("test.silent.error");
+    logger.info("test.silent.info");
+
+    expect(console.error).not.toHaveBeenCalled();
+    expect(console.log).not.toHaveBeenCalled();
+  });
 });

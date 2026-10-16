@@ -1,21 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { aiLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { plural } from "@/lib/format";
+import { createRateLimiter } from "@/lib/rate-limit";
+
+// Exports are heavy reads, so they get their own budget instead of sharing
+// the AI limiter (an export no longer blocks generating a deck, or the reverse).
+const exportLimiter = createRateLimiter("account-export", {
+  maxRequests: 3,
+  windowMs: 60 * 1000,
+});
 
 /**
  * GET /api/account/export
- * GDPR data export: returns all user data as a downloadable JSON file.
+ * Data export: returns everything the student owns as a JSON attachment.
  */
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
-  const rl = aiLimiter.check(userId);
-  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+  const rl = exportLimiter.check(userId);
+  if (!rl.allowed) {
+    const seconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000));
+    return NextResponse.json(
+      {
+        error: `Too many exports. Retry in ${plural(seconds, { one: "# second", other: "# seconds" })}.`,
+        retry_after_seconds: seconds,
+      },
+      { status: 429, headers: { "Retry-After": String(seconds) } },
+    );
+  }
 
   try {
     const [
@@ -160,13 +178,24 @@ export async function GET(request: NextRequest) {
 
     logger.info("account.export.success", { userId });
 
-    return NextResponse.json(exportData, {
+    // Some columns are BigInt (AI call costs, Google token expiry), which
+    // JSON.stringify refuses; write them as decimal strings.
+    const body = JSON.stringify(exportData, (_key, value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    );
+
+    return new NextResponse(body, {
       headers: {
+        "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": `attachment; filename="study-bot-export-${Date.now()}.json"`,
+        "Cache-Control": "no-store",
       },
     });
   } catch (err) {
     logger.error("account.export.failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Data not exported. Check your connection and retry." },
+      { status: 500 },
+    );
   }
 }

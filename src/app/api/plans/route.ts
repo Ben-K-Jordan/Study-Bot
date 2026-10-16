@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { createPlan } from "@/services/plan";
+import { createPlanWithReplace, planEndDateKey } from "@/services/plan";
 import { prisma } from "@/lib/db";
-import { z } from "zod/v4";
+import { z } from "zod";
 import { logger } from "@/lib/logger";
+import { dateColumnKey } from "@/lib/plan-dates";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
+import { unauthorized } from "@/lib/http";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -35,9 +38,9 @@ export async function GET(request: NextRequest) {
       plan_id: plan.planId,
       course_name: plan.courseName,
       exam_name: plan.examName,
-      exam_date: plan.examDate.toISOString().split("T")[0],
-      start_date: plan.startDate.toISOString().split("T")[0],
-      end_date: plan.endDate.toISOString().split("T")[0],
+      exam_date: dateColumnKey(plan.examDate),
+      start_date: dateColumnKey(plan.startDate),
+      end_date: planEndDateKey(plan.startDate),
       timezone: plan.timezone,
       created_at: plan.createdAt.toISOString(),
       items: plan.items.map((item) => {
@@ -67,41 +70,51 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     logger.error("list_plans_failed", { error: String(err) });
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Plans didn't load. Retry in a minute.", code: "internal" },
       { status: 500 },
     );
   }
 }
 
+/**
+ * POST /api/plans: create a plan. With `replace_plan_id`, the replaced plan
+ * is deleted only after the new one is created (see createPlanWithReplace).
+ * Validation errors return `issues` whose paths name the fields
+ * (course_name, exam_name, exam_date, availability, objectives).
+ */
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
+
+  // Creating a plan runs AI topic extraction and reads Google Calendar
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Invalid JSON body" },
+      { error: "The request wasn't valid JSON.", code: "INVALID_JSON" },
       { status: 400 }
     );
   }
 
   try {
-    const result = await createPlan(userId, body);
+    const result = await createPlanWithReplace(userId, body);
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", issues: err.issues },
+        { error: "Check the highlighted fields.", code: "validation_failed", issues: err.issues },
         { status: 400 }
       );
     }
     logger.error("create_plan_failed", { error: String(err) });
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Plan not created. Retry in a minute.", code: "internal" },
       { status: 500 }
     );
   }

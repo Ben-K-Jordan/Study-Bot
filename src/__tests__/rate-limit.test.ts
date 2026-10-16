@@ -1,12 +1,30 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import type { NextRequest } from "next/server";
-import { getClientIp } from "@/lib/rate-limit";
+import { createRateLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 
 function makeRequest(headers: Record<string, string>): NextRequest {
   return new Request("http://localhost/api/test", { headers }) as unknown as NextRequest;
 }
 
 describe("getClientIp", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("counts TRUSTED_PROXY_HOPS entries from the right when several proxies append", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "2");
+    const request = makeRequest({
+      "x-forwarded-for": "198.51.100.1, 203.0.113.7, 192.0.2.44",
+    });
+    expect(getClientIp(request)).toBe("203.0.113.7");
+  });
+
+  it("falls back to one hop when TRUSTED_PROXY_HOPS isn't a positive whole number", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "zero");
+    const request = makeRequest({ "x-forwarded-for": "198.51.100.1, 192.0.2.44" });
+    expect(getClientIp(request)).toBe("192.0.2.44");
+  });
+
   it("returns the single X-Forwarded-For entry when there is only one", () => {
     const request = makeRequest({ "x-forwarded-for": "203.0.113.7" });
     expect(getClientIp(request)).toBe("203.0.113.7");
@@ -54,5 +72,41 @@ describe("getClientIp", () => {
   it("returns 'unknown' when no IP headers are present", () => {
     const request = makeRequest({});
     expect(getClientIp(request)).toBe("unknown");
+  });
+});
+
+describe("tooManyRequests", () => {
+  it("sets Retry-After in whole seconds and says how long to wait by default", async () => {
+    const res = tooManyRequests(1500);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("2");
+    const body = await res.json();
+    expect(body.error).toBe("Too many requests. Retry in 2 seconds.");
+    expect(body.code).toBe("RATE_LIMITED");
+    expect(body.retry_after).toBe(2);
+  });
+
+  it("rounds longer waits up to whole minutes", async () => {
+    const res = tooManyRequests(90_000);
+    expect((await res.json()).error).toBe("Too many requests. Retry in 2 minutes.");
+  });
+
+  it("takes a message that names the limited action", async () => {
+    const res = tooManyRequests(60_000, "Too many reset requests. Retry in 1 minute.");
+    expect((await res.json()).error).toBe("Too many reset requests. Retry in 1 minute.");
+  });
+});
+
+describe("createRateLimiter", () => {
+  it("allows up to the limit, then reports the wait", () => {
+    const limiter = createRateLimiter("test-limit", { maxRequests: 2, windowMs: 60_000 });
+    expect(limiter.check("ip").allowed).toBe(true);
+    expect(limiter.check("ip").allowed).toBe(true);
+    const blocked = limiter.check("ip");
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.retryAfterMs).toBeGreaterThan(0);
+    expect(limiter.check("other-ip").allowed).toBe(true);
+    limiter.reset();
+    expect(limiter.check("ip").allowed).toBe(true);
   });
 });

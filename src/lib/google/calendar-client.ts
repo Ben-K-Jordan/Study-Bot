@@ -13,7 +13,7 @@
  * FakeGoogleCalendarClient — in-memory for tests.
  */
 import { prisma } from "@/lib/db";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encryptToken, decryptToken } from "@/lib/crypto/token-vault";
 import { logger } from "@/lib/logger";
 
 // ---- Types ----
@@ -154,7 +154,8 @@ const CALENDAR_LIST_FIELDS = "items(id,summary,primary,accessRole,timeZone)";
 
 // ---- Concurrency ----
 
-const SYNC_CONCURRENCY = parseInt(process.env.GOOGLE_SYNC_CONCURRENCY || "3", 10);
+/** Max concurrent Google Calendar calls while publishing or unpublishing a plan. */
+const SYNC_CONCURRENCY = Math.max(1, parseInt(process.env.GOOGLE_SYNC_CONCURRENCY || "", 10) || 3);
 export { SYNC_CONCURRENCY };
 
 // ---- Real Implementation ----
@@ -191,11 +192,11 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
       return this.refreshAccessToken(integration.id, integration.refreshTokenEncrypted!);
     }
 
-    return decrypt(integration.accessTokenEncrypted);
+    return decryptToken(integration.accessTokenEncrypted);
   }
 
   private async refreshAccessToken(integrationId: string, refreshTokenEncrypted: string): Promise<string> {
-    const refreshToken = decrypt(refreshTokenEncrypted);
+    const refreshToken = decryptToken(refreshTokenEncrypted);
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     if (!clientId || !clientSecret) throw new Error("Google OAuth credentials not configured");
@@ -239,7 +240,7 @@ export class RealGoogleCalendarClient implements GoogleCalendarClient {
     await prisma.googleIntegration.update({
       where: { id: integrationId },
       data: {
-        accessTokenEncrypted: encrypt(newAccessToken),
+        accessTokenEncrypted: encryptToken(newAccessToken),
         tokenExpiryMs: BigInt(Date.now() + expiresIn * 1000),
         lastRefreshAt: new Date(),
         lastErrorCode: null,

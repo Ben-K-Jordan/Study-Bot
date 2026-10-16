@@ -12,16 +12,22 @@
  * Robust: handles 404 (manual deletion), rate limits, partial failure.
  */
 import { prisma } from "@/lib/db";
-import { getGoogleClient, GoogleApiError, GoogleReconnectError, type CalendarEventInput } from "@/lib/google/calendar-client";
+import {
+  getGoogleClient,
+  GoogleApiError,
+  GoogleReconnectError,
+  SYNC_CONCURRENCY,
+} from "@/lib/google/calendar-client";
 import { buildEventPayload } from "@/lib/google/event-builder";
+import { googleErrorMessage } from "@/lib/google/messages";
+import { sanitizeForLog } from "@/lib/crypto/redact";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
 
-const CONCURRENCY_LIMIT = parseInt(process.env.GOOGLE_CALENDAR_SYNC_CONCURRENCY || "5", 10);
-
 // ---- Types ----
 
-export type ItemAction = "CREATED" | "UPDATED" | "UNCHANGED" | "FAILED";
+/** REMOVED: a session Reschedule skipped, whose event was taken out of the calendar. */
+export type ItemAction = "CREATED" | "UPDATED" | "UNCHANGED" | "FAILED" | "REMOVED";
 
 export interface PublishItemResult {
   plan_item_id: string;
@@ -44,6 +50,9 @@ export interface PublishResult {
     updated: number;
     unchanged: number;
     failed: number;
+    /** Events of skipped sessions taken out of the calendar. */
+    removed: number;
+    /** Sessions that belong in the calendar (skipped ones don't). */
     total: number;
   };
   item_results: PublishItemResult[];
@@ -96,9 +105,20 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
   return results;
 }
 
+// ---- Student-facing messages for the error codes above ----
+
+/**
+ * The sentence to show for a publish or unpublish error code. Routes send it
+ * as `message` next to the code, so no raw code reaches the screen. The copy
+ * lives in one place, shared with Settings and the plan screen.
+ */
+export function calendarErrorMessage(code: string): string {
+  return googleErrorMessage(code);
+}
+
 // ---- Zod schemas for request validation ----
 
-import { z } from "zod/v4";
+import { z } from "zod";
 
 export const publishRequestSchema = z.object({
   calendar_id: z.string().optional(),
@@ -188,7 +208,35 @@ export async function publishPlanToGoogle(
   // 3) Process each item
   const itemResults: PublishItemResult[] = [];
 
-  const tasks = plan.items.map((item) => async () => {
+  // Sessions Reschedule skipped are off the schedule: take their events out
+  // (once), and never create one. A removal that fails stays mapped and is
+  // retried on the next publish; it doesn't count against this one.
+  const skippedItems = plan.items.filter((item) => item.status === "SKIPPED");
+  const removeTasks = skippedItems.flatMap((item) => {
+    const mapping = mappingByItemId.get(item.id);
+    if (!mapping || options.dryRun) return [];
+    return [
+      async () => {
+        try {
+          await client.deleteEvent(mapping.calendarId, mapping.eventId);
+        } catch (err) {
+          if (err instanceof GoogleReconnectError) throw err;
+          if (!(err instanceof GoogleApiError && (err.status === 404 || err.status === 410))) {
+            warnings.push(`Event ${mapping.eventId} of a skipped session wasn't removed; retrying on the next update.`);
+            logger.warn("google.publish.skipped_remove_failed", {
+              plan_item_id: item.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return;
+          }
+        }
+        await prisma.planItemExternalEvent.delete({ where: { id: mapping.id } });
+        itemResults.push({ plan_item_id: item.id, session_id: item.sessionId, action: "REMOVED" });
+      },
+    ];
+  });
+
+  const tasks = plan.items.filter((item) => item.status !== "SKIPPED").map((item) => async () => {
     const session = sessionMap.get(item.sessionId);
     if (!session) {
       itemResults.push({
@@ -214,7 +262,7 @@ export async function publishPlanToGoogle(
       startTime: item.startTime.toISOString(),
       endTime: item.endTime.toISOString(),
       timezone: plan.timezone,
-      objectives: session.objectives as string[] | null,
+      objectives: session.objectives,
       targetOutcome: session.targetOutcome as Record<string, unknown> | null,
       breakProtocol: session.breakProtocol as Record<string, unknown> | null,
       baseUrl,
@@ -384,7 +432,7 @@ export async function publishPlanToGoogle(
   });
 
   try {
-    await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+    await runWithConcurrency([...removeTasks, ...tasks], SYNC_CONCURRENCY);
   } catch (err) {
     if (err instanceof GoogleReconnectError) {
       return { error: "GOOGLE_RECONNECT_REQUIRED", status: 409 };
@@ -398,6 +446,7 @@ export async function publishPlanToGoogle(
     updated: itemResults.filter((r) => r.action === "UPDATED").length,
     unchanged: itemResults.filter((r) => r.action === "UNCHANGED").length,
     failed: itemResults.filter((r) => r.action === "FAILED").length,
+    removed: itemResults.filter((r) => r.action === "REMOVED").length,
   };
 
   const status: PublishResult["status"] =
@@ -411,9 +460,12 @@ export async function publishPlanToGoogle(
   const dbStatus = status === "OK" ? "PUBLISHED" : status;
 
   if (!options.dryRun) {
-    const lastError = counts.failed > 0
+    // Google's error text is stored and sent back to the screen as
+    // last_error, so anything token-like in it is redacted first.
+    const failedMessage = counts.failed > 0
       ? itemResults.find((r) => r.action === "FAILED")?.error?.message || null
       : null;
+    const lastError = failedMessage ? sanitizeForLog(failedMessage) : null;
 
     await prisma.planCalendarPublication.upsert({
       where: { provider_planId: { provider: "GOOGLE", planId } },
@@ -456,7 +508,7 @@ export async function publishPlanToGoogle(
       status,
       published_at: now.toISOString(),
       duration_ms: durationMs,
-      summary: { ...counts, total: itemResults.length },
+      summary: { ...counts, total: itemResults.length - counts.removed },
       item_results: itemResults,
       warnings: warnings.length > 0 ? warnings : undefined,
     },
@@ -536,7 +588,7 @@ export async function unpublishPlanFromGoogle(
     deleted++;
   });
 
-  await runWithConcurrency(tasks, CONCURRENCY_LIMIT);
+  await runWithConcurrency(tasks, SYNC_CONCURRENCY);
 
   // Update publication status
   const status: UnpublishResult["status"] = failedItems!.length === 0 ? "UNPUBLISHED" : "PARTIAL";
@@ -547,7 +599,7 @@ export async function unpublishPlanFromGoogle(
       data: {
         status,
         lastSyncedAt: new Date(),
-        lastError: failedItems!.length > 0 ? failedItems![0].error.message : null,
+        lastError: failedItems!.length > 0 ? sanitizeForLog(failedItems![0].error.message) : null,
       },
     });
   }

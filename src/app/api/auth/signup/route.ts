@@ -1,38 +1,76 @@
-import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/db";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { signupLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
+import { prisma } from "@/lib/db";
+import { hashPassword, isEmailVerificationRequired } from "@/lib/auth-options";
+import { signupLimiter, getClientIp } from "@/lib/rate-limit";
 import { createEmailVerificationToken } from "@/lib/tokens";
 import { emailProvider } from "@/lib/email/provider";
 import { emailVerification } from "@/lib/email/templates";
 import { logger } from "@/lib/logger";
+import { getBaseUrl } from "@/lib/config";
+import { REQUEST_FAILED } from "@/lib/auth-messages";
+import {
+  emailField,
+  invalidFields,
+  logVerificationLinkHint,
+  nameField,
+  newPasswordField,
+  rateLimited,
+  readJson,
+  unreadableBody,
+} from "../_lib/responses";
 
 const signupSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  name: z.string().min(1, "Name is required").max(50),
+  name: nameField,
+  email: emailField,
+  password: newPasswordField,
 });
+
+/** Create the token and send the email. Runs after the response is sent. */
+async function sendVerificationLink(user: { id: string; email: string; name: string | null }): Promise<void> {
+  try {
+    const token = await createEmailVerificationToken(user.id);
+    const verifyUrl = `${getBaseUrl()}/api/auth/verify-email?token=${token}`;
+    const { subject, html } = emailVerification(user.name || "there", verifyUrl);
+    await emailProvider.send(user.email, subject, html);
+    logger.info("signup.verification_email_sent", { userId: user.id });
+    logVerificationLinkHint();
+  } catch (emailErr) {
+    // A mail failure never breaks signup; the sign-in form offers a new link.
+    logger.error("signup.verification_email_failed", {
+      userId: user.id,
+      error: String(emailErr),
+    });
+  }
+}
 
 /**
  * POST /api/auth/signup
  *
  * Always returns the same shaped response whether the email is new or taken,
- * to prevent email enumeration. A verification email is sent if the account
- * is newly created.
+ * to prevent email enumeration. When sign-in requires a verified email, a
+ * new account gets a verification email after the response, so its token
+ * write and send don't make a new email answer slower than a taken one.
+ * Without that requirement the form signs the new account straight in, and
+ * no email is sent (the sign-in form offers a link if the setting changes).
+ *
+ * 400 bodies carry `issues: [{ field, message }]` for the form's fields.
  */
 export async function POST(request: Request) {
-  const rl = signupLimiter.check(getClientIp(request as any));
-  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
+  const rl = signupLimiter.check(getClientIp(request));
+  if (!rl.allowed) return rateLimited(rl.retryAfterMs, "Too many new accounts from this network.");
+
+  const body = await readJson(request);
+  if (body === null) return unreadableBody();
+  const parsed = signupSchema.safeParse(body);
+  if (!parsed.success) return invalidFields(parsed.error);
+  const { email, password, name } = parsed.data;
 
   try {
-    const body = await request.json();
-    const { email, password, name } = signupSchema.parse(body);
+    const normalizedEmail = email.toLowerCase();
+    const passwordHash = await hashPassword(password);
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    // Generic response — same whether account is new or already exists
+    // Generic response, the same whether the account is new or already exists
     const genericResponse = NextResponse.json(
       { message: "Check your email to verify your account." },
       { status: 201 },
@@ -58,24 +96,11 @@ export async function POST(request: Request) {
         return u;
       });
 
-      // Send verification email (non-blocking — don't let email failures break signup)
-      try {
-        const token = await createEmailVerificationToken(user.id);
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-        const verifyUrl = `${appUrl}/api/auth/verify-email?token=${token}`;
-        const { subject, html } = emailVerification(user.name || "there", verifyUrl);
-        await emailProvider.send(user.email, subject, html);
-        logger.info("signup.verification_email_sent", { userId: user.id });
-      } catch (emailErr) {
-        logger.error("signup.verification_email_failed", {
-          userId: user.id,
-          error: String(emailErr),
-        });
-      }
+      if (isEmailVerificationRequired()) after(() => sendVerificationLink(user));
 
       return genericResponse;
     } catch (err: unknown) {
-      // Unique constraint violation (P2002) — email already taken.
+      // Unique constraint violation (P2002): the email is already taken.
       // Return the same generic response to prevent email enumeration.
       if (
         typeof err === "object" &&
@@ -88,16 +113,7 @@ export async function POST(request: Request) {
       throw err;
     }
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: err.issues[0].message },
-        { status: 400 },
-      );
-    }
     logger.error("signup.failed", { error: String(err) });
-    return NextResponse.json(
-      { error: "Failed to create account" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: REQUEST_FAILED.signup }, { status: 500 });
   }
 }

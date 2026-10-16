@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { updateAttemptMeta } from "@/services/run";
 import { updateAttemptMetaSchema } from "@/lib/validation";
 import { logger } from "@/lib/logger";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 /**
  * PATCH /api/attempts/:attemptId/meta
@@ -14,11 +15,11 @@ import { z } from "zod/v4";
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { attemptId: string } }
+  { params }: { params: Promise<{ attemptId: string }> }
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   const { attemptId } = await params;
@@ -27,7 +28,7 @@ export async function PATCH(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Reflection not saved. Retry." }, { status: 400 });
   }
 
   let parsed;
@@ -36,7 +37,7 @@ export async function PATCH(
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", issues: err.issues },
+        { error: "Reflection not saved. Keep each answer under 2,000 characters.", issues: err.issues },
         { status: 400 }
       );
     }
@@ -48,16 +49,16 @@ export async function PATCH(
 
     if ("error" in result) {
       if (result.error === "not_found") {
-        return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+        return NextResponse.json({ error: "Reflection not saved: this answer no longer exists." }, { status: 404 });
       }
       if (result.error === "forbidden") {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ error: "This session belongs to another account." }, { status: 403 });
       }
     }
 
     return NextResponse.json(result.data);
   } catch (err) {
     logger.error("attempt_meta_update_failed", { error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Reflection not saved. Retry." }, { status: 500 });
   }
 }

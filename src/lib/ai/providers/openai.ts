@@ -4,7 +4,13 @@
  * Requires OPENAI_API_KEY environment variable.
  * Supports chat completions (JSON mode) and embeddings.
  */
-import type { AiProvider, EmbedResult, CompleteJsonResult } from "../provider";
+import {
+  ProviderRequestError,
+  REQUEST_ERROR_STATUSES,
+  type AiProvider,
+  type EmbedResult,
+  type CompleteJsonResult,
+} from "../provider";
 import { logger } from "@/lib/logger";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -95,9 +101,13 @@ async function openaiRequest(
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => "unknown");
-    throw new Error(
-      `OpenAI API error ${response.status}: ${errorBody.slice(0, 500)}`,
-    );
+    const message = `OpenAI API error ${response.status}: ${errorBody.slice(0, 500)}`;
+    // A rejected request (context too long, malformed input) says nothing
+    // about OpenAI's health, so it's typed apart from outages and rate limits.
+    if (REQUEST_ERROR_STATUSES.has(response.status)) {
+      throw new ProviderRequestError(message, response.status);
+    }
+    throw new Error(message);
   }
 
   return response.json();

@@ -1,8 +1,25 @@
+import Link from "next/link";
+import { SearchXIcon } from "lucide-react";
+
+import { StatusScreen } from "@/components/app/status-screen";
+import { Button } from "@/components/ui/button";
+
 export default function SessionNotFound() {
   return (
-    <main style={{ maxWidth: 640, margin: "0 auto", padding: "2rem 1rem", fontFamily: "var(--font-body)", color: "var(--color-text)" }}>
-      <h1>Session Not Found</h1>
-      <p>This session does not exist or you do not have access to it.</p>
-    </main>
+    <StatusScreen
+      icon={SearchXIcon}
+      title="Session not found"
+      description="This link doesn't match a session. It may have been deleted."
+      actions={
+        <>
+          <Button asChild>
+            <Link href="/">Go to Home</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/plan">Go to Plan</Link>
+          </Button>
+        </>
+      }
+    />
   );
 }

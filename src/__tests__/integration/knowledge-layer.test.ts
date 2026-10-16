@@ -12,7 +12,6 @@ let prisma: any;
 let uploadDocument: any;
 let processDocument: any;
 let listDocuments: any;
-let fetchFeedbackExcerpts: any;
 let searchChunks: any;
 let createSession: any;
 let startOrResumeRun: any;
@@ -53,7 +52,6 @@ The outer loop invariant must account for the inner loop's effect.
     uploadDocument = contentService.uploadDocument;
     processDocument = contentService.processDocument;
     listDocuments = contentService.listDocuments;
-    fetchFeedbackExcerpts = contentService.fetchFeedbackExcerpts;
     const searchModule = await import("@/lib/search");
     searchChunks = searchModule.searchChunks;
     const sessionService = await import("@/services/session");

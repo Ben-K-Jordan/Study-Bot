@@ -1,24 +1,95 @@
+/**
+ * Event titles and descriptions for a study session in a calendar: the .ics
+ * export, "Add to Google Calendar" links and published Google events all use
+ * these, so a session reads the same everywhere.
+ *
+ * Descriptions are plain text. Apple Calendar and Outlook show Markdown
+ * (`**`, `- [ ]`) literally, so there is none here.
+ */
+import { getBreakConfig } from "./breaks";
+import { formatDuration, formatList, formatPercent, plural } from "./format";
+import { MODE_LABELS } from "./modes";
 import { SessionMode } from "./validation";
 
-export const MODE_LABELS: Record<string, string> = {
-  RETRIEVAL: "Retrieval",
-  INTERLEAVED_PRACTICE: "Interleaved Practice",
-  ERROR_REPAIR: "Error Repair",
-  EXAM_SIM: "Exam Sim",
-  WORKED_EXAMPLES: "Worked Examples",
-};
+export { MODE_LABELS };
 
+/** Topics named in a description before the rest are counted ("and 3 more"). */
+const MAX_TOPICS = 6;
+/** Topics named in an event title: calendar views cut long titles short. */
+const MAX_TITLE_TOPICS = 3;
+
+/**
+ * Follow-up sessions used to store "Follow-up: " in front of their topic
+ * scope (twice for a follow-up of a follow-up). Those rows still exist, and
+ * the marker isn't a topic.
+ */
+const LEGACY_FOLLOWUP_PREFIX = /^(?:follow-up:\s*)+/i;
+
+/**
+ * A session's topic titles: its objectives ({ title } objects or strings),
+ * else its comma-separated topic scope.
+ */
+export function sessionTopics(objectives: unknown, topicScope = ""): string[] {
+  if (Array.isArray(objectives)) {
+    const titles = objectives
+      .map((o) =>
+        typeof o === "string"
+          ? o
+          : o && typeof o === "object" && "title" in o
+            ? String((o as { title: unknown }).title ?? "")
+            : "",
+      )
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (titles.length > 0) return titles;
+  }
+  return topicScope
+    .trim()
+    .replace(LEGACY_FOLLOWUP_PREFIX, "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/** "Recursion, Stacks, and Big-O", or the first `max` and "and 3 more". */
+function topicText(topics: readonly string[], max = MAX_TOPICS): string {
+  if (topics.length <= max) return formatList(topics);
+  const rest = topics.length - max;
+  return formatList([...topics.slice(0, max), plural(rest, { one: "# more", other: "# more" })]);
+}
+
+function modeName(mode: string | undefined): string | null {
+  return mode ? (MODE_LABELS[mode] ?? null) : null;
+}
+
+/**
+ * "Retrieval: Recursion and Stacks · CS 2110 Prelim 1". Topics come from the
+ * objectives when given (else the topic scope), and a long list names the
+ * first 3 and counts the rest: "Exam simulation: A, B, C, and 3 more".
+ */
 export function buildCalendarTitle(params: {
   courseName: string;
   examName: string;
-  mode: SessionMode;
+  mode: SessionMode | string;
   topicScope: string;
+  /** The session's objectives as stored ({ title } objects or strings). */
+  objectives?: unknown;
 }): string {
-  const modeLabel = MODE_LABELS[params.mode];
-  return `${params.courseName} | ${params.examName} | ${modeLabel}: ${params.topicScope}`;
+  const mode = modeName(params.mode) ?? "Study session";
+  const topics = sessionTopics(params.objectives, params.topicScope);
+  const what = topics.length > 0 ? `${mode}: ${topicText(topics, MAX_TITLE_TOPICS)}` : mode;
+  const where = [params.courseName, params.examName].map((s) => s.trim()).filter(Boolean).join(" ");
+  return where ? `${what} · ${where}` : what;
 }
 
-interface DescriptionParams {
+export interface CalendarDescriptionParams {
+  courseName?: string;
+  examName?: string;
+  mode?: string;
+  /** Topic titles, or a session's objectives as stored ({ title } objects). */
+  topics?: unknown;
+  /** Used for the topics when `topics` is empty. */
+  topicScope?: string;
   outcome?: {
     type?: string;
     prompt_count?: number;
@@ -33,71 +104,82 @@ interface DescriptionParams {
   resources?: { type: string; ref: string; range?: string }[] | null;
 }
 
-export function buildCalendarDescription(params: DescriptionParams): string {
+/** "error_log_entries>=5" as "Error log entries: at least 5". */
+function deliverableText(raw: string): string {
+  const match = /^(.*?)\s*>=\s*(\d+)\s*$/.exec(raw);
+  const name = (match ? match[1] : raw).replace(/_/g, " ").trim();
+  const label = name.charAt(0).toUpperCase() + name.slice(1);
+  return match ? `${label}: at least ${match[2]}.` : `${label}.`;
+}
+
+/** "2 blocks of 25 min, with a 5 min break in between." Null for a single block (no break). */
+export function breaksText(breaks: { type?: string; cycles?: number } | null | undefined): string | null {
+  const cycles = breaks?.cycles ?? 1;
+  if (!breaks || cycles <= 1) return null;
+  const { workMinutes, breakMinutes } = getBreakConfig(breaks.type ?? "");
+  const work = formatDuration(workMinutes);
+  const pause = formatDuration(breakMinutes);
+  return cycles === 2
+    ? `2 blocks of ${work}, with a ${pause} break in between.`
+    : `${plural(cycles, { one: "# block", other: "# blocks" })} of ${work}, with a ${pause} break between blocks.`;
+}
+
+/**
+ * The event description, for example:
+ *
+ *   Retrieval session for CS 2110 Prelim 1
+ *   Topics: Recursion and Stacks
+ *   8 questions. Target accuracy: 80%. Answer from memory before you open your notes.
+ *
+ *   Open the session: https://…/s/abc
+ *
+ *   Added by Study Bot
+ */
+export function buildCalendarDescription(params: CalendarDescriptionParams): string {
   const sections: string[] = [];
 
-  // Outcome
-  if (params.outcome) {
-    const o = params.outcome;
-    const items: string[] = [];
-    if (o.target_accuracy != null && o.prompt_count != null) {
-      items.push(
-        `Score >= ${(o.target_accuracy * 100).toFixed(0)}% on ${o.prompt_count} prompts`
-      );
-    }
-    if (o.closed_book_required) {
-      items.push("Complete closed-book first pass");
-    }
-    if (o.deliverables) {
-      for (const d of o.deliverables) {
-        items.push(d.replace(">=", " >= ").replace("_", " "));
-      }
-    }
-    if (items.length > 0) {
-      sections.push(
-        "**Outcome (by end):**\n" + items.map((i) => `- [ ] ${i}`).join("\n")
-      );
-    }
+  const summary: string[] = [];
+  const mode = modeName(params.mode);
+  const where = [params.courseName, params.examName]
+    .map((s) => s?.trim())
+    .filter(Boolean)
+    .join(" ");
+  if (mode) summary.push(where ? `${mode} session for ${where}` : `${mode} session`);
+
+  const topics = sessionTopics(params.topics, params.topicScope);
+  if (topics.length > 0) summary.push(`Topics: ${topicText(topics)}`);
+
+  const o = params.outcome;
+  if (o) {
+    const parts: string[] = [];
+    if (o.prompt_count) parts.push(plural(o.prompt_count, { one: "# question.", other: "# questions." }));
+    if (o.target_accuracy != null) parts.push(`Target accuracy: ${formatPercent(o.target_accuracy)}.`);
+    if (o.closed_book_required) parts.push("Answer from memory before you open your notes.");
+    for (const d of o.deliverables ?? []) parts.push(deliverableText(d));
+    if (parts.length > 0) summary.push(parts.join(" "));
   }
 
-  // Plan
+  const breaks = breaksText(params.breaks);
+  if (breaks) summary.push(breaks);
+  if (summary.length > 0) sections.push(summary.join("\n"));
+
   if (params.planSteps && params.planSteps.length > 0) {
-    sections.push(
-      "**Plan (how):**\n" + params.planSteps.map((s) => `- ${s}`).join("\n")
-    );
+    sections.push(["Steps", ...params.planSteps.map((s) => `- ${s}`)].join("\n"));
   }
-
-  // Rules
   if (params.rules && params.rules.length > 0) {
-    sections.push(
-      "**Rules:**\n" + params.rules.map((r) => `- ${r}`).join("\n")
-    );
+    sections.push(["Rules", ...params.rules.map((r) => `- ${r}`)].join("\n"));
   }
-
-  // Breaks
-  if (params.breaks) {
-    const b = params.breaks;
-    const label = b.type === "50_10" ? "50 min work / 10 min break" : b.type;
-    sections.push(
-      `**Breaks:**\n- ${label}${b.cycles ? `, ${b.cycles} cycle(s)` : ""}`
-    );
-  }
-
-  // Terminal session link
-  sections.push(`**Terminal session:**\n${params.sessionUrl}`);
-
-  // Resources
   if (params.resources && params.resources.length > 0) {
     sections.push(
-      "**Resources:**\n" +
-        params.resources
-          .map(
-            (r) =>
-              `- ${r.type}: ${r.ref}${r.range ? ` (${r.range})` : ""}`
-          )
-          .join("\n")
+      [
+        "Materials",
+        ...params.resources.map((r) => `- ${r.type}: ${r.ref}${r.range ? ` (${r.range})` : ""}`),
+      ].join("\n"),
     );
   }
+
+  sections.push(`Open the session: ${params.sessionUrl}`);
+  sections.push("Added by Study Bot");
 
   return sections.join("\n\n");
 }

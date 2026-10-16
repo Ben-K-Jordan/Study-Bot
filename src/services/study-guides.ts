@@ -5,21 +5,15 @@ import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
 import { sampleEvenly } from "@/lib/config";
+import {
+  guideTitle,
+  isGuideType,
+  normalizeGuideSections,
+  type GuideSection,
+  type GuideType,
+} from "@/lib/guide-format";
 
-export type GuideType = "KEY_CONCEPTS" | "FAQ" | "CHEAT_SHEET";
-
-interface GuideSection {
-  // KEY_CONCEPTS
-  concept?: string;
-  explanation?: string;
-  importance?: string;
-  // FAQ
-  question?: string;
-  answer?: string;
-  // CHEAT_SHEET
-  topic?: string;
-  content?: string;
-}
+export type { GuideSection, GuideType };
 
 export interface StudyGuideData {
   id: string;
@@ -32,7 +26,29 @@ export interface StudyGuideData {
   created_at: string;
 }
 
+/** Raised when a course (or exam) has no processed materials to write a guide from. */
+export class NoGuideMaterialsError extends Error {
+  readonly code = "NO_MATERIALS";
+  constructor(courseName: string, examName?: string) {
+    const scope = examName ? `${courseName} ${examName}` : courseName;
+    super(`No finished ${scope} materials yet. Upload them on Plan, then generate the guide.`);
+    this.name = "NoGuideMaterialsError";
+  }
+}
+
 const GUIDE_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
+
+/** Parses the model's JSON. Sections are coerced to strings so a list or table never breaks rendering. */
+export function parseGuideOutput(raw: unknown, guideType: GuideType, scopeName: string) {
+  const data = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const sections = normalizeGuideSections(data.sections);
+  if (sections.length === 0) throw new Error("The guide has no sections");
+  return {
+    guide_type: guideType,
+    title: guideTitle(data.title, guideType, scopeName),
+    sections,
+  };
+}
 
 export async function generateStudyGuide(
   userId: string,
@@ -40,7 +56,6 @@ export async function generateStudyGuide(
   examName: string | undefined,
   guideType: GuideType,
 ): Promise<StudyGuideData> {
-  // Fetch course chunks directly from DB for comprehensive coverage
   const docWhere: Record<string, unknown> = {
     userId,
     namespace: "COURSE",
@@ -49,72 +64,61 @@ export async function generateStudyGuide(
   };
   if (examName) docWhere.examName = examName;
 
-  // Count chunks first to avoid loading unbounded data into memory
+  // Count first so a large course never loads every chunk into memory.
   const totalChunks = await prisma.contentChunk.count({
     where: { document: { is: docWhere } },
   });
+  if (totalChunks === 0) throw new NoGuideMaterialsError(courseName, examName);
 
-  if (totalChunks === 0) {
-    throw new Error("No course materials found. Upload documents first.");
-  }
-
-  // Fetch a capped sample: if many chunks exist, skip evenly to get
-  // representative coverage without loading thousands into memory
+  // Sample evenly across a capped fetch for representative coverage.
   const TARGET_SAMPLE = 20;
   const MAX_FETCH = 200;
-  const fetchLimit = Math.min(totalChunks, MAX_FETCH);
-
-  const allChunks = await prisma.contentChunk.findMany({
-    where: { document: { is: docWhere } },
-    orderBy: [{ documentId: "asc" }, { ordinal: "asc" }],
-    select: { text: true },
-    take: fetchLimit,
-  });
+  const [allChunks, sessions, earlier] = await Promise.all([
+    prisma.contentChunk.findMany({
+      where: { document: { is: docWhere } },
+      orderBy: [{ documentId: "asc" }, { ordinal: "asc" }],
+      select: { text: true },
+      take: Math.min(totalChunks, MAX_FETCH),
+    }),
+    prisma.session.findMany({
+      where: { userId, courseName, ...(examName ? { examName } : {}) },
+      select: { objectives: true },
+      take: 1,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.studyGuide.count({
+      where: { userId, courseName, examName: examName || null, guideType },
+    }),
+  ]);
 
   const chunkTexts = sampleEvenly(allChunks, TARGET_SAMPLE).map((c) => c.text);
 
-  // Fetch objectives if available
   let objectives: string[] | undefined;
-  const sessions = await prisma.session.findMany({
-    where: { userId, courseName, ...(examName ? { examName } : {}) },
-    select: { objectives: true },
-    take: 1,
-    orderBy: { createdAt: "desc" },
-  });
-  if (sessions.length > 0 && sessions[0].objectives) {
-    const objs = sessions[0].objectives as { title: string }[];
-    objectives = objs.map((o) => o.title);
+  const stored = sessions[0]?.objectives;
+  if (Array.isArray(stored)) {
+    objectives = stored
+      .map((o) => (o as { title?: unknown })?.title)
+      .filter((t): t is string => typeof t === "string" && t.trim() !== "");
   }
 
   const ctx: GatewayContext = { userId, provider: createProvider() };
   const prompt = getPrompt(AiTask.GENERATE_STUDY_GUIDE);
+  const scopeName = examName ? `${courseName} ${examName}` : courseName;
 
-  const result = await runTask<{
-    guide_type: string;
-    title: string;
-    sections: GuideSection[];
-  }>(ctx, {
-    task: AiTask.GENERATE_STUDY_GUIDE,
-    promptVersion: prompt.version,
-    model: GUIDE_MODEL,
-    input: {
-      courseName,
-      examName,
-      guideType,
-      chunkTexts,
-      objectives,
+  // A second guide of the same format is a request for a new version, so
+  // skip the cache that would return the same text again.
+  const result = await runTask<ReturnType<typeof parseGuideOutput>>(
+    ctx,
+    {
+      task: AiTask.GENERATE_STUDY_GUIDE,
+      promptVersion: prompt.version,
+      model: GUIDE_MODEL,
+      input: { courseName, examName, guideType, chunkTexts, objectives },
+      parseOutput: (raw: unknown) => parseGuideOutput(raw, guideType, scopeName),
     },
-    parseOutput: (raw: unknown) => {
-      const data = raw as Record<string, unknown>;
-      return {
-        guide_type: (data.guide_type as string) || guideType,
-        title: (data.title as string) || `${guideType.replace(/_/g, " ")} Guide`,
-        sections: (data.sections as GuideSection[]) || [],
-      };
-    },
-  });
+    { skipCache: earlier > 0 },
+  );
 
-  // Persist the guide
   const guide = await prisma.studyGuide.create({
     data: {
       userId,
@@ -146,28 +150,99 @@ export async function generateStudyGuide(
   };
 }
 
-export async function listStudyGuides(
-  userId: string,
-  courseName?: string,
-  examName?: string,
-): Promise<StudyGuideData[]> {
-  const where: Record<string, unknown> = { userId };
-  if (courseName) where.courseName = courseName;
-  if (examName) where.examName = examName;
+/**
+ * A guide in a list. Only the newest guide of each format carries its
+ * sections; load another version with getStudyGuide (GET /api/guides/{id}),
+ * so the list stays small however often a guide is regenerated.
+ */
+export type StudyGuideListItem = Omit<StudyGuideData, "sections"> & { sections?: GuideSection[] };
 
-  const guides = await prisma.studyGuide.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-  });
+const GUIDE_META_SELECT = {
+  id: true,
+  userId: true,
+  courseName: true,
+  examName: true,
+  guideType: true,
+  title: true,
+  createdAt: true,
+} as const;
 
-  return guides.map((g) => ({
+function guideMeta(g: {
+  id: string;
+  userId: string;
+  courseName: string;
+  examName: string | null;
+  guideType: string;
+  title: string;
+  createdAt: Date;
+}): Omit<StudyGuideData, "sections"> {
+  const type = g.guideType as GuideType;
+  return {
     id: g.id,
     user_id: g.userId,
     course_name: g.courseName,
     exam_name: g.examName,
-    guide_type: g.guideType as GuideType,
-    title: g.title,
-    sections: g.content as unknown as GuideSection[],
+    guide_type: type,
+    title: guideTitle(g.title, type, g.examName ? `${g.courseName} ${g.examName}` : g.courseName),
     created_at: g.createdAt.toISOString(),
-  }));
+  };
+}
+
+/** Guides for a course (and exam), newest first; sections on the newest of each format only. */
+export async function listStudyGuides(
+  userId: string,
+  courseName?: string,
+  examName?: string,
+): Promise<StudyGuideListItem[]> {
+  const where: Record<string, unknown> = { userId };
+  if (courseName) where.courseName = courseName;
+  if (examName) where.examName = examName;
+
+  const rows = (
+    await prisma.studyGuide.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: GUIDE_META_SELECT,
+    })
+  ).filter((g) => isGuideType(g.guideType));
+
+  const newestIds: string[] = [];
+  const seen = new Set<string>();
+  for (const g of rows) {
+    if (seen.has(g.guideType)) continue;
+    seen.add(g.guideType);
+    newestIds.push(g.id);
+  }
+
+  const contents =
+    newestIds.length > 0
+      ? await prisma.studyGuide.findMany({
+          where: { userId, id: { in: newestIds } },
+          select: { id: true, content: true },
+        })
+      : [];
+  // Stored JSON may predate validation: clean it on the way out.
+  const sectionsById = new Map(contents.map((c) => [c.id, normalizeGuideSections(c.content)]));
+
+  return rows.map((g) => {
+    const sections = sectionsById.get(g.id);
+    return sections ? { ...guideMeta(g), sections } : guideMeta(g);
+  });
+}
+
+/** One guide with its sections, or null when it doesn't exist or isn't the user's. */
+export async function getStudyGuide(userId: string, guideId: string): Promise<StudyGuideData | null> {
+  const g = await prisma.studyGuide.findFirst({
+    where: { id: guideId, userId },
+    select: { ...GUIDE_META_SELECT, content: true },
+  });
+  if (!g || !isGuideType(g.guideType)) return null;
+  return { ...guideMeta(g), sections: normalizeGuideSections(g.content) };
+}
+
+/** Deletes a guide the user owns. Returns false when it doesn't exist or isn't theirs. */
+export async function deleteStudyGuide(userId: string, guideId: string): Promise<boolean> {
+  const { count } = await prisma.studyGuide.deleteMany({ where: { id: guideId, userId } });
+  if (count > 0) logger.info("guide.deleted", { user_id: userId, guide_id: guideId });
+  return count > 0;
 }

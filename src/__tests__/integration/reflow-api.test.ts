@@ -16,6 +16,8 @@ import {
   setGoogleClientFactory,
   resetGoogleClientFactory,
 } from "@/lib/google/calendar-client";
+import { dateColumnKey } from "@/lib/plan-dates";
+import { zonedTimeToUtc } from "@/lib/timezone";
 
 const hasDb = !!process.env.DATABASE_URL;
 
@@ -106,6 +108,13 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     break_protocol_default: "50_10",
   };
 
+  // The reflow routes pass noon of the plan's first day in its timezone and
+  // read availability in that zone. startDate is a DATE column, so read it as
+  // a calendar day (plan-dates.ts), not as midnight UTC.
+  function planStartInstant(plan: { startDate: Date; timezone: string }) {
+    return zonedTimeToUtc(dateColumnKey(plan.startDate), "12:00", plan.timezone);
+  }
+
   // Helper: create a plan and return its ID + items
   async function createTestPlan() {
     const result = await createPlan(userId, basePlanInput);
@@ -174,7 +183,7 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     const earlyNow = new Date(plan.startDate);
     earlyNow.setDate(earlyNow.getDate() - 1);
 
-    const result = computeReflow(reflowItems, reflowConfig, plan.startDate, earlyNow);
+    const result = computeReflow(reflowItems, reflowConfig, planStartInstant(plan), earlyNow, [], plan.timezone);
 
     // The MISSED item should NOT be in the movable set (it's terminal)
     // Only SCHEDULED items should be in changes
@@ -243,7 +252,7 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     const earlyNow = new Date(plan.startDate);
     earlyNow.setDate(earlyNow.getDate() - 1);
 
-    const result = computeReflow(reflowItems, reflowConfig, plan.startDate, earlyNow);
+    const result = computeReflow(reflowItems, reflowConfig, planStartInstant(plan), earlyNow, [], plan.timezone);
     const movedChanges = result.changes.filter((c: { action: string }) => c.action === "MOVED");
     const droppedChanges = result.changes.filter((c: { action: string }) => c.action === "DROPPED");
 
@@ -425,7 +434,7 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
     const earlyNow = new Date(plan.startDate);
     earlyNow.setDate(earlyNow.getDate() - 1);
 
-    const result = computeReflow(reflowItems, reflowConfig, plan.startDate, earlyNow);
+    const result = computeReflow(reflowItems, reflowConfig, planStartInstant(plan), earlyNow, [], plan.timezone);
 
     // The locked item should NOT appear in the changes at all
     // (it's classified as "fixed" and excluded from movable)
@@ -446,7 +455,7 @@ describe.skipIf(!hasDb)("Integration: Reflow API", () => {
   // ---- Test 5: Item status endpoint behavior ----
 
   it("DONE sets completedAt, MISSED sets missedAt", async () => {
-    const { planId, items } = await createTestPlan();
+    const { items } = await createTestPlan();
 
     // Mark first item DONE
     const doneItem = await prisma.studyPlanItem.update({

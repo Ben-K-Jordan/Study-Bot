@@ -2,8 +2,8 @@
  * Schedule Intelligence Module
  *
  * Applies cognitive science research to optimize WHEN study sessions are scheduled,
- * not just WHERE they fit. Provides slot scoring, pre-exam tapering, intraday
- * spacing enforcement, and dynamic session duration adjustment.
+ * not just WHERE they fit. Provides slot scoring, pre-exam tapering, and
+ * dynamic session duration adjustment.
  *
  * Research basis:
  * - Circadian task alignment: Wieth & Zacks 2011, Schmidt et al. 2007
@@ -11,13 +11,21 @@
  * - Post-exercise cognitive boost: Roig et al. 2013, Blomstrand & Engvall 2021
  * - Cognitive fatigue: Linder et al. 2014, Hockey 2013
  * - Pre-exam taper: Mujika & Padilla 2003 (adapted from athletic tapering)
- * - Intraday spacing: Cepeda et al. 2008
  * - Session duration by cognitive load: Cognitive Research 2020
  * - Post-class consolidation timing: Dewar et al. 2012, Wixted 2004
  * - Retroactive interference avoidance: Underwood 1957
  */
 
 import type { TimeInterval } from "@/lib/google/free-slots";
+import { dayKey, daysBetween, hourOfDay } from "@/lib/timezone";
+
+/**
+ * Hour of day (decimal) for scoring. With a timezone it is the student's
+ * wall clock; without one it falls back to the server's local clock.
+ */
+function localHour(date: Date, timeZone?: string): number {
+  return timeZone ? hourOfDay(date, timeZone) : date.getHours() + date.getMinutes() / 60;
+}
 
 // ---- Types ----
 
@@ -48,6 +56,8 @@ export interface SlotScoreInput {
   courseName?: string;
   /** The topic scope for this study session (for class-matching). Optional. */
   topicScope?: string;
+  /** IANA timezone used to read the slot's hour of day. Optional. */
+  timeZone?: string;
 }
 
 // ---- Constants ----
@@ -120,8 +130,7 @@ export const MIN_SESSION_MINUTES = 15;
 export function scoreSlot(input: SlotScoreInput): number {
   const { slot, mode, chronotype, dayEvents, bedtimeHour, courseName, topicScope } = input;
 
-  const slotDate = new Date(slot.start);
-  const slotTimeDecimal = slotDate.getHours() + slotDate.getMinutes() / 60;
+  const slotTimeDecimal = localHour(new Date(slot.start), input.timeZone);
 
   // 1. Circadian alignment (0-1)
   const circadianScore = computeCircadianScore(slotTimeDecimal, mode, chronotype);
@@ -417,12 +426,6 @@ function isCognitiveEvent(summaryLower: string): boolean {
 
 // ---- Pre-Exam Taper ----
 
-export interface TaperInput {
-  blocks: { dayIndex: number; mode: string; plannedMinutes: number }[];
-  examDate: Date;
-  planStartDate: Date;
-}
-
 /**
  * Apply pre-exam taper: reduce study volume in the final 48h before the exam.
  * Based on athletic taper research (Mujika & Padilla 2003) adapted for cognition:
@@ -436,22 +439,34 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
   blocks: T[],
   examDate: Date,
   planStartDate: Date,
+  timeZone?: string,
 ): T[] {
-  // Normalize the plan start to local midnight of day 0 so block-midday math
-  // is independent of the wall-clock time the plan was created. The production
+  // Normalize the plan start to midnight of day 0 so block-midday math is
+  // independent of the wall-clock time the plan was created. The production
   // caller passes `new Date()`; without this, a plan created at/after noon
   // pushes every block's assumed midday past exam midnight and silently drops
   // the final pre-exam study day (and misclassifies the 24h/48h windows).
-  const start = new Date(planStartDate);
-  start.setHours(0, 0, 0, 0);
-  const planStartMs = start.getTime();
-
-  // Exam day boundary is the exam's local midnight, self-consistent with the
-  // midnight-normalized plan start above: any block on or after exam day is
-  // dropped regardless of the exam's time of day.
-  const examDayStart = new Date(examDate);
-  examDayStart.setHours(0, 0, 0, 0);
-  const examTime = examDayStart.getTime();
+  //
+  // The exam day boundary is the exam's midnight, self-consistent with the
+  // midnight-normalized plan start: any block on or after exam day is dropped
+  // regardless of the exam's time of day.
+  //
+  // With a timezone, both midnights are calendar days in that zone and the
+  // math runs on a fixed 24h grid. Without one, the server's local midnights
+  // are used.
+  let planStartMs: number;
+  let examTime: number;
+  if (timeZone) {
+    planStartMs = 0;
+    examTime = daysBetween(dayKey(planStartDate, timeZone), dayKey(examDate, timeZone)) * 86400000;
+  } else {
+    const start = new Date(planStartDate);
+    start.setHours(0, 0, 0, 0);
+    planStartMs = start.getTime();
+    const examDayStart = new Date(examDate);
+    examDayStart.setHours(0, 0, 0, 0);
+    examTime = examDayStart.getTime();
+  }
 
   const tapered: T[] = [];
   let hasSessionInFinal24h = false;
@@ -497,58 +512,6 @@ export function applyPreExamTaper<T extends { dayIndex: number; mode: string; pl
   return tapered;
 }
 
-// ---- Intraday Spacing ----
-
-/**
- * Enforce minimum spacing between same-topic sessions on the same day.
- * If two sessions covering the same objectives are scheduled less than
- * minGapMinutes apart, the second one is shifted or flagged.
- *
- * Returns indices of blocks that violate spacing (caller should reschedule).
- */
-export function findIntradaySpacingViolations(
-  blocks: { dayIndex: number; topicScope: string; startMinuteOfDay?: number }[],
-  minGapMinutes: number = 60,
-): number[] {
-  // Pre-compute word sets once to avoid recreating in O(n²) pair comparisons
-  const wordSets = blocks.map((b) =>
-    new Set(b.topicScope.toLowerCase().split(/[,\s]+/).filter((w) => w.length > 3)),
-  );
-
-  const violations: number[] = [];
-  const dayGroups = new Map<number, number[]>();
-
-  for (let i = 0; i < blocks.length; i++) {
-    const day = blocks[i].dayIndex;
-    if (!dayGroups.has(day)) dayGroups.set(day, []);
-    dayGroups.get(day)!.push(i);
-  }
-
-  for (const indices of dayGroups.values()) {
-    for (let i = 0; i < indices.length; i++) {
-      for (let j = i + 1; j < indices.length; j++) {
-        const idxA = indices[i];
-        const idxB = indices[j];
-
-        // Check topic overlap using pre-computed sets
-        let hasOverlap = false;
-        for (const w of wordSets[idxA]) {
-          if (wordSets[idxB].has(w)) { hasOverlap = true; break; }
-        }
-        if (!hasOverlap) continue;
-
-        const startA = blocks[idxA].startMinuteOfDay ?? 0;
-        const startB = blocks[idxB].startMinuteOfDay ?? 0;
-        if (Math.abs(startB - startA) < minGapMinutes) {
-          violations.push(idxB);
-        }
-      }
-    }
-  }
-
-  return violations;
-}
-
 // ---- Dynamic Session Duration ----
 
 /**
@@ -578,6 +541,8 @@ export interface ScoredFitInput {
   courseName?: string;
   /** Per-block topic scopes for class-matching. Optional. */
   blockTopicScopes?: string[];
+  /** IANA timezone used to read hours of day. Optional. */
+  timeZone?: string;
 }
 
 /**
@@ -589,7 +554,7 @@ export interface ScoredFitInput {
  * Returns scheduled time intervals in the same order as input blocks.
  */
 export function fitBlocksScored(input: ScoredFitInput): (TimeInterval | null)[] {
-  const { blockDurationsMs, blockModes, freeSlots, chronotype, dayEvents, bedtimeHour, courseName, blockTopicScopes } = input;
+  const { blockDurationsMs, blockModes, freeSlots, chronotype, dayEvents, bedtimeHour, courseName, blockTopicScopes, timeZone } = input;
 
   // Track remaining capacity in each slot
   const slotStarts = freeSlots.map((s) => s.start);
@@ -625,6 +590,7 @@ export function fitBlocksScored(input: ScoredFitInput): (TimeInterval | null)[] 
         bedtimeHour,
         courseName,
         topicScope: blockTopicScopes?.[idx],
+        timeZone,
       });
 
       if (score > bestScore) {
@@ -650,13 +616,13 @@ export function fitBlocksScored(input: ScoredFitInput): (TimeInterval | null)[] 
  * Estimate bedtime from calendar events. If the user has events ending late,
  * infer they sleep after the last event. Otherwise default to 23:00.
  */
-export function estimateBedtime(events: CalendarEvent[]): number {
+export function estimateBedtime(events: CalendarEvent[], timeZone?: string): number {
   if (events.length === 0) return 23;
 
   // Find the latest event end time across all events
   let latestHour = 0;
   for (const event of events) {
-    const endHour = new Date(event.end).getHours();
+    const endHour = Math.floor(localHour(new Date(event.end), timeZone));
     if (endHour < 4) {
       // After midnight — they sleep very late
       return Math.min(endHour + 1, 3);

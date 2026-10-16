@@ -4,6 +4,8 @@
  * with the retention interval, i.e. the time remaining until the exam).
  */
 
+import { plural } from "@/lib/format";
+
 export interface FollowupRecommendation {
   label: string;
   days_from_now: number;
@@ -74,7 +76,7 @@ export function computeFollowups(accuracy: number, now: Date = new Date()): Foll
     const d = new Date(now);
     d.setDate(d.getDate() + days);
     return {
-      label: `Retrieval session in ${days} day${days === 1 ? "" : "s"}`,
+      label: plural(days, { one: "Retrieval session in # day", other: "Retrieval session in # days" }),
       days_from_now: days,
       date: formatLocalDate(d),
     };
@@ -112,7 +114,7 @@ export function followupsFromDueDates(
     const d = new Date(now);
     d.setDate(d.getDate() + days);
     return {
-      label: `Review session in ${days} day${days === 1 ? "" : "s"}`,
+      label: plural(days, { one: "Review session in # day", other: "Review session in # days" }),
       days_from_now: days,
       date: formatLocalDate(d),
     };

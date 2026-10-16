@@ -1,13 +1,13 @@
 /**
  * Build Google Calendar event payloads from StudyPlan data.
  *
- * Deterministic templates — no LLM calls.
- * Includes hash-based change detection for skip-on-unchanged.
+ * Deterministic templates, no LLM calls. The title and description are the
+ * same plain text as the .ics export (src/lib/calendar.ts). Includes a
+ * hash for skipping events that haven't changed; changing the text changes
+ * the hash, so the next publish updates every event once.
  */
 import { createHash } from "crypto";
-import { buildCalendarTitle, buildCalendarDescription, MODE_LABELS } from "@/lib/calendar";
-import { hashUserId } from "@/lib/calendar/hash";
-import { type SessionMode } from "@/lib/validation";
+import { buildCalendarDescription, buildCalendarTitle, type CalendarDescriptionParams } from "@/lib/calendar";
 import { type CalendarEventInput } from "./calendar-client";
 
 export interface EventBuildInput {
@@ -24,7 +24,8 @@ export interface EventBuildInput {
   startTime: string; // ISO
   endTime: string;   // ISO
   timezone?: string;
-  objectives?: string[] | null;
+  /** Topic titles, or the session's objectives as stored ({ id, title } objects). */
+  objectives?: unknown;
   targetOutcome?: Record<string, unknown> | null;
   breakProtocol?: Record<string, unknown> | null;
   baseUrl: string;
@@ -44,59 +45,21 @@ export function buildEventPayload(params: EventBuildInput): BuiltEvent {
   const summary = buildCalendarTitle({
     courseName: params.courseName,
     examName: params.examName,
-    mode: params.mode as SessionMode,
+    mode: params.mode,
     topicScope: params.topicScope,
+    objectives: params.objectives,
   });
 
-  const descriptionParts: string[] = [];
-
-  // Top line: deep link
-  descriptionParts.push(`StudyBot session: ${sessionUrl}`);
-  descriptionParts.push("");
-
-  // Objectives (max 5 + truncation)
-  if (params.objectives && params.objectives.length > 0) {
-    const shown = params.objectives.slice(0, 5);
-    const remaining = params.objectives.length - shown.length;
-    descriptionParts.push("Objectives:");
-    for (const obj of shown) {
-      descriptionParts.push(`  - ${obj}`);
-    }
-    if (remaining > 0) {
-      descriptionParts.push(`  +${remaining} more`);
-    }
-    descriptionParts.push("");
-  }
-
-  // Mode
-  const modeLabel = MODE_LABELS[params.mode] || params.mode;
-  descriptionParts.push(`Mode: ${modeLabel}`);
-
-  // Target
-  if (params.targetOutcome) {
-    const o = params.targetOutcome;
-    const parts: string[] = [];
-    if (o.prompt_count) parts.push(`${o.prompt_count} prompts`);
-    if (o.target_accuracy != null) parts.push(`target ${((o.target_accuracy as number) * 100).toFixed(0)}%`);
-    if (parts.length > 0) {
-      descriptionParts.push(`Target: ${parts.join(", ")}`);
-    }
-  }
-
-  // Break protocol
-  if (params.breakProtocol) {
-    const bp = params.breakProtocol;
-    const bpType = bp.type as string | undefined;
-    if (bpType) {
-      const label = bpType === "50_10" ? "50/10" : bpType === "25_5" ? "25/5" : bpType === "90_15" ? "90/15" : bpType;
-      descriptionParts.push(`Protocol: ${label} — phone away`);
-    }
-  }
-
-  descriptionParts.push("");
-  descriptionParts.push("Created by Study Bot");
-
-  const description = descriptionParts.join("\n");
+  const description = buildCalendarDescription({
+    courseName: params.courseName,
+    examName: params.examName,
+    mode: params.mode,
+    topics: params.objectives,
+    topicScope: params.topicScope,
+    outcome: (params.targetOutcome ?? null) as CalendarDescriptionParams["outcome"],
+    breaks: (params.breakProtocol ?? null) as CalendarDescriptionParams["breaks"],
+    sessionUrl,
+  });
 
   // Extended properties for reconciliation
   const extendedProperties: Record<string, string> = {
@@ -140,4 +103,9 @@ export function computeEventHash(input: CalendarEventInput): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-export { hashUserId as _hashUserIdForTest };
+/**
+ * Short hash of a user ID for extended properties (no PII).
+ */
+export function hashUserId(userId: string): string {
+  return createHash("sha256").update(userId).digest("hex").slice(0, 16);
+}

@@ -10,7 +10,8 @@
  *      are empty (user-set values are never touched).
  *   3. Starts the Postgres container via Docker Compose (if Docker is
  *      available) and waits for its healthcheck.
- *   4. Applies Prisma migrations and generates the Prisma client.
+ *   4. Applies Prisma migrations, then prisma/manual-scripts/001_pgvector.sql
+ *      (safe to re-run), and generates the Prisma client.
  *
  * Cross-platform (macOS / Linux / Windows), no dependencies beyond Node.
  */
@@ -26,12 +27,12 @@ const envPath = join(root, ".env");
 const examplePath = join(root, ".env.example");
 
 // ---------------------------------------------------------------------------
-// 0. Node version check (Next.js 14 + this script need Node 20.19+)
+// 0. Node version check (Prisma 7 and this script need Node 20.19+)
 // ---------------------------------------------------------------------------
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 if (nodeMajor < 20 || (nodeMajor === 20 && nodeMinor < 19)) {
   console.error(
-    `Setup failed: Node ${process.versions.node} is too old — this project requires Node 20.19 or newer, so install a current Node LTS and re-run npm run setup.`,
+    `Setup failed: Node ${process.versions.node} is too old. This project needs Node 20.19 or newer, so install a current Node LTS and re-run npm run setup.`,
   );
   process.exit(1);
 }
@@ -67,16 +68,16 @@ function sleep(ms) {
 // ---------------------------------------------------------------------------
 step("Environment file");
 if (existsSync(envPath)) {
-  ok(".env already exists — leaving your values untouched");
+  ok(".env already exists, so your values stay as they are");
 } else {
-  if (!existsSync(examplePath)) die(".env.example not found — cannot create .env");
+  if (!existsSync(examplePath)) die(".env.example not found, so .env can't be created");
   copyFileSync(examplePath, envPath);
   ok("created .env from .env.example");
 }
 
 // ---------------------------------------------------------------------------
 // 2. Fill in generated secrets where the value is empty
-//    (matches `KEY=""`, `KEY=''` or `KEY=` — never a user-set value)
+//    (matches `KEY=""`, `KEY=''` or `KEY=`, never a user-set value)
 // ---------------------------------------------------------------------------
 const SECRET_GENERATORS = {
   NEXTAUTH_SECRET: () => randomBytes(32).toString("base64"),
@@ -94,9 +95,9 @@ for (const [key, generate] of Object.entries(SECRET_GENERATORS)) {
     );
     ok(`generated ${key}`);
   } else if (new RegExp(`^${key}=`, "m").test(envText)) {
-    ok(`${key} already set — keeping your value`);
+    ok(`${key} already set, keeping your value`);
   } else {
-    warn(`${key} not found in .env — add it manually if you need it`);
+    warn(`${key} not found in .env; add it by hand if you need it`);
   }
 }
 try {
@@ -159,7 +160,7 @@ function waitForHealthy(timeoutMs) {
     if (ps.status === 0 && ps.stdout) {
       const text = ps.stdout.trim();
       // Compose emits either a single JSON object, an array, or NDJSON lines
-      // depending on version — handle all three.
+      // depending on version. Handle all three.
       let entries = [];
       try {
         const parsed = JSON.parse(text);
@@ -196,19 +197,19 @@ const composeCheck = run("docker", ["compose", "version"], {
   stdio: ["ignore", "pipe", "pipe"],
 });
 if (composeCheck.status !== 0 || composeCheck.error) {
-  explainNoDocker("Docker Compose not found — skipping database startup.");
+  explainNoDocker("Docker Compose not found, so the database isn't started.");
 } else {
   const up = run("docker", ["compose", "up", "-d", "db"], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (up.status !== 0) {
     const detail = (up.stderr || "").trim().split(/\r?\n/).pop() || "unknown error";
-    explainNoDocker(`Docker is installed but not usable (${detail}) — skipping database startup.`);
+    explainNoDocker(`Docker is installed but not usable (${detail}), so the database isn't started.`);
   } else {
     ok("started the db container (host port 5433)");
     dbHealthy = waitForHealthy(60_000);
     if (!dbHealthy) {
-      warn("Postgres did not report healthy in time — check: npm run db:logs");
+      warn("Postgres did not report healthy in time. Check: npm run db:logs");
     }
   }
 }
@@ -222,7 +223,27 @@ const migrated = migrate.status === 0;
 if (migrated) {
   ok("migrations applied");
 } else {
-  warn("database not reachable — start Postgres and run: npx prisma migrate deploy");
+  warn("database not reachable. Start Postgres and run: npx prisma migrate deploy");
+}
+
+// The embedding column and its index live outside the Prisma schema because
+// Prisma cannot model the vector type. Every statement in the script uses
+// IF NOT EXISTS, so re-running setup is safe. Without pgvector the app still
+// works; only embedding jobs and hybrid search stay unavailable.
+const PGVECTOR_SCRIPT = "prisma/manual-scripts/001_pgvector.sql";
+let vectorReady = false;
+if (migrated) {
+  step("pgvector extension and embedding column");
+  const vector = run("npx", ["prisma", "db", "execute", "--file", PGVECTOR_SCRIPT], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  vectorReady = vector.status === 0;
+  if (vectorReady) {
+    ok(`applied ${PGVECTOR_SCRIPT}`);
+  } else {
+    warn(`could not apply ${PGVECTOR_SCRIPT}; is the pgvector extension installed?`);
+    warn("the Docker database (npm run db:up) ships with pgvector");
+  }
 }
 
 step("Prisma client (prisma generate)");
@@ -231,7 +252,7 @@ const generated = generate.status === 0;
 if (generated) {
   ok("Prisma client generated");
 } else {
-  warn("prisma generate failed — run it manually: npx prisma generate");
+  warn("prisma generate failed. Run it by hand: npx prisma generate");
 }
 
 // ---------------------------------------------------------------------------
@@ -249,9 +270,14 @@ if (!migrated || !generated) {
   }
   if (!generated) log("  - npx prisma generate");
 }
+if (migrated && !vectorReady) {
+  log("");
+  log("Optional, for npm run worker and embedding search: install pgvector,");
+  log(`then run: npx prisma db execute --file ${PGVECTOR_SCRIPT}`);
+}
 if (parsedEnv.AI_PROVIDER === "mock") {
   log("");
-  log("Heads up: AI_PROVIDER is \"mock\" in .env. Mock mode exists for tests —");
+  log("Heads up: AI_PROVIDER is \"mock\" in .env. Mock mode exists for tests:");
   log("sessions get template questions and canned feedback. For real studying,");
   log("set AI_PROVIDER=openai and add an OPENAI_API_KEY in .env.");
 }

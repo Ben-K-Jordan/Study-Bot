@@ -138,21 +138,25 @@ describe("generateWorkedExampleDeck", () => {
     // STUDY prompt: problem, numbered steps with rationale, self-explanation
     const study = deck[0];
     expect(study.text).toContain("A problem");
-    expect(study.text).toContain("Step 1: A action 1 — why: A why 1");
-    expect(study.text).toContain("Step 3: A action 3 — why: A why 3");
+    expect(study.text).toContain("Step 1: A action 1. Why: A why 1.");
+    expect(study.text).toContain("Step 3: A action 3. Why: A why 3.");
     expect(study.text).toContain(
-      "In your own words: why does step 3 follow from the previous steps?",
+      "In your own words, why does step 3 follow from the steps before it?",
     );
+    // No typed dashes in text the student reads
+    expect(deck.every((p) => !/[\u2013\u2014]/.test(p.text))).toBe(true);
 
-    // COMPLETION 1: last step missing
+    // COMPLETION 1: last step missing, with the solution's step count
     expect(deck[1].text).toContain("A completion 1");
-    expect(deck[1].text).toContain(
-      "(The final step is missing — supply it and state why it follows.)",
-    );
+    expect(deck[1].text).toContain("The last step is missing. Write it and say why it follows.");
+    expect(deck[1].meta?.step_count).toBe(3);
 
     // COMPLETION 2: last two steps missing
     expect(deck[2].text).toContain("A completion 2");
-    expect(deck[2].text).toContain("(The final two steps are missing — supply them.)");
+    expect(deck[2].text).toContain(
+      "The last two steps are missing. Write them and say why each follows.",
+    );
+    expect(deck[2].meta?.step_count).toBe(3);
 
     // FULL: bare problem, model answer stashed in meta for post-answer reveal
     expect(deck[3].text).toBe("A full problem");
@@ -184,6 +188,8 @@ describe("generateWorkedExampleDeck", () => {
       "WORKED_EXAMPLES",
       ["Projectile motion", "Free fall"],
       15,
+      // The exam's own files rank first in the search.
+      { examName: "Midterm 1" },
     );
 
     const spec = runTaskMock.mock.calls[0][1] as {

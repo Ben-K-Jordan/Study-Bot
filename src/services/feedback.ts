@@ -292,10 +292,65 @@ async function generateAndPersist(
   }
 }
 
+/** The AI helpers run only with a real provider; the mock writes nothing. */
+function aiWritesFeedback(): boolean {
+  return (process.env.AI_PROVIDER || "mock") !== "mock";
+}
+
+/**
+ * The passages behind an attempt's feedback: the objective's anchors when
+ * it has them, else a full-text search for the topic, the correction rule
+ * and the question. The search matches any of their words (match "any"),
+ * since a passage that answers a question rarely repeats all of it; the
+ * search's own floor keeps stray one-word matches out. Exam-scoped results
+ * win over course-wide ones.
+ */
+async function findSources(
+  userId: string,
+  courseName: string,
+  examName: string,
+  objectiveId: string | null | undefined,
+  query: string,
+): Promise<SearchResult[]> {
+  if (objectiveId) {
+    const anchored = await tryObjectiveAnchors(userId, courseName, examName, objectiveId);
+    if (anchored.length > 0) return anchored;
+  }
+  const [scopedResults, unscopedResults] = await Promise.all([
+    searchChunks({ userId, q: query, namespace: "COURSE", courseName, examName, topK: 5, match: "any" }),
+    searchChunks({ userId, q: query, namespace: "COURSE", courseName, topK: 5, match: "any" }),
+  ]);
+  return scopedResults.length > 0 ? scopedResults : unscopedResults;
+}
+
+/** Number the passages and store them as the attempt's citations, in one transaction. */
+async function saveCitations(attemptId: string, results: SearchResult[]): Promise<FeedbackExcerpt[]> {
+  await prisma.$transaction(
+    results.map((r, i) =>
+      prisma.attemptCitation.upsert({
+        where: { attemptId_chunkId: { attemptId, chunkId: r.chunk_id } },
+        create: { attemptId, chunkId: r.chunk_id, rank: i + 1, snippet: r.snippet },
+        update: { rank: i + 1, snippet: r.snippet },
+      }),
+    ),
+  );
+  return results.map((r, i) => ({
+    chunk_id: r.chunk_id,
+    doc_title: r.doc_title,
+    page_number: r.page_number,
+    snippet: r.snippet,
+    rank: i + 1,
+  }));
+}
+
 /**
  * The actual generation work. Assumes the caller holds the GENERATING claim
  * and that the attempt is scored (selfScore != null). Throws on failure —
  * generateAndPersist owns error handling.
+ *
+ * Every AI-written block comes with the passages it was written from. When
+ * no passage matches, the result says so (no_sources) and carries no
+ * explanation or reinforcement, so nothing unsourced is shown as sourced.
  */
 async function generateContent(
   userId: string,
@@ -306,59 +361,38 @@ async function generateContent(
   const session = attempt.run.session;
   const courseName = session.courseName;
   const examName = session.examName;
+  const correct = attempt.selfScore === "CORRECT";
 
-  // For CORRECT answers: generate reinforcement + Socratic follow-up
-  if (attempt.selfScore === "CORRECT") {
-    const [reinforcement, socratic] = await Promise.all([
-      generateReinforcement(
-        userId, attempt.promptText, attempt.userAnswer || "", courseName, examName,
-      ),
-      generateSocraticFollowup(
-        userId, attempt.promptText, attempt.userAnswer || "", "CORRECT",
-        undefined, courseName, examName,
-      ),
-    ]);
-    return { status: "OK", excerpts: [], ...reinforcement, ...socratic };
+  // A correct answer gets only AI-written notes, so with the mock provider
+  // there is nothing to look up.
+  if (correct && !aiWritesFeedback()) {
+    return { status: "OK", excerpts: [] };
   }
 
   // Fetch error log, prompt row, and mistake patterns in parallel
   const [errorLog, promptRow, mistakePatterns] = await Promise.all([
-    prisma.sessionErrorLog.findFirst({
-      where: { runId: attempt.runId, promptIndex: attempt.promptIndex },
-    }),
+    correct
+      ? null
+      : prisma.sessionErrorLog.findFirst({
+          where: { runId: attempt.runId, promptIndex: attempt.promptIndex },
+        }),
     prisma.sessionRunPrompt.findUnique({
       where: { runId_promptIndex: { runId: attempt.runId, promptIndex: attempt.promptIndex } },
     }),
-    detectMistakePatterns(userId, courseName),
+    correct ? [] : detectMistakePatterns(userId, courseName),
   ]);
   const objectives = session.objectives as { id: string; title: string }[] | null;
   const objectiveTitle = promptRow?.objectiveId
     ? objectives?.find((o) => o.id === promptRow.objectiveId)?.title
     : objectives?.[0]?.title;
 
-  // Phase 3: Try objective anchors first
-  let results: SearchResult[] = [];
-  if (promptRow?.objectiveId) {
-    results = await tryObjectiveAnchors(
-      userId, courseName, examName, promptRow.objectiveId
-    );
-  }
-
-  // Fall back to FTS if anchors returned nothing
-  if (results.length === 0) {
-    const query = buildFeedbackQuery(
-      attempt.promptText,
-      errorLog?.correctionRule,
-      objectiveTitle
-    );
-
-    // Run both scoped (with examName) and unscoped searches in parallel
-    const [scopedResults, unscopedResults] = await Promise.all([
-      searchChunks({ userId, q: query, namespace: "COURSE", courseName, examName, topK: 5 }),
-      searchChunks({ userId, q: query, namespace: "COURSE", courseName, topK: 5 }),
-    ]);
-    results = scopedResults.length > 0 ? scopedResults : unscopedResults;
-  }
+  const results = await findSources(
+    userId,
+    courseName,
+    examName,
+    promptRow?.objectiveId,
+    buildFeedbackQuery(attempt.promptText, errorLog?.correctionRule, objectiveTitle),
+  );
 
   const ftsMs = Date.now() - ftsStart;
 
@@ -367,27 +401,35 @@ async function generateContent(
     // Terminal state: generateAndPersist stores this as READY, so refetches
     // return it verbatim and the client stops polling. Without the explicit
     // marker this payload is indistinguishable from "not generated yet".
-    return { status: "OK", excerpts: [], no_sources: true };
+    if (!correct) return { status: "OK", excerpts: [], no_sources: true };
+    // A correct answer still gets its follow-up question (labeled AI-written,
+    // never presented as sourced), but no "why it's correct" note: with no
+    // passage to write it from, it would be general knowledge shown as
+    // coming from the student's materials.
+    const socratic = await generateSocraticFollowup(
+      userId, attempt.promptText, attempt.userAnswer || "", "CORRECT", undefined, [],
+    );
+    return { status: "OK", excerpts: [], no_sources: true, ...socratic };
   }
 
-  // Build excerpts and store citations in a single batch transaction
-  const excerpts: FeedbackExcerpt[] = results.map((r, i) => ({
-    chunk_id: r.chunk_id,
-    doc_title: r.doc_title,
-    page_number: r.page_number,
-    snippet: r.snippet,
-    rank: i + 1,
-  }));
+  const excerpts = await saveCitations(attemptId, results);
 
-  await prisma.$transaction(
-    results.map((r, i) =>
-      prisma.attemptCitation.upsert({
-        where: { attemptId_chunkId: { attemptId, chunkId: r.chunk_id } },
-        create: { attemptId, chunkId: r.chunk_id, rank: i + 1, snippet: r.snippet },
-        update: { rank: i + 1, snippet: r.snippet },
-      }),
-    ),
-  );
+  if (correct) {
+    const [reinforcement, socratic] = await Promise.all([
+      generateReinforcement(userId, attempt.promptText, attempt.userAnswer || "", results),
+      generateSocraticFollowup(
+        userId, attempt.promptText, attempt.userAnswer || "", "CORRECT", undefined, results,
+      ),
+    ]);
+    logger.info("feedback.generated", {
+      attempt_id: attemptId,
+      count: excerpts.length,
+      has_reinforcement: !!reinforcement.reinforcement,
+      has_socratic: !!socratic?.socratic_followup,
+      fts_ms: ftsMs,
+    });
+    return { status: "OK", excerpts, ...reinforcement, ...socratic };
+  }
 
   // Generate AI explanation and Socratic follow-up in parallel
   const [aiExplanation, socratic] = await Promise.all([
@@ -404,7 +446,7 @@ async function generateContent(
     ),
     generateSocraticFollowup(
       userId, attempt.promptText, attempt.userAnswer || "",
-      attempt.selfScore || "INCORRECT", undefined, courseName, examName,
+      attempt.selfScore || "INCORRECT", undefined, results,
     ),
   ]);
 
@@ -506,8 +548,7 @@ async function generateAIExplanation(
   mnemonic?: string;
   pattern_advice?: string;
 }> {
-  const providerName = process.env.AI_PROVIDER || "mock";
-  if (providerName === "mock") return {};
+  if (!aiWritesFeedback()) return {};
 
   try {
     const gatewayCtx: GatewayContext = { userId, provider: createProvider() };
@@ -575,26 +616,20 @@ async function generateAIExplanation(
 
 // ---- Reinforcement (CORRECT) ----
 
+/**
+ * The "why it's correct" note, written from the passages findSources found.
+ * The caller returns those passages as the numbered sources and calls this
+ * only when there is at least one.
+ */
 async function generateReinforcement(
   userId: string,
   question: string,
   userAnswer: string,
-  courseName: string,
-  examName: string,
+  results: SearchResult[],
 ): Promise<{ reinforcement?: string; deeper_insight?: string; concept_connection?: string }> {
-  const providerName = process.env.AI_PROVIDER || "mock";
-  if (providerName === "mock") return {};
+  if (!aiWritesFeedback() || results.length === 0) return {};
 
   try {
-    const results = await searchChunks({
-      userId,
-      q: question,
-      namespace: "COURSE",
-      courseName,
-      examName,
-      topK: 3,
-    });
-
     const gatewayCtx: GatewayContext = { userId, provider: createProvider() };
     const prompt = getPrompt(AiTask.REINFORCE_CORRECT);
 
@@ -607,7 +642,7 @@ async function generateReinforcement(
         input: {
           question,
           userAnswer,
-          chunks: results.map((r) => ({
+          chunks: results.slice(0, 3).map((r) => ({
             chunk_id: r.chunk_id,
             title: r.doc_title,
             page: r.page_number,
@@ -638,28 +673,18 @@ async function generateReinforcement(
 
 // ---- Socratic Follow-up ----
 
+/** The follow-up question, grounded in the same passages as the rest of the feedback. */
 async function generateSocraticFollowup(
   userId: string,
   question: string,
   userAnswer: string,
   selfScore: string,
   explanation: string | undefined,
-  courseName: string,
-  examName: string,
+  results: SearchResult[],
 ): Promise<{ socratic_followup?: string; socratic_purpose?: string }> {
-  const providerName = process.env.AI_PROVIDER || "mock";
-  if (providerName === "mock") return {};
+  if (!aiWritesFeedback()) return {};
 
   try {
-    const results = await searchChunks({
-      userId,
-      q: question,
-      namespace: "COURSE",
-      courseName,
-      examName,
-      topK: 3,
-    });
-
     const gatewayCtx: GatewayContext = { userId, provider: createProvider() };
     const prompt = getPrompt(AiTask.SOCRATIC_FOLLOWUP);
 
@@ -674,7 +699,7 @@ async function generateSocraticFollowup(
           userAnswer,
           selfScore,
           explanation,
-          chunks: results.map((r) => ({
+          chunks: results.slice(0, 3).map((r) => ({
             chunk_id: r.chunk_id,
             title: r.doc_title,
             page: r.page_number,

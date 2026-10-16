@@ -5,18 +5,11 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getUserId } from "@/lib/auth";
+import { requireAdmin } from "@/lib/admin";
 
 export async function GET(request: NextRequest) {
-  const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").filter(Boolean);
-  if (!adminIds.includes(userId)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const admin = await requireAdmin(request);
+  if ("response" in admin) return admin.response;
 
   const statusFilter = request.nextUrl.searchParams.get("status");
   const limitRaw = parseInt(request.nextUrl.searchParams.get("limit") || "20", 10);

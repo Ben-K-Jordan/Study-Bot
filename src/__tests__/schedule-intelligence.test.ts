@@ -5,7 +5,6 @@ import {
   adjustDurationByMode,
   fitBlocksScored,
   estimateBedtime,
-  findIntradaySpacingViolations,
   isClassEvent,
   isRelatedClass,
   MAX_DURATION_BY_MODE,
@@ -352,48 +351,6 @@ describe("estimateBedtime", () => {
     const bedtime = estimateBedtime(events);
     expect(bedtime).toBeGreaterThanOrEqual(22);
     expect(bedtime).toBeLessThanOrEqual(24);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// findIntradaySpacingViolations
-// ---------------------------------------------------------------------------
-
-describe("findIntradaySpacingViolations", () => {
-  it("detects same-topic sessions within 1 hour on same day", () => {
-    const blocks = [
-      { dayIndex: 0, topicScope: "Linear Algebra, Matrices", startMinuteOfDay: 540 },
-      { dayIndex: 0, topicScope: "Matrices, Determinants", startMinuteOfDay: 570 },  // 30 min gap
-    ];
-    const violations = findIntradaySpacingViolations(blocks, 60);
-    expect(violations.length).toBeGreaterThan(0);
-  });
-
-  it("allows same-topic sessions with sufficient gap", () => {
-    const blocks = [
-      { dayIndex: 0, topicScope: "Linear Algebra", startMinuteOfDay: 540 },
-      { dayIndex: 0, topicScope: "Linear Algebra", startMinuteOfDay: 660 }, // 2h gap
-    ];
-    const violations = findIntradaySpacingViolations(blocks, 60);
-    expect(violations).toHaveLength(0);
-  });
-
-  it("ignores different topics on the same day", () => {
-    const blocks = [
-      { dayIndex: 0, topicScope: "Calculus", startMinuteOfDay: 540 },
-      { dayIndex: 0, topicScope: "Chemistry", startMinuteOfDay: 570 },
-    ];
-    const violations = findIntradaySpacingViolations(blocks, 60);
-    expect(violations).toHaveLength(0);
-  });
-
-  it("ignores same-topic sessions on different days", () => {
-    const blocks = [
-      { dayIndex: 0, topicScope: "Linear Algebra", startMinuteOfDay: 540 },
-      { dayIndex: 1, topicScope: "Linear Algebra", startMinuteOfDay: 540 },
-    ];
-    const violations = findIntradaySpacingViolations(blocks, 60);
-    expect(violations).toHaveLength(0);
   });
 });
 

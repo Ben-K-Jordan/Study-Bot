@@ -21,13 +21,12 @@ describe("token encryption", () => {
   it("fails without TOKEN_ENC_KEY in production", async () => {
     const origEnv = { ...process.env };
     delete process.env.TOKEN_ENC_KEY;
-    delete process.env.GOOGLE_TOKEN_ENC_KEY;
     vi.stubEnv("NODE_ENV", "production");
 
     // Dynamic import to get fresh module
     vi.resetModules();
     try {
-      const { encrypt } = await import("@/lib/crypto");
+      const { encryptToken: encrypt } = await import("@/lib/crypto/token-vault");
       expect(() => encrypt("test")).toThrow("TOKEN_ENC_KEY");
     } finally {
       vi.unstubAllEnvs();
@@ -38,12 +37,11 @@ describe("token encryption", () => {
 
   it("accepts TOKEN_ENC_KEY as primary env var", async () => {
     const origEnv = { ...process.env };
-    delete process.env.GOOGLE_TOKEN_ENC_KEY;
     process.env.TOKEN_ENC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     vi.resetModules();
     try {
-      const { encrypt, decrypt } = await import("@/lib/crypto");
+      const { encryptToken: encrypt, decryptToken: decrypt } = await import("@/lib/crypto/token-vault");
       const enc = encrypt("hello");
       expect(decrypt(enc)).toBe("hello");
     } finally {

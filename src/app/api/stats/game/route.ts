@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { getGameState } from "@/services/gamification";
 import { logger } from "@/lib/logger";
 
+/**
+ * GET /api/stats/game: streak, XP, freezes and achievements. Read-only;
+ * achievements are awarded when XP is earned, never here, so
+ * `newAchievements` is always empty.
+ */
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -14,6 +20,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(state);
   } catch (err) {
     logger.error("stats.game_failed", { userId, error: String(err) });
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Progress didn't load. Retry." }, { status: 500 });
   }
 }

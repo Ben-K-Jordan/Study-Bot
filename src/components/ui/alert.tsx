@@ -1,0 +1,88 @@
+import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
+import { cn } from "cn"
+
+const alertVariants = cva(
+  "group/alert relative grid w-full gap-0.5 rounded-lg border border-transparent px-4 py-3 text-left type-body-m has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 has-data-[slot=alert-description]:*:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
+  {
+    variants: {
+      variant: {
+        default: "bg-surface-container text-on-surface",
+        info: "bg-primary-container text-on-primary-container *:data-[slot=alert-description]:text-current",
+        success:
+          "bg-tertiary-container text-on-tertiary-container *:data-[slot=alert-description]:text-current",
+        warning:
+          "bg-warning-container text-on-warning-container *:data-[slot=alert-description]:text-current",
+        destructive:
+          "bg-error-container text-on-error-container *:data-[slot=alert-description]:text-current",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+)
+
+/**
+ * A callout. Only `destructive` (something failed) is a live alert by
+ * default; info, success, warning and default notices are static, so a
+ * notice already on the page when it loads isn't read out over everything
+ * else. Pass `role="alert"` when another variant appears in response to an
+ * action, `role="status"` for a polite update, or `role="note"`.
+ */
+function Alert({
+  className,
+  variant,
+  role,
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
+  return (
+    <div
+      data-slot="alert"
+      role={role ?? (variant === "destructive" ? "alert" : undefined)}
+      className={cn(alertVariants({ variant }), className)}
+      {...props}
+    />
+  )
+}
+
+function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="alert-title"
+      className={cn(
+        "type-title-s group-has-[>svg]/alert:col-start-2 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function AlertDescription({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="alert-description"
+      className={cn(
+        "type-body-m text-pretty text-muted-foreground [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="alert-action"
+      className={cn("absolute top-1.5 right-2", className)}
+      {...props}
+    />
+  )
+}
+
+export { Alert, AlertTitle, AlertDescription, AlertAction }

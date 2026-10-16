@@ -1,4 +1,5 @@
 import { SessionMode } from "./validation";
+import { slugifyObjectiveTitle } from "./objective-keys";
 
 export interface PlanBlock {
   dayIndex: number;
@@ -56,20 +57,8 @@ function clampDuration(desired: number, cap: number, windowMinutes: number): num
   return Math.max(15, Math.min(desired, max));
 }
 
-/**
- * Derive a stable objective id from its title. The same title always yields
- * the same id, so an objective keeps one identity across every block it
- * appears in (SM-2 mastery rows and feedback anchors are keyed by this id).
- */
-export function slugifyObjectiveTitle(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 60)
-    .replace(/_+$/g, "");
-  return slug || "objective";
-}
+// Objective ids are slugs of their titles; the rule lives in objective-keys.
+export { slugifyObjectiveTitle };
 
 /**
  * Build a title -> id map for a whole plan's objectives. Ids are slugs of the
@@ -260,4 +249,157 @@ export function generatePlan(input: PlanGeneratorInput): PlanBlock[] {
   }
 
   return blocks;
+}
+
+// ---------------------------------------------------------------------------
+// Laying blocks out in time
+// ---------------------------------------------------------------------------
+
+const QUARTER_HOUR_MS = 15 * 60 * 1000;
+
+/** The next quarter hour at or after an instant (every real UTC offset is a multiple of 15 minutes). */
+export function nextQuarterHour(ms: number): number {
+  return Math.ceil(ms / QUARTER_HOUR_MS) * QUARTER_HOUR_MS;
+}
+
+export interface BlockPlacement {
+  dayIndex: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * Times for blocks laid end to end in each day's study window, from the
+ * window start. Day 0 is today: its blocks start no earlier than `earliest`
+ * (now, rounded up), so a plan made in the evening never schedules sessions
+ * that already passed. A day-0 block that no longer fits before today's
+ * window ends moves to the first later day (up to `lastDayIndex`) with room
+ * left in its window and daily cap, after that day's own blocks; with no room
+ * anywhere it gets null. Blocks on other days keep their order and times.
+ *
+ * `window(dayIndex)` gives that day's window as instants (ms).
+ */
+export function layoutBlocks<B extends { dayIndex: number; plannedMinutes: number }>(
+  blocks: readonly B[],
+  options: {
+    window: (dayIndex: number) => { start: number; end: number };
+    earliest: number;
+    dailyCapMinutes: number;
+    lastDayIndex?: number;
+  },
+): (BlockPlacement | null)[] {
+  const lastDayIndex = options.lastDayIndex ?? 6;
+  const cursor = new Map<number, number>();
+  const usedMinutes = new Map<number, number>();
+  const placements: (BlockPlacement | null)[] = blocks.map(() => null);
+  const overflow: number[] = [];
+
+  const startOf = (day: number) => {
+    const known = cursor.get(day);
+    if (known !== undefined) return known;
+    const start = options.window(day).start;
+    return day === 0 ? Math.max(start, options.earliest) : start;
+  };
+  const place = (index: number, day: number, start: number) => {
+    const minutes = blocks[index].plannedMinutes;
+    const end = start + minutes * 60_000;
+    placements[index] = { dayIndex: day, start, end };
+    cursor.set(day, end);
+    usedMinutes.set(day, (usedMinutes.get(day) ?? 0) + minutes);
+  };
+
+  blocks.forEach((block, index) => {
+    const start = startOf(block.dayIndex);
+    if (block.dayIndex === 0 && start + block.plannedMinutes * 60_000 > options.window(0).end) {
+      overflow.push(index);
+      return;
+    }
+    place(index, block.dayIndex, start);
+  });
+
+  for (const index of overflow) {
+    const minutes = blocks[index].plannedMinutes;
+    for (let day = 1; day <= lastDayIndex; day++) {
+      const start = startOf(day);
+      const fitsWindow = start + minutes * 60_000 <= options.window(day).end;
+      const fitsCap = (usedMinutes.get(day) ?? 0) + minutes <= options.dailyCapMinutes;
+      if (fitsWindow && fitsCap) {
+        place(index, day, start);
+        break;
+      }
+    }
+  }
+
+  return placements;
+}
+
+/**
+ * Places blocks one day at a time with `fitDay`, which fits that day's
+ * blocks into its free time (the Google Calendar path) and returns a slot or
+ * null for each. A block with no room on its day rolls to the next day, after
+ * that day's own blocks and within the daily cap, and keeps rolling until
+ * `lastDayIndex`; one that fits nowhere gets null. Blocks that rolled keep
+ * their original order, so the earliest goes first.
+ */
+export function rollBlocksForward<B extends { dayIndex: number; plannedMinutes: number }>(
+  blocks: readonly B[],
+  options: {
+    lastDayIndex: number;
+    dailyCapMinutes: number;
+    fitDay: (dayIndex: number, dayBlocks: readonly B[]) => readonly ({ start: number; end: number } | null)[];
+  },
+): (BlockPlacement | null)[] {
+  const placements: (BlockPlacement | null)[] = blocks.map(() => null);
+  const byDay = new Map<number, number[]>();
+  blocks.forEach((block, index) => {
+    const list = byDay.get(block.dayIndex) ?? [];
+    list.push(index);
+    byDay.set(block.dayIndex, list);
+  });
+
+  let carried: number[] = [];
+  for (let day = 0; day <= options.lastDayIndex; day++) {
+    const own = byDay.get(day) ?? [];
+    let used = own.reduce((sum, index) => sum + blocks[index].plannedMinutes, 0);
+    const joining: number[] = [];
+    const waiting: number[] = [];
+    for (const index of carried) {
+      const minutes = blocks[index].plannedMinutes;
+      if (used + minutes <= options.dailyCapMinutes) {
+        joining.push(index);
+        used += minutes;
+      } else {
+        waiting.push(index);
+      }
+    }
+
+    const dayIndexes = [...own, ...joining];
+    if (dayIndexes.length === 0) {
+      carried = waiting;
+      continue;
+    }
+    const slots = options.fitDay(day, dayIndexes.map((index) => blocks[index]));
+    const unplaced: number[] = [];
+    dayIndexes.forEach((index, k) => {
+      const slot = slots[k];
+      if (slot) placements[index] = { dayIndex: day, start: slot.start, end: slot.end };
+      else unplaced.push(index);
+    });
+    carried = [...unplaced, ...waiting].sort((a, b) => a - b);
+  }
+
+  return placements;
+}
+
+/**
+ * Whether a YYYY-MM-DD string names a real calendar day. The API schema
+ * only checks the shape, and Date.UTC rolls 2026-02-31 over to March 3 and
+ * 2026-13-01 into the next year.
+ */
+export function isCalendarDay(key: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!match) return false;
+  const [y, m, d] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 }

@@ -18,25 +18,27 @@
 import type { Prompt } from "@/lib/prompts";
 
 /**
- * Variant question templates — each approaches the concept differently.
- * The original question text and error context are used to ground the variant.
+ * Variant question templates. Each retests the same idea from a different
+ * angle; the question answered incorrectly comes first, the instruction after it, and no
+ * template names the error type (an enum) or quotes an earlier repair.
+ * Every one asks for an answer from memory.
  */
 const VARIANT_TEMPLATES = [
-  // Explain why the wrong answer is wrong
-  (original: string, errorType: string) =>
-    `Retry (different angle): A student answered a question about this topic incorrectly due to a ${errorType.toLowerCase()} error. The original question was: "${original}"\n\nNow explain: What is the correct concept, and why does the common mistake happen?`,
+  // Explain the idea and why the error happens
+  (original: string) =>
+    `${original}\n\nFrom memory: explain the idea behind this question and why this error usually happens.`,
 
-  // Apply the concept to a new scenario
-  (original: string, _errorType: string) =>
-    `Apply it: You previously studied this topic. Here's a new scenario — apply the same underlying concept:\n\nOriginal: "${original}"\n\nDescribe how you would apply this concept to a different but related situation. Give a concrete example.`,
+  // Apply the same method to a new case
+  (original: string) =>
+    `${original}\n\nFrom memory: apply the same method to a different but related case. Work through it step by step and give a concrete example.`,
 
-  // Compare and contrast
-  (original: string, errorType: string) =>
-    `Distinguish: A ${errorType.toLowerCase()} error often happens because two concepts are confused. Referring to: "${original}"\n\nIdentify the two concepts that could be confused here and explain the key difference between them.`,
+  // Tell apart two ideas that get confused
+  (original: string) =>
+    `${original}\n\nFrom memory: name the two ideas that are easy to confuse here and explain the difference between them.`,
 
   // Teach it back
-  (original: string, _errorType: string) =>
-    `Teach it: Imagine you need to explain this concept to a classmate who is confused. The topic: "${original}"\n\nWrite a clear, simple explanation in your own words. Include one example that makes it click.`,
+  (original: string) =>
+    `${original}\n\nFrom memory: explain this to a classmate in your own words, with one example that makes it clear.`,
 ] as const;
 
 /**
@@ -77,7 +79,7 @@ export function generateVariantQuestion(
   }
 
   const templateFn = VARIANT_TEMPLATES[templateIdx];
-  const text = templateFn(originalPromptText, errorType);
+  const text = templateFn(originalPromptText.trim());
 
   return {
     id: `variant_${promptIndex}`,

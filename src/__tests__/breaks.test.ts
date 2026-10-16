@@ -3,10 +3,7 @@ import {
   getBreakConfig,
   initBreakState,
   checkBreakNeeded,
-  checkBreakEnded,
   endBreakEarly,
-  breakRemainingSeconds,
-  workRemainingSeconds,
 } from "@/lib/breaks";
 
 describe("getBreakConfig", () => {
@@ -78,31 +75,6 @@ describe("checkBreakNeeded", () => {
   });
 });
 
-describe("checkBreakEnded", () => {
-  it("advances cycle when break duration exceeded", () => {
-    const breakStart = new Date(Date.now() - 11 * 60 * 1000); // 11 min ago
-    const state = initBreakState({ type: "50_10", cycles: 2 });
-    state.on_break = true;
-    state.break_started_at = breakStart.toISOString();
-    state.current_cycle = 0;
-
-    const result = checkBreakEnded(state);
-    expect(result.on_break).toBe(false);
-    expect(result.current_cycle).toBe(1);
-    expect(result.completed_breaks).toHaveLength(1);
-  });
-
-  it("keeps break active if not yet elapsed", () => {
-    const breakStart = new Date(Date.now() - 5 * 60 * 1000); // 5 min ago
-    const state = initBreakState({ type: "50_10", cycles: 2 });
-    state.on_break = true;
-    state.break_started_at = breakStart.toISOString();
-
-    const result = checkBreakEnded(state);
-    expect(result.on_break).toBe(true);
-  });
-});
-
 describe("endBreakEarly", () => {
   it("ends break and advances cycle", () => {
     const state = initBreakState({ type: "50_10", cycles: 2 });
@@ -113,34 +85,5 @@ describe("endBreakEarly", () => {
     expect(result.on_break).toBe(false);
     expect(result.current_cycle).toBe(1);
     expect(result.completed_breaks).toHaveLength(1);
-  });
-});
-
-describe("breakRemainingSeconds", () => {
-  it("returns remaining seconds during break", () => {
-    const state = initBreakState({ type: "50_10", cycles: 2 });
-    state.on_break = true;
-    const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000);
-    state.break_started_at = twoMinAgo.toISOString();
-
-    const remaining = breakRemainingSeconds(state);
-    // Should be ~8 minutes (480 seconds) ± 1s
-    expect(remaining).toBeGreaterThan(470);
-    expect(remaining).toBeLessThanOrEqual(481);
-  });
-
-  it("returns 0 when not on break", () => {
-    const state = initBreakState({ type: "50_10", cycles: 2 });
-    expect(breakRemainingSeconds(state)).toBe(0);
-  });
-});
-
-describe("workRemainingSeconds", () => {
-  it("returns remaining work time", () => {
-    const state = initBreakState({ type: "25_5", cycles: 2 });
-    // work_started_at is "now"
-    const remaining = workRemainingSeconds(state);
-    expect(remaining).toBeGreaterThan(24 * 60 - 2);
-    expect(remaining).toBeLessThanOrEqual(25 * 60 + 1);
   });
 });
