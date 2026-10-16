@@ -2,6 +2,7 @@ import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { testAuthUserId } from "@/lib/test-auth";
+import { unauthorized } from "@/lib/http";
 
 // One-time flag: warn loudly if the test-auth header is trusted in a
 // production build (only possible with CI=true) so it can't go unnoticed.
@@ -19,8 +20,10 @@ const PUBLIC_PATHS = [
 ];
 
 // Files served from public/ and app metadata routes (icon.svg, manifest.json).
-// Matched by extension outside /api only, so an API path can never skip auth.
-const STATIC_FILE = /\.(?:avif|css|gif|ico|jpe?g|js|json|map|png|svg|txt|webmanifest|webp|woff2?|xml)$/i;
+// All of them sit at the top level, so only a single-segment path matches:
+// /flashcards/abc.json is a page under a dynamic segment and still needs a
+// session. Checked outside /api only, so an API path can never skip auth.
+const STATIC_FILE = /^\/[^/]+\.(?:avif|css|gif|ico|jpe?g|js|json|map|png|svg|txt|webmanifest|webp|woff2?|xml)$/i;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -97,12 +100,7 @@ export async function proxy(request: NextRequest) {
 
   if (!token) {
     // API routes get 401 JSON instead of redirect
-    if (isApi) {
-      return NextResponse.json(
-        { error: "Your sign-in expired. Sign in again.", code: "UNAUTHORIZED" },
-        { status: 401 },
-      );
-    }
+    if (isApi) return unauthorized();
     const signInUrl = new URL("/auth/signin", request.url);
     // Keep the query (/plan?plan=abc) so sign-in returns to the same view
     signInUrl.searchParams.set("callbackUrl", pathname + request.nextUrl.search);

@@ -34,6 +34,10 @@ vi.mock("@/lib/db", () => {
           return create;
         }),
         update: vi.fn(async () => ({})),
+        deleteMany: vi.fn(async ({ where }: { where: { keyHash: string } }) => {
+          aiCacheEntries.delete(where.keyHash);
+          return { count: 1 };
+        }),
       },
       _test: { aiCallLogs, aiCacheEntries },
     },
@@ -41,6 +45,7 @@ vi.mock("@/lib/db", () => {
 });
 
 import { runTask, embed, resetCircuitBreaker, GatewayError } from "@/lib/ai/gateway";
+import { ProviderRequestError } from "@/lib/ai/provider";
 import { prisma } from "@/lib/db";
 
 const testPrisma = (prisma as unknown as { _test: { aiCallLogs: unknown[]; aiCacheEntries: Map<string, unknown> } })._test;
@@ -102,6 +107,32 @@ describe("AI Gateway", () => {
 
       // Provider should only have been called once
       expect(provider.callLog).toHaveLength(1);
+    });
+
+    it("treats a cached entry that no longer parses as a miss and evicts it", async () => {
+      const prompt = getPrompt(AiTask.SUGGEST_ERROR_TYPE);
+      const base = {
+        task: AiTask.SUGGEST_ERROR_TYPE,
+        promptVersion: prompt.version,
+        model: "test-model",
+        input: { question: "Q", userAnswer: "A", correctConcept: "C" },
+      };
+      const ctx = { userId: "user1", provider };
+
+      await runTask(ctx, { ...base, parseOutput: (raw: unknown) => raw as { error_type: string } });
+      expect(testPrisma.aiCacheEntries.size).toBe(1);
+
+      let calls = 0;
+      const strict = (raw: unknown) => {
+        calls++;
+        if (calls === 1) throw new Error("stale shape");
+        return raw as { error_type: string };
+      };
+      const r2 = await runTask(ctx, { ...base, parseOutput: strict });
+
+      expect(r2.meta.cacheHit).toBe(false);
+      expect(provider.callLog).toHaveLength(2);
+      expect(vi.mocked(prisma.aiCache.deleteMany)).toHaveBeenCalledTimes(1);
     });
 
     it("skips cache when skipCache is true", async () => {
@@ -174,6 +205,84 @@ describe("AI Gateway", () => {
 
       // 6th call should be blocked by circuit breaker
       await expect(runTask(ctx, spec, { skipCache: true, skipBudget: true })).rejects.toThrow("circuit breaker");
+    });
+
+    it("doesn't count requests the provider refused for their content", async () => {
+      const tooLong = new ProviderRequestError("OpenAI API error 400: context_length_exceeded", 400);
+      const refusingProvider = {
+        embed: vi.fn().mockRejectedValue(tooLong),
+        completeJson: vi.fn().mockRejectedValue(tooLong),
+      };
+      const prompt = getPrompt(AiTask.SUGGEST_ERROR_TYPE);
+      const spec = {
+        task: AiTask.SUGGEST_ERROR_TYPE,
+        promptVersion: prompt.version,
+        model: "m",
+        input: { question: "Q", userAnswer: "A", correctConcept: "C" },
+        parseOutput: (raw: unknown) => raw,
+      };
+
+      for (let i = 0; i < 8; i++) {
+        const err = await runTask({ userId: "attacker", provider: refusingProvider }, spec, {
+          skipCache: true,
+          skipBudget: true,
+        }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(GatewayError);
+        expect((err as GatewayError).code).toBe("PROVIDER_ERROR");
+        expect((err as GatewayError).retryable).toBe(false);
+      }
+
+      // Another student's request still reaches the provider
+      const result = await runTask({ userId: "user2", provider }, spec, { skipCache: true, skipBudget: true });
+      expect(result.meta.cacheHit).toBe(false);
+      expect(provider.callLog).toHaveLength(1);
+    });
+  });
+
+  describe("embed budget", () => {
+    const aggregateMock = () => vi.mocked(prisma.aiCallLog.aggregate);
+    const spent = (usd: number) =>
+      ({ _sum: { costUsdMicros: BigInt(Math.round(usd * 1_000_000)) } }) as never;
+
+    it("checks uploads against today's embedding spend, not all AI spend", async () => {
+      await embed({ userId: "user1", provider }, ["chunk"], "text-embedding-3-small", { budget: "upload" });
+
+      const wheres = aggregateMock().mock.calls.map((c) => (c[0] as { where: Record<string, unknown> }).where);
+      expect(wheres).toHaveLength(2);
+      expect(wheres[0]).toMatchObject({ userId: "user1", task: "EMBED_TEXTS", status: "OK" });
+      expect(wheres[1]).not.toHaveProperty("task");
+      expect(provider.callLog).toHaveLength(1);
+    });
+
+    it("stops an upload once today's embedding cap is spent", async () => {
+      aggregateMock().mockResolvedValueOnce(spent(0.5)).mockResolvedValueOnce(spent(0.5));
+
+      const err = await embed({ userId: "user1", provider }, ["chunk"], "text-embedding-3-small", {
+        budget: "upload",
+      }).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(GatewayError);
+      expect((err as GatewayError).code).toBe("BUDGET_EXCEEDED");
+      expect((err as GatewayError).message).toMatch(/^Daily embedding budget reached/);
+      expect(provider.callLog).toHaveLength(0);
+    });
+
+    it("stops an upload once the monthly AI cap is spent", async () => {
+      aggregateMock().mockResolvedValueOnce(spent(0)).mockResolvedValueOnce(spent(50));
+
+      const err = await embed({ userId: "user1", provider }, ["chunk"], "text-embedding-3-small", {
+        budget: "upload",
+      }).catch((e: unknown) => e);
+
+      expect((err as GatewayError).code).toBe("BUDGET_EXCEEDED");
+      expect((err as GatewayError).message).toMatch(/^Monthly embedding budget reached/);
+    });
+
+    it("re-reads spend for every upload slice instead of caching it", async () => {
+      const ctx = { userId: "user1", provider };
+      await embed(ctx, ["a"], "text-embedding-3-small", { budget: "upload" });
+      await embed(ctx, ["b"], "text-embedding-3-small", { budget: "upload" });
+      expect(aggregateMock()).toHaveBeenCalledTimes(4);
     });
   });
 

@@ -57,18 +57,31 @@ vi.mock("@/lib/db", () => {
   };
 });
 
-// Mock the AI gateway so no provider/budget/circuit logic runs
-vi.mock("@/lib/ai/gateway", () => ({
+// Mock the AI gateway's embed so no provider/budget/circuit logic runs
+// (GatewayError stays real so the handler can recognize budget errors)
+vi.mock("@/lib/ai/gateway", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ai/gateway")>()),
   embed: vi.fn(),
 }));
 
-import { handleEmbedChunkBatch } from "@/lib/jobs/handlers/embed-chunks";
-import { embed } from "@/lib/ai/gateway";
+vi.mock("@/lib/jobs/queue", () => ({
+  enqueueJob: vi.fn(async () => "job_deferred"),
+}));
+
+import {
+  handleEmbedChunkBatch,
+  sliceForEmbedding,
+  estimateTokens,
+  MAX_INPUTS_PER_REQUEST,
+} from "@/lib/jobs/handlers/embed-chunks";
+import { embed, GatewayError } from "@/lib/ai/gateway";
+import { enqueueJob } from "@/lib/jobs/queue";
 import { prisma } from "@/lib/db";
 import { MockProvider } from "@/lib/ai/providers/mock";
 
 const chunkStore = (prisma as unknown as { _test: { chunks: ChunkRow[] } })._test.chunks;
 const embedMock = vi.mocked(embed);
+const enqueueMock = vi.mocked(enqueueJob);
 const executeRawMock = prisma.$executeRawUnsafe as unknown as Mock;
 
 function seedChunks(...rows: ChunkRow[]) {
@@ -190,5 +203,86 @@ describe("handleEmbedChunkBatch", () => {
     await handleEmbedChunkBatch({ chunkIds: [], userId: "u1" }, provider);
 
     expect(embedMock).not.toHaveBeenCalled();
+  });
+
+  it("embeds a large document in request-sized slices, against the upload budget", async () => {
+    const ids = Array.from({ length: 600 }, (_, i) => `c${i}`);
+    seedChunks(...ids.map((id) => ({ id, text: `text ${id}`, embeddingStatus: "PENDING" })));
+
+    await handleEmbedChunkBatch({ chunkIds: ids, userId: "u1" }, provider);
+
+    expect(embedMock.mock.calls.map((c) => c[1].length)).toEqual([
+      MAX_INPUTS_PER_REQUEST,
+      MAX_INPUTS_PER_REQUEST,
+      600 - 2 * MAX_INPUTS_PER_REQUEST,
+    ]);
+    for (const call of embedMock.mock.calls) expect(call[3]).toEqual({ budget: "upload" });
+    expect(ids.every((id) => statusOf(id) === "DONE")).toBe(true);
+  });
+
+  it("defers the rest to the next budget day when the upload budget runs out", async () => {
+    const ids = Array.from({ length: MAX_INPUTS_PER_REQUEST + 3 }, (_, i) => `c${i}`);
+    seedChunks(...ids.map((id) => ({ id, text: `text ${id}`, embeddingStatus: "PENDING" })));
+    embedMock
+      .mockImplementationOnce(async (_ctx, texts) => ({ embeddings: texts.map(() => [1, 2, 3]) }))
+      .mockRejectedValueOnce(new GatewayError("BUDGET_EXCEEDED", "Daily embedding budget reached.", false));
+
+    const before = Date.now();
+    await handleEmbedChunkBatch({ chunkIds: ids, userId: "u1" }, provider);
+
+    const firstSlice = ids.slice(0, MAX_INPUTS_PER_REQUEST);
+    const rest = ids.slice(MAX_INPUTS_PER_REQUEST);
+    expect(firstSlice.every((id) => statusOf(id) === "DONE")).toBe(true);
+    // Not FAILED: the deferred job picks them up after the budget resets
+    expect(rest.map(statusOf)).toEqual(["PENDING", "PENDING", "PENDING"]);
+
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    const [type, payload, opts] = enqueueMock.mock.calls[0];
+    expect(type).toBe("EMBED_CHUNK_BATCH");
+    expect(payload).toEqual({ chunkIds: rest, userId: "u1" });
+    const runAfter = (opts as { runAfter: Date }).runAfter;
+    expect(runAfter.getTime()).toBeGreaterThan(before);
+    expect(runAfter.getUTCHours()).toBe(0);
+  });
+
+  it("fails the batch when the provider returns the wrong number of vectors", async () => {
+    seedChunks(
+      { id: "c1", text: "alpha", embeddingStatus: "PENDING" },
+      { id: "c2", text: "beta", embeddingStatus: "PENDING" },
+    );
+    embedMock.mockResolvedValueOnce({ embeddings: [[1, 2, 3]] });
+
+    await expect(
+      handleEmbedChunkBatch({ chunkIds: ["c1", "c2"], userId: "u1" }, provider),
+    ).rejects.toThrow(/count mismatch/);
+
+    expect(statusOf("c1")).toBe("FAILED");
+    expect(statusOf("c2")).toBe("FAILED");
+    expect(enqueueMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("sliceForEmbedding", () => {
+  const items = (n: number, chars: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `c${i}`, text: "x".repeat(chars) }));
+
+  it("caps inputs per request and keeps the order", () => {
+    const slices = sliceForEmbedding(items(5, 10), 2, 1_000);
+    expect(slices.map((s) => s.map((c) => c.id))).toEqual([["c0", "c1"], ["c2", "c3"], ["c4"]]);
+  });
+
+  it("caps estimated tokens per request", () => {
+    const perItem = estimateTokens("x".repeat(1_600));
+    const slices = sliceForEmbedding(items(10, 1_600), 100, perItem * 4);
+    expect(slices.map((s) => s.length)).toEqual([4, 4, 2]);
+  });
+
+  it("gives an oversized item a request of its own", () => {
+    const slices = sliceForEmbedding([{ text: "x".repeat(900) }, { text: "y" }], 10, 100);
+    expect(slices.map((s) => s.length)).toEqual([1, 1]);
+  });
+
+  it("returns no slices for no items", () => {
+    expect(sliceForEmbedding([])).toEqual([]);
   });
 });

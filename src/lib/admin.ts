@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "./auth";
+import { unauthorized } from "./http";
 
 /** User IDs listed in ADMIN_USER_IDS (comma-separated). */
 function adminUserIds(): string[] {
@@ -21,10 +22,15 @@ export async function requireAdmin(
 ): Promise<{ userId: string } | { response: NextResponse }> {
   const userId = await getUserId(request);
   if (!userId) {
-    return { response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+    return { response: unauthorized() };
   }
   if (!adminUserIds().includes(userId)) {
-    return { response: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    return {
+      response: NextResponse.json(
+        { error: "Only admin accounts can use this.", code: "FORBIDDEN" },
+        { status: 403 },
+      ),
+    };
   }
   return { userId };
 }

@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpenAIProvider } from "@/lib/ai/providers/openai";
+import { ProviderRequestError } from "@/lib/ai/provider";
 import { logger } from "@/lib/logger";
 
 // Mock the API key
@@ -81,6 +82,23 @@ describe("OpenAIProvider", () => {
       await expect(
         provider.completeJson("system", "user", "gpt-4o-mini"),
       ).rejects.toThrow("OpenAI API error 429");
+    });
+
+    it("types a rejected request apart from outages", async () => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response("context_length_exceeded", { status: 400 }))
+        .mockResolvedValueOnce(new Response("Rate limited", { status: 429 }))
+        .mockResolvedValueOnce(new Response("Server error", { status: 500 }));
+
+      const provider = new OpenAIProvider();
+      const tooLong = await provider.completeJson("system", "user", "gpt-4o-mini").catch((e: unknown) => e);
+      expect(tooLong).toBeInstanceOf(ProviderRequestError);
+      expect((tooLong as ProviderRequestError).status).toBe(400);
+
+      const limited = await provider.completeJson("system", "user", "gpt-4o-mini").catch((e: unknown) => e);
+      expect(limited).not.toBeInstanceOf(ProviderRequestError);
+      const down = await provider.embed(["text"], "text-embedding-3-small").catch((e: unknown) => e);
+      expect(down).not.toBeInstanceOf(ProviderRequestError);
     });
 
     it("throws on invalid JSON response", async () => {

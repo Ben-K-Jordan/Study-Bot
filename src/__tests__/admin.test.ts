@@ -8,6 +8,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 import { requireAdmin } from "@/lib/admin";
+import { UNAUTHORIZED_BODY } from "@/lib/http";
 
 function req(userId?: string) {
   return new Request("http://localhost/api/admin/jobs", {
@@ -24,9 +25,10 @@ describe("requireAdmin", () => {
     vi.unstubAllEnvs();
   });
 
-  it("answers 401 without a user", async () => {
+  it("answers 401 without a user, with the proxy's body", async () => {
     const result = await requireAdmin(req());
     expect("response" in result && result.response.status).toBe(401);
+    if ("response" in result) expect(await result.response.json()).toEqual(UNAUTHORIZED_BODY);
   });
 
   it("answers 403 for a user not in ADMIN_USER_IDS", async () => {

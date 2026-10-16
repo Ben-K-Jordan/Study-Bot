@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isTestAuthEnabled } from "@/lib/test-auth";
+import { unauthorized } from "@/lib/http";
 
 function available(): boolean {
   return process.env.GOOGLE_PROVIDER === "fake" && isTestAuthEnabled();
@@ -21,9 +22,7 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return unauthorized();
 
   let body: Record<string, unknown> = {};
   try {
@@ -63,9 +62,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const userId = await getUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!userId) return unauthorized();
 
   await prisma.googleIntegration.deleteMany({ where: { userId } });
   return NextResponse.json({ deleted: true });

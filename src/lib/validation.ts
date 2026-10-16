@@ -71,10 +71,30 @@ export const ERROR_TYPES = [
   "MEMORY",
   "UNKNOWN",
 ] as const;
+
+/**
+ * Longest answer the server accepts, the same limit as POST /reveal. The text
+ * goes into AI prompts in full, so an unbounded answer could overflow the
+ * model's context window, and those provider failures count toward the AI
+ * circuit breaker that every student shares (src/lib/ai/gateway.ts).
+ */
+export const MAX_ANSWER_CHARS = 20_000;
+
+const answerText = z
+  .string()
+  .min(1, "Answer is required")
+  .max(MAX_ANSWER_CHARS, "Shorten your answer to 20,000 characters.");
+
 const errorLogSchema = z.object({
   error_type: z.enum(ERROR_TYPES),
-  correction_rule: z.string().min(1, "Correction rule is required"),
-  variant_question: z.string().optional(),
+  correction_rule: z
+    .string()
+    .min(1, "Correction rule is required")
+    .max(MAX_ANSWER_CHARS, "Shorten your correction rule to 20,000 characters."),
+  variant_question: z
+    .string()
+    .max(MAX_ANSWER_CHARS, "Shorten your similar question to 20,000 characters.")
+    .optional(),
 });
 
 /**
@@ -87,7 +107,7 @@ const errorLogSchema = z.object({
 export const submitAttemptSchema = z
   .object({
     prompt_index: z.number().int().min(0),
-    user_answer: z.string().min(1, "Answer is required"),
+    user_answer: answerText,
     self_score: z.enum(SELF_SCORES).optional(),
     mcq_choice_index: z.number().int().min(0).max(3).optional(),
     // Pretest items are diagnostic — errors are expected and are not logged.
@@ -126,7 +146,7 @@ export type SubmitAttemptInput = z.infer<typeof submitAttemptSchema>;
 export const examAnswerSchema = z.object({
   prompt_index: z.number().int().min(0),
   kind: z.literal("ANSWER"),
-  user_answer: z.string().min(1, "Answer is required"),
+  user_answer: answerText,
   mcq_choice_index: z.number().int().min(0).max(3).optional(),
   time_to_answer_seconds: z.number().int().min(0).max(7200).optional(),
   confidence_rating: z.number().int().min(1).max(5).optional(),

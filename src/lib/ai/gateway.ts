@@ -1,5 +1,5 @@
 /**
- * AI Gateway — the single entry point for all AI operations.
+ * AI Gateway: the single entry point for all AI operations.
  *
  * Responsibilities:
  * 1. Cache lookup (AiCache table) with SHA-256 key hashing
@@ -10,7 +10,7 @@
  */
 import { createHash } from "crypto";
 import { prisma } from "../db";
-import type { AiProvider } from "./provider";
+import { ProviderRequestError, type AiProvider } from "./provider";
 import type { AiUsage, AiCallMeta, TaskSpec, RunTaskResult } from "./types";
 import { getPrompt } from "./prompt-registry";
 
@@ -21,9 +21,18 @@ import { getPrompt } from "./prompt-registry";
 const AI_CACHE_TTL_SECONDS = parseInt(process.env.AI_CACHE_TTL_SECONDS || "3600", 10);
 const AI_DAILY_COST_CAP_USD = parseFloat(process.env.AI_DAILY_COST_CAP_USD || "1.0");
 const AI_MONTHLY_COST_CAP_USD = parseFloat(process.env.AI_MONTHLY_COST_CAP_USD || "10.0");
+// Background embedding of uploaded files has its own daily cap, so an upload
+// still embeds after the student has used AI today, while repeated uploads
+// can't spend without limit. $0.10 is about 5M tokens with
+// text-embedding-3-small, roughly 20 MB of extracted text a day.
+const AI_DAILY_EMBED_COST_CAP_USD = parseFloat(process.env.AI_DAILY_EMBED_COST_CAP_USD || "0.10");
 const AI_DISABLED = process.env.AI_DISABLED === "true";
 const CIRCUIT_BREAKER_THRESHOLD = 5; // consecutive failures before opening circuit
 const CIRCUIT_BREAKER_RESET_MS = 60_000; // 1 minute cooldown
+const CIRCUIT_OPEN_MESSAGE = "AI circuit breaker is open after too many recent failures";
+
+/** AiCallLog task name for embedding calls (uploads and search queries). */
+export const EMBED_TASK = "EMBED_TEXTS";
 
 // ---------------------------------------------------------------------------
 // Circuit breaker state (in-process, resets on restart)
@@ -36,7 +45,14 @@ function recordSuccess() {
   consecutiveFailures = 0;
 }
 
-function recordFailure() {
+/**
+ * Count a failed provider call toward the breaker. A request the provider
+ * refused for its own content (ProviderRequestError, such as an input past the
+ * context window) is skipped: the breaker is shared by every user, so one
+ * user's bad input must not cut AI off for the rest.
+ */
+function recordFailure(err: unknown) {
+  if (err instanceof ProviderRequestError) return;
   consecutiveFailures++;
   if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
     circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
@@ -61,13 +77,14 @@ interface BudgetCheckResult {
   allowed: boolean;
   spentUsd: number;
   capUsd: number;
+  period: "daily" | "monthly";
 }
 
 // In-memory budget cache to avoid aggregate queries on every AI call
 const BUDGET_CACHE_TTL_MS = 60_000; // 1 minute
 const budgetCache = new Map<string, { result: BudgetCheckResult; expiresAt: number }>();
 
-/** Reset circuit breaker and budget cache state — exposed for tests. */
+/** Reset circuit breaker and budget cache state (exposed for tests). */
 export function resetCircuitBreaker() {
   consecutiveFailures = 0;
   circuitOpenUntil = 0;
@@ -82,6 +99,39 @@ function sha256(data: string): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
+/** Start of the current UTC day and month; budgets reset on UTC boundaries. */
+function budgetWindows(now = new Date()): { startOfDay: Date; startOfMonth: Date } {
+  const startOfDay = new Date(now);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const startOfMonth = new Date(startOfDay);
+  startOfMonth.setUTCDate(1);
+  return { startOfDay, startOfMonth };
+}
+
+async function spentUsd(where: Record<string, unknown>): Promise<number> {
+  const result = await prisma.aiCallLog.aggregate({
+    where: { ...where, status: "OK" },
+    _sum: { costUsdMicros: true },
+  });
+  return Number(result._sum.costUsdMicros ?? 0) / 1_000_000;
+}
+
+function budgetResult(daily: number, dailyCap: number, monthly: number): BudgetCheckResult {
+  if (monthly >= AI_MONTHLY_COST_CAP_USD) {
+    return { allowed: false, spentUsd: monthly, capUsd: AI_MONTHLY_COST_CAP_USD, period: "monthly" };
+  }
+  return { allowed: daily < dailyCap, spentUsd: daily, capUsd: dailyCap, period: "daily" };
+}
+
+function budgetExceeded(budget: BudgetCheckResult, what = "AI"): GatewayError {
+  const period = budget.period === "daily" ? "Daily" : "Monthly";
+  return new GatewayError(
+    "BUDGET_EXCEEDED",
+    `${period} ${what} budget reached: $${budget.spentUsd.toFixed(2)} of $${budget.capUsd.toFixed(2)} spent.`,
+    false,
+  );
+}
+
 async function checkBudget(userId: string): Promise<BudgetCheckResult> {
   // Return cached result if still fresh
   const cached = budgetCache.get(userId);
@@ -89,38 +139,29 @@ async function checkBudget(userId: string): Promise<BudgetCheckResult> {
     return cached.result;
   }
 
-  const startOfDay = new Date();
-  startOfDay.setUTCHours(0, 0, 0, 0);
-
-  const startOfMonth = new Date();
-  startOfMonth.setUTCDate(1);
-  startOfMonth.setUTCHours(0, 0, 0, 0);
-
-  const [dailyResult, monthlyResult] = await Promise.all([
-    prisma.aiCallLog.aggregate({
-      where: { userId, createdAt: { gte: startOfDay }, status: "OK" },
-      _sum: { costUsdMicros: true },
-    }),
-    prisma.aiCallLog.aggregate({
-      where: { userId, createdAt: { gte: startOfMonth }, status: "OK" },
-      _sum: { costUsdMicros: true },
-    }),
+  const { startOfDay, startOfMonth } = budgetWindows();
+  const [daily, monthly] = await Promise.all([
+    spentUsd({ userId, createdAt: { gte: startOfDay } }),
+    spentUsd({ userId, createdAt: { gte: startOfMonth } }),
   ]);
-
-  const dailySpentUsd = Number(dailyResult._sum.costUsdMicros ?? 0) / 1_000_000;
-  const monthlySpentUsd = Number(monthlyResult._sum.costUsdMicros ?? 0) / 1_000_000;
-
-  const dailyExceeded = dailySpentUsd >= AI_DAILY_COST_CAP_USD;
-  const monthlyExceeded = monthlySpentUsd >= AI_MONTHLY_COST_CAP_USD;
-
-  const result: BudgetCheckResult = {
-    allowed: !dailyExceeded && !monthlyExceeded,
-    spentUsd: dailySpentUsd,
-    capUsd: dailyExceeded ? AI_DAILY_COST_CAP_USD : AI_MONTHLY_COST_CAP_USD,
-  };
+  const result = budgetResult(daily, AI_DAILY_COST_CAP_USD, monthly);
 
   budgetCache.set(userId, { result, expiresAt: Date.now() + BUDGET_CACHE_TTL_MS });
   return result;
+}
+
+/**
+ * Budget for embedding uploaded files: today's embedding spend against
+ * AI_DAILY_EMBED_COST_CAP_USD, plus the shared monthly cap. Not cached, so
+ * each slice of a large upload sees the spend of the slices before it.
+ */
+async function checkUploadEmbedBudget(userId: string): Promise<BudgetCheckResult> {
+  const { startOfDay, startOfMonth } = budgetWindows();
+  const [daily, monthly] = await Promise.all([
+    spentUsd({ userId, task: EMBED_TASK, createdAt: { gte: startOfDay } }),
+    spentUsd({ userId, createdAt: { gte: startOfMonth } }),
+  ]);
+  return budgetResult(daily, AI_DAILY_EMBED_COST_CAP_USD, monthly);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +189,13 @@ async function cacheGet(keyHash: string): Promise<{ outputJson: unknown } | null
     });
 
   return { outputJson: entry.outputJson };
+}
+
+/** Drop an entry that no longer parses (best effort). */
+function cacheEvict(keyHash: string): void {
+  prisma.aiCache.deleteMany({ where: { keyHash } }).catch(() => {
+    /* best-effort */
+  });
 }
 
 async function cacheSet(
@@ -252,7 +300,7 @@ export async function runTask<T>(
   }
 
   if (isCircuitOpen()) {
-    throw new GatewayError("CIRCUIT_OPEN", "AI circuit breaker is open — too many recent failures", true);
+    throw new GatewayError("CIRCUIT_OPEN", CIRCUIT_OPEN_MESSAGE, true);
   }
 
   const { task, model, promptVersion, input, parseOutput } = spec;
@@ -263,8 +311,19 @@ export async function runTask<T>(
   // --- Cache check ---
   if (!opts.skipCache) {
     const cached = await cacheGet(cacheKey);
+    let cachedOutput: T | undefined;
+    let parsed = false;
     if (cached) {
-      const output = parseOutput(cached.outputJson);
+      // An entry written before a parser got stricter can fail to parse.
+      // Treat it as a miss, evict it, and ask the provider again.
+      try {
+        cachedOutput = parseOutput(cached.outputJson);
+        parsed = true;
+      } catch {
+        cacheEvict(cacheKey);
+      }
+    }
+    if (parsed) {
       const meta: AiCallMeta = {
         cacheHit: true,
         latencyMs: Date.now() - startMs,
@@ -284,20 +343,14 @@ export async function runTask<T>(
         status: "OK",
       }).catch(() => {});
 
-      return { output, meta };
+      return { output: cachedOutput as T, meta };
     }
   }
 
   // --- Budget check ---
   if (!opts.skipBudget) {
     const budget = await checkBudget(ctx.userId);
-    if (!budget.allowed) {
-      throw new GatewayError(
-        "BUDGET_EXCEEDED",
-        `Daily AI budget exceeded: $${budget.spentUsd.toFixed(2)} / $${budget.capUsd.toFixed(2)}`,
-        false,
-      );
-    }
+    if (!budget.allowed) throw budgetExceeded(budget);
   }
 
   // --- Provider call ---
@@ -313,7 +366,7 @@ export async function runTask<T>(
     usage = result.usage;
     recordSuccess();
   } catch (err) {
-    recordFailure();
+    recordFailure(err);
     const latencyMs = Date.now() - startMs;
     const errorCode = err instanceof Error ? err.message.slice(0, 100) : "UNKNOWN";
 
@@ -329,7 +382,9 @@ export async function runTask<T>(
       errorCode,
     }).catch(() => {});
 
-    throw new GatewayError("PROVIDER_ERROR", `AI provider failed: ${errorCode}`, true);
+    // Resending a request the provider refused for its content fails again.
+    const retryable = !(err instanceof ProviderRequestError);
+    throw new GatewayError("PROVIDER_ERROR", `AI provider failed: ${errorCode}`, retryable);
   }
 
   const latencyMs = Date.now() - startMs;
@@ -387,11 +442,18 @@ export async function runTask<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Embed shortcut (no prompts, no cache — embeddings are stored in DB directly)
+// Embed shortcut (no prompts and no cache: embeddings are stored in the DB)
 // ---------------------------------------------------------------------------
 
 export interface EmbedOptions {
-  skipBudget?: boolean;
+  /**
+   * The budget the call counts against. "general" (the default, for search
+   * and chat queries) is the per-user daily and monthly AI cap every feature
+   * shares. "upload" is for background embedding of uploaded files: its own
+   * daily cap (AI_DAILY_EMBED_COST_CAP_USD) plus the monthly cap. There is
+   * no way to skip the budget, since an upload's size is up to the user.
+   */
+  budget?: "general" | "upload";
 }
 
 export async function embed(
@@ -405,18 +467,15 @@ export async function embed(
   }
 
   if (isCircuitOpen()) {
-    throw new GatewayError("CIRCUIT_OPEN", "AI circuit breaker is open — too many recent failures", true);
+    throw new GatewayError("CIRCUIT_OPEN", CIRCUIT_OPEN_MESSAGE, true);
   }
 
-  if (!opts.skipBudget) {
+  if (opts.budget === "upload") {
+    const budget = await checkUploadEmbedBudget(ctx.userId);
+    if (!budget.allowed) throw budgetExceeded(budget, "embedding");
+  } else {
     const budget = await checkBudget(ctx.userId);
-    if (!budget.allowed) {
-      throw new GatewayError(
-        "BUDGET_EXCEEDED",
-        `Daily AI budget exceeded: $${budget.spentUsd.toFixed(2)} / $${budget.capUsd.toFixed(2)}`,
-        false,
-      );
-    }
+    if (!budget.allowed) throw budgetExceeded(budget);
   }
 
   const startMs = Date.now();
@@ -428,7 +487,7 @@ export async function embed(
     const latencyMs = Date.now() - startMs;
     await logCall({
       userId: ctx.userId,
-      task: "EMBED_TEXTS",
+      task: EMBED_TASK,
       model,
       promptVersion: "n/a",
       cacheHit: false,
@@ -439,13 +498,13 @@ export async function embed(
 
     return { embeddings: result.embeddings, usage: result.usage };
   } catch (err) {
-    recordFailure();
+    recordFailure(err);
     const latencyMs = Date.now() - startMs;
     const errorCode = err instanceof Error ? err.message.slice(0, 100) : "UNKNOWN";
 
     await logCall({
       userId: ctx.userId,
-      task: "EMBED_TEXTS",
+      task: EMBED_TASK,
       model,
       promptVersion: "n/a",
       cacheHit: false,
@@ -454,7 +513,8 @@ export async function embed(
       errorCode,
     }).catch(() => {});
 
-    throw new GatewayError("PROVIDER_ERROR", `Embedding failed: ${errorCode}`, true);
+    const retryable = !(err instanceof ProviderRequestError);
+    throw new GatewayError("PROVIDER_ERROR", `Embedding failed: ${errorCode}`, retryable);
   }
 }
 

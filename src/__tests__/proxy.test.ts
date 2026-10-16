@@ -10,6 +10,7 @@ vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 import { getToken } from "next-auth/jwt";
 import { proxy } from "@/proxy";
 import { isTestAuthEnabled, testAuthUserId } from "@/lib/test-auth";
+import { UNAUTHORIZED_BODY } from "@/lib/http";
 
 const getTokenMock = vi.mocked(getToken);
 
@@ -86,6 +87,19 @@ describe("proxy auth", () => {
     expect(await outcome(req("/api/health"))).toBe("pass");
     expect(await outcome(req("/manifest.json"))).toBe("pass");
     expect(await outcome(req("/icon.svg"))).toBe("pass");
+  });
+
+  it("answers signed-out API requests with the shared 401 body", async () => {
+    const res = await proxy(req("/api/plans"));
+    expect(await res.json()).toEqual(UNAUTHORIZED_BODY);
+  });
+
+  it("only skips auth for static files at the top level", async () => {
+    // A page under a dynamic segment whose id happens to end in an extension
+    expect(await outcome(req("/flashcards/abc.json"))).toBe(307);
+    expect(await outcome(req("/s/abc.js"))).toBe(307);
+    expect(await outcome(req("/plan/x/y.svg"))).toBe(307);
+    expect(await outcome(req("/icon-maskable.svg"))).toBe("pass");
   });
 
   it("does not treat a dotted API path or page path as a static file", async () => {

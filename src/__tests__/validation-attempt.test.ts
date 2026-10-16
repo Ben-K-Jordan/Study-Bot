@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { submitAttemptSchema, updateAttemptMetaSchema } from "@/lib/validation";
+import {
+  examAnswerSchema,
+  MAX_ANSWER_CHARS,
+  submitAttemptSchema,
+  updateAttemptMetaSchema,
+} from "@/lib/validation";
 
 describe("submitAttemptSchema", () => {
   it("accepts a valid CORRECT attempt without error_log", () => {
@@ -119,6 +124,48 @@ describe("submitAttemptSchema", () => {
       },
     });
     expect(result.success).toBe(false);
+  });
+
+  // Answers go into AI prompts in full, so they share the reveal route's cap.
+  describe("length caps", () => {
+    const base = { prompt_index: 0, self_score: "CORRECT" as const };
+
+    it("accepts an answer of exactly MAX_ANSWER_CHARS", () => {
+      const answer = "x".repeat(MAX_ANSWER_CHARS);
+      expect(submitAttemptSchema.safeParse({ ...base, user_answer: answer }).success).toBe(true);
+    });
+
+    it("rejects a longer answer with a fixable message", () => {
+      const result = submitAttemptSchema.safeParse({ ...base, user_answer: "x".repeat(MAX_ANSWER_CHARS + 1) });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]).toMatchObject({
+        path: ["user_answer"],
+        message: "Shorten your answer to 20,000 characters.",
+      });
+    });
+
+    it("caps exam-simulation answers the same way", () => {
+      const result = examAnswerSchema.safeParse({
+        prompt_index: 0,
+        kind: "ANSWER",
+        user_answer: "x".repeat(MAX_ANSWER_CHARS + 1),
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("caps the correction rule and similar question", () => {
+      const long = "x".repeat(MAX_ANSWER_CHARS + 1);
+      const attempt = (error_log: Record<string, unknown>) =>
+        submitAttemptSchema.safeParse({
+          prompt_index: 0,
+          user_answer: "Answer",
+          self_score: "INCORRECT",
+          error_log: { error_type: "MEMORY", ...error_log },
+        });
+      expect(attempt({ correction_rule: long }).success).toBe(false);
+      expect(attempt({ correction_rule: "Rule", variant_question: long }).success).toBe(false);
+      expect(attempt({ correction_rule: "Rule", variant_question: "Similar?" }).success).toBe(true);
+    });
   });
 
   // MCQ attempts: the server grades the choice and builds the error log,
