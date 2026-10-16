@@ -1,52 +1,89 @@
 import { defineConfig, devices } from "@playwright/test";
-import dotenv from "dotenv";
+import { AUTH_FILE, BASE_URL, E2E_PORT, assertE2eDatabase, serverEnv } from "./e2e/support/env";
 
-// Load .env for DATABASE_URL (used by pg.Pool in tests).
-// Force BASE_URL to port 3000 to match the Playwright webServer.
-const savedBaseUrl = process.env.BASE_URL;
-dotenv.config();
-process.env.BASE_URL = savedBaseUrl || "http://localhost:3000";
-
+/**
+ * e2e suite. See e2e/README.md for running it locally.
+ *
+ * - E2E_PORT (default 3000) picks the app's port; the base URL follows it.
+ * - CI=true: builds the app and runs `next start`, as CI does. Otherwise
+ *   `next dev`.
+ * - E2E_REUSE_SERVER=1: use a server already listening on E2E_PORT (one you
+ *   started with the env in e2e/README.md) instead of starting one.
+ *
+ * The suite never loads .env. A server it starts gets explicit offline
+ * settings and the DATABASE_URL you pass, which must name an e2e database.
+ */
 const isCI = !!process.env.CI;
+const reuseServer = process.env.E2E_REUSE_SERVER === "1";
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: false, // Sequential since tests depend on state
+  // One folder per port, so parallel runs on different ports don't wipe
+  // each other's traces.
+  outputDir: `test-results/e2e-${E2E_PORT}`,
+  // Tests own their data (a unique course, plan or user per test), so they
+  // can run in any order and in parallel.
+  fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
-  workers: 1,
+  // One Next server serves every worker; more than this slows each test
+  // down more than it saves. Override with --workers.
+  workers: isCI ? 2 : 4,
   reporter: isCI
-    ? [["github"], ["html", { open: "never" }]]
-    : "list",
+    ? [["github"], ["html", { open: "never", outputFolder: `playwright-report/e2e-${E2E_PORT}` }]]
+    : [["list"]],
   timeout: 30_000,
+  expect: { timeout: 10_000 },
   use: {
-    baseURL: process.env.BASE_URL || "http://localhost:3000",
+    baseURL: BASE_URL,
+    actionTimeout: 15_000,
+    navigationTimeout: 30_000,
     trace: "on-first-retry",
-    extraHTTPHeaders: {
-      "X-User-Id": "e2e_test_user",
-    },
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+    locale: "en-US",
+    timezoneId: "America/New_York",
   },
   projects: [
     {
-      name: "chromium",
+      // Creates the e2e account and signs in through /auth/signin.
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
-  ],
-  webServer: {
-    command: isCI ? "npm run build && npm run start" : "npm run dev",
-    // Set here rather than inline in the command so it also works in
-    // PowerShell and cmd. Playwright merges these over process.env.
-    env: {
-      // Trust the X-User-Id header sent by the specs (test-only auth)
-      ALLOW_TEST_AUTH: "true",
-      NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "e2e-test-secret",
-      // Keep test runs offline: in-memory Google client, canned AI, logged email
-      GOOGLE_PROVIDER: "fake",
-      AI_PROVIDER: "mock",
-      EMAIL_PROVIDER: "console",
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], storageState: AUTH_FILE },
+      dependencies: ["setup"],
     },
-    url: "http://localhost:3000",
-    reuseExistingServer: !isCI,
-    timeout: isCI ? 120_000 : 30_000,
-  },
+    {
+      // Phone layout (bottom navigation, floating start button). Runs only
+      // tests tagged @mobile.
+      name: "mobile",
+      use: { ...devices["Pixel 7"], storageState: AUTH_FILE },
+      grep: /@mobile/,
+      dependencies: ["setup"],
+    },
+  ],
+  webServer: reuseServer
+    ? {
+        // Started by you; Playwright only waits for it.
+        command: `echo "Expecting a server on ${BASE_URL}"`,
+        url: `${BASE_URL}/api/health`,
+        reuseExistingServer: true,
+        timeout: 30_000,
+      }
+    : {
+        command: isCI
+          ? `npm run build && npm run start -- -p ${E2E_PORT}`
+          : `npm run dev -- -p ${E2E_PORT}`,
+        url: `${BASE_URL}/api/health`,
+        // Playwright merges this over its own environment. CI=true comes from
+        // the runner and is what lets `next start` accept test auth.
+        env: serverEnv(assertE2eDatabase(process.env.DATABASE_URL)),
+        reuseExistingServer: false,
+        timeout: isCI ? 300_000 : 120_000,
+        stdout: "ignore",
+        stderr: "pipe",
+      },
 });

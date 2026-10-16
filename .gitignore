@@ -17,6 +17,8 @@ next-env.d.ts
 /coverage
 playwright-report/
 test-results/
+# Signed-in browser state saved by the e2e setup project
+e2e/.auth/
 
 # Local data (uploads and other runtime files)
 data/
