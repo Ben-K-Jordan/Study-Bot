@@ -100,6 +100,7 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: [lint-and-build, unit-tests, integration-tests]
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -116,16 +117,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    # playwright.config.ts builds the app and starts `next start` with
+    # playwright.config.ts builds the app and starts `next start -p $E2E_PORT`
+    # with the offline providers (mock AI, fake Google, console email) and
     # ALLOW_TEST_AUTH=true. GitHub sets CI=true, which is what lets the
-    # production build trust the specs' X-User-Id header.
+    # production build trust the specs' X-User-Id header. The suite runs the
+    # setup, chromium (Desktop Chrome) and mobile (Pixel 7, @mobile tests)
+    # projects; all of them use Chromium.
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studybot_e2e?schema=public
-      BASE_URL: http://localhost:3000
-      NEXTAUTH_URL: http://localhost:3000
-      GOOGLE_PROVIDER: fake
-      AI_PROVIDER: mock
-      EMAIL_PROVIDER: console
+      E2E_PORT: "3000"
 
     steps:
       - uses: actions/checkout@v7
@@ -151,10 +151,15 @@ jobs:
       - run: npm run test:e2e
 
       - uses: actions/upload-artifact@v7
-        if: failure()
+        if: ${{ !cancelled() }}
         with:
           name: playwright-report
-          path: |
-            playwright-report/
-            test-results/
+          path: playwright-report/
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: test-results/
           retention-days: 7
