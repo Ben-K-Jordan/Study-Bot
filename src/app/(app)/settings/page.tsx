@@ -1,8 +1,5 @@
 import { redirect } from "next/navigation"
 
-import { publicConfig } from "@/app/api/config/flags"
-import { readGoogleStatus } from "@/app/api/integrations/google/status/status-dto"
-import { readSettings } from "@/app/api/settings/data"
 import { PageContainer } from "@/components/app/page-container"
 import { ThemeToggle } from "@/components/app/theme-toggle"
 import { AccountSection } from "@/components/settings/account-section"
@@ -18,6 +15,9 @@ import { getCurrentUserId } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { googleConnectResult } from "@/lib/google/messages"
 import { logger } from "@/lib/logger"
+import { publicConfig } from "@/lib/public-config"
+import { readGoogleStatus } from "@/services/google-status"
+import { readSettings } from "@/services/settings"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -95,7 +95,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
           <AiSection config={config} dev={dev} />
           <DataSection />
-          <AccountSection email={account?.email ?? null} />
+          <AccountSection emailConfigured={config.email_configured} dev={dev} />
         </div>
       </div>
     </PageContainer>

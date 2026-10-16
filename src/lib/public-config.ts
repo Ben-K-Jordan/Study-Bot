@@ -1,7 +1,10 @@
 /**
  * Public, non-secret runtime flags, read at request time. Shared by
- * GET /api/config and server components (Settings) so both agree.
+ * GET /api/config, PUT /api/settings and server components (Settings) so
+ * they all agree.
  */
+import { isEmailDeliveryConfigured } from "@/lib/email/delivery";
+
 export interface PublicConfig {
   /** Email verification gates sign-in (REQUIRE_EMAIL_VERIFICATION). */
   verification_required: boolean;
@@ -13,6 +16,11 @@ export interface PublicConfig {
   ai_disabled: boolean;
   /** Google Calendar OAuth has a client id on this server. */
   google_configured: boolean;
+  /**
+   * Emails (password reset and verification links) are delivered over SMTP.
+   * False means they only reach the server log (EMAIL_PROVIDER isn't "smtp").
+   */
+  email_configured: boolean;
 }
 
 export function publicConfig(): PublicConfig {
@@ -23,5 +31,6 @@ export function publicConfig(): PublicConfig {
     ai_provider: aiProvider,
     ai_disabled: process.env.AI_DISABLED === "true",
     google_configured: Boolean(process.env.GOOGLE_CLIENT_ID),
+    email_configured: isEmailDeliveryConfigured(),
   };
 }

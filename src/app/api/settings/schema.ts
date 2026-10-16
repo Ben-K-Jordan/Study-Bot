@@ -1,6 +1,6 @@
 /**
  * The PUT /api/settings body schema (zod, server side). The shared rules
- * live in ./rules so the Settings form can use them without zod.
+ * live in @/lib/settings-rules so the Settings form can use them without zod.
  */
 import { z } from "zod";
 import {
@@ -10,9 +10,9 @@ import {
   TIME_PATTERN,
   type SettingsField,
   type SettingsFieldErrors,
-} from "./rules";
+} from "@/lib/settings-rules";
 
-export * from "./rules";
+export * from "@/lib/settings-rules";
 
 export const settingsUpdateSchema = z.object({
   studyStart: z.string().regex(TIME_PATTERN, SETTINGS_FIELD_MESSAGES.studyStart).optional(),

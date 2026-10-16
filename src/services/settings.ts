@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { SETTINGS_DEFAULTS, type UserSettings } from "./rules";
+import { SETTINGS_DEFAULTS, type UserSettings } from "@/lib/settings-rules";
 
 /**
  * The student's study settings. A student who never saved any gets the

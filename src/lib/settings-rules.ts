@@ -1,7 +1,7 @@
 /**
- * Study settings rules shared by PUT /api/settings and the Settings form:
- * defaults, ranges, field messages and the cross-field checks. No zod and
- * no Prisma, so the client bundle stays small.
+ * Study settings rules shared by PUT /api/settings, the settings service and
+ * the Settings form: defaults, ranges, field messages and the cross-field
+ * checks. No zod and no Prisma, so the client bundle stays small.
  */
 
 export interface UserSettings {

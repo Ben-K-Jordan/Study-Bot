@@ -1,4 +1,4 @@
-import type { UserSettings } from "@/app/api/settings/rules"
+import type { UserSettings } from "@/lib/settings-rules"
 
 /**
  * localStorage["study_bot_prefs"] = { studyStart, studyEnd, dailyCap }.

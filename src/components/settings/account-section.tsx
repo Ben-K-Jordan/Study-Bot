@@ -1,31 +1,50 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
-import { KeyRoundIcon, LogOutIcon, Trash2Icon } from "lucide-react"
+import { KeyRoundIcon, LogOutIcon } from "lucide-react"
 import { signOut } from "next-auth/react"
 
-import { DELETE_ACCOUNT_PHRASE } from "@/app/api/account/delete/phrase"
-import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { Button } from "@/components/ui/button"
+import { FieldError } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
+import { DELETE_ACCOUNT_PHRASE } from "@/lib/account"
+import { DeleteAccountDialog } from "./delete-account-dialog"
 import { sendJson } from "./request"
 import { SettingsRow, SettingsRows, SettingsSection } from "./settings-section"
 
 /** Where the sign-in page lands after a deletion; it shows "Account deleted". */
 const ACCOUNT_DELETED_URL = "/auth/signin?account=deleted"
 
-/** Sign out, reset the password by email, and delete the account. */
-export function AccountSection({ email }: { email: string | null }) {
+const NOT_SIGNED_OUT = "Not signed out. Check your connection and retry."
+
+/**
+ * Sign out, reset the password by email, and delete the account.
+ * `emailConfigured` is false when reset emails only reach the server log;
+ * developers get a note saying so.
+ */
+export function AccountSection({ emailConfigured, dev }: { emailConfigured: boolean; dev: boolean }) {
   const [signingOut, setSigningOut] = useState(false)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
+  const signOutRef = useRef<HTMLButtonElement>(null)
 
   async function handleSignOut() {
     setSigningOut(true)
-    await signOut({ callbackUrl: "/auth/signin" })
+    setSignOutError(null)
+    try {
+      await signOut({ callbackUrl: "/auth/signin" })
+    } catch {
+      // next-auth rejects when the sign-out request fails (offline, an error
+      // page instead of JSON). The session is still live, so say so.
+      setSigningOut(false)
+      setSignOutError(NOT_SIGNED_OUT)
+      // The button was disabled while it worked, which dropped focus; return it.
+      requestAnimationFrame(() => signOutRef.current?.focus())
+    }
   }
 
-  async function deleteAccount() {
-    await sendJson("DELETE", "/api/account/delete", { confirm: DELETE_ACCOUNT_PHRASE })
+  async function deleteAccount(password: string) {
+    await sendJson("DELETE", "/api/account/delete", { confirm: DELETE_ACCOUNT_PHRASE, password })
     // The session token outlives the account, so end it before anything else loads.
     // The account is gone at this point, so a sign-out failure must not read as "not deleted".
     try {
@@ -40,7 +59,15 @@ export function AccountSection({ email }: { email: string | null }) {
     <SettingsSection id="account" title="Account">
       <SettingsRows>
         <SettingsRow title="Sign out" description="Signs you out of Study Bot in this browser.">
-          <Button type="button" variant="outline" className="self-start" onClick={handleSignOut} disabled={signingOut}>
+          <Button
+            ref={signOutRef}
+            type="button"
+            variant="outline"
+            className="self-start"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-describedby={signOutError ? "settings-sign-out-error" : undefined}
+          >
             {signingOut ? (
               <Spinner data-icon="inline-start" aria-hidden="true" role={undefined} />
             ) : (
@@ -48,6 +75,7 @@ export function AccountSection({ email }: { email: string | null }) {
             )}
             {signingOut ? "Signing out…" : "Sign out"}
           </Button>
+          {signOutError ? <FieldError id="settings-sign-out-error">{signOutError}</FieldError> : null}
         </SettingsRow>
 
         <SettingsRow
@@ -60,40 +88,20 @@ export function AccountSection({ email }: { email: string | null }) {
               Reset password
             </Link>
           </Button>
+          {dev && !emailConfigured ? (
+            <p className="max-w-prose type-body-s text-on-surface-variant">
+              <code>EMAIL_PROVIDER</code> isn&apos;t <code>smtp</code> on this server, so the reset
+              link is printed in the server&apos;s terminal instead of emailed. This note shows only
+              in development.
+            </p>
+          ) : null}
         </SettingsRow>
 
         <SettingsRow
           title="Delete account"
           description="Permanently deletes your account and everything in it. Export your data first if you want a copy."
         >
-          {email ? (
-            <ConfirmDialog
-              trigger={
-                <Button type="button" variant="destructive" className="self-start">
-                  <Trash2Icon data-icon="inline-start" aria-hidden="true" />
-                  Delete account
-                </Button>
-              }
-              title="Delete your account?"
-              description={
-                <>
-                  This permanently deletes your plans, sessions, answers, materials, decks, guides,
-                  and chat history, and disconnects Google Calendar. Events already in Google
-                  Calendar stay there. Export your data first if you want a copy.
-                </>
-              }
-              confirmText={email}
-              confirmTextLabel="Type your email address to confirm"
-              confirmLabel="Delete account"
-              pendingLabel="Deleting account…"
-              failedMessage="Account not deleted. Check your connection and retry."
-              onConfirm={deleteAccount}
-            />
-          ) : (
-            <p className="type-body-m text-on-surface-variant">
-              Reload the page to delete your account. Your email address didn&apos;t load.
-            </p>
-          )}
+          <DeleteAccountDialog onDelete={deleteAccount} />
         </SettingsRow>
       </SettingsRows>
     </SettingsSection>

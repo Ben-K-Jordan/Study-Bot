@@ -66,7 +66,7 @@ export const TimezoneField = memo(function TimezoneField({
     <Field data-invalid={error ? true : undefined}>
       <FieldLabel htmlFor={FIELD_ID}>Time zone</FieldLabel>
       <FieldDescription id={descriptionId}>
-        Your streak, and the dates and times Study Bot shows you, follow this time zone.
+        A new day starts at midnight in this time zone. Your streak, daily XP, and today&apos;s sessions count from then.
       </FieldDescription>
       <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center">
         <Select value={value ?? ""} onValueChange={onChange} disabled={disabled}>

@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ prisma: {} }));
 
-import { toGoogleStatus } from "@/app/api/integrations/google/status/status-dto";
+import { toGoogleStatus } from "@/services/google-status";
 
 const row = {
   status: "CONNECTED",

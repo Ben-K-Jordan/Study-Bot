@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge"
-import type { PublicConfig } from "@/app/api/config/flags"
+import type { PublicConfig } from "@/lib/public-config"
 import { SettingsRow, SettingsRows, SettingsSection } from "./settings-section"
 
 /**

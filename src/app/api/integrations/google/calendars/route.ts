@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getGoogleClient, GoogleReconnectError } from "@/lib/google/calendar-client";
 import { GOOGLE_COPY } from "@/lib/google/messages";
 import { logger } from "@/lib/logger";
+import { generalLimiter, tooManyRequests } from "@/lib/rate-limit";
 
 /**
  * GET /api/integrations/google/calendars: the student's Google calendars.
@@ -15,6 +16,10 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
   }
+
+  // Each call reaches Google Calendar.
+  const rl = generalLimiter.check(userId);
+  if (!rl.allowed) return tooManyRequests(rl.retryAfterMs);
 
   const integration = await prisma.googleIntegration.findUnique({
     where: { userId },

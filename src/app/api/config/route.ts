@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { publicConfig } from "./flags";
+import { publicConfig } from "@/lib/public-config";
 
 // Env-derived flags must be read at request time, not baked in at build.
 export const dynamic = "force-dynamic";

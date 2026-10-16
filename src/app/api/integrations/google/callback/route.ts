@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { encryptToken } from "@/lib/crypto/token-vault";
 import { logger } from "@/lib/logger";
@@ -31,17 +32,22 @@ export async function GET(request: NextRequest) {
     return settingsRedirect({ error: "missing_params" });
   }
 
-  // Validate state
-  const oauthState = await prisma.oAuthState.findUnique({ where: { state } });
-  if (!oauthState || oauthState.expiresAt < new Date()) {
-    // Clean up expired state
-    if (oauthState) await prisma.oAuthState.delete({ where: { id: oauthState.id } });
+  // The tokens belong to whoever is signed in here, never to whoever started
+  // the flow: otherwise an attacker could send a victim their own consent
+  // link (carrying the attacker's state) and receive the victim's calendar.
+  const userId = await getUserId(request);
+  if (!userId) {
     return settingsRedirect({ error: "invalid_state" });
   }
 
-  const userId = oauthState.userId;
-  // Delete state (one-time use)
-  await prisma.oAuthState.delete({ where: { id: oauthState.id } });
+  // Claim the state in one statement: it must exist, be unexpired and have
+  // been issued to this same user. Two concurrent callbacks can't both win.
+  const { count } = await prisma.oAuthState.deleteMany({
+    where: { state, userId, expiresAt: { gt: new Date() } },
+  });
+  if (count !== 1) {
+    return settingsRedirect({ error: "invalid_state" });
+  }
 
   // Exchange code for tokens
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -64,6 +70,7 @@ export async function GET(request: NextRequest) {
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!tokenRes.ok) {
@@ -87,13 +94,14 @@ export async function GET(request: NextRequest) {
     try {
       const userinfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(5_000),
       });
       if (userinfoRes.ok) {
         const info = await userinfoRes.json();
         connectedEmail = (info.email as string) || null;
       }
     } catch {
-      // Non-critical — email is cosmetic
+      // Non-critical: the email is only shown in Settings.
     }
 
     // Encrypt and store tokens

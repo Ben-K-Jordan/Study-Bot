@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { DELETE_ACCOUNT_PHRASE } from "@/lib/account";
 import { getUserId } from "@/lib/auth";
+import { forgetSessionCheck } from "@/lib/auth-options";
 import { decryptToken } from "@/lib/crypto/token-vault";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { DELETE_ACCOUNT_PHRASE } from "./phrase";
+import { tooManyRequests } from "@/lib/rate-limit";
+import { accountDeleteLimiter, deleteUserFiles } from "@/services/account";
 
 const deleteSchema = z.object({
   confirm: z.literal(DELETE_ACCOUNT_PHRASE),
+  password: z.string().min(1).max(200),
 });
 
+const SIGNED_OUT = "Your sign-in expired. Sign in again.";
 const NOT_DELETED = "Account not deleted. Confirm in the dialog and retry.";
+const WRONG_PASSWORD = "That password doesn't match your account. Check it and retry.";
 
 /**
  * Best effort: revoke Study Bot's Google access before the tokens are
@@ -37,14 +44,16 @@ async function revokeGoogleAccess(userId: string): Promise<void> {
 }
 
 /**
- * DELETE /api/account/delete with body { confirm: "DELETE MY ACCOUNT" }.
- * Permanently deletes the student and everything they own. The client
- * signs out afterwards, since the session token outlives the account.
+ * DELETE /api/account/delete with body { confirm: "DELETE MY ACCOUNT", password }.
+ * Permanently deletes the student and everything they own, uploaded files
+ * included. The password is checked first, so a session alone (a borrowed
+ * laptop, a stolen cookie) can't wipe the account. The client signs out
+ * afterwards, since the session token outlives the account.
  */
 export async function DELETE(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
   }
 
   let body: unknown;
@@ -57,6 +66,26 @@ export async function DELETE(request: NextRequest) {
   const parsed = deleteSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: NOT_DELETED, issues: parsed.error.issues }, { status: 400 });
+  }
+
+  const limit = accountDeleteLimiter.check(userId);
+  if (!limit.allowed) {
+    return tooManyRequests(limit.retryAfterMs);
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+  if (!user) {
+    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
+  }
+  if (!(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
+    return NextResponse.json(
+      {
+        error: WRONG_PASSWORD,
+        code: "WRONG_PASSWORD",
+        issues: [{ path: ["password"], message: WRONG_PASSWORD }],
+      },
+      { status: 403 },
+    );
   }
 
   await revokeGoogleAccess(userId);
@@ -79,6 +108,11 @@ export async function DELETE(request: NextRequest) {
         tx.sessionErrorLog.deleteMany({ where: { userId } }),
         tx.chatMessage.deleteMany({ where: { userId } }),
         tx.verificationToken.deleteMany({ where: { userId } }),
+        // Queued embedding jobs carry the student's id in their payload. A
+        // running job is left to finish; it finds no chunks once they're gone.
+        tx.jobQueue.deleteMany({
+          where: { payload: { path: ["userId"], equals: userId }, status: { not: "RUNNING" } },
+        }),
       ]);
 
       // Phase 2: Child models without userId (filter via parent relation)
@@ -106,10 +140,6 @@ export async function DELETE(request: NextRequest) {
       // Phase 5: Delete User — remaining cascade relations handle the rest
       await tx.user.delete({ where: { id: userId } });
     });
-
-    logger.info("account.deleted", { userId });
-
-    return NextResponse.json({ deleted: true });
   } catch (err) {
     logger.error("account.delete.failed", { userId, error: String(err) });
     return NextResponse.json(
@@ -117,4 +147,20 @@ export async function DELETE(request: NextRequest) {
       { status: 500 },
     );
   }
+
+  logger.info("account.deleted", { userId });
+  // Sessions on other devices end on their next request, not after the
+  // recheck interval.
+  forgetSessionCheck(userId);
+
+  // The rows are gone; now the uploaded lecture files. Nothing references
+  // them any more, so a later cleanup could never find them. A failure here
+  // is logged for the operator and doesn't undo the deletion.
+  try {
+    await deleteUserFiles(userId);
+  } catch (err) {
+    logger.error("account.delete.files_failed", { userId, error: String(err) });
+  }
+
+  return NextResponse.json({ deleted: true });
 }

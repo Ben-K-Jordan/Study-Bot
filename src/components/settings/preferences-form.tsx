@@ -11,7 +11,7 @@ import {
   type SettingsField,
   type SettingsFieldErrors,
   type UserSettings,
-} from "@/app/api/settings/rules"
+} from "@/lib/settings-rules"
 import { ErrorState } from "@/components/app/error-state"
 import { LoadingRegion } from "@/components/app/skeletons"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -288,7 +288,11 @@ function PreferencesEditor({
     <form
       noValidate
       onSubmit={handleSubmit}
-      className="flex flex-col gap-6 sm:[&_:focus]:scroll-mb-28"
+      className={cn(
+        "flex flex-col gap-6",
+        // Keep a focused field clear of the sticky save bar (and, on phones, the bottom bar under it).
+        dirty && "[&_:focus]:scroll-mb-[calc(var(--bottom-bar-height)+9rem)] sm:[&_:focus]:scroll-mb-28"
+      )}
     >
       <SettingsSection id="profile" title="Profile">
         <SettingsRows>
@@ -345,7 +349,14 @@ function PreferencesEditor({
           <NumberSelectField
             id={FIELD_IDS.dailyXpGoal}
             label="Daily XP goal"
-            description="Home shows how much of this goal you've reached today."
+            description={
+              <>
+                <Link href="/achievements" className="underline underline-offset-4">
+                  Progress
+                </Link>{" "}
+                shows how much of this goal you&apos;ve reached today.
+              </>
+            }
             value={values.dailyXpGoal}
             options={xpOptions}
             format={(n) => `${formatNumber(n)} XP`}
@@ -372,8 +383,9 @@ function PreferencesEditor({
         data-dirty={dirty || undefined}
         className={cn(
           "-mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 rounded-2xl px-4 py-3 transition-[background-color,box-shadow] duration-150 ease-standard",
-          // With unsaved changes the bar turns tonal and, from 600px up, stays in view while you scroll.
-          "data-dirty:bg-surface-container sm:data-dirty:sticky sm:data-dirty:bottom-4 sm:data-dirty:z-10 sm:data-dirty:shadow-md"
+          // With unsaved changes the bar turns tonal and stays in view while you scroll: above the
+          // bottom navigation bar on phones, near the window's edge from 600px up.
+          "data-dirty:sticky data-dirty:bottom-[calc(var(--bottom-bar-height)+env(safe-area-inset-bottom)+0.5rem)] data-dirty:z-10 data-dirty:bg-surface-container data-dirty:shadow-md sm:data-dirty:bottom-4"
         )}
       >
         <p
@@ -448,7 +460,7 @@ function NumberSelectField({
 }: {
   id: string
   label: string
-  description: string
+  description: React.ReactNode
   value: number
   options: number[]
   format: (value: number) => string

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { logger } from "@/lib/logger";
-import { readGoogleStatus } from "./status-dto";
+import { readGoogleStatus } from "@/services/google-status";
 
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);

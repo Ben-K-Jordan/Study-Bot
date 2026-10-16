@@ -18,16 +18,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ disconnected: true, status: "DISCONNECTED" });
   }
 
-  // Best-effort revoke token at Google
+  // Best-effort revoke at Google. Prefer the refresh token: revoking it ends
+  // the whole grant, while the stored access token has usually expired (it
+  // lasts about an hour) and Google rejects revoking it.
   try {
-    if (integration.accessTokenEncrypted) {
-      const token = decryptToken(integration.accessTokenEncrypted);
-      // Send the token in the POST body — never in the URL, where it would
+    const encrypted = integration.refreshTokenEncrypted ?? integration.accessTokenEncrypted;
+    if (encrypted) {
+      const token = decryptToken(encrypted);
+      // Send the token in the POST body, never in the URL, where it would
       // leak into proxy/APM logs
       await fetch("https://oauth2.googleapis.com/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token }),
+        signal: AbortSignal.timeout(5_000),
       });
     }
   } catch {

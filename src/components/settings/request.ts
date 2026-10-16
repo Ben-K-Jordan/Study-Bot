@@ -1,5 +1,5 @@
 import { ApiError } from "@/lib/client-api"
-import { plural } from "@/lib/format"
+import { retryAfterText } from "@/lib/format"
 
 /**
  * JSON writes the shared client-api helpers don't cover (PUT, and DELETE
@@ -27,7 +27,13 @@ export async function sendJson<T>(
   }
   if (!res.ok) {
     const message = (data as { error?: unknown } | null)?.error
-    throw new ApiError(typeof message === "string" ? message : "Request failed", res.status, data)
+    // Keep Retry-After with the error, so the message can say how long to wait.
+    const retryAfter = res.status === 429 ? retryAfterSeconds(null, res.headers.get("Retry-After")) : null
+    const body =
+      retryAfter && (data === null || typeof data === "object")
+        ? { ...(data as object | null), retry_after_seconds: retryAfter }
+        : data
+    throw new ApiError(typeof message === "string" ? message : "Request failed", res.status, body)
   }
   return data as T
 }
@@ -54,10 +60,24 @@ export function failureMessage(error: unknown, fallback: string): string {
     if (error.status === 401) return SIGNED_OUT_MESSAGE
     if (error.status === 429) {
       const seconds = retryAfterSeconds(error)
-      return seconds
-        ? `Too many requests. Retry in ${plural(seconds, { one: "# second", other: "# seconds" })}.`
-        : "Too many requests. Retry in a minute."
+      if (seconds) return `Too many requests. ${retryAfterText(seconds)}`
+      // The server's own 429 sentence already says how long to wait.
+      const sent = (error.body as { error?: unknown } | null)?.error
+      return typeof sent === "string" && sent ? sent : "Too many requests. Retry in a minute."
     }
   }
   return fallback
+}
+
+const ACCOUNT_NOT_DELETED = "Account not deleted. Check your connection and retry."
+
+/**
+ * Where a failed account deletion is reported: a wrong password goes beside
+ * the password field (`field`); anything else is a general failure (`general`).
+ */
+export function deleteAccountFailure(error: unknown): { field: string | null; general: string | null } {
+  if (error instanceof ApiError && error.status === 403 && error.code === "WRONG_PASSWORD") {
+    return { field: error.message, general: null }
+  }
+  return { field: null, general: failureMessage(error, ACCOUNT_NOT_DELETED) }
 }

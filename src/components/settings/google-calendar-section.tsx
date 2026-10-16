@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { CalendarPlusIcon, CheckIcon, InfoIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
 import type { KeyedMutator } from "swr"
 
-import type { GoogleStatus } from "@/app/api/integrations/google/status/status-dto"
+import type { GoogleStatus } from "@/services/google-status"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { ErrorState } from "@/components/app/error-state"
 import { LoadingRegion } from "@/components/app/skeletons"
@@ -347,7 +347,7 @@ function CalendarChoices({
   return (
     <SettingsRows>
       <Field>
-        <FieldLabel htmlFor="settings-session-calendar">Calendar for study sessions</FieldLabel>
+        <FieldLabel htmlFor="settings-session-calendar">Calendar for sessions</FieldLabel>
         <FieldDescription id="settings-session-calendar-description">
           Sessions you add from the Plan page go to this calendar.
         </FieldDescription>

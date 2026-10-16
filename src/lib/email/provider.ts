@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { logger } from "@/lib/logger";
+import { isEmailDeliveryConfigured } from "./delivery";
 
 export interface EmailProvider {
   send(to: string, subject: string, html: string): Promise<void>;
@@ -71,8 +72,8 @@ ${divider}${linkBlock}
 }
 
 export function createEmailProvider(): EmailProvider {
-  const provider = process.env.EMAIL_PROVIDER || "console";
-  if (provider === "smtp") return new SmtpProvider();
+  // One rule for "does mail go out", shared with the Settings page.
+  if (isEmailDeliveryConfigured()) return new SmtpProvider();
   return new ConsoleProvider();
 }
 

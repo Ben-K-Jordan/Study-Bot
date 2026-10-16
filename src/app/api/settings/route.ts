@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { logger } from "@/lib/logger";
-import { publicConfig } from "@/app/api/config/flags";
-import { readSettings, writeSettings } from "./data";
+import { publicConfig } from "@/lib/public-config";
+import { readSettings, writeSettings } from "@/services/settings";
 import {
   SETTINGS_INVALID_MESSAGE,
   fieldErrorsFromIssues,
