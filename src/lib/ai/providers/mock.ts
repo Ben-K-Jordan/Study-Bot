@@ -24,6 +24,31 @@ function shouldElicitMalformed(userPrompt: string): boolean {
 }
 
 /**
+ * The first excerpt the user prompt lists ("(chunk_id: abc)"), so canned
+ * answers cite an excerpt that was really retrieved and the demo shows its
+ * sources. Falls back to a placeholder id when the prompt lists none.
+ */
+function firstChunkId(userPrompt: string): string {
+  return /\(chunk_id: ([^)\s]+)\)/.exec(userPrompt)?.[1] ?? "mock_chunk_1";
+}
+
+/**
+ * The guide's scope from the GENERATE_STUDY_GUIDE user prompt
+ * ("Course: CS 2110 | Exam: Prelim 1"), so canned guide titles read like
+ * real ones ("Cheat sheet for CS 2110 Prelim 1"). Null when absent.
+ */
+function guideScope(userPrompt: string): string | null {
+  const match = /^Course: (.+?)(?: \| Exam: (.+))?$/m.exec(userPrompt);
+  if (!match) return null;
+  return [match[1], match[2]].filter(Boolean).join(" ").trim() || null;
+}
+
+function guideTitle(label: string, userPrompt: string): string {
+  const scope = guideScope(userPrompt);
+  return scope ? `${label} for ${scope}` : label;
+}
+
+/**
  * Generate a deterministic embedding vector from text.
  * Same text always produces the same vector. Different texts produce different vectors.
  */
@@ -62,9 +87,9 @@ export class MockProvider implements AiProvider {
     if (systemPrompt.includes("ANSWER_WITH_CITATIONS")) {
       return {
         json: {
-          answer_markdown: "Based on the provided materials, the key concept involves understanding the fundamental principles and their applications.",
+          answer_markdown: "Your materials define the core concept as the rule that governs how the main ideas interact [1].",
           citations: [
-            { chunk_id: "mock_chunk_1", reason: "Directly relevant definition", quote_snippet: "The concept is defined as..." },
+            { chunk_id: firstChunkId(userPrompt), reason: "Defines the concept", quote_snippet: "The concept is defined as…" },
           ],
         },
         usage: { tokenIn: 500, tokenOut: 150, costUsdMicros: 100 },
@@ -90,32 +115,32 @@ export class MockProvider implements AiProvider {
         json: {
           objectives: [
             {
-              title: "Fundamental Concepts",
-              description: "Understand the core principles and definitions covered in the course material.",
+              title: "Core concepts",
+              description: "The main principles and definitions in the course material.",
               difficulty: 1,
               keywords: ["fundamentals", "definitions", "core concepts"],
             },
             {
-              title: "Applied Problem Solving",
-              description: "Apply theoretical knowledge to solve practical problems.",
+              title: "Applied problem solving",
+              description: "Use the course methods to solve practical problems.",
               difficulty: 3,
               keywords: ["application", "problem solving", "practice"],
             },
             {
-              title: "Critical Analysis",
-              description: "Evaluate and analyze complex scenarios using course frameworks.",
+              title: "Critical analysis",
+              description: "Judge a new scenario with the frameworks from the course.",
               difficulty: 4,
               keywords: ["analysis", "evaluation", "critical thinking"],
             },
             {
-              title: "Integration and Synthesis",
-              description: "Synthesize concepts across multiple topics into cohesive understanding.",
+              title: "Synthesis across topics",
+              description: "Connect ideas from different topics to explain one problem.",
               difficulty: 5,
               keywords: ["synthesis", "integration", "connections"],
             },
             {
-              title: "Key Terminology",
-              description: "Master domain-specific vocabulary and notation.",
+              title: "Key terms",
+              description: "The vocabulary and notation the course uses.",
               difficulty: 2,
               keywords: ["terminology", "vocabulary", "notation"],
             },
@@ -128,7 +153,7 @@ export class MockProvider implements AiProvider {
     if (systemPrompt.includes("GENERATE_STUDY_PLAN")) {
       // Return null to signal "use deterministic fallback"
       return {
-        json: { blocks: null, reasoning: "Mock provider — using deterministic fallback." },
+        json: { blocks: null, reasoning: "Mock provider: using the deterministic fallback." },
         usage: { tokenIn: 200, tokenOut: 50, costUsdMicros: 30 },
       };
     }
@@ -136,9 +161,9 @@ export class MockProvider implements AiProvider {
     if (systemPrompt.includes("SUMMARIZE_DOCUMENT")) {
       return {
         json: {
-          summary: "This document covers fundamental concepts including key definitions, core principles, and practical applications relevant to the course.",
+          summary: "This file defines the course's core concepts and shows how to apply them to practice problems.",
           suggested_questions: [
-            "What are the main concepts covered in this document?",
+            "What are the main concepts in this file?",
             "How do these concepts relate to each other?",
             "What are the practical applications of these ideas?",
           ],
@@ -154,9 +179,9 @@ export class MockProvider implements AiProvider {
         return {
           json: {
             guide_type: "FAQ",
-            title: "Frequently Asked Questions",
+            title: guideTitle("FAQ", userPrompt),
             sections: [
-              { question: "What are the core concepts?", answer: "The core concepts include fundamental principles covered in the course materials." },
+              { question: "What are the core concepts?", answer: "The principles and definitions the rest of the course material builds on." },
               { question: "How are these concepts applied?", answer: "These concepts are applied through problem-solving and analytical frameworks." },
             ],
           },
@@ -167,10 +192,10 @@ export class MockProvider implements AiProvider {
         return {
           json: {
             guide_type: "CHEAT_SHEET",
-            title: "Quick Reference Sheet",
+            title: guideTitle("Cheat sheet", userPrompt),
             sections: [
-              { topic: "Key Definitions", content: "Term 1: Definition of the first key concept\nTerm 2: Definition of the second key concept" },
-              { topic: "Important Formulas", content: "Formula 1: A = B + C\nFormula 2: X = Y * Z" },
+              { topic: "Key definitions", content: "Term 1: Definition of the first key concept\nTerm 2: Definition of the second key concept" },
+              { topic: "Formulas", content: "Formula 1: A = B + C\nFormula 2: X = Y * Z" },
             ],
           },
           usage: { tokenIn: 600, tokenOut: 200, costUsdMicros: 150 },
@@ -179,10 +204,10 @@ export class MockProvider implements AiProvider {
       return {
         json: {
           guide_type: "KEY_CONCEPTS",
-          title: "Key Concepts Guide",
+          title: guideTitle("Key concepts", userPrompt),
           sections: [
-            { concept: "Fundamental Principles", explanation: "The foundational ideas that form the basis of the course material.", importance: "Required for understanding all advanced topics." },
-            { concept: "Applied Methods", explanation: "Techniques used to put theoretical knowledge into practice.", importance: "Essential for exam problem-solving." },
+            { concept: "Core principles", explanation: "The ideas the rest of the course material builds on.", importance: "Every later topic assumes them." },
+            { concept: "Applied methods", explanation: "The techniques that turn the principles into worked solutions.", importance: "Most exam problems ask you to use one." },
           ],
         },
         usage: { tokenIn: 600, tokenOut: 200, costUsdMicros: 150 },
@@ -236,7 +261,7 @@ export class MockProvider implements AiProvider {
               ],
               correct_index: 0,
               distractor_rationales: [
-                "Correct — the principle underpins how the core concepts interact.",
+                "Correct. The principle governs how the core concepts interact.",
                 "Confuses a foundational requirement with an optional style choice.",
                 "Assumes the principle was superseded; it remains current.",
                 "Mistakes a load-bearing concept for mere notation.",
@@ -265,7 +290,7 @@ export class MockProvider implements AiProvider {
               ],
               correct_index: 0,
               distractor_rationales: [
-                "Correct — the validation step is required before applying the method.",
+                "Correct. The method needs the validation step before it applies.",
                 "Supported input types are exactly where the method should be used.",
                 "Following the documented order is correct usage, not an error.",
                 "Re-checking boundaries is redundant but not incorrect.",
@@ -278,8 +303,8 @@ export class MockProvider implements AiProvider {
               text: "Compare and contrast the two applied methods covered in the materials: when would you choose each?",
               difficulty: 4,
               format: "FREE_RECALL",
-              model_answer: "Method one suits well-defined inputs where the validation cost is low; method two trades setup cost for robustness on noisy inputs.",
-              key_points: ["method one: well-defined inputs", "method two: robustness on noisy inputs", "trade-off: setup cost vs validation cost"],
+              model_answer: "Method one suits well-defined inputs where the validation cost is low; method two costs more to set up but tolerates noisy inputs.",
+              key_points: ["method one: well-defined inputs", "method two: tolerates noisy inputs", "trade-off: setup cost vs validation cost"],
             },
           ],
         },
@@ -309,8 +334,8 @@ export class MockProvider implements AiProvider {
           key_takeaway: "Always verify the preconditions before applying the method.",
           concept_connection: "This mirrors the fundamental principle: governing rules constrain every later step.",
           mnemonic: "V-A-R: Validate, Apply, Review.",
-          pattern_advice: "You have repeatedly skipped setup steps under time pressure — slow down on the first line of each problem.",
-          referenced_chunk_ids: ["mock_chunk_1"],
+          pattern_advice: "You skipped the setup step in several recent answers. Check the preconditions on the first line of each problem.",
+          referenced_chunk_ids: [firstChunkId(userPrompt)],
         },
         usage: { tokenIn: 700, tokenOut: 220, costUsdMicros: 160 },
       };
@@ -377,7 +402,7 @@ export class MockProvider implements AiProvider {
                 { action: "Apply the method's documented procedure", why: "Ordered steps prevent skipped constraints" },
                 { action: "Review the result against the boundary conditions", why: "Catches off-by-one and edge-case errors" },
               ],
-              completion_problem_1: "Resolve a similar scenario; validation and application are done — supply the review.",
+              completion_problem_1: "Resolve a similar scenario. Validation and application are done, so supply the review.",
               completion_problem_2: "Resolve a similar scenario; only the validation is done.",
               full_problem: "Resolve a novel scenario with the applied method, unaided.",
               model_answer: "Validate preconditions, apply the documented procedure in order, then review the result against boundary conditions.",
@@ -392,8 +417,8 @@ export class MockProvider implements AiProvider {
       return {
         json: {
           cards: [
-            { front: "What are the fundamental principles covered in this course?", back: "The fundamental principles include core definitions, foundational theories, and key frameworks that form the basis of the subject.", tags: ["fundamentals", "definitions"] },
-            { front: "How are theoretical concepts applied in practice?", back: "Theoretical concepts are applied through structured problem-solving, case analysis, and practical exercises that demonstrate real-world applications.", tags: ["application", "practice"] },
+            { front: "What do the course's core principles cover?", back: "The definitions and rules that every later topic in the course builds on.", tags: ["fundamentals", "definitions"] },
+            { front: "How do you apply a concept from the course to a problem?", back: "Name the rule that governs the problem, write down what you know, then use the rule to solve for the unknown.", tags: ["application", "practice"] },
             { front: "What is the relationship between core concepts A and B?", back: "Concept A provides the theoretical foundation, while Concept B extends it into practical applications. They are complementary and often tested together.", tags: ["relationships", "exam prep"] },
           ],
         },
