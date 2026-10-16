@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
-import { firstConnected, resolveOpener } from "@/components/app/return-focus"
+import { closeFocusOrder, firstConnected, resolveOpener } from "@/components/app/return-focus"
 
 function mainRegion(): HTMLElement | null {
   return document.getElementById("main-content")
@@ -97,13 +97,14 @@ export function ConfirmDialog({
   }, [open])
 
   const restoreFocus = (event: Event) => {
-    // After the action ran, `returnFocus` wins (the opener is usually what
-    // was just deleted, even if it hasn't left the page yet); after Cancel or
-    // Escape, the opener does.
-    const preferred = confirmed.current
-      ? [returnFocus?.current, opener.current]
-      : [opener.current, returnFocus?.current]
-    const target = firstConnected([...preferred, mainRegion()])
+    const target = firstConnected(
+      closeFocusOrder({
+        confirmed: confirmed.current,
+        opener: opener.current,
+        afterAction: returnFocus?.current,
+        main: mainRegion(),
+      })
+    )
     opener.current = null
     confirmed.current = false
     if (!target) return

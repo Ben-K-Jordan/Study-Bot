@@ -29,6 +29,22 @@ export function resolveOpener<T extends FocusTarget>(
   return trigger ?? active
 }
 
+/**
+ * Where focus may go when a confirmation dialog closes, best first. After the
+ * action ran, `afterAction` wins: the opener is usually what was just
+ * deleted, even if it hasn't left the page yet. After Cancel or Escape, the
+ * opener does. The main region is the last resort, never <body>.
+ */
+export function closeFocusOrder<T>(input: {
+  confirmed: boolean
+  opener: T | null | undefined
+  afterAction: T | null | undefined
+  main: T | null | undefined
+}): (T | null | undefined)[] {
+  const { confirmed, opener, afterAction, main } = input
+  return confirmed ? [afterAction, opener, main] : [opener, afterAction, main]
+}
+
 /** The first candidate still on the page, in priority order. */
 export function firstConnected<T extends Pick<FocusTarget, "isConnected">>(
   candidates: readonly (T | null | undefined)[]

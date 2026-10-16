@@ -107,9 +107,9 @@ export function MaterialsManager({
     uploads.addFiles(files, { courseName: course, examName: exam })
   }
 
+  // The deleted row's dialog hands focus to the list heading as it closes.
   async function afterDelete() {
     await mutate()
-    listHeadingRef.current?.focus()
   }
 
   const chipHref = (value: string | null) => {
@@ -261,6 +261,7 @@ export function MaterialsManager({
                         busy={uploads.busyIds.has(doc.document_id)}
                         onChanged={() => mutate()}
                         onDeleted={afterDelete}
+                        returnFocus={listHeadingRef}
                       />
                     ))}
                   </ul>

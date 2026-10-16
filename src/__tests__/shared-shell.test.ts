@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { buildCourseOptions } from "@/hooks/use-course-options"
-import { firstConnected, resolveOpener, type FocusTarget } from "@/components/app/return-focus"
+import { closeFocusOrder, firstConnected, resolveOpener, type FocusTarget } from "@/components/app/return-focus"
 import { lessonProgressText } from "@/components/lesson/lesson-frame"
 import { NAV_ITEMS, ROUTE_TITLES, goToLabel, titleFor } from "@/components/shell/nav-items"
 import { sessionFabLabel, showsFloatingFab } from "@/components/shell/session-fab"
@@ -142,5 +142,30 @@ describe("return focus after a dialog", () => {
     expect(firstConnected([gone, heading, main])).toBe(heading)
     expect(firstConnected([gone, null, main])).toBe(main)
     expect(firstConnected([gone, undefined])).toBeNull()
+  })
+
+  it("returns to the opener after Cancel or Escape, even when an after-action target exists", () => {
+    const opener = fakeElement(true)
+    const heading = fakeElement(true)
+    const main = fakeElement(true)
+    const order = closeFocusOrder({ confirmed: false, opener, afterAction: heading, main })
+    expect(firstConnected(order)).toBe(opener)
+  })
+
+  it("prefers the after-action target once the action ran, though the opener is still on the page", () => {
+    const opener = fakeElement(true)
+    const heading = fakeElement(true)
+    const main = fakeElement(true)
+    expect(firstConnected(closeFocusOrder({ confirmed: true, opener, afterAction: heading, main }))).toBe(heading)
+  })
+
+  it("falls back past a deleted opener, even when the dialog closes before the action settles", () => {
+    // A row's own dialog unmounts with the row, so its close can run before
+    // the action is marked as done: the after-action target still wins.
+    const gone = fakeElement(false)
+    const heading = fakeElement(true)
+    const main = fakeElement(true)
+    expect(firstConnected(closeFocusOrder({ confirmed: false, opener: gone, afterAction: heading, main }))).toBe(heading)
+    expect(firstConnected(closeFocusOrder({ confirmed: false, opener: gone, afterAction: null, main }))).toBe(main)
   })
 })

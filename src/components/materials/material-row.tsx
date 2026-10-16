@@ -70,6 +70,7 @@ export function MaterialRow({
   busy = false,
   onChanged,
   onDeleted,
+  returnFocus,
 }: {
   doc: MaterialDoc
   timeZone: string
@@ -79,6 +80,8 @@ export function MaterialRow({
   onChanged: () => void | Promise<unknown>
   /** After the file is deleted. */
   onDeleted: (doc: MaterialDoc) => void | Promise<unknown>
+  /** Where focus goes after a delete, since this row (and its Delete button) leaves the page. */
+  returnFocus?: React.RefObject<HTMLElement | null>
 }) {
   const [processingHere, setProcessingHere] = React.useState(false)
   const [processError, setProcessError] = React.useState<string | null>(null)
@@ -170,6 +173,7 @@ export function MaterialRow({
               confirmLabel="Delete file"
               pendingLabel="Deleting file…"
               failedMessage="File not deleted. Check your connection and retry."
+              returnFocus={returnFocus}
               onConfirm={remove}
             />
           </div>

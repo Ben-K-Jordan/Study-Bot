@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useLayoutEffect, useRef, useState } from "react"
 
 import { apiDelete } from "@/lib/client-api"
 import { plural } from "@/lib/format"
@@ -16,14 +16,16 @@ import {
 import { Button } from "@/components/ui/button"
 import { FieldError } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
+import { closeFocusOrder, firstConnected, resolveOpener } from "@/components/app/return-focus"
 import { describeRequestError } from "@/components/study/request-errors"
 import { normalizeGuideSections } from "@/components/guides/guide-format"
 import type { StudyGuide } from "@/components/guides/types"
 
 /**
- * Confirms deleting a guide. Built from AlertDialog (like ConfirmDialog) so
- * it can hand focus to `returnFocus` when it closes: the button that opened
- * it belongs to the guide that was just deleted.
+ * Confirms deleting a guide. Built from AlertDialog (like ConfirmDialog) and
+ * returns focus the same way: to the button that opened it after Cancel or
+ * Escape, and to `returnFocus` after a delete, since that button belonged to
+ * the guide that was just deleted.
  */
 export function DeleteGuideDialog({
   guide,
@@ -41,9 +43,20 @@ export function DeleteGuideDialog({
 }) {
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
-  const [deletedId, setDeletedId] = useState<string | null>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const deleted = useRef(false)
   const errorId = "delete-guide-error"
   const sections = guide ? normalizeGuideSections(guide.sections).length : 0
+  const isOpen = open && guide !== null
+
+  // The dialog has no trigger, so remember what opened it before its focus
+  // trap moves focus inside. Layout effects run before Radix's auto-focus.
+  useLayoutEffect(() => {
+    if (!isOpen) return
+    deleted.current = false
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    opener.current = resolveOpener(active, document.body, (id) => document.getElementById(id))
+  }, [isOpen])
 
   async function confirm() {
     if (!guide || pending) return
@@ -51,7 +64,7 @@ export function DeleteGuideDialog({
     setFailure(null)
     try {
       await apiDelete(`/api/guides/${encodeURIComponent(guide.id)}`)
-      setDeletedId(guide.id)
+      deleted.current = true
       await onDeleted(guide)
       onOpenChange(false)
     } catch (error) {
@@ -63,7 +76,7 @@ export function DeleteGuideDialog({
 
   return (
     <AlertDialog
-      open={open && guide !== null}
+      open={isOpen}
       onOpenChange={(next) => {
         if (pending) return
         if (!next) setFailure(null)
@@ -72,12 +85,19 @@ export function DeleteGuideDialog({
     >
       <AlertDialogContent
         onCloseAutoFocus={(event) => {
-          // After a delete the opener is gone; land on the panel instead.
-          if (deletedId) {
-            event.preventDefault()
-            returnFocus()?.focus()
-            setDeletedId(null)
-          }
+          const target = firstConnected(
+            closeFocusOrder({
+              confirmed: deleted.current,
+              opener: opener.current,
+              afterAction: returnFocus(),
+              main: document.getElementById("main-content"),
+            })
+          )
+          opener.current = null
+          deleted.current = false
+          if (!target) return
+          event.preventDefault()
+          target.focus()
         }}
       >
         <AlertDialogHeader>

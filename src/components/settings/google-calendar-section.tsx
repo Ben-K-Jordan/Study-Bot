@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { CalendarPlusIcon, CheckIcon, InfoIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
 import type { KeyedMutator } from "swr"
 
@@ -97,23 +97,14 @@ function CalendarConnection({ initial }: { initial: GoogleStatus | null }) {
   })
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  // After a disconnect the Disconnect button is gone, so the dialog hands
+  // focus to Connect as it closes and keyboard users aren't dropped at the top.
   const connectRef = useRef<HTMLAnchorElement>(null)
-  const focusConnectNext = useRef(false)
-
-  // After a disconnect the Disconnect button is gone; put focus on Connect
-  // once the dialog has closed, so keyboard users aren't dropped at the top.
   const connected = status?.connected ?? false
-  useEffect(() => {
-    if (focusConnectNext.current && !confirmOpen && !connected) {
-      focusConnectNext.current = false
-      connectRef.current?.focus()
-    }
-  }, [confirmOpen, connected])
 
   async function disconnect() {
     await apiPost("/api/integrations/google/disconnect", {})
     await mutate()
-    focusConnectNext.current = true
     setNotice("Google Calendar disconnected")
   }
 
@@ -225,6 +216,7 @@ function CalendarConnection({ initial }: { initial: GoogleStatus | null }) {
         pendingLabel="Disconnecting…"
         destructive={false}
         failedMessage="Google Calendar not disconnected. Check your connection and retry."
+        returnFocus={connectRef}
         onConfirm={disconnect}
       />
     </div>
