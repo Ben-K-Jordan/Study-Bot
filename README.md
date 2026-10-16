@@ -70,7 +70,7 @@ For Google Calendar, enable the Calendar API in Google Cloud, create a Web appli
 
 ## Screenshot tour
 
-All from the demo account on the mock provider, so session questions are the built-in templates plus repair questions from the seeded history.
+All from the demo account on the mock provider. The mock provider only writes free-recall templates, so the two multiple-choice shots use a known deck written into the run, the same way the e2e suite seeds one.
 
 <p align="center">
   <img src="docs/images/answer-loop.gif" alt="Animation of one repair question: an answer is typed, Unsure is picked, the answer is submitted, the correction rule appears, Correct is chosen, the green feedback sheet slides up, and the next question loads" width="768">
@@ -91,6 +91,20 @@ Every session opens by saying what it will ask.
 </picture>
 
 One question per screen, rated before anything is revealed.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/session-mcq-selected-dark.png">
+  <img src="docs/images/session-mcq-selected-light.png" alt="A multiple-choice repair question about which CSS selector wins, with the first choice selected, Sure picked under How sure are you, and a green Submit answer button" width="900">
+</picture>
+
+Multiple choice works from the keyboard: 1 to 4 picks an answer, Q, W and E set how sure you are, and Enter submits.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/session-mcq-feedback-dark.png">
+  <img src="docs/images/session-mcq-feedback-light.png" alt="After a wrong pick marked Sure: the chosen answer in red, the correct answer in green, a Confident error note, and a red Incorrect sheet showing the correct answer and a Next question button" width="900">
+</picture>
+
+The server checks the pick against the answer key, which never reaches the browser before you commit.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/session-scoring-dark.png">
