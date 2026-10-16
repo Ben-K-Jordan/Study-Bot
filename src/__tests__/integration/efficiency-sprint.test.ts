@@ -256,13 +256,13 @@ The loop invariant for binary search is that the target element, if present, mus
     });
 
     it("anchor results are idempotent (upsert)", async () => {
-      const result1 = await buildObjectiveAnchors(
+      await buildObjectiveAnchors(
         USER,
         COURSE,
         undefined,
         [{ id: "obj_1", title: "Loop invariants" }]
       );
-      const result2 = await buildObjectiveAnchors(
+      await buildObjectiveAnchors(
         USER,
         COURSE,
         undefined,

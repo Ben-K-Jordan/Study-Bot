@@ -14,7 +14,6 @@ let startOrResumeRun: any;
 let submitAttempt: any;
 let completeRun: any;
 let getRun: any;
-let endBreak: any;
 
 // ============================================================
 // INTERLEAVED_PRACTICE

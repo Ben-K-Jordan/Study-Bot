@@ -16,7 +16,6 @@ let getPlan: any;
 let generatePlanIcs: any;
 let startOrResumeRun: any;
 let submitAttempt: any;
-let getRun: any;
 
 describe.skipIf(!hasDb)("Integration: plan creation and retrieval", () => {
   const userId = "test_user_plan";
@@ -58,7 +57,6 @@ describe.skipIf(!hasDb)("Integration: plan creation and retrieval", () => {
     const runService = await import("@/services/run");
     startOrResumeRun = runService.startOrResumeRun;
     submitAttempt = runService.submitAttempt;
-    getRun = runService.getRun;
   });
 
   afterAll(async () => {
