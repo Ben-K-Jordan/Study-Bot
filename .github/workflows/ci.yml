@@ -97,10 +97,16 @@ jobs:
       - run: npm run test:integration
 
   e2e-tests:
-    name: E2E Tests
+    name: E2E Tests (shard ${{ matrix.shard }} of 2)
     runs-on: ubuntu-latest
     needs: [lint-and-build, unit-tests, integration-tests]
     timeout-minutes: 20
+    # Each shard builds the app and runs half the tests against its own
+    # server and database. The setup project runs in both.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     services:
       postgres:
@@ -122,7 +128,8 @@ jobs:
     # ALLOW_TEST_AUTH=true. GitHub sets CI=true, which is what lets the
     # production build trust the specs' X-User-Id header. The suite runs the
     # setup, chromium (Desktop Chrome) and mobile (Pixel 7, @mobile tests)
-    # projects; all of them use Chromium.
+    # projects; all of them use Chromium. DATABASE_URL is set for the test
+    # runner too: a few tests write rows the API can't reach.
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studybot_e2e?schema=public
       E2E_PORT: "3000"
@@ -148,18 +155,18 @@ jobs:
       - name: Apply pgvector migration
         run: npx prisma db execute --file prisma/manual-scripts/001_pgvector.sql
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 14
 
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-test-results
+          name: playwright-test-results-${{ matrix.shard }}
           path: test-results/
           retention-days: 7

@@ -173,7 +173,7 @@ One warning: `ALLOW_TEST_AUTH` makes the app trust a header as the authenticated
 * `npm run dev`, `npm run build`, and `npm start` cover the dev server and production.
 * `npm test` runs everything vitest knows. `npm run test:unit` needs no database.
 * `npm run test:integration` needs PostgreSQL reachable through `DATABASE_URL`.
-* `npm run test:e2e` runs Playwright: against your dev server locally, or against a production build when `CI` is set. Run `npx playwright install chromium` once first.
+* `npm run test:e2e` runs Playwright against a server it starts on `E2E_PORT`: `next dev` locally, or a production build when `CI` is set. It needs an e2e database in `DATABASE_URL`; `e2e/README.md` has the commands. Run `npx playwright install chromium` once first.
 * `npm run lint` and `npm run typecheck` run ESLint and the TypeScript compiler.
 * `npm run worker` processes background jobs, `npm run db:migrate` creates new migrations, and `npm run db:seed-research` loads the research evidence base that grounds plan generation.
 * `npm run db:seed-demo` fills a demo database (see Quick start), and `npm run screenshots -- --base http://localhost:3000 --out <dir>` signs in as the demo user and captures every page in light and dark, at desktop and phone sizes. The options are listed at the top of `scripts/screenshots.ts`.
