@@ -3,8 +3,12 @@
 import { useCallback, useRef, useState } from "react"
 
 import { postAuth } from "@/components/auth/auth-request"
-import { REQUEST_FAILED } from "@/components/auth/messages"
-import { FIELD_MESSAGES } from "@/components/auth/validation"
+import {
+  EMAIL_NOT_CONFIGURED,
+  EMAIL_NOT_CONFIGURED_MESSAGES,
+  REQUEST_FAILED,
+} from "@/lib/auth-messages"
+import { FIELD_MESSAGES } from "@/lib/auth-validation"
 
 export type ResendState =
   | { status: "idle" }
@@ -37,6 +41,8 @@ export function useResendVerification() {
       next = { status: "failed", message: result.issues.email ?? FIELD_MESSAGES.emailInvalid, fieldError: true }
     } else if (result.kind === "rate-limited") {
       next = { status: "failed", message: result.message, fieldError: false }
+    } else if (result.kind === "code" && result.code === EMAIL_NOT_CONFIGURED) {
+      next = { status: "failed", message: EMAIL_NOT_CONFIGURED_MESSAGES.verificationLink, fieldError: false }
     } else {
       next = { status: "failed", message: REQUEST_FAILED.verificationLink, fieldError: false }
     }

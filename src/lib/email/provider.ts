@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import { logger } from "@/lib/logger";
-import { isEmailDeliveryConfigured } from "./delivery";
+import { isEmailDeliveryConfigured, mayPrintEmailLinks } from "./delivery";
 
 export interface EmailProvider {
   send(to: string, subject: string, html: string): Promise<void>;
@@ -42,8 +42,18 @@ class SmtpProvider implements EmailProvider {
   }
 }
 
-class ConsoleProvider implements EmailProvider {
+/**
+ * Prints emails to the server's terminal instead of sending them. Outside
+ * development (see mayPrintEmailLinks) it records only that an email wasn't
+ * delivered: a reset link in a production log would let anyone who reads
+ * the log take over the account.
+ */
+export class ConsoleProvider implements EmailProvider {
   async send(to: string, subject: string, html: string): Promise<void> {
+    if (!mayPrintEmailLinks()) {
+      logger.warn("email_not_delivered", { to, subject, reason: "EMAIL_PROVIDER isn't smtp" });
+      return;
+    }
     const divider = "═".repeat(60);
     // Collect every URL in the email (href attributes and bare URLs) so
     // links like verification/reset URLs are always printed in full, even
@@ -74,6 +84,15 @@ ${divider}${linkBlock}
 export function createEmailProvider(): EmailProvider {
   // One rule for "does mail go out", shared with the Settings page.
   if (isEmailDeliveryConfigured()) return new SmtpProvider();
+  // `next build` loads this module in every page-data worker; the warning
+  // belongs to the running server, not the build output.
+  if (!mayPrintEmailLinks() && process.env.NEXT_PHASE !== "phase-production-build") {
+    // Said once at startup, so whoever runs the server knows why password
+    // reset and verification are switched off.
+    logger.warn("email.not_configured", {
+      detail: "Set EMAIL_PROVIDER=smtp and the SMTP_* variables to send password reset and verification emails.",
+    });
+  }
   return new ConsoleProvider();
 }
 

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "crypto";
+import type { Prisma } from "../../generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 
@@ -120,34 +121,36 @@ export async function inspectToken(token: string, expectedType: TokenType): Prom
   return classifyToken(record, expectedType, new Date());
 }
 
+/** The client redeemToken writes with: prisma, or a transaction's client. */
+export type TokenDb = Pick<Prisma.TransactionClient, "verificationToken">;
+
 /**
  * Use a token once. The conditional update is the claim, so two requests
  * racing on the same link can't both succeed; anything else reports why the
  * link didn't work.
+ *
+ * Pass a transaction's client to make the claim part of a larger write: if
+ * the transaction rolls back (the new password wasn't saved), the link
+ * still works.
  */
-export async function redeemToken(token: string, expectedType: TokenType): Promise<TokenState> {
+export async function redeemToken(
+  token: string,
+  expectedType: TokenType,
+  db: TokenDb = prisma,
+): Promise<TokenState> {
   if (!token) return { status: "invalid" };
   const now = new Date();
   const stored = hashToken(token);
 
-  const { count } = await prisma.verificationToken.updateMany({
+  const { count } = await db.verificationToken.updateMany({
     where: { token: stored, type: expectedType, usedAt: null, expiresAt: { gt: now } },
     data: { usedAt: now },
   });
-  const record = await prisma.verificationToken.findUnique({ where: { token: stored } });
+  const record = await db.verificationToken.findUnique({ where: { token: stored } });
 
   if (count === 1 && record) return { status: "valid", userId: record.userId };
   const state = classifyToken(record, expectedType, now);
   // Unclaimed but "valid" can only mean the row changed between the two
   // queries; treat it as already used rather than letting it through.
   return state.status === "valid" ? { status: "used", userId: state.userId } : state;
-}
-
-/**
- * Verify and consume a token. Returns the userId if this call used it,
- * null otherwise. Kept for callers that don't need the reason.
- */
-export async function consumeToken(token: string, expectedType: TokenType): Promise<string | null> {
-  const state = await redeemToken(token, expectedType);
-  return state.status === "valid" ? state.userId : null;
 }

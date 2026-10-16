@@ -7,7 +7,7 @@ import {
   signInFailureMessage,
   SIGN_IN_MESSAGES,
   REQUEST_FAILED,
-} from "@/components/auth/messages";
+} from "@/lib/auth-messages";
 import {
   FIELD_MESSAGES,
   collectErrors,
@@ -15,9 +15,16 @@ import {
   validateCurrentPassword,
   validateEmail,
   validateName,
+  passwordTooLong,
   validateNewPassword,
   validatePasswordConfirmation,
-} from "@/components/auth/validation";
+} from "@/lib/auth-validation";
+import {
+  RESET_LINK_PROBLEMS,
+  parseVerifyEmailStatus,
+  resetPasswordTitle,
+  verifyEmailTitle,
+} from "@/components/auth/link-copy";
 
 describe("retryAfterText", () => {
   it("uses whole seconds under a minute and whole minutes after", () => {
@@ -102,6 +109,20 @@ describe("field validation", () => {
     expect(validateNewPassword("12345678")).toBeNull();
   });
 
+  it("refuses a new password bcrypt would cut short, counting bytes, not characters", () => {
+    expect(validateNewPassword("a".repeat(72))).toBeNull();
+    expect(validateNewPassword("a".repeat(73))).toBe(FIELD_MESSAGES.passwordLong);
+    // 37 accented letters are 74 bytes; 18 four-byte emoji are exactly 72.
+    expect(passwordTooLong("é".repeat(37))).toBe(true);
+    expect(passwordTooLong("\u{1F512}".repeat(18))).toBe(false);
+    expect(passwordTooLong("\u{1F512}".repeat(19))).toBe(true);
+    // A lone surrogate counts 3 bytes, as bcryptjs counts it.
+    expect(passwordTooLong("a".repeat(69) + "\uD800")).toBe(false);
+    expect(passwordTooLong("a".repeat(70) + "\uD800")).toBe(true);
+    // Sign-in still takes any password an account already has.
+    expect(validateCurrentPassword("a".repeat(200))).toBeNull();
+  });
+
   it("checks the confirmation and the name", () => {
     expect(validatePasswordConfirmation("abcdefgh", "")).toBe(FIELD_MESSAGES.confirmMissing);
     expect(validatePasswordConfirmation("abcdefgh", "abcdefgx")).toBe(FIELD_MESSAGES.passwordMismatch);
@@ -116,5 +137,23 @@ describe("field validation", () => {
     expect(errors).toEqual({ password: "Enter your password." });
     expect(hasErrors(errors)).toBe(true);
     expect(hasErrors(collectErrors({ email: null }))).toBe(false);
+  });
+});
+
+describe("link screen titles", () => {
+  it("names the reset screen after the link's problem", () => {
+    expect(resetPasswordTitle(null)).toBe("Choose a new password");
+    expect(resetPasswordTitle("invalid")).toBe("This reset link doesn't work");
+    expect(resetPasswordTitle("expired")).toBe(RESET_LINK_PROBLEMS.expired.title);
+    expect(resetPasswordTitle("used")).toBe("Reset link already used");
+  });
+
+  it("reads the verify page's status and titles it like its heading", () => {
+    expect(parseVerifyEmailStatus(undefined)).toBe("sent");
+    expect(parseVerifyEmailStatus("toString")).toBe("sent");
+    expect(parseVerifyEmailStatus("expired")).toBe("expired");
+    expect(verifyEmailTitle("sent")).toBe("Verify your email");
+    expect(verifyEmailTitle("expired")).toBe("Verification link expired");
+    expect(verifyEmailTitle("invalid")).toBe("This verification link doesn't work");
   });
 });

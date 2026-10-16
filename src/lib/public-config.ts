@@ -3,7 +3,8 @@
  * GET /api/config, PUT /api/settings and server components (Settings) so
  * they all agree.
  */
-import { isEmailDeliveryConfigured } from "@/lib/email/delivery";
+import { areEmailLinksAvailable, isEmailDeliveryConfigured } from "@/lib/email/delivery";
+import { isGoogleCalendarAvailable } from "@/lib/google/availability";
 
 export interface PublicConfig {
   /** Email verification gates sign-in (REQUIRE_EMAIL_VERIFICATION). */
@@ -14,13 +15,22 @@ export interface PublicConfig {
   ai_provider: string;
   /** The AI kill switch is on (AI_DISABLED=true). */
   ai_disabled: boolean;
-  /** Google Calendar OAuth has a client id on this server. */
+  /**
+   * Google Calendar can be connected on this server: the fake provider
+   * (GOOGLE_PROVIDER=fake), or OAuth with a client id.
+   */
   google_configured: boolean;
   /**
    * Emails (password reset and verification links) are delivered over SMTP.
    * False means they only reach the server log (EMAIL_PROVIDER isn't "smtp").
    */
   email_configured: boolean;
+  /**
+   * Password reset and verification links can reach the student: emailed
+   * over SMTP, or printed in the server's terminal in development. False on
+   * a production server without SMTP, where screens must not promise an email.
+   */
+  email_links_available: boolean;
 }
 
 export function publicConfig(): PublicConfig {
@@ -30,7 +40,8 @@ export function publicConfig(): PublicConfig {
     ai_mock: aiProvider === "mock",
     ai_provider: aiProvider,
     ai_disabled: process.env.AI_DISABLED === "true",
-    google_configured: Boolean(process.env.GOOGLE_CLIENT_ID),
+    google_configured: isGoogleCalendarAvailable(),
     email_configured: isEmailDeliveryConfigured(),
+    email_links_available: areEmailLinksAvailable(),
   };
 }

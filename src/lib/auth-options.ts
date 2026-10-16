@@ -5,15 +5,21 @@ import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "./db";
 import { logger } from "./logger";
-import { EMAIL_NOT_VERIFIED } from "@/components/auth/messages";
+import { EMAIL_NOT_VERIFIED } from "@/lib/auth-messages";
 
 // Secure cookies must follow the actual serving protocol, not the build
 // mode: a production build served over plain http (e.g. `npm start` on
 // localhost) would set Secure cookies the browser silently drops, making
 // sign-in impossible. Browsers only honor the __Secure- prefix over https.
-const useSecureCookies =
+// Exported for the other cookies the auth routes set.
+export const SECURE_COOKIES =
   process.env.NEXTAUTH_URL?.startsWith("https://") ??
   process.env.NODE_ENV === "production";
+
+/** The session cookie; its arrival on a sign-in response means the password matched. */
+export const SESSION_COOKIE_NAME = SECURE_COOKIES
+  ? "__Secure-next-auth.session-token"
+  : "next-auth.session-token";
 
 /** bcrypt cost for every stored password hash (sign-up and reset). */
 export const BCRYPT_COST = 12;
@@ -119,12 +125,12 @@ export const authOptions: NextAuthOptions = {
   },
   cookies: {
     sessionToken: {
-      name: useSecureCookies ? "__Secure-next-auth.session-token" : "next-auth.session-token",
+      name: SESSION_COOKIE_NAME,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: useSecureCookies,
+        secure: SECURE_COOKIES,
       },
     },
   },

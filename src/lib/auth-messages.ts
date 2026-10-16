@@ -78,6 +78,17 @@ export const REQUEST_FAILED = {
   verificationLink: "New link not sent. Check your connection and retry.",
 } as const;
 
+/**
+ * The 503 code from the reset and verification link routes when this
+ * server can't deliver email, the same for every address.
+ */
+export const EMAIL_NOT_CONFIGURED = "EMAIL_NOT_CONFIGURED";
+
+export const EMAIL_NOT_CONFIGURED_MESSAGES = {
+  resetLink: "Reset link not sent. Email isn't set up on this Study Bot server. Ask whoever runs the server to turn on email.",
+  verificationLink: "New link not sent. Email isn't set up on this Study Bot server. Ask whoever runs the server to turn on email.",
+} as const;
+
 export function tooManyRequestsText(subject: string, seconds: number | null | undefined): string {
   return `${subject} ${retryAfterText(seconds)}`;
 }

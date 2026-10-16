@@ -7,12 +7,21 @@
 export const PASSWORD_MIN_LENGTH = 8;
 export const NAME_MAX_LENGTH = 50;
 
+/**
+ * bcrypt hashes only the first 72 bytes of a password (UTF-8), so anything
+ * past that would be ignored at sign-in. A byte limit, not a character one:
+ * accented letters take 2 bytes and emoji 4.
+ */
+export const PASSWORD_MAX_BYTES = 72;
+
 export const FIELD_MESSAGES = {
   emailMissing: "Enter your email address.",
   emailInvalid: "Enter an email address like name@example.com.",
   passwordMissing: "Enter your password.",
   newPasswordMissing: "Enter a password.",
   passwordShort: `Use at least ${PASSWORD_MIN_LENGTH} characters.`,
+  // Counts bytes, so it can't promise a number of characters.
+  passwordLong: "Use a shorter password.",
   confirmMissing: "Enter the password again.",
   passwordMismatch: "Enter the same password in both fields.",
   nameMissing: "Enter your name.",
@@ -38,9 +47,19 @@ export function validateCurrentPassword(value: string): string | null {
   return value ? null : FIELD_MESSAGES.passwordMissing;
 }
 
+/**
+ * True when bcrypt would cut the password short. TextEncoder counts what
+ * bcryptjs's own `truncates()` counts (a lone surrogate is 3 bytes in both),
+ * and it runs the same in the browser and on the server.
+ */
+export function passwordTooLong(value: string): boolean {
+  return new TextEncoder().encode(value).length > PASSWORD_MAX_BYTES;
+}
+
 export function validateNewPassword(value: string): string | null {
   if (!value) return FIELD_MESSAGES.newPasswordMissing;
   if (value.length < PASSWORD_MIN_LENGTH) return FIELD_MESSAGES.passwordShort;
+  if (passwordTooLong(value)) return FIELD_MESSAGES.passwordLong;
   return null;
 }
 

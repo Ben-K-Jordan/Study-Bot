@@ -14,7 +14,7 @@ import {
 import { withCallbackUrl } from "@/components/auth/callback-url"
 import { signInWithCredentials } from "@/components/auth/credentials-sign-in"
 import { ErrorSummary } from "@/components/auth/error-summary"
-import { signInFailureMessage, type SignInFailure } from "@/components/auth/messages"
+import { signInFailureMessage, type SignInFailure } from "@/lib/auth-messages"
 import { useResendVerification } from "@/components/auth/use-resend-verification"
 import {
   collectErrors,
@@ -22,7 +22,7 @@ import {
   validateCurrentPassword,
   validateEmail,
   type FieldErrors,
-} from "@/components/auth/validation"
+} from "@/lib/auth-validation"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"

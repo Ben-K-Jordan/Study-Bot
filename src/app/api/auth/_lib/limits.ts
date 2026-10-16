@@ -62,6 +62,11 @@ export function createFailureLimiter({ maxFailures, windowMs }: { maxFailures: n
       if (stamps.length === 0) failures.delete(key);
     },
 
+    /** Forget every failure for one key (the account's password just changed). */
+    clear(key: string): void {
+      failures.delete(key);
+    },
+
     /** Clear every key (tests). */
     reset(): void {
       failures.clear();
@@ -72,8 +77,10 @@ export function createFailureLimiter({ maxFailures, windowMs }: { maxFailures: n
 
 /**
  * Failed sign-ins per account, from any network: 30 per 15 minutes. Three
- * times the per-IP cap, so locking a student out takes several networks,
- * while guessing stays slow. Only wrong passwords count.
+ * times the per-IP cap, so guessing stays slow. Only wrong passwords count.
+ * A browser that has signed in to the account before skips this limit (see
+ * known-device.ts), so a stranger who trips it can't lock the student out of
+ * their own devices; a password reset clears it.
  */
 export const signInFailureLimiter = createFailureLimiter({
   maxFailures: isProduction ? 30 : 300,

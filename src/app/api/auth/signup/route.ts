@@ -8,7 +8,7 @@ import { emailProvider } from "@/lib/email/provider";
 import { emailVerification } from "@/lib/email/templates";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
-import { REQUEST_FAILED } from "@/components/auth/messages";
+import { REQUEST_FAILED } from "@/lib/auth-messages";
 import {
   emailField,
   invalidFields,

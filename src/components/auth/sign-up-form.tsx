@@ -15,7 +15,7 @@ import { postAuth } from "@/components/auth/auth-request"
 import { withCallbackUrl } from "@/components/auth/callback-url"
 import { signInWithCredentials } from "@/components/auth/credentials-sign-in"
 import { ErrorSummary } from "@/components/auth/error-summary"
-import { REQUEST_FAILED } from "@/components/auth/messages"
+import { REQUEST_FAILED } from "@/lib/auth-messages"
 import {
   NAME_MAX_LENGTH,
   PASSWORD_RULE,
@@ -26,7 +26,7 @@ import {
   validateNewPassword,
   validatePasswordConfirmation,
   type FieldErrors,
-} from "@/components/auth/validation"
+} from "@/lib/auth-validation"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
 

@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 
+import { parseVerifyEmailStatus, verifyEmailTitle } from "@/components/auth/link-copy";
 import { firstParam, redirectIfSignedIn, type SearchParams } from "@/components/auth/server";
-import { validateEmail } from "@/components/auth/validation";
-import { VerifyEmailPanel, type VerifyEmailStatus } from "@/components/auth/verify-email-panel";
+import { validateEmail } from "@/lib/auth-validation";
+import { VerifyEmailPanel } from "@/components/auth/verify-email-panel";
 
-export const metadata: Metadata = {
-  title: "Verify your email",
-};
-
-const LINK_STATUSES = new Set<VerifyEmailStatus>(["expired", "invalid", "busy", "failed"]);
 const MAX_EMAIL_LENGTH = 254;
+
+/** The tab title matches the panel's heading, so a broken link doesn't read "Verify your email". */
+export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
+  const status = parseVerifyEmailStatus(firstParam((await searchParams).status));
+  return { title: verifyEmailTitle(status) };
+}
 
 /**
  * /auth/verify-email?email=... after creating an account, or
@@ -20,8 +22,7 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
   await redirectIfSignedIn("/");
   const params = await searchParams;
 
-  const rawStatus = firstParam(params.status) as VerifyEmailStatus | undefined;
-  const status: VerifyEmailStatus = rawStatus && LINK_STATUSES.has(rawStatus) ? rawStatus : "sent";
+  const status = parseVerifyEmailStatus(firstParam(params.status));
 
   // Only echo something that looks like an email address back onto the page.
   const rawEmail = firstParam(params.email)?.trim() ?? "";

@@ -13,7 +13,6 @@ vi.mock("@/lib/db", () => ({ prisma: { verificationToken } }));
 
 import {
   classifyToken,
-  consumeToken,
   createEmailVerificationToken,
   createPasswordResetToken,
   hashToken,
@@ -96,13 +95,15 @@ describe("redeemToken", () => {
     expect(verificationToken.updateMany).not.toHaveBeenCalled();
   });
 
-  it("keeps consumeToken's userId-or-null contract", async () => {
-    verificationToken.updateMany.mockResolvedValue({ count: 1 });
-    verificationToken.findUnique.mockResolvedValue(record({ usedAt: NOW }));
-    expect(await consumeToken("tok", "PASSWORD_RESET")).toBe("user-1");
+  it("claims through a transaction's client when given one, so a rollback undoes the claim", async () => {
+    const tx = { verificationToken: { updateMany: vi.fn(), findUnique: vi.fn() } };
+    tx.verificationToken.updateMany.mockResolvedValue({ count: 1 });
+    tx.verificationToken.findUnique.mockResolvedValue(record({ usedAt: NOW }));
 
-    verificationToken.updateMany.mockResolvedValue({ count: 0 });
-    expect(await consumeToken("tok", "PASSWORD_RESET")).toBeNull();
+    expect(await redeemToken("tok", "PASSWORD_RESET", tx as never)).toEqual({ status: "valid", userId: "user-1" });
+    expect(tx.verificationToken.updateMany).toHaveBeenCalledOnce();
+    expect(verificationToken.updateMany).not.toHaveBeenCalled();
+    expect(verificationToken.findUnique).not.toHaveBeenCalled();
   });
 });
 

@@ -87,6 +87,16 @@ test.describe("signed out", () => {
         await expect(confirm).toHaveAccessibleDescription("Enter the same password in both fields.");
         await expect(page).toHaveURL("/auth/signup");
       });
+
+      await test.step("a password past bcrypt's 72 bytes is refused, not cut short", async () => {
+        // 37 accented letters: under 40 characters, but 74 bytes.
+        const long = "\u00e9".repeat(37);
+        await password.fill(long);
+        await confirm.fill(long);
+        await page.getByRole("button", { name: "Create account" }).click();
+        await expect(password).toHaveAccessibleDescription("Use a shorter password.");
+        await expect(page).toHaveURL("/auth/signup");
+      });
     });
 
     test("Show password reveals both passwords, and a pasted password is accepted", async ({ page, baseURL }) => {
@@ -271,6 +281,8 @@ test.describe("signed out", () => {
         await email.fill(account.email);
         await page.getByRole("button", { name: "Send reset link" }).click();
         await expect(page.getByRole("heading", { level: 1, name: "Check your email" })).toBeFocused();
+        // The tab title follows the screen, not the page it started on.
+        await expect(page).toHaveTitle("Check your email · Study Bot");
         await expect(page.getByRole("main")).toContainText(
           `If an account uses ${account.email}, a password reset link is on its way. The link lasts 1 hour.`,
         );
@@ -288,6 +300,7 @@ test.describe("signed out", () => {
       await test.step("the link asks for the new password twice", async () => {
         await page.goto(link);
         await expect(page.getByRole("heading", { level: 1, name: "Choose a new password" })).toBeVisible();
+        await expect(page).toHaveTitle("Choose a new password · Study Bot");
         const password = page.getByRole("textbox", { name: "New password", exact: true });
         const confirm = page.getByRole("textbox", { name: "Confirm new password" });
         await expect(password).toBeFocused();
@@ -300,6 +313,7 @@ test.describe("signed out", () => {
         await confirm.fill(NEW_PASSWORD);
         await page.getByRole("button", { name: "Reset password" }).click();
         await expect(page.getByRole("heading", { level: 1, name: "Password updated" })).toBeFocused();
+        await expect(page).toHaveTitle("Password updated · Study Bot");
       });
 
       await test.step("sessions signed in with the old password end", async () => {
@@ -319,6 +333,7 @@ test.describe("signed out", () => {
       await test.step("the link works once", async () => {
         await page.goto(link);
         await expect(page.getByRole("heading", { level: 1, name: "Reset link already used" })).toBeVisible();
+        await expect(page).toHaveTitle("Reset link already used · Study Bot");
         await expect(page.getByRole("link", { name: "Request a new link" })).toHaveAttribute("href", "/auth/forgot-password");
       });
     });
@@ -329,6 +344,7 @@ test.describe("signed out", () => {
 
       await page.goto(`/auth/reset-password?token=${token}`);
       await expect(page.getByRole("heading", { level: 1, name: "Reset link expired" })).toBeVisible();
+      await expect(page).toHaveTitle("Reset link expired · Study Bot");
       await expect(page.getByRole("main")).toContainText("Reset links last 1 hour. Request a new link to choose a new password.");
       await expect(page.getByRole("textbox", { name: "New password" })).toHaveCount(0);
 
@@ -349,6 +365,8 @@ test.describe("signed out", () => {
         await test.step(path, async () => {
           await page.goto(path);
           await expect(page.getByRole("heading", { level: 1, name: "This reset link doesn't work" })).toBeVisible();
+          // The tab title is the first thing a screen reader reads; it matches the heading.
+          await expect(page).toHaveTitle("This reset link doesn't work · Study Bot");
           await expect(page.getByRole("main")).toContainText(
             "The link may be incomplete. Copy the whole link from the email, or request a new one.",
           );
@@ -409,6 +427,7 @@ test.describe("signed out", () => {
       await test.step("sent, with the address", async () => {
         await page.goto("/auth/verify-email?email=ada%40studybot.test");
         await expect(page.getByRole("heading", { level: 1, name: "Verify your email" })).toBeVisible();
+        await expect(page).toHaveTitle("Verify your email · Study Bot");
         await expect(main).toContainText("A verification link went to ada@studybot.test. Open it to finish creating your account.");
         await expect(sendButton).toBeVisible();
         await expect(emailField).toHaveCount(0);
@@ -444,6 +463,7 @@ test.describe("signed out", () => {
         await test.step(status, async () => {
           await page.goto(`/auth/verify-email?status=${status}`);
           await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+          await expect(page).toHaveTitle(`${title} · Study Bot`);
           await expect(main).toContainText(description);
           await expect(sendButton).toHaveCount(canResend ? 1 : 0);
           await expect(page.getByRole("link", { name: "Back to sign in" })).toBeVisible();

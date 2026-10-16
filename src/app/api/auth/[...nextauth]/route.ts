@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { authOptions } from "@/lib/auth-options";
 import { authLimiter, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 import { CREDENTIALS_SIGNIN, readSignInEmail, signInErrorCode, signInFailureLimiter } from "../_lib/limits";
+import { KNOWN_DEVICE_COOKIE, isKnownDevice, startsSession, withKnownDevice } from "../_lib/known-device";
 
 const nextAuth = NextAuth(authOptions);
 
@@ -19,7 +20,9 @@ export { nextAuth as GET };
 
 /**
  * POST carries sign-in attempts, sign-out and session updates. Password
- * attempts are limited per network, and wrong passwords per account.
+ * attempts are limited per network, and wrong passwords per account. A
+ * browser that has signed in to the account before skips the per-account
+ * limit, so a stranger tripping it can't lock the student out.
  */
 export async function POST(request: NextRequest, context: Context) {
   const [action, provider] = (await context.params).nextauth ?? [];
@@ -30,6 +33,11 @@ export async function POST(request: NextRequest, context: Context) {
 
   const email = action === "callback" && provider === "credentials" ? await readSignInEmail(request) : null;
   if (!email) return nextAuth(request, context);
+
+  if (isKnownDevice(request.cookies.get(KNOWN_DEVICE_COOKIE)?.value, email)) {
+    const response = await nextAuth(request, context);
+    return startsSession(response) ? withKnownDevice(response, email) : response;
+  }
 
   const attempt = signInFailureLimiter.start(email);
   if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
@@ -45,5 +53,5 @@ export async function POST(request: NextRequest, context: Context) {
   if ((await signInErrorCode(response)) !== CREDENTIALS_SIGNIN) {
     signInFailureLimiter.forgive(email, attempt.stamp);
   }
-  return response;
+  return startsSession(response) ? withKnownDevice(response, email) : response;
 }

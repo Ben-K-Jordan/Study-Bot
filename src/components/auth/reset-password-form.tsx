@@ -12,7 +12,12 @@ import {
 } from "@/components/auth/auth-fields"
 import { postAuth } from "@/components/auth/auth-request"
 import { ErrorSummary } from "@/components/auth/error-summary"
-import { REQUEST_FAILED } from "@/components/auth/messages"
+import {
+  RESET_LINK_PROBLEMS,
+  RESET_PASSWORD_TITLE,
+  type ResetLinkProblem,
+} from "@/components/auth/link-copy"
+import { REQUEST_FAILED } from "@/lib/auth-messages"
 import {
   PASSWORD_RULE,
   collectErrors,
@@ -20,32 +25,13 @@ import {
   validateNewPassword,
   validatePasswordConfirmation,
   type FieldErrors,
-} from "@/components/auth/validation"
+} from "@/lib/auth-validation"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
-
-export type ResetLinkProblem = "expired" | "used" | "invalid"
 
 type Field = "password" | "confirmPassword"
 
 const FIELD_IDS: Record<Field, string> = { password: "password", confirmPassword: "confirm-password" }
-
-const LINK_PROBLEMS: Record<ResetLinkProblem, { title: string; description: string }> = {
-  expired: {
-    title: "Reset link expired",
-    description: "Reset links last 1 hour. Request a new link to choose a new password.",
-  },
-  used: {
-    title: "Reset link already used",
-    description:
-      "Each reset link works once, and a newer link replaces older ones. Request a new link if you still need to choose a new password.",
-  },
-  invalid: {
-    title: "This reset link doesn't work",
-    description:
-      "The link may be incomplete. Copy the whole link from the email, or request a new one.",
-  },
-}
 
 const CODE_TO_PROBLEM: Record<string, ResetLinkProblem> = {
   TOKEN_EXPIRED: "expired",
@@ -160,7 +146,7 @@ export function ResetPasswordForm({
   }
 
   if (linkProblem) {
-    const copy = LINK_PROBLEMS[linkProblem]
+    const copy = RESET_LINK_PROBLEMS[linkProblem]
     return (
       <AuthCard
         title={copy.title}
@@ -187,7 +173,7 @@ export function ResetPasswordForm({
       : []
 
   return (
-    <AuthCard title="Choose a new password" description="Your new password replaces the old one.">
+    <AuthCard title={RESET_PASSWORD_TITLE} description="Your new password replaces the old one.">
       <form method="post" noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
         {problem?.type === "fields" && summaryItems.length > 0 ? (
           <ErrorSummary key={attempt} items={summaryItems} />

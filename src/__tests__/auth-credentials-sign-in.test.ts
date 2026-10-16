@@ -83,4 +83,11 @@ describe("interpretAuthError", () => {
     expect(interpretAuthError(new ApiError("Failed", 500, { error: "Failed" }))).toEqual({ ok: false, kind: "failed" });
     expect(interpretAuthError(new TypeError("Failed to fetch"))).toEqual({ ok: false, kind: "failed" });
   });
+
+  it("passes on the 503 for a server that can't send email, so the form can say why", () => {
+    const error = new ApiError("Reset link not sent.", 503, { error: "Reset link not sent.", code: "EMAIL_NOT_CONFIGURED" });
+    expect(interpretAuthError(error)).toEqual({ ok: false, kind: "code", code: "EMAIL_NOT_CONFIGURED" });
+    // Any other 5xx code still reads as a failed request.
+    expect(interpretAuthError(new ApiError("x", 503, { code: "SOMETHING_ELSE" }))).toEqual({ ok: false, kind: "failed" });
+  });
 });

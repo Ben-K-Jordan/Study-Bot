@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { FIELD_MESSAGES, NAME_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/components/auth/validation";
-import { tooManyRequestsText } from "@/components/auth/messages";
+import {
+  FIELD_MESSAGES,
+  NAME_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordTooLong,
+} from "@/lib/auth-validation";
+import { EMAIL_NOT_CONFIGURED, tooManyRequestsText } from "@/lib/auth-messages";
 import { tooManyRequests } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 
@@ -18,10 +23,16 @@ export const emailField = z
   .min(1, FIELD_MESSAGES.emailMissing)
   .pipe(z.email({ error: FIELD_MESSAGES.emailInvalid }));
 
+/**
+ * A password being set (sign-up, reset). Past 72 bytes bcrypt ignores the
+ * rest, so a longer one is refused rather than silently cut. Sign-in keeps
+ * accepting any password, so an existing one always still works.
+ */
 export const newPasswordField = z
   .string({ error: FIELD_MESSAGES.newPasswordMissing })
   .min(1, FIELD_MESSAGES.newPasswordMissing)
-  .min(PASSWORD_MIN_LENGTH, FIELD_MESSAGES.passwordShort);
+  .min(PASSWORD_MIN_LENGTH, FIELD_MESSAGES.passwordShort)
+  .refine((password) => !passwordTooLong(password), FIELD_MESSAGES.passwordLong);
 
 export const nameField = z
   .string({ error: FIELD_MESSAGES.nameMissing })
@@ -71,6 +82,14 @@ export async function readJson(request: Request): Promise<unknown | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * A 503 for a link that can't be emailed (see areEmailLinksAvailable). The same
+ * answer for every address, so it says nothing about which accounts exist.
+ */
+export function emailNotConfigured(message: string): NextResponse {
+  return NextResponse.json({ error: message, code: EMAIL_NOT_CONFIGURED }, { status: 503 });
 }
 
 /** A 429 whose message names the limited action and when to retry. */

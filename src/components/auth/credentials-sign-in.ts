@@ -4,7 +4,7 @@ import {
   parseRetryAfter,
   signInFailureFromCode,
   type SignInOutcome,
-} from "@/components/auth/messages";
+} from "@/lib/auth-messages";
 
 /**
  * Credentials sign-in through next-auth's REST endpoints.

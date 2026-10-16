@@ -7,7 +7,16 @@ import { passwordReset } from "@/lib/email/templates";
 import { authEmailLimiter, getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
-import { emailField, invalidFields, rateLimited, readJson, unreadableBody } from "../_lib/responses";
+import { areEmailLinksAvailable } from "@/lib/email/delivery";
+import { EMAIL_NOT_CONFIGURED_MESSAGES } from "@/lib/auth-messages";
+import {
+  emailField,
+  emailNotConfigured,
+  invalidFields,
+  rateLimited,
+  readJson,
+  unreadableBody,
+} from "../_lib/responses";
 import { accountKey, authEmailAddressLimiter } from "../_lib/limits";
 
 const schema = z.object({
@@ -32,9 +41,14 @@ async function sendResetLink(user: { id: string; email: string; name: string | n
  * Sends a password reset email. Always returns 200 for a well-formed email,
  * whether or not an account uses it, to prevent email enumeration. The
  * token write and the email happen after the response, so the answer takes
- * the same time either way.
+ * the same time either way. A production server that can't send email
+ * answers 503 EMAIL_NOT_CONFIGURED for every address instead of promising
+ * a link that never arrives.
  */
 export async function POST(request: NextRequest) {
+  // Production without SMTP: the link would go nowhere (see areEmailLinksAvailable).
+  if (!areEmailLinksAvailable()) return emailNotConfigured(EMAIL_NOT_CONFIGURED_MESSAGES.resetLink);
+
   const rl = authEmailLimiter.check(getClientIp(request));
   if (!rl.allowed) return rateLimited(rl.retryAfterMs, "Too many reset requests.");
 

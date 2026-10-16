@@ -25,6 +25,7 @@ vi.mock("next/server", async (importOriginal) => ({
   },
 }));
 vi.mock("@/lib/tokens", () => ({
+  inspectToken: vi.fn(),
   redeemToken: vi.fn(),
   createPasswordResetToken: vi.fn(async () => "reset-token"),
   createEmailVerificationToken: vi.fn(async () => "verify-token"),
@@ -32,11 +33,11 @@ vi.mock("@/lib/tokens", () => ({
 vi.mock("@/lib/email/provider", () => ({ emailProvider: { send: vi.fn(async () => undefined) } }));
 vi.mock("bcryptjs", () => ({ default: { hash: vi.fn(async () => "hashed") } }));
 
-import { redeemToken } from "@/lib/tokens";
+import { inspectToken, redeemToken } from "@/lib/tokens";
 import { emailProvider } from "@/lib/email/provider";
 import bcrypt from "bcryptjs";
 import { authEmailLimiter, authTokenLimiter, signupLimiter } from "@/lib/rate-limit";
-import { authEmailAddressLimiter } from "@/app/api/auth/_lib/limits";
+import { authEmailAddressLimiter, signInFailureLimiter } from "@/app/api/auth/_lib/limits";
 import { POST as signup } from "@/app/api/auth/signup/route";
 import { POST as forgotPassword } from "@/app/api/auth/forgot-password/route";
 import { POST as resendVerification } from "@/app/api/auth/resend-verification/route";
@@ -44,6 +45,7 @@ import { POST as resetPassword } from "@/app/api/auth/reset-password/route";
 import { GET as verifyEmail } from "@/app/api/auth/verify-email/route";
 
 const redeemTokenMock = vi.mocked(redeemToken);
+const inspectTokenMock = vi.mocked(inspectToken);
 
 let ipCounter = 0;
 function post(path: string, body: unknown, ip = `10.0.0.${++ipCounter}`) {
@@ -169,6 +171,28 @@ describe("POST /api/auth/forgot-password", () => {
     expect((await forgotPassword(post("/api/auth/forgot-password", { email: "other@example.com" }))).status).toBe(200);
   });
 
+  it("says no link went out, for every address, when a production server can't send email", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("EMAIL_PROVIDER", "console");
+    vi.stubEnv("ALLOW_TEST_AUTH", "");
+    prisma.user.findUnique.mockResolvedValue({ id: "u1", email: "me@example.com", name: "Me" });
+    const known = await forgotPassword(post("/api/auth/forgot-password", { email: "me@example.com" }));
+    const unknown = await forgotPassword(post("/api/auth/forgot-password", { email: "nobody@example.com" }));
+    expect(known.status).toBe(503);
+    const body = await known.json();
+    expect(body).toEqual({
+      code: "EMAIL_NOT_CONFIGURED",
+      error: "Reset link not sent. Email isn't set up on this Study Bot server. Ask whoever runs the server to turn on email.",
+    });
+    expect(await unknown.json()).toEqual(body);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(afterTasks).toHaveLength(0);
+
+    // SMTP delivers, so the usual answer comes back.
+    vi.stubEnv("EMAIL_PROVIDER", "smtp");
+    expect((await forgotPassword(post("/api/auth/forgot-password", { email: "me@example.com" }))).status).toBe(200);
+  });
+
   it("words its rate limit with the wait", async () => {
     const ip = "10.9.9.9";
     let res: Response | undefined;
@@ -200,9 +224,43 @@ describe("POST /api/auth/resend-verification", () => {
     expect(emailProvider.send).toHaveBeenCalledOnce();
     expect(vi.mocked(emailProvider.send).mock.calls[0][0]).toBe("y@example.com");
   });
+
+  it("says no link went out when a production server can't send email", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("EMAIL_PROVIDER", "console");
+    vi.stubEnv("ALLOW_TEST_AUTH", "");
+    const res = await resendVerification(post("/api/auth/resend-verification", { email: "y@example.com" }));
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      code: "EMAIL_NOT_CONFIGURED",
+      error: "New link not sent. Email isn't set up on this Study Bot server. Ask whoever runs the server to turn on email.",
+    });
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+
+    // A CI e2e server reads links from the database, so it still makes them.
+    vi.stubEnv("ALLOW_TEST_AUTH", "true");
+    vi.stubEnv("CI", "true");
+    vi.stubEnv("NEXTAUTH_URL", "http://localhost:3000");
+    prisma.user.findUnique.mockResolvedValueOnce(null);
+    expect((await resendVerification(post("/api/auth/resend-verification", { email: "y@example.com" }))).status).toBe(200);
+  });
 });
 
 describe("POST /api/auth/reset-password", () => {
+  // The transaction's client: the claim and the password write both go through it.
+  const tx = { user: { update: vi.fn() } };
+
+  beforeEach(() => {
+    signInFailureLimiter.reset();
+    prisma.$transaction.mockImplementation(async (work: (client: typeof tx) => unknown) => work(tx));
+    tx.user.update.mockReset();
+    tx.user.update.mockResolvedValue({ email: "me@example.com" });
+  });
+
+  afterEach(() => {
+    prisma.$transaction.mockReset();
+  });
+
   it("maps a short password to the password field", async () => {
     const res = await resetPassword(post("/api/auth/reset-password", { token: "t", password: "short" }));
     expect(res.status).toBe(400);
@@ -210,32 +268,85 @@ describe("POST /api/auth/reset-password", () => {
     expect(redeemTokenMock).not.toHaveBeenCalled();
   });
 
-  it("returns a code for each kind of bad link", async () => {
+  it("refuses a password longer than bcrypt hashes, rather than cutting it short", async () => {
+    // 37 accented letters: 37 characters, 74 bytes.
+    const res = await resetPassword(post("/api/auth/reset-password", { token: "t", password: "\u00e9".repeat(37) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).issues).toEqual([{ field: "password", message: "Use a shorter password." }]);
+    expect(inspectTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a code for each kind of bad link, before any bcrypt work", async () => {
     for (const [status, code] of [
       ["expired", "TOKEN_EXPIRED"],
       ["used", "TOKEN_USED"],
       ["invalid", "TOKEN_INVALID"],
     ] as const) {
-      redeemTokenMock.mockResolvedValueOnce(status === "invalid" ? { status } : { status, userId: "u1" });
+      inspectTokenMock.mockResolvedValueOnce(status === "invalid" ? { status } : { status, userId: "u1" });
       const res = await resetPassword(post("/api/auth/reset-password", { token: "t", password: "12345678" }));
       expect(res.status).toBe(400);
       expect((await res.json()).code).toBe(code);
     }
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(bcrypt.hash).not.toHaveBeenCalled();
+    expect(redeemTokenMock).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 
   it("treats a missing token as an invalid link", async () => {
-    redeemTokenMock.mockResolvedValueOnce({ status: "invalid" });
+    inspectTokenMock.mockResolvedValueOnce({ status: "invalid" });
     const res = await resetPassword(post("/api/auth/reset-password", { password: "12345678" }));
     expect((await res.json()).code).toBe("TOKEN_INVALID");
-    expect(redeemTokenMock).toHaveBeenCalledWith("", "PASSWORD_RESET");
+    expect(inspectTokenMock).toHaveBeenCalledWith("", "PASSWORD_RESET");
   });
 
-  it("updates the password with a valid link", async () => {
+  it("claims the link and saves the password in one transaction", async () => {
+    inspectTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
     redeemTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
     const res = await resetPassword(post("/api/auth/reset-password", { token: "t", password: "12345678" }));
     expect(res.status).toBe(200);
-    expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { passwordHash: "hashed" } });
+    expect(redeemTokenMock).toHaveBeenCalledWith("t", "PASSWORD_RESET", tx);
+    expect(tx.user.update).toHaveBeenCalledWith({
+      where: { id: "u1" },
+      data: { passwordHash: "hashed" },
+      select: { email: true },
+    });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    // The hash is ready before the transaction starts.
+    expect(vi.mocked(bcrypt.hash).mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.$transaction.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("answers 500 when the password isn't saved, with the claim inside the transaction that failed", async () => {
+    inspectTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
+    redeemTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
+    tx.user.update.mockRejectedValueOnce(new Error("connection reset"));
+    const res = await resetPassword(post("/api/auth/reset-password", { token: "t", password: "12345678" }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("Password not changed. Check your connection and retry.");
+    // The claim ran on the transaction's client, so the database rolls it
+    // back with the failed write and the same link works for a retry.
+    expect(redeemTokenMock).toHaveBeenCalledWith("t", "PASSWORD_RESET", tx);
+  });
+
+  it("says the link was used when another request claimed it first", async () => {
+    inspectTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
+    redeemTokenMock.mockResolvedValueOnce({ status: "used", userId: "u1" });
+    const res = await resetPassword(post("/api/auth/reset-password", { token: "t", password: "12345678" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe("TOKEN_USED");
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it("lifts the sign-in lock on the account, so the new password works at once", async () => {
+    for (let i = 0; i < 400; i++) signInFailureLimiter.start("me@example.com");
+    expect(signInFailureLimiter.start("me@example.com").allowed).toBe(false);
+
+    inspectTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
+    redeemTokenMock.mockResolvedValueOnce({ status: "valid", userId: "u1" });
+    tx.user.update.mockResolvedValueOnce({ email: "Me@Example.com" });
+    expect((await resetPassword(post("/api/auth/reset-password", { token: "t", password: "12345678" }))).status).toBe(200);
+    expect(signInFailureLimiter.start("me@example.com").allowed).toBe(true);
   });
 });
 

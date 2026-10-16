@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 
-import { ResetPasswordForm, type ResetLinkProblem } from "@/components/auth/reset-password-form";
+import { resetPasswordTitle, type ResetLinkProblem } from "@/components/auth/link-copy";
+import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 import { firstParam, type SearchParams } from "@/components/auth/server";
 import { inspectToken } from "@/lib/tokens";
 import { logger } from "@/lib/logger";
 
-export const metadata: Metadata = {
-  title: "Choose a new password",
-};
-
-async function linkProblem(token: string): Promise<ResetLinkProblem | null> {
+/**
+ * Why the link can't be used, or null to show the form. Cached for the
+ * request, so the tab title and the page share one token lookup.
+ */
+const linkProblem = cache(async (token: string): Promise<ResetLinkProblem | null> => {
   if (!token) return "invalid";
   try {
     const state = await inspectToken(token, "PASSWORD_RESET");
@@ -19,6 +21,15 @@ async function linkProblem(token: string): Promise<ResetLinkProblem | null> {
     logger.error("password_reset.inspect_failed", { error: String(err) });
     return null;
   }
+});
+
+async function tokenFrom(searchParams: SearchParams): Promise<string> {
+  return firstParam((await searchParams).token) ?? "";
+}
+
+/** The tab title names the screen the link opens: the form, or why the link doesn't work. */
+export async function generateMetadata({ searchParams }: { searchParams: SearchParams }): Promise<Metadata> {
+  return { title: resetPasswordTitle(await linkProblem(await tokenFrom(searchParams))) };
 }
 
 /**
@@ -27,7 +38,7 @@ async function linkProblem(token: string): Promise<ResetLinkProblem | null> {
  * is still signed in.
  */
 export default async function ResetPasswordPage({ searchParams }: { searchParams: SearchParams }) {
-  const token = firstParam((await searchParams).token) ?? "";
+  const token = await tokenFrom(searchParams);
   const problem = await linkProblem(token);
   return <ResetPasswordForm key={token} token={token} initialProblem={problem} />;
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { safeCallbackUrl } from "@/components/auth/callback-url";
-import { signInErrorBanner } from "@/components/auth/messages";
+import { signInErrorBanner } from "@/lib/auth-messages";
 import { firstParam, redirectIfSignedIn, type SearchParams } from "@/components/auth/server";
 import { SignInForm } from "@/components/auth/sign-in-form";
 

@@ -45,6 +45,8 @@ for (const scheme of SCHEMES) {
         test(`${heading} (${path}) passes axe`, { tag: ["@a11y", "@mobile"] }, async ({ page }) => {
           await page.goto(path);
           await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+          // WCAG 2.4.2: the title names this screen, a broken link included.
+          await expect(page).toHaveTitle(`${heading} · Study Bot`);
           await expectScheme(page, scheme);
           await expectNoAxeViolations(page, `${heading} (${scheme})`);
         });
@@ -175,7 +177,10 @@ test.describe("keyboard", () => {
 
     await test.step("Tab stays inside the dialog", async () => {
       // Delete account is disabled until a password is typed, so with one
-      // typed the order is the field, Cancel, Delete account, then the field.
+      // typed the order is the field, the reset link in its hint, Cancel,
+      // Delete account, then the field.
+      await page.keyboard.press("Tab");
+      await expect(dialog.getByRole("link", { name: "Reset your password" })).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
       await page.keyboard.press("Tab");

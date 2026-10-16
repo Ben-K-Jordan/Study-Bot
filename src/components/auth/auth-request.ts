@@ -1,3 +1,4 @@
+import { EMAIL_NOT_CONFIGURED } from "@/lib/auth-messages"
 import { ApiError, apiPost } from "@/lib/client-api"
 
 /**
@@ -36,6 +37,8 @@ export function interpretAuthError(error: unknown): Exclude<AuthRequestResult<ne
     const wordedByRoute = error.message.startsWith("Too many") && !error.message.includes("Please")
     return { ok: false, kind: "rate-limited", message: wordedByRoute ? error.message : DEFAULT_RATE_LIMIT_TEXT }
   }
+  // A 503 the form has its own words for: no retry will help.
+  if (error.code === EMAIL_NOT_CONFIGURED) return { ok: false, kind: "code", code: error.code }
   const issues = issuesFrom(error.body)
   if (error.status === 400 && issues) return { ok: false, kind: "fields", issues }
   if (error.status < 500 && error.code && error.code !== "INVALID_BODY") {

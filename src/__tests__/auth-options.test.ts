@@ -31,7 +31,7 @@ import {
   passwordFingerprint,
   refreshSessionToken,
 } from "@/lib/auth-options";
-import { EMAIL_NOT_VERIFIED } from "@/components/auth/messages";
+import { EMAIL_NOT_VERIFIED } from "@/lib/auth-messages";
 
 type Authorize = (credentials: Record<string, string> | undefined) => Promise<unknown>;
 

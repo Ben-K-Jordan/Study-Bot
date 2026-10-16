@@ -1,7 +1,24 @@
+"use client"
+
+import { useEffect } from "react"
+
 import { AppMark } from "@/components/shell/app-mark"
+import { TITLE_TEMPLATE } from "@/lib/metadata"
 import { cn } from "@/lib/utils"
 
 export const AUTH_TITLE_ID = "auth-title"
+
+/**
+ * Keep the tab title on the card's h1 ("Check your email · Study Bot").
+ * The page's metadata gives the first paint; this follows the views a form
+ * switches to after an action (Password updated, a link that turned out to
+ * be used), which metadata never sees. Screen readers read the title first.
+ */
+function useTabTitle(title: string) {
+  useEffect(() => {
+    document.title = TITLE_TEMPLATE.replace("%s", title)
+  }, [title])
+}
 
 /**
  * The one card on every auth screen, after Google's sign-in: the Study Bot
@@ -23,6 +40,7 @@ export function AuthCard({
   headingRef?: React.Ref<HTMLHeadingElement>
   className?: string
 }) {
+  useTabTitle(title)
   return (
     <section
       aria-labelledby={AUTH_TITLE_ID}

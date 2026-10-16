@@ -7,38 +7,17 @@ import { CircleCheckIcon } from "lucide-react"
 import { AuthActions, AuthCard, EmailAddress } from "@/components/auth/auth-card"
 import { AuthTextField, PendingStatus } from "@/components/auth/auth-fields"
 import { ErrorSummary } from "@/components/auth/error-summary"
+import {
+  VERIFY_LINK_PROBLEMS,
+  verifyEmailTitle,
+  type VerifyEmailStatus,
+} from "@/components/auth/link-copy"
 import { useResendVerification } from "@/components/auth/use-resend-verification"
-import { validateEmail } from "@/components/auth/validation"
+import { validateEmail } from "@/lib/auth-validation"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
-
-/**
- * Where the verify-email page is coming from: "sent" after creating an
- * account, or a verification link that didn't work.
- */
-export type VerifyEmailStatus = "sent" | "expired" | "invalid" | "busy" | "failed"
-
-const COPY: Record<Exclude<VerifyEmailStatus, "sent">, { title: string; description: string }> = {
-  expired: {
-    title: "Verification link expired",
-    description: "Verification links last 24 hours. Send a new one to finish creating your account.",
-  },
-  invalid: {
-    title: "This verification link doesn't work",
-    description:
-      "It may be incomplete, or a newer link replaced it. Send a new one to finish creating your account.",
-  },
-  busy: {
-    title: "Too many attempts",
-    description: "Wait a few minutes, then open the link in your email again.",
-  },
-  failed: {
-    title: "Email not verified yet",
-    description: "The link couldn't be checked just now. Open it again in a few minutes.",
-  },
-}
 
 /**
  * The "verify your email" screen: where the link went, how long it lasts,
@@ -69,7 +48,7 @@ export function VerifyEmailPanel({ status, email }: { status: VerifyEmailStatus;
   const requestError =
     state.status === "failed" && (!state.fieldError || !askForEmail) ? state.message : null
 
-  const title = status === "sent" ? "Verify your email" : COPY[status].title
+  const title = verifyEmailTitle(status)
   const description =
     status === "sent" ? (
       email ? (
@@ -81,7 +60,7 @@ export function VerifyEmailPanel({ status, email }: { status: VerifyEmailStatus;
         "A verification link went to the email you signed up with. Open it to finish creating your account."
       )
     ) : (
-      COPY[status].description
+      VERIFY_LINK_PROBLEMS[status].description
     )
 
   return (

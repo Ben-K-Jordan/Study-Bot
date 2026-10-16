@@ -7,8 +7,12 @@ import { AuthActions, AuthCard, EmailAddress, focusOnMount } from "@/components/
 import { AuthTextField, PendingStatus, SubmitButton } from "@/components/auth/auth-fields"
 import { postAuth } from "@/components/auth/auth-request"
 import { ErrorSummary } from "@/components/auth/error-summary"
-import { REQUEST_FAILED } from "@/components/auth/messages"
-import { FIELD_MESSAGES, validateEmail } from "@/components/auth/validation"
+import {
+  EMAIL_NOT_CONFIGURED,
+  EMAIL_NOT_CONFIGURED_MESSAGES,
+  REQUEST_FAILED,
+} from "@/lib/auth-messages"
+import { FIELD_MESSAGES, validateEmail } from "@/lib/auth-validation"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
 
@@ -59,7 +63,12 @@ export function ForgotPasswordForm() {
     }
     fail({
       type: "message",
-      message: result.kind === "rate-limited" ? result.message : REQUEST_FAILED.resetLink,
+      message:
+        result.kind === "rate-limited"
+          ? result.message
+          : result.kind === "code" && result.code === EMAIL_NOT_CONFIGURED
+            ? EMAIL_NOT_CONFIGURED_MESSAGES.resetLink
+            : REQUEST_FAILED.resetLink,
     })
   }
 
