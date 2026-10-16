@@ -25,7 +25,7 @@ const generateSchema = z.object({
   document_id: z.string().min(1).max(100).optional(),
 });
 
-const NOT_GENERATED = "Deck not generated. Retry";
+const NOT_GENERATED = "Deck not generated. Retry.";
 
 /**
  * POST /api/flashcards: generate a deck with AI from a course's processed
@@ -98,6 +98,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ decks });
   } catch (err) {
     logger.error("flashcards.list_failed", { userId, error: String(err) });
-    return failed("Decks didn't load. Retry");
+    return failed("Decks didn't load. Retry.");
   }
 }

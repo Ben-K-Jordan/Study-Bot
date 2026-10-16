@@ -39,6 +39,7 @@ export function CardEditorDialog({
   open,
   onOpenChange,
   onSaved,
+  onCloseAutoFocus,
 }: {
   deckId: string
   mode: Mode
@@ -46,6 +47,11 @@ export function CardEditorDialog({
   onOpenChange: (open: boolean) => void
   /** Runs after each save so the page can refresh its list. */
   onSaved: () => void
+  /**
+   * Puts focus back when the dialog closes. It opens without a trigger, so
+   * the page names the control to return to.
+   */
+  onCloseAutoFocus?: (event: Event) => void
 }) {
   const formId = React.useId()
   const frontRef = React.useRef<HTMLTextAreaElement>(null)
@@ -113,7 +119,7 @@ export function CardEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{adding ? "Add cards" : "Edit card"}</DialogTitle>
           <DialogDescription>

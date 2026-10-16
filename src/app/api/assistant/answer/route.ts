@@ -57,7 +57,7 @@ interface AnswerOutput {
 
 const EMBED_MODEL = process.env.AI_MODEL_EMBED || "text-embedding-3-small";
 const ANSWER_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
-const NOT_ANSWERED = "Answer not generated. Retry";
+const NOT_ANSWERED = "Answer not generated. Retry.";
 
 const provider = createProvider();
 
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
         return failed("This question isn't in your chat history anymore. Ask it again.", 404, "QUESTION_NOT_FOUND");
       }
       logger.error("assistant.question_save_failed", { userId, error: String(err) });
-      return failed("Question not saved. Retry");
+      return failed("Question not saved. Retry.");
     }
   }
   const questionDto = questionRow ? (await toMessageDtos(userId, courseKey, [questionRow]))[0] : null;

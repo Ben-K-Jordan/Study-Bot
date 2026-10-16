@@ -37,6 +37,6 @@ export async function POST(
       return failed("This deck doesn't exist. It may have been deleted.", 404, err.code);
     }
     logger.error("flashcards.card_add_failed", { userId, deckId, error: String(err) });
-    return failed("Card not added. Retry");
+    return failed("Card not added. Retry.");
   }
 }

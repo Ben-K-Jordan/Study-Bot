@@ -1,3 +1,4 @@
+import { formatNumber, plural } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /**
@@ -22,7 +23,7 @@ export function ReviewProgress({
       aria-valuemin={0}
       aria-valuemax={total}
       aria-valuenow={value}
-      aria-valuetext={`${value} of ${total} cards done`}
+      aria-valuetext={`${formatNumber(value)} of ${plural(total, { one: "# card", other: "# cards" })} done`}
       className={cn("relative h-4 w-full overflow-hidden rounded-full bg-lesson-progress-track", className)}
     >
       <div

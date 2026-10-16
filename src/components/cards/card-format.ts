@@ -1,4 +1,4 @@
-import { formatDuration, plural } from "@/lib/format"
+import { calendarDay, formatCountdown, formatDateWeekday, formatDuration, plural } from "@/lib/format"
 import type { CardStatus } from "@/services/spaced-repetition"
 
 /** Limits for a card's sides (the API enforces the same: services/flashcards.ts). */
@@ -23,12 +23,32 @@ export function intervalLabel(days: number): string {
 
 /**
  * An exam date stored as a calendar date ("2026-10-22") as an instant at
- * noon UTC, which falls on that same calendar day in every zone from
- * UTC-11 to UTC+11. Plain `new Date("2026-10-22")` is midnight UTC and shows
- * the day before in the Americas.
+ * noon UTC. Read it back only in UTC (examDateLabel, examCountdown): in a
+ * zone east of UTC+12 that instant is already the next day, and plain
+ * `new Date("2026-10-22")` (midnight UTC) is the day before in the Americas.
  */
 export function calendarDate(date: string): Date {
   return new Date(`${date.slice(0, 10)}T12:00:00Z`)
+}
+
+/** "Thu, Oct 22" for an exam's calendar date, the same in every time zone. */
+export function examDateLabel(date: string): string {
+  return formatDateWeekday(calendarDate(date), { timeZone: "UTC" })
+}
+
+/**
+ * "Prelim 1 is in 7 days": whole days from today on the student's clock to
+ * the exam's calendar date. Both sides are compared as calendar dates, so
+ * the count is right in every zone, UTC+13 and UTC+14 included.
+ */
+export function examCountdown(
+  examName: string,
+  date: string,
+  { timeZone, now = new Date() }: { timeZone?: string; now?: Date } = {}
+): string {
+  const today = calendarDay(now, timeZone)
+  const todayAsDate = new Date(Date.UTC(today.year, today.month - 1, today.day, 12))
+  return formatCountdown(examName, calendarDate(date), { timeZone: "UTC", now: todayAsDate })
 }
 
 export function cardCount(count: number): string {

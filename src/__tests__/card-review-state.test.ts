@@ -128,6 +128,16 @@ describe("keyIntent", () => {
     expect(keyIntent(press("5"), body, { phase: "answer", submitting: null })).toBeNull();
   });
 
+  it("ignores number keys when single-key shortcuts are off, but Space still reveals", () => {
+    const off = { singleKeys: false };
+    expect(keyIntent(press("3"), body, { phase: "answer", submitting: null }, off)).toBeNull();
+    expect(keyIntent(press(" "), body, { phase: "question", submitting: null }, off)).toEqual({ type: "reveal" });
+    expect(keyIntent(press("3"), body, { phase: "answer", submitting: null }, { singleKeys: true })).toEqual({
+      type: "rate",
+      rating: "GOOD",
+    });
+  });
+
   it("does nothing on the done screen, while saving, in fields, on repeat, or with modifiers", () => {
     expect(keyIntent(press("3"), body, { phase: "done", submitting: null })).toBeNull();
     expect(keyIntent(press(" "), body, { phase: "done", submitting: null })).toBeNull();

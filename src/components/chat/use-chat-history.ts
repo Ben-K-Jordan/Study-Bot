@@ -65,6 +65,31 @@ export function useChatHistory(courseKey: string | null) {
   }
 }
 
+/** The history pages with `added` at the end of the newest page (pages are newest first). */
+export function appendToPages(pages: HistoryPage[] | undefined, added: ChatMessage[]): HistoryPage[] | undefined {
+  if (!pages || pages.length === 0) return pages
+  const [first, ...rest] = pages
+  const known = new Set(first.messages.map((m) => m.id))
+  const fresh = added.filter((m) => !known.has(m.id))
+  return [{ ...first, messages: [...first.messages, ...fresh], total: first.total + fresh.length }, ...rest]
+}
+
+type GlobalMutate = ReturnType<typeof useSWRConfig>["mutate"]
+
+/**
+ * Adds saved messages to a course's history cache. A history that hasn't
+ * loaded (still loading, or failed) has nothing to add to, so it's fetched
+ * again instead, and the saved messages arrive with it.
+ */
+export function appendToHistory(mutate: GlobalMutate, courseKey: string, added: ChatMessage[]) {
+  if (added.length === 0) return
+  void mutate(
+    unstable_serialize(historyKey(courseKey)),
+    (pages: HistoryPage[] | undefined) => appendToPages(pages, added),
+    { revalidate: (pages: HistoryPage[] | undefined) => !pages || pages.length === 0 }
+  )
+}
+
 /**
  * Adds saved messages to a course's history cache, whichever course is on
  * screen. Messages go at the end of the newest page.
@@ -72,20 +97,7 @@ export function useChatHistory(courseKey: string | null) {
 export function useAppendToHistory() {
   const { mutate } = useSWRConfig()
   return React.useCallback(
-    (courseKey: string, added: ChatMessage[]) => {
-      if (added.length === 0) return
-      void mutate(
-        unstable_serialize(historyKey(courseKey)),
-        (pages: HistoryPage[] | undefined) => {
-          if (!pages || pages.length === 0) return pages
-          const [first, ...rest] = pages
-          const known = new Set(first.messages.map((m) => m.id))
-          const fresh = added.filter((m) => !known.has(m.id))
-          return [{ ...first, messages: [...first.messages, ...fresh], total: first.total + fresh.length }, ...rest]
-        },
-        { revalidate: false }
-      )
-    },
+    (courseKey: string, added: ChatMessage[]) => appendToHistory(mutate, courseKey, added),
     [mutate]
   )
 }

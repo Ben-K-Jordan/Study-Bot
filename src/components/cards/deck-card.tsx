@@ -5,6 +5,7 @@ import { PlusIcon } from "lucide-react"
 
 import { formatDateWeekday, plural } from "@/lib/format"
 import type { DeckSummaryData } from "@/services/flashcards"
+import { AiTag } from "@/components/app/ai-tag"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -82,7 +83,8 @@ export function DeckCard({
 }: {
   deck: DeckSummaryData
   timeZone: string
-  onDeleted: () => void
+  /** After the deck is deleted; returns where focus goes (see DeckActionsMenu). */
+  onDeleted: () => HTMLElement | null | void
 }) {
   const titleId = `deck-${deck.id}`
   return (
@@ -102,7 +104,7 @@ export function DeckCard({
           <span>{cardCount(deck.card_count)}</span>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0">{deckSource(deck)}</span>
-            {deck.kind === "generated" ? <Badge variant="outline">AI-written</Badge> : null}
+            {deck.kind === "generated" ? <AiTag /> : null}
           </span>
         </CardDescription>
         <CardAction>

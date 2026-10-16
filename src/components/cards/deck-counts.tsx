@@ -36,14 +36,19 @@ export function DeckCounts({
     )
   }
 
+  // Four across when the space it sits in fits "Reviewing" in each column,
+  // else two by two (a narrow phone). Capped in width so the numbers stay
+  // together on a full-width deck card.
   return (
-    <dl className={cn("grid grid-cols-4 gap-2", className)}>
-      {ITEMS.map((item) => (
-        <div key={item.key} className="flex min-w-0 flex-col-reverse gap-0.5">
-          <dt className="truncate type-label-m text-on-surface-variant">{item.label}</dt>
-          <dd className="type-title-l text-on-surface tabular-nums">{formatNumber(counts[item.key])}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className={cn("@container", className)}>
+      <dl className="grid max-w-lg grid-cols-2 gap-x-4 gap-y-2 @min-[20rem]:grid-cols-4">
+        {ITEMS.map((item) => (
+          <div key={item.key} className="flex min-w-0 flex-col-reverse gap-0.5">
+            <dt className="type-label-m text-on-surface-variant">{item.label}</dt>
+            <dd className="type-title-l text-on-surface tabular-nums">{formatNumber(counts[item.key])}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }

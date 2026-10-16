@@ -191,6 +191,49 @@ describe("POST /api/flashcards/[deckId]/review", () => {
     );
   });
 
+  it("looks up the zone once, alongside the deck check, and schedules the card in it", async () => {
+    let deckChecked = false;
+    mockedFindDeck.mockImplementation((async () => {
+      deckChecked = true;
+      return { userId: "user1", cards: [{ id: "card1" }] };
+    }) as never);
+    mockedResolveTimeZone.mockImplementationOnce(async () => {
+      // Started before the deck query has answered
+      expect(deckChecked).toBe(false);
+      return "America/New_York";
+    });
+
+    await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(mockedResolveTimeZone).toHaveBeenCalledTimes(1);
+    const zone = mockedReviewCard.mock.calls[0][3];
+    await expect(zone).resolves.toBe("America/New_York");
+    expect(mockedIsDeckPerfect).toHaveBeenCalledWith("user1", "deck1", "America/New_York", expect.any(Date));
+  });
+
+  it("answers a missing deck even when the zone lookup fails", async () => {
+    mockedFindDeck.mockResolvedValue(null as never);
+    mockedResolveTimeZone.mockRejectedValueOnce(new Error("db down"));
+
+    const res = await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("does not save a rating it can't schedule when the zone lookup fails", async () => {
+    mockDeck("user1", true);
+    mockedResolveTimeZone.mockRejectedValueOnce(new Error("db down"));
+    mockedReviewCard.mockImplementationOnce(async (_u, _c, _r, zone) => {
+      await zone;
+      return REVIEW_RESULT;
+    });
+
+    const res = await callRoute({ card_id: "card1", rating: "GOOD" });
+
+    expect(res.status).toBe(500);
+    expect(mockedAwardXp).not.toHaveBeenCalled();
+  });
+
   it("does not re-award the bonus when it was already granted today", async () => {
     mockDeck("user1", true);
     mockedIsDeckPerfect.mockResolvedValue(true);

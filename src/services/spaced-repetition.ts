@@ -10,8 +10,9 @@
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { compressIntervalForExam } from "@/lib/spacing";
-import { addDays, dayKey, getUserTimezone, zonedTimeToUtc } from "@/lib/timezone";
+import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone";
 import { deckKind, displayDeckTitle, type DeckKind } from "@/services/deck-titles";
+import { resolveTimeZone } from "@/services/gamification";
 
 // Rating scale matches SM-2: 0=Again, 3=Hard, 4=Good, 5=Easy
 const RATING_MAP: Record<string, number> = {
@@ -44,8 +45,9 @@ interface SM2Result {
 
 export interface SM2Options {
   /**
-   * The student's IANA time zone. When given, day intervals come due at
-   * 4:00 AM on the student's clock; without it, at 4:00 AM server time.
+   * The student's IANA time zone (resolveTimeZone). Day intervals come due
+   * at 4:00 AM on the student's clock; without a zone, 4:00 AM UTC, never
+   * the server's own clock.
    */
   timeZone?: string | null;
   now?: Date;
@@ -122,13 +124,10 @@ export function computeSM2(
   let nextDue: Date;
   if (interval === 0) {
     nextDue = new Date(now.getTime() + LEARNING_STEP_MINUTES * 60 * 1000);
-  } else if (options.timeZone) {
-    // 4:00 AM on the student's clock, `interval` calendar days from today
-    nextDue = zonedTimeToUtc(addDays(dayKey(now, options.timeZone), interval), "04:00", options.timeZone);
   } else {
-    nextDue = new Date(now);
-    nextDue.setDate(nextDue.getDate() + interval);
-    nextDue.setHours(4, 0, 0, 0); // 4:00 AM server time
+    // 4:00 AM on the student's clock, `interval` calendar days from today
+    const timeZone = options.timeZone || "UTC";
+    nextDue = zonedTimeToUtc(addDays(dayKey(now, timeZone), interval), "04:00", timeZone);
   }
 
   return {
@@ -208,19 +207,21 @@ export interface ReviewResult {
 /**
  * Review a flashcard: updates SM-2 state and creates a review log. Intervals
  * are capped by the nearest exam for the deck's course and come due at
- * 4:00 AM in the student's time zone.
+ * 4:00 AM in the student's time zone (resolveTimeZone, the zone streaks and
+ * Study use). Pass `zone`, or the lookup already under way, to skip it.
  */
 export async function reviewCard(
   userId: string,
   cardId: string,
   rating: ReviewRating,
+  zone?: Promise<string> | string,
 ): Promise<ReviewResult> {
   const [owner, timeZone] = await Promise.all([
     prisma.flashcard.findUnique({
       where: { id: cardId },
       select: { deck: { select: { userId: true, courseName: true, examName: true } } },
     }),
-    getUserTimezone(userId),
+    zone ?? resolveTimeZone(userId),
   ]);
 
   if (!owner) throw new Error("Card not found");
@@ -339,7 +340,7 @@ export interface StudyData {
   /** Earliest review after today, when nothing else is due. */
   nextDueAt: string | null;
   scope: StudyScope;
-  /** The student's time zone for dates on screen ("UTC" when unset). */
+  /** The student's time zone for dates on screen (resolveTimeZone). */
   timeZone: string;
 }
 
@@ -384,7 +385,7 @@ export async function getStudyCards(
       where: { id: deckId },
       include: { cards: { orderBy: { ordinal: "asc" } }, document: { select: { title: true } } },
     }),
-    getUserTimezone(userId),
+    resolveTimeZone(userId),
   ]);
 
   if (!deck || deck.userId !== userId) throw new Error("Deck not found");
@@ -438,7 +439,7 @@ export async function getStudyCards(
     exam: exam ? { name: exam.examName, date: exam.examDate.toISOString().slice(0, 10) } : null,
     nextDueAt: nextDueAfterToday(deck.cards, todayEnds),
     scope,
-    timeZone: timeZone ?? "UTC",
+    timeZone,
   };
 }
 

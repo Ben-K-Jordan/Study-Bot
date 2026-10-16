@@ -29,8 +29,14 @@ export const LEGACY_ERRORS_DECK_PREFIX = "Error Repair \u2014 ";
 /** MCQ-stem fronts are unanswerable without their options. */
 const MCQ_STEM_PATTERN = /which of the following/i;
 
-/** Marker emitted by MCQ-sourced correction rules: The correct answer is "X". */
-const CORRECT_ANSWER_MARKER = /the correct answer is\s*"[^"]+"/i;
+/**
+ * Marker emitted by MCQ-sourced correction rules: The correct answer is "X".
+ * Rules saved by one earlier build read "The right answer is X." instead.
+ */
+const CORRECT_ANSWER_MARKER = /the (?:correct|right) answer is\s*"?[^".]+/i;
+
+/** Multiple-choice answers are stored as "[B] text"; the card shows the text. */
+const CHOICE_PREFIX = /^\[[A-D]\]\s*/;
 
 /** Error types in the words the session's error log uses. */
 const ERROR_TYPE_LABELS: Record<string, string> = {
@@ -96,7 +102,7 @@ export function buildBack(
 
   if (userAnswer) {
     backParts.push("");
-    backParts.push(`Your earlier answer: ${userAnswer}`);
+    backParts.push(`Your earlier answer: ${userAnswer.replace(CHOICE_PREFIX, "")}`);
   }
 
   return backParts.join("\n");
@@ -109,6 +115,52 @@ function isUniqueViolation(err: unknown): boolean {
     "code" in err &&
     (err as { code: string }).code === "P2002"
   );
+}
+
+/**
+ * The id of the course's "Session errors" deck, created when missing. A deck
+ * with the earlier title is renamed and reused when no current one exists.
+ * Runs outside any transaction: a unique violation (two runs creating the
+ * deck at once, or a rename racing a create) is recovered by reading again.
+ */
+async function errorsDeckId(userId: string, courseName: string): Promise<string> {
+  const legacyTitle = `${LEGACY_ERRORS_DECK_PREFIX}${courseName}`;
+  const find = async () => {
+    const decks = await prisma.flashcardDeck.findMany({
+      where: { userId, courseName, title: { in: [ERRORS_DECK_TITLE, legacyTitle] } },
+      select: { id: true, title: true },
+    });
+    // The current title wins when both exist
+    return decks.find((d) => d.title === ERRORS_DECK_TITLE) ?? decks[0] ?? null;
+  };
+
+  const existing = await find();
+  if (existing) {
+    if (existing.title === legacyTitle) {
+      try {
+        await prisma.flashcardDeck.update({ where: { id: existing.id }, data: { title: ERRORS_DECK_TITLE } });
+      } catch (err: unknown) {
+        // A deck with the current title appeared meanwhile: use that one.
+        if (!isUniqueViolation(err)) throw err;
+        return (await find())?.id ?? existing.id;
+      }
+    }
+    return existing.id;
+  }
+
+  try {
+    const deck = await prisma.flashcardDeck.create({
+      data: { userId, courseName, title: ERRORS_DECK_TITLE, cardCount: 0 },
+      select: { id: true },
+    });
+    return deck.id;
+  } catch (err: unknown) {
+    // A concurrent run created it first
+    if (!isUniqueViolation(err)) throw err;
+    const deck = await find();
+    if (!deck) throw err;
+    return deck.id;
+  }
 }
 
 /**
@@ -146,59 +198,26 @@ export async function createFlashcardsFromErrors(
     });
     const errorByIndex = new Map(errorLogs.map((e) => [e.promptIndex, e]));
 
-    const legacyDeckTitle = `${LEGACY_ERRORS_DECK_PREFIX}${courseName}`;
-    const titles = [ERRORS_DECK_TITLE, legacyDeckTitle];
+    // The deck is found or created before the transaction. In PostgreSQL a
+    // failed statement (a unique violation from a concurrent run) aborts
+    // the whole transaction, so recovering from one has to happen outside it.
+    const deckId = await errorsDeckId(userId, courseName);
 
-    // Deck lookup/creation, card inserts/refreshes, and the cardCount update
-    // all run in one transaction so concurrent run completions can't
-    // interleave and leave the deck with colliding ordinals or a stale
-    // cardCount.
-    const { deckId, created, refreshed } = await prisma.$transaction(async (tx) => {
-      // Find or create the session-errors deck for this course. A deck with
-      // the earlier title is reused and renamed.
-      let deck = await tx.flashcardDeck.findFirst({
-        where: { userId, courseName, title: { in: titles } },
-        select: { id: true, title: true },
-      });
-
-      if (deck && deck.title === legacyDeckTitle) {
-        try {
-          await tx.flashcardDeck.update({ where: { id: deck.id }, data: { title: ERRORS_DECK_TITLE } });
-        } catch (err: unknown) {
-          // A deck with the new title already exists: keep using this one as is.
-          if (!isUniqueViolation(err)) throw err;
-        }
-      }
-
-      if (!deck) {
-        try {
-          deck = await tx.flashcardDeck.create({
-            data: {
-              userId,
-              courseName,
-              title: ERRORS_DECK_TITLE,
-              cardCount: 0,
-            },
-            select: { id: true, title: true },
-          });
-        } catch (err: unknown) {
-          // Unique constraint violation (P2002): a concurrent completion
-          // created the deck first; re-fetch it and proceed.
-          if (isUniqueViolation(err)) {
-            deck = await tx.flashcardDeck.findFirst({
-              where: { userId, courseName, title: { in: titles } },
-              select: { id: true, title: true },
-            });
-          }
-          if (!deck) throw err;
-        }
-      }
+    // Card inserts and refreshes, and the cardCount update, run in one
+    // transaction so concurrent run completions can't interleave and leave
+    // the deck with colliding ordinals or a stale cardCount.
+    const { created, refreshed } = await prisma.$transaction(async (tx) => {
+      // Lock the deck row first: a second run for the same course waits
+      // here until this one commits, then reads its cards and ordinals.
+      // Without the lock both read the same highest ordinal and the second
+      // insert fails the (deckId, ordinal) unique, losing that run's cards.
+      await tx.flashcardDeck.update({ where: { id: deckId }, data: { cardCount: { increment: 0 } } });
 
       // Map existing card fronts to their ids. The (transformed) front is
       // the dedup key since we don't have a direct link; a recurring error
       // refreshes that card's back with the newest correction.
       const existingCards = await tx.flashcard.findMany({
-        where: { deckId: deck.id },
+        where: { deckId },
         select: { id: true, front: true },
       });
       const cardIdByFront = new Map(existingCards.map((c) => [c.front, c.id]));
@@ -206,7 +225,7 @@ export async function createFlashcardsFromErrors(
       // Derive the next ordinal from the deck's actual cards: the cached
       // cardCount can go stale if a previous invocation failed midway.
       const { _max } = await tx.flashcard.aggregate({
-        where: { deckId: deck.id },
+        where: { deckId },
         _max: { ordinal: true },
       });
       let nextOrdinal = (_max.ordinal ?? -1) + 1;
@@ -238,7 +257,7 @@ export async function createFlashcardsFromErrors(
 
         const card = await tx.flashcard.create({
           data: {
-            deckId: deck.id,
+            deckId,
             front,
             back,
             tags: error ? [error.errorType.toLowerCase(), "auto-repair"] : ["auto-repair"],
@@ -255,15 +274,15 @@ export async function createFlashcardsFromErrors(
       if (createdCount > 0) {
         // Set cardCount from the real number of cards in the deck
         const totalCards = await tx.flashcard.count({
-          where: { deckId: deck.id },
+          where: { deckId },
         });
         await tx.flashcardDeck.update({
-          where: { id: deck.id },
+          where: { id: deckId },
           data: { cardCount: totalCards },
         });
       }
 
-      return { deckId: deck.id, created: createdCount, refreshed: refreshedCount };
+      return { created: createdCount, refreshed: refreshedCount };
     });
 
     if (created > 0 || refreshed > 0) {

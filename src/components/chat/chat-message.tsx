@@ -6,11 +6,21 @@ import { ChevronDownIcon, InfoIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { AppMark } from "@/components/shell/app-mark"
-import { Badge } from "@/components/ui/badge"
+import { AiTag } from "@/components/app/ai-tag"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { AnswerMarkdown } from "@/components/chat/answer-markdown"
 import type { ChatMessage, ChatSource } from "@/components/chat/chat-types"
+
+// The Markdown renderer (react-markdown, remark-gfm) is the largest part of
+// Chat's JavaScript and isn't needed until answers arrive, which is after
+// the page hydrates. ChatScreen starts loading it on mount.
+const loadAnswerMarkdown = () => import("@/components/chat/answer-markdown")
+const AnswerMarkdown = React.lazy(() => loadAnswerMarkdown().then((m) => ({ default: m.AnswerMarkdown })))
+
+/** Starts loading the answer renderer so it's ready when the history is. */
+export function preloadAnswerMarkdown() {
+  void loadAnswerMarkdown()
+}
 
 /** The student's question, right-aligned like a sent message. */
 export const QuestionBubble = React.memo(function QuestionBubble({
@@ -39,7 +49,7 @@ function AnswerHeader({ ai }: { ai: boolean }) {
     <div className="flex items-center gap-2">
       <AppMark className="size-6" />
       <span className="type-label-l text-on-surface">Study Bot</span>
-      {ai ? <Badge variant="outline">AI-written</Badge> : null}
+      {ai ? <AiTag /> : null}
     </div>
   )
 }
@@ -74,7 +84,13 @@ export const AnswerBlock = React.memo(function AnswerBlock({ message }: { messag
   return (
     <article aria-label="Study Bot answered" className="flex scroll-mt-24 flex-col gap-3">
       <AnswerHeader ai />
-      <AnswerMarkdown content={message.content} sources={message.sources} idFor={idFor} onOpenSource={openSource} />
+      <React.Suspense
+        fallback={
+          <p className="type-body-l whitespace-pre-wrap text-on-surface [overflow-wrap:anywhere]">{message.content}</p>
+        }
+      >
+        <AnswerMarkdown content={message.content} sources={message.sources} idFor={idFor} onOpenSource={openSource} />
+      </React.Suspense>
       {message.sources.length > 0 ? (
         <SourceList sources={message.sources} idFor={idFor} open={open} onToggle={toggle} headingId={`${baseId}-heading`} />
       ) : (

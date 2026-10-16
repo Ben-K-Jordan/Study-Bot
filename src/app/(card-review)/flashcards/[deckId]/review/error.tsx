@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button"
 /** The review failed to load or crashed: ratings already saved stay saved. */
 export default function ReviewError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string }
-  reset: () => void
+  /** Refetches and re-renders the segment (reset would only re-render the failed payload). */
+  retry: () => void
 }) {
   return (
     <StatusScreen
@@ -22,12 +23,12 @@ export default function ReviewError({
       description="Ratings you already gave are saved. Retry, or go back to your decks."
       actions={
         <>
-          <Button onClick={reset}>
+          <Button onClick={() => retry()}>
             <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
             Retry
           </Button>
           <Button asChild variant="outline">
-            <Link href="/flashcards">Go to flashcards</Link>
+            <Link href="/flashcards">Go to Flashcards</Link>
           </Button>
         </>
       }

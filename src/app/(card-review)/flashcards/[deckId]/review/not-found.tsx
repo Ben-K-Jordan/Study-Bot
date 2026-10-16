@@ -12,7 +12,7 @@ export default function ReviewNotFound() {
       description="This link doesn't match one of your decks. It may have been deleted."
       actions={
         <Button asChild>
-          <Link href="/flashcards">Go to flashcards</Link>
+          <Link href="/flashcards">Go to Flashcards</Link>
         </Button>
       }
     />

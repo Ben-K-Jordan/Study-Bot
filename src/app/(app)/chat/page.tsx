@@ -2,8 +2,8 @@ import { redirect } from "next/navigation"
 
 import { getCurrentUserId } from "@/lib/auth"
 import { logger } from "@/lib/logger"
-import { getUserTimezone } from "@/lib/timezone"
 import { listDocuments } from "@/services/content"
+import { resolveTimeZone } from "@/services/gamification"
 import { PageContainer } from "@/components/app/page-container"
 import { ChatScreen } from "@/components/chat/chat-screen"
 import { SwrFallback } from "@/components/chat/swr-fallback"
@@ -24,13 +24,13 @@ export default async function ChatPage() {
       logger.error("chat.page_documents_failed", { userId, error: String(err) })
       return null
     }),
-    getUserTimezone(userId),
+    resolveTimeZone(userId),
   ])
 
   return (
     <PageContainer size="narrow" className="flex-1 pb-0">
       <SwrFallback fallback={documents ? { [DOCUMENTS_KEY]: { documents } } : {}}>
-        <ChatScreen timeZone={timeZone ?? "UTC"} />
+        <ChatScreen timeZone={timeZone} />
       </SwrFallback>
     </PageContainer>
   )

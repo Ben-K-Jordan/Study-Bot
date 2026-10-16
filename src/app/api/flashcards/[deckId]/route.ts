@@ -25,7 +25,7 @@ export async function GET(
     return NextResponse.json(deck);
   } catch (err) {
     logger.error("flashcard.deck_get_failed", { userId, deckId, error: String(err) });
-    return failed("Deck didn't load. Retry");
+    return failed("Deck didn't load. Retry.");
   }
 }
 
@@ -45,6 +45,6 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (err) {
     logger.error("flashcard.delete_failed", { userId, deckId, error: String(err) });
-    return failed("Deck not deleted. Retry");
+    return failed("Deck not deleted. Retry.");
   }
 }

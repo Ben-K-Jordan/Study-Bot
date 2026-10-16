@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { ApiError, apiDelete, apiPost } from "@/lib/client-api"
 import { daysUntil, formatDate, formatDateWeekday, plural } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { useApi } from "@/lib/swr"
 import { useActiveCourse } from "@/hooks/use-active-course"
 import { useCourseOptions } from "@/hooks/use-course-options"
@@ -17,6 +18,7 @@ import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
 import { LoadingRegion } from "@/components/app/skeletons"
 import { Button } from "@/components/ui/button"
+import { FieldLabel } from "@/components/ui/field"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { errorDetail } from "@/components/cards/error-copy"
@@ -26,12 +28,30 @@ import {
   QuestionBubble,
   SearchingRow,
   UnansweredRow,
+  preloadAnswerMarkdown,
 } from "@/components/chat/chat-message"
 import { Composer, type ComposerHandle } from "@/components/chat/composer"
 import type { AnswerResponse, ChatMessage, PendingQuestion } from "@/components/chat/chat-types"
 import { useAppendToHistory, useChatHistory } from "@/components/chat/use-chat-history"
 
 const DOCUMENTS_KEY = "/api/content/documents?namespace=COURSE"
+
+/**
+ * Sticky bars give their space back on short windows (a phone in landscape,
+ * a laptop at 200 to 400% zoom), so the thread between them stays in view.
+ */
+const STATIC_WHEN_SHORT = "short:static"
+
+/**
+ * Focused controls in the thread scroll clear of the question bar and, under
+ * 600px, the bottom bar beneath it (the global :focus margin covers only the
+ * bottom bar). --composer-height is measured in ChatThread.
+ */
+const CLEAR_OF_COMPOSER =
+  "[&_:focus]:scroll-mb-[calc(var(--bottom-bar-height)+var(--composer-height,8rem)+1rem)] sm:[&_:focus]:scroll-mb-[calc(var(--composer-height,8rem)+1rem)]"
+/** The same margin for the end-of-thread marker that new messages scroll to. */
+const CLEAR_OF_COMPOSER_SELF =
+  "scroll-mb-[calc(var(--bottom-bar-height)+var(--composer-height,8rem)+1rem)] sm:scroll-mb-[calc(var(--composer-height,8rem)+1rem)]"
 
 interface DocumentsResponse {
   documents?: { course_name: string | null; exam_name: string | null; suggested_questions: string[] | null }[]
@@ -61,6 +81,9 @@ export function ChatScreen({ timeZone }: { timeZone: string }) {
   React.useEffect(() => {
     activeRef.current = activeCourse
   })
+
+  // The answer renderer loads alongside the history request, not after it
+  React.useEffect(() => preloadAnswerMarkdown(), [])
 
   const ask = React.useCallback(
     async (question: string, opts: { questionId?: string; localId?: string } = {}) => {
@@ -269,8 +292,38 @@ function ChatThread({
     void history.loadOlder()
   }
 
+  // The question bar sticks above the bottom bar while the thread scrolls.
+  // Its height goes in --composer-height, so controls focused in the thread
+  // stop above it instead of under it. On a short window the bar doesn't
+  // stick (see STATIC_WHEN_SHORT) and reserves nothing.
+  const composerId = React.useId()
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  const composerBarRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const root = rootRef.current
+    const bar = composerBarRef.current
+    if (!root || !bar) return
+    const measure = () => {
+      const sticky = getComputedStyle(bar).position === "sticky"
+      root.style.setProperty("--composer-height", sticky ? `${bar.offsetHeight}px` : "0px")
+    }
+    measure()
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure)
+    observer?.observe(bar)
+    window.addEventListener("resize", measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener("resize", measure)
+    }
+  }, [])
+
+  // After Delete chat history the button goes with the history, so focus
+  // moves to the question box; after Cancel it returns to the button.
+  const afterDeleteRef = React.useRef<HTMLElement | null>(null)
+
   async function deleteHistory() {
     await apiDelete(`/api/chat/messages?courseKey=${encodeURIComponent(courseKey)}`)
+    afterDeleteRef.current = document.getElementById(composerId)
     await history.mutate([{ messages: [], has_more: false, total: 0 }], { revalidate: false })
     onHistoryDeleted()
     toast("Chat history deleted")
@@ -279,8 +332,17 @@ function ChatThread({
 
   const lastMessage = messages?.[messages.length - 1]
 
+  // An empty thread keeps the label in the question bar, where it's always
+  // in view; see the bar below.
+  const labelInBar = !messages || (messages.length === 0 && pending.length === 0)
+  const composerLabel = (className?: string) => (
+    <FieldLabel htmlFor={composerId} className={cn("type-label-l", className)}>
+      Ask about your {courseName} materials
+    </FieldLabel>
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div ref={rootRef} className="flex flex-1 flex-col gap-6">
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <CourseSwitcher className="min-w-0" />
@@ -300,6 +362,10 @@ function ChatThread({
               confirmLabel="Delete messages"
               pendingLabel="Deleting messages…"
               failedMessage="Messages not deleted. Check your connection and retry."
+              onOpenChange={(open) => {
+                if (open) afterDeleteRef.current = null
+              }}
+              returnFocus={afterDeleteRef}
               onConfirm={deleteHistory}
             />
           ) : null}
@@ -309,7 +375,7 @@ function ChatThread({
         </p>
       </div>
 
-      <section aria-label={`Chat about ${courseName}`} className="flex flex-1 flex-col gap-6">
+      <section aria-label={`Chat about ${courseName}`} className={cn("flex flex-1 flex-col gap-6", CLEAR_OF_COMPOSER)}>
         {history.error && !messages ? (
           <ErrorState
             title="Chat history didn't load."
@@ -335,6 +401,7 @@ function ChatThread({
             {rows.length === 0 && pending.length === 0 ? (
               <EmptyState
                 icon={MessagesSquareIcon}
+                headingLevel="h2"
                 title={`No questions about ${courseName} yet`}
                 description={`Ask about anything in your ${courseName} materials. Each answer lists the files and pages it used.`}
                 action={
@@ -429,15 +496,26 @@ function ChatThread({
               ))}
           </>
         )}
-        <div ref={endRef} />
+        <div ref={endRef} className={CLEAR_OF_COMPOSER_SELF} />
       </section>
 
       <p role="status" aria-live="polite" className="sr-only">
         {status}
       </p>
 
-      <div className="sticky bottom-[calc(var(--bottom-bar-height)+env(safe-area-inset-bottom))] z-10 -mx-4 bg-background px-4 pt-2 pb-4 sm:bottom-0 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
-        <Composer ref={composerRef} courseName={courseName} busy={sending} onAsk={(q) => onAsk(q)} />
+      {/* Once the thread has messages, the label sits just above the bar
+          (the thread opens scrolled to the end, so it shows there), which
+          keeps the part that sticks over the thread short. */}
+      {labelInBar ? null : composerLabel("-mb-6")}
+      <div
+        ref={composerBarRef}
+        className={cn(
+          "sticky bottom-[calc(var(--bottom-bar-height)+env(safe-area-inset-bottom))] z-10 -mx-4 flex flex-col gap-2 bg-background px-4 pt-2 pb-4 sm:bottom-0 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8",
+          STATIC_WHEN_SHORT
+        )}
+      >
+        {labelInBar ? composerLabel() : null}
+        <Composer ref={composerRef} id={composerId} busy={sending} onAsk={(q) => onAsk(q)} />
       </div>
     </div>
   )

@@ -5,8 +5,10 @@ import { getPrompt } from "@/lib/ai/prompt-registry";
 import { createProvider } from "@/lib/ai/provider-factory";
 import { logger } from "@/lib/logger";
 import { sampleEvenly } from "@/lib/config";
-import { getUserTimezone } from "@/lib/timezone";
 import { deckKind, displayDeckTitle, type DeckKind } from "@/services/deck-titles";
+import { resolveTimeZone } from "@/services/gamification";
+import { dateColumnKey } from "@/lib/plan-dates";
+import { dayKey } from "@/lib/timezone";
 import {
   cardStatus,
   deckStats,
@@ -220,18 +222,30 @@ async function runGeneration(
   const ctx: GatewayContext = { userId, provider: createProvider() };
   const prompt = getPrompt(AiTask.GENERATE_FLASHCARDS);
 
-  const result = await runTask<{ cards: FlashcardGenerated[] }>(ctx, {
-    task: AiTask.GENERATE_FLASHCARDS,
-    promptVersion: prompt.version,
-    model: FLASHCARD_MODEL,
-    input: { ...input, masteryContext },
-    parseOutput: (raw: unknown) => ({ cards: cleanGeneratedCards((raw as Record<string, unknown> | null)?.cards) }),
-  });
-
-  if (result.output.cards.length === 0) {
-    throw new FlashcardError("NO_CARDS", "The materials produced no cards.");
+  // Output with no usable card fails the parse, so the gateway doesn't
+  // cache it and Retry asks the model again instead of replaying the same
+  // empty list for an hour.
+  let noCards = false;
+  try {
+    const result = await runTask<{ cards: FlashcardGenerated[] }>(ctx, {
+      task: AiTask.GENERATE_FLASHCARDS,
+      promptVersion: prompt.version,
+      model: FLASHCARD_MODEL,
+      input: { ...input, masteryContext },
+      parseOutput: (raw: unknown) => {
+        const cards = cleanGeneratedCards((raw as Record<string, unknown> | null)?.cards);
+        if (cards.length === 0) {
+          noCards = true;
+          throw new Error("No usable cards in the output");
+        }
+        return { cards };
+      },
+    });
+    return result.output.cards;
+  } catch (err) {
+    if (noCards) throw new FlashcardError("NO_CARDS", "The materials produced no cards.");
+    throw err;
   }
-  return result.output.cards;
 }
 
 async function saveGeneratedDeck(
@@ -466,7 +480,7 @@ export async function listFlashcardDecks(
       orderBy: { createdAt: "desc" },
       include: DECK_SUMMARY_INCLUDE,
     }),
-    getUserTimezone(userId),
+    resolveTimeZone(userId),
   ]);
 
   const todayEnds = endOfToday(timeZone);
@@ -495,7 +509,9 @@ export interface DeckLibrary {
  * and their counts. Feeds the /flashcards page.
  */
 export async function getDeckLibrary(userId: string, now: Date = new Date()): Promise<DeckLibrary> {
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // The student's today can be a day behind UTC's; the exact cut is made
+  // below, once the zone is known.
+  const fromDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
   const [decks, documents, plans, timeZone] = await Promise.all([
     prisma.flashcardDeck.findMany({
       where: { userId },
@@ -507,14 +523,15 @@ export async function getDeckLibrary(userId: string, now: Date = new Date()): Pr
       select: { courseName: true, examName: true, status: true },
     }),
     prisma.studyPlan.findMany({
-      where: { userId, examDate: { gte: today } },
+      where: { userId, examDate: { gte: fromDay } },
       orderBy: { examDate: "asc" },
       select: { courseName: true, examName: true, examDate: true },
     }),
-    getUserTimezone(userId),
+    resolveTimeZone(userId),
   ]);
 
   const todayEnds = endOfToday(timeZone, now);
+  const todayKey = dayKey(now, timeZone);
   const byCourse = new Map<string, CourseDecks & { exams: Set<string> }>();
   const entry = (courseName: string) => {
     let course = byCourse.get(courseName);
@@ -542,9 +559,11 @@ export async function getDeckLibrary(userId: string, now: Date = new Date()): Pr
   }
   for (const deck of decks) entry(deck.courseName).decks.push(summarizeDeck(deck, todayEnds));
   for (const plan of plans) {
+    const examDay = dateColumnKey(plan.examDate);
+    if (examDay < todayKey) continue;
     const course = byCourse.get(plan.courseName);
     if (course && !course.exam) {
-      course.exam = { name: plan.examName, date: plan.examDate.toISOString().slice(0, 10) };
+      course.exam = { name: plan.examName, date: examDay };
     }
   }
 
@@ -563,7 +582,7 @@ export async function getDeckLibrary(userId: string, now: Date = new Date()): Pr
     return a.courseName.localeCompare(b.courseName);
   });
 
-  return { courses, timeZone: timeZone ?? "UTC" };
+  return { courses, timeZone };
 }
 
 export interface DeckCardDetail {
@@ -596,7 +615,7 @@ export async function getDeckDetail(userId: string, deckId: string): Promise<Dec
         cards: { orderBy: { ordinal: "asc" } },
       },
     }),
-    getUserTimezone(userId),
+    resolveTimeZone(userId),
   ]);
   if (!deck || deck.userId !== userId) return null;
 
@@ -607,7 +626,7 @@ export async function getDeckDetail(userId: string, deckId: string): Promise<Dec
   return {
     ...summarizeDeck(deck, todayEnds),
     exam: exam ? { name: exam.examName, date: exam.examDate.toISOString().slice(0, 10) } : null,
-    timeZone: timeZone ?? "UTC",
+    timeZone,
     cards: deck.cards.map((c) => ({
       id: c.id,
       front: c.front,

@@ -40,7 +40,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   } catch (err) {
     if (err instanceof FlashcardError) return notFound(err);
     logger.error("flashcards.card_update_failed", { userId, deckId, cardId, error: String(err) });
-    return failed("Card not saved. Retry");
+    return failed("Card not saved. Retry.");
   }
 }
 
@@ -57,6 +57,6 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   } catch (err) {
     if (err instanceof FlashcardError) return notFound(err);
     logger.error("flashcards.card_delete_failed", { userId, deckId, cardId, error: String(err) });
-    return failed("Card not deleted. Retry");
+    return failed("Card not deleted. Retry.");
   }
 }

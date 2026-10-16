@@ -27,6 +27,6 @@ export async function GET(
       return failed("This deck doesn't exist. It may have been deleted.", 404, "DECK_NOT_FOUND");
     }
     logger.error("flashcard.study_failed", { userId, deckId, error: String(err) });
-    return failed("Cards didn't load. Retry");
+    return failed("Cards didn't load. Retry.");
   }
 }

@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { apiDelete } from "@/lib/client-api"
 import { formatDateWeekday } from "@/lib/format"
 import type { DeckCardDetail, DeckDetail } from "@/services/flashcards"
+import { AiTag } from "@/components/app/ai-tag"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { EmptyState } from "@/components/app/empty-state"
 import { PageHeader } from "@/components/app/page-header"
@@ -20,7 +21,7 @@ import { CardEditorDialog } from "@/components/cards/card-editor-dialog"
 import { DeckActionsMenu } from "@/components/cards/deck-actions-menu"
 import { DeckPrimaryAction, DueLine, deckSource } from "@/components/cards/deck-card"
 import { DeckCounts } from "@/components/cards/deck-counts"
-import { STATUS_LABELS, calendarDate, cardCount } from "@/components/cards/card-format"
+import { STATUS_LABELS, cardCount, examDateLabel } from "@/components/cards/card-format"
 import { errorDetail } from "@/components/cards/error-copy"
 
 type Editor = { kind: "add" } | { kind: "edit"; card: DeckCardDetail } | null
@@ -45,6 +46,29 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
   const listRef = React.useRef<HTMLElement>(null)
   const { timeZone } = deck
 
+  // The editor opens without a trigger, so focus goes back by hand when it
+  // closes: to the button that opened it, or to the Cards list when that
+  // button is gone (the empty state's Add cards after the first card).
+  const openerRef = React.useRef<{ element: HTMLElement; goneAfterSave: boolean } | null>(null)
+  const savedRef = React.useRef(false)
+  // After a card is deleted its row goes too, so the delete dialog sends
+  // focus to the Cards list; after Cancel, ConfirmDialog returns it to the
+  // row's Delete button.
+  const afterDeleteRef = React.useRef<HTMLElement | null>(null)
+
+  function focusAfterClose() {
+    const opener = openerRef.current
+    openerRef.current = null
+    if (opener && opener.element.isConnected && !(savedRef.current && opener.goneAfterSave)) opener.element.focus()
+    else listRef.current?.focus()
+  }
+
+  function openEditor(next: NonNullable<Editor>, opener: HTMLElement, goneAfterSave = false) {
+    openerRef.current = { element: opener, goneAfterSave }
+    savedRef.current = false
+    setEditor(next)
+  }
+
   const refresh = React.useCallback(() => router.refresh(), [router])
 
   async function deleteCard() {
@@ -57,13 +81,13 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
       setDeleteFailed(`Card not deleted. ${errorDetail(err)}`)
       throw err
     }
+    afterDeleteRef.current = listRef.current
     toast("Card deleted")
     refresh()
-    listRef.current?.focus()
   }
 
   const examLine = deck.exam
-    ? `Reviews are scheduled to finish before ${deck.exam.name} on ${formatDateWeekday(calendarDate(deck.exam.date), { timeZone })}.`
+    ? `Reviews are scheduled to finish before ${deck.exam.name} on ${examDateLabel(deck.exam.date)}.`
     : null
 
   return (
@@ -72,7 +96,7 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
         <Button asChild variant="text" size="sm" className="-ml-3">
           <Link href="/flashcards">
             <ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />
-            All decks
+            Go to Flashcards
           </Link>
         </Button>
       </div>
@@ -92,7 +116,7 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
         actions={
           <>
             <DeckPrimaryAction deck={deck} />
-            <Button variant="outline" onClick={() => setEditor({ kind: "add" })}>
+            <Button variant="outline" onClick={(event) => openEditor({ kind: "add" }, event.currentTarget)}>
               <PlusIcon data-icon="inline-start" aria-hidden="true" />
               Add cards
             </Button>
@@ -107,7 +131,7 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
 
       <div className="flex flex-col gap-3">
         <p className="flex flex-wrap items-center gap-2 type-body-m text-on-surface-variant">
-          {deck.kind === "generated" ? <Badge variant="outline">AI-written</Badge> : null}
+          {deck.kind === "generated" ? <AiTag /> : null}
           <span>
             {deck.kind === "generated"
               ? `Written by AI ${deckSource(deck).replace(/^From/, "from")}. Edit any card that's wrong.`
@@ -139,7 +163,7 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
             title="No cards in this deck"
             description="Add a card with a question on the front and its answer on the back."
             action={
-              <Button onClick={() => setEditor({ kind: "add" })}>
+              <Button onClick={(event) => openEditor({ kind: "add" }, event.currentTarget, true)}>
                 <PlusIcon data-icon="inline-start" aria-hidden="true" />
                 Add cards
               </Button>
@@ -158,8 +182,9 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
                   number={index + 1}
                   timeZone={timeZone}
                   showTags={deck.kind === "generated"}
-                  onEdit={() => setEditor({ kind: "edit", card })}
+                  onEdit={(opener) => openEditor({ kind: "edit", card }, opener)}
                   onDelete={() => {
+                    afterDeleteRef.current = null
                     setDeleteFailed(undefined)
                     setDeleting(card)
                   }}
@@ -181,13 +206,21 @@ export function DeckDetailView({ deck }: { deck: DeckDetail }) {
           }
           open
           onOpenChange={(open) => (open ? undefined : setEditor(null))}
-          onSaved={refresh}
+          onSaved={() => {
+            savedRef.current = true
+            refresh()
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            focusAfterClose()
+          }}
         />
       ) : null}
 
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => (open ? undefined : setDeleting(null))}
+        returnFocus={afterDeleteRef}
         title="Delete this card?"
         description="This deletes the card and its review history."
         confirmLabel="Delete card"
@@ -211,7 +244,7 @@ function CardRow({
   number: number
   timeZone: string
   showTags: boolean
-  onEdit: () => void
+  onEdit: (opener: HTMLElement) => void
   onDelete: () => void
 }) {
   const tags = showTags ? (card.tags ?? []).filter((t) => t !== "auto-repair") : []
@@ -239,7 +272,7 @@ function CardRow({
       <div className="row-span-2 -mt-2 -mr-2 flex items-start justify-end md:row-span-1">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={`Edit card ${number}`} onClick={onEdit}>
+            <Button variant="ghost" size="icon" aria-label={`Edit card ${number}`} onClick={(event) => onEdit(event.currentTarget)}>
               <PencilIcon aria-hidden="true" />
             </Button>
           </TooltipTrigger>

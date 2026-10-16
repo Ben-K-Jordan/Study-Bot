@@ -6,7 +6,11 @@ import { CheckIcon, CircleAlertIcon, LayersIcon, XIcon } from "lucide-react"
 
 import { apiGet, apiPost } from "@/lib/client-api"
 import { formatDateWeekday, formatNumber, formatRelativeDay, plural } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import type { ReviewRating, StudyData } from "@/services/spaced-repetition"
+import { useMounted } from "@/hooks/use-mounted"
+import { readShortcutsEnabled, writeShortcutsEnabled } from "@/components/session/runner/storage"
+import { AiTag } from "@/components/app/ai-tag"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { LessonAnnouncer } from "@/components/lesson/lesson-announcer"
@@ -14,6 +18,7 @@ import { LessonButton } from "@/components/lesson/lesson-button"
 import { DeckCounts } from "@/components/cards/deck-counts"
 import { STATUS_LABELS, intervalLabel } from "@/components/cards/card-format"
 import { errorDetail } from "@/components/cards/error-copy"
+import { ReviewKeyboardHelp } from "@/components/cards/review/review-keyboard-help"
 import { ReviewProgress } from "@/components/cards/review/review-progress"
 import {
   currentCard,
@@ -32,6 +37,12 @@ const RATINGS: { rating: ReviewRating; label: string; key: string; variant: "wro
 ]
 
 /**
+ * Sticky bars give their space back on short windows (a phone in landscape,
+ * a laptop at 200 to 400% zoom), so the card between them stays in view.
+ */
+const STATIC_WHEN_SHORT = "short:static"
+
+/**
  * A flashcard review in the lesson grammar: one card at a time, Show answer,
  * then Again, Hard, Good or Easy (keys 1 to 4) with the interval each gives,
  * a progress bar, and a summary at the end. Cards rated Again come back at
@@ -42,6 +53,20 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
   const [state, dispatch] = React.useReducer(reviewReducer, data, (d) => initialReviewState(d.cards, d.stats))
   const [restarting, setRestarting] = React.useState<string | null>(null)
   const deck = review.deck
+
+  // Single-key shortcuts (1 to 4) are on unless the student turned them off,
+  // here or in a study session. Read after hydration: the server can't know.
+  const mounted = useMounted()
+  const [shortcutsChoice, setShortcutsChoice] = React.useState<boolean | null>(null)
+  const shortcutsEnabled = shortcutsChoice ?? (mounted ? readShortcutsEnabled() : true)
+  const shortcutsRef = React.useRef(shortcutsEnabled)
+  React.useEffect(() => {
+    shortcutsRef.current = shortcutsEnabled
+  })
+  const onShortcutsEnabledChange = React.useCallback((enabled: boolean) => {
+    setShortcutsChoice(enabled)
+    writeShortcutsEnabled(enabled)
+  }, [])
   const card = currentCard(state)
 
   const frontRef = React.useRef<HTMLHeadingElement>(null)
@@ -78,7 +103,9 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return
-      const intent = keyIntent(event, event.target instanceof Element ? event.target : null, stateRef.current)
+      const intent = keyIntent(event, event.target instanceof Element ? event.target : null, stateRef.current, {
+        singleKeys: shortcutsRef.current,
+      })
       if (!intent) return
       event.preventDefault()
       if (intent.type === "reveal") dispatch({ type: "reveal" })
@@ -90,12 +117,13 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
 
   // Move focus with the review so screen readers read the new side and the
   // keyboard never falls back to the page: front on a new card, the answer
-  // once shown, the summary at the end.
+  // once shown, the summary at the end. Focus scrolls only when that part is
+  // out of view (on a short window, where the bars don't stick).
   const position = state.position
   const phase = state.phase
   React.useEffect(() => {
-    if (phase === "question") frontRef.current?.focus({ preventScroll: false })
-    else if (phase === "answer") answerRef.current?.focus({ preventScroll: true })
+    if (phase === "question") frontRef.current?.focus()
+    else if (phase === "answer") answerRef.current?.focus()
     else doneRef.current?.focus()
   }, [phase, position])
 
@@ -120,7 +148,12 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
   return (
     <LessonAnnouncer>
       <div className="flex min-h-dvh flex-1 flex-col">
-        <TopBar state={state} closeHref={closeHref} />
+        <TopBar
+          state={state}
+          closeHref={closeHref}
+          shortcutsEnabled={shortcutsEnabled}
+          onShortcutsEnabledChange={onShortcutsEnabledChange}
+        />
 
         {state.total === 0 ? (
           <EmptyReview
@@ -173,13 +206,17 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
                   ref={answerRef}
                   tabIndex={-1}
                   aria-labelledby="card-answer"
-                  className="flex animate-in fade-in-0 slide-in-from-bottom-2 duration-250 ease-emphasized flex-col gap-3 rounded-2xl border-2 border-lesson-option-border bg-lesson-option p-5 outline-none sm:p-6"
+                  className={cn(
+                    "flex animate-in fade-in-0 slide-in-from-bottom-2 duration-250 ease-emphasized flex-col gap-3 rounded-2xl border-2 border-lesson-option-border bg-lesson-option p-5 outline-none sm:p-6",
+                    // Focus brings the whole answer out from under the top bar and the ratings
+                    "scroll-mt-32 scroll-mb-56 short:scroll-m-4"
+                  )}
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 id="card-answer" className="type-title-m font-bold text-lesson-on-surface">
                       Answer
                     </h2>
-                    {deck.kind === "generated" ? <Badge variant="outline">AI-written</Badge> : null}
+                    {deck.kind === "generated" ? <AiTag tone="lesson" /> : null}
                   </div>
                   <p className="type-body-l whitespace-pre-line text-lesson-on-surface [overflow-wrap:anywhere]">
                     {card.back}
@@ -194,7 +231,12 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
               ) : null}
             </div>
 
-            <div className="sticky bottom-0 z-10 border-t-2 border-lesson-option-border bg-lesson-surface">
+            <div
+              className={cn(
+                "sticky bottom-0 z-10 border-t-2 border-lesson-option-border bg-lesson-surface",
+                STATIC_WHEN_SHORT
+              )}
+            >
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-6">
                 {state.error ? (
                   <p role="alert" className="flex items-start gap-2 type-body-m font-bold text-lesson-on-wrong">
@@ -223,7 +265,7 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
                         <LessonButton
                           key={r.rating}
                           variant={r.variant}
-                          kbd={r.key}
+                          kbd={shortcutsEnabled ? r.key : undefined}
                           width="full"
                           className="min-h-16 min-w-0 px-3"
                           loading={state.submitting === r.rating}
@@ -233,7 +275,7 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
                         >
                           <span className="flex flex-col items-center leading-tight">
                             <span>{r.label}</span>
-                            <span className="type-label-m font-medium opacity-90">
+                            <span className="type-label-m font-medium">
                               <span className="sr-only">, next review in </span>
                               {intervalLabel(card.previews[r.rating])}
                             </span>
@@ -252,9 +294,20 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
   )
 }
 
-function TopBar({ state, closeHref }: { state: ReviewState; closeHref: string }) {
+function TopBar({
+  state,
+  closeHref,
+  shortcutsEnabled,
+  onShortcutsEnabledChange,
+}: {
+  state: ReviewState
+  closeHref: string
+  shortcutsEnabled: boolean
+  onShortcutsEnabledChange: (enabled: boolean) => void
+}) {
+  const reviewing = state.total > 0 && state.phase !== "done"
   return (
-    <div className="sticky top-0 z-10 bg-lesson-surface">
+    <div className={cn("sticky top-0 z-10 bg-lesson-surface", STATIC_WHEN_SHORT)}>
       <div className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8 sm:py-6">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -269,14 +322,17 @@ function TopBar({ state, closeHref }: { state: ReviewState; closeHref: string })
           <TooltipContent side="bottom">Leave review. Your ratings are saved.</TooltipContent>
         </Tooltip>
         <ReviewProgress done={state.phase === "done" ? state.total : state.finished} total={state.total} className="flex-1" />
-        {state.total > 0 && state.phase !== "done" ? (
+        {reviewing ? (
           <p className="shrink-0 type-label-l font-bold text-lesson-muted tabular-nums">
             {formatNumber(state.finished)} of {formatNumber(state.total)}
             <span className="sr-only sm:not-sr-only"> done</span>
           </p>
         ) : null}
+        {reviewing ? (
+          <ReviewKeyboardHelp shortcutsEnabled={shortcutsEnabled} onShortcutsEnabledChange={onShortcutsEnabledChange} />
+        ) : null}
       </div>
-      {state.total > 0 && state.phase !== "done" ? (
+      {reviewing ? (
         <div className="mx-auto -mt-2 w-full max-w-4xl px-4 pb-2 sm:px-8">
           <DeckCounts counts={state.stats} size="compact" className="text-lesson-muted" />
         </div>
@@ -352,10 +408,11 @@ function ReviewSummary({
           loadingLabel="Loading cards…"
           disabled={restarting !== null && restarting !== "all"}
         >
-          Review again
+          {/* It reviews every card, which is "again" only after a whole-deck review */}
+          {data.scope === "all" ? "Review again" : "Review deck"}
         </LessonButton>
         <LessonButton asChild variant="primary">
-          <Link href="/flashcards">Back to decks</Link>
+          <Link href="/flashcards">Go to Flashcards</Link>
         </LessonButton>
       </div>
     </div>
@@ -422,7 +479,7 @@ function EmptyReview({
       <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:justify-center">
         {emptyDeck ? (
           <LessonButton asChild variant="neutral">
-            <Link href="/flashcards">Back to decks</Link>
+            <Link href="/flashcards">Go to Flashcards</Link>
           </LessonButton>
         ) : (
           <LessonButton variant="neutral" onClick={onReviewAll} loading={restarting === "all"} loadingLabel="Loading cards…">
@@ -435,7 +492,7 @@ function EmptyReview({
           </LessonButton>
         ) : (
           <LessonButton asChild variant="primary">
-            <Link href="/flashcards">Back to decks</Link>
+            <Link href="/flashcards">Go to Flashcards</Link>
           </LessonButton>
         )}
       </div>

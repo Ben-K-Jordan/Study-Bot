@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ messages, has_more: hasMore, total });
   } catch (err) {
     logger.error("chat.messages.get_failed", { userId, courseKey, error: String(err) });
-    return failed("Chat history didn't load. Retry");
+    return failed("Chat history didn't load. Retry.");
   }
 }
 
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message }, { status: 201 });
   } catch (err) {
     logger.error("chat.message.create_failed", { userId, courseKey, error: String(err) });
-    return failed("Message not saved. Retry");
+    return failed("Message not saved. Retry.");
   }
 }
 
@@ -144,6 +144,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ deleted: result.count });
   } catch (err) {
     logger.error("chat.messages.clear_failed", { userId, courseKey, error: String(err) });
-    return failed("Chat history not deleted. Retry");
+    return failed("Chat history not deleted. Retry.");
   }
 }

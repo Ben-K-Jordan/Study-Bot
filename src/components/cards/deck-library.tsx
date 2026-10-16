@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation"
 import { LayersIcon, SparklesIcon, UploadIcon } from "lucide-react"
 
 import { apiPost } from "@/lib/client-api"
-import { formatCountdown, plural } from "@/lib/format"
+import { cn } from "@/lib/utils"
+import { plural } from "@/lib/format"
 import type { CourseDecks, DeckLibrary } from "@/services/flashcards"
 import { EmptyState } from "@/components/app/empty-state"
 import { PageHeader } from "@/components/app/page-header"
@@ -16,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { DeckCard } from "@/components/cards/deck-card"
-import { calendarDate } from "@/components/cards/card-format"
+import { examCountdown } from "@/components/cards/card-format"
 import { errorDetail, isPermanent } from "@/components/cards/error-copy"
 
 /**
@@ -107,15 +108,15 @@ function CourseSection({ course, timeZone }: { course: CourseDecks; timeZone: st
     }
   }
 
+  // The deleted deck's card goes, so focus moves to its course section
   function afterDelete() {
     setState({ status: "idle" })
     router.refresh()
     sectionRef.current?.focus()
+    return sectionRef.current
   }
 
-  const examLine = course.exam
-    ? formatCountdown(course.exam.name, calendarDate(course.exam.date), { timeZone })
-    : undefined
+  const examLine = course.exam ? examCountdown(course.exam.name, course.exam.date, { timeZone }) : undefined
 
   const generating = state.status === "generating"
 
@@ -210,7 +211,9 @@ function CourseSection({ course, timeZone }: { course: CourseDecks; timeZone: st
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        // One card alone takes the full width, like the empty state, so the
+        // Generate deck action above it lines up with its edge.
+        <div className={cn("grid gap-4", course.decks.length + (generating ? 1 : 0) > 1 && "md:grid-cols-2")}>
           {generating ? <GeneratingCard /> : null}
           {course.decks.map((deck) => (
             <DeckCard key={deck.id} deck={deck} timeZone={timeZone} onDeleted={afterDelete} />

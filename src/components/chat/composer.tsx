@@ -6,7 +6,7 @@ import { SendHorizontalIcon } from "lucide-react"
 import { formatNumber } from "@/lib/format"
 import { KbdHint } from "@/components/app/kbd-hint"
 import { Button } from "@/components/ui/button"
-import { FieldError, FieldLabel } from "@/components/ui/field"
+import { FieldError } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { QUESTION_MAX } from "@/components/chat/chat-types"
@@ -18,22 +18,23 @@ export interface ComposerHandle {
 }
 
 /**
- * The question box: a labelled textarea that grows with the text. Enter
- * asks, Shift+Enter starts a new line, and nothing is sent mid-composition
- * (IME). The box stays editable while an answer is on its way, and focus
- * stays in it after asking.
+ * The question box: a textarea that grows with the text. Enter asks,
+ * Shift+Enter starts a new line, and nothing is sent mid-composition (IME).
+ * The box stays editable while an answer is on its way, and focus stays in
+ * it after asking. The page renders the visible label (`htmlFor={id}`), so
+ * it can sit in the sticky bar or just above it.
  */
 export const Composer = React.forwardRef<
   ComposerHandle,
   {
-    courseName: string
+    /** The textarea's id, for the page's label. */
+    id: string
     /** An answer is on its way: asking again waits for it. */
     busy: boolean
     disabled?: boolean
     onAsk: (question: string) => void
   }
->(function Composer({ courseName, busy, disabled = false, onAsk }, ref) {
-  const id = React.useId()
+>(function Composer({ id, busy, disabled = false, onAsk }, ref) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const [value, setValue] = React.useState("")
 
@@ -66,9 +67,6 @@ export const Composer = React.forwardRef<
         ask()
       }}
     >
-      <FieldLabel htmlFor={id} className="type-label-l">
-        Ask about your {courseName} materials
-      </FieldLabel>
       <InputGroup className="bg-surface-container-lowest">
         <InputGroupTextarea
           ref={textareaRef}

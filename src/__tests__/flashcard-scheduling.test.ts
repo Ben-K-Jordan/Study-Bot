@@ -12,7 +12,7 @@ vi.mock("@/lib/db", () => {
   return {
     prisma: {
       flashcard: { findUnique: vi.fn() },
-      studyPlan: { findMany: vi.fn(async () => []) },
+      studyPlan: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       userGameState: { findUnique: vi.fn(async () => ({ timezone: "America/New_York" })) },
       $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
       _tx: tx,
@@ -35,7 +35,7 @@ import {
 
 const db = prisma as unknown as {
   flashcard: { findUnique: ReturnType<typeof vi.fn> };
-  studyPlan: { findMany: ReturnType<typeof vi.fn> };
+  studyPlan: { findMany: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
   userGameState: { findUnique: ReturnType<typeof vi.fn> };
   _tx: {
     flashcard: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -50,6 +50,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   vi.clearAllMocks();
   db.studyPlan.findMany.mockResolvedValue([]);
+  db.studyPlan.findFirst.mockResolvedValue(null);
   db.userGameState.findUnique.mockResolvedValue({ timezone: "America/New_York" });
 });
 
@@ -72,6 +73,11 @@ describe("computeSM2 with a time zone", () => {
     expect(result.intervalDays).toBe(1);
     // Oct 16, 4:00 AM EDT is 08:00 UTC
     expect(result.nextDueAt.toISOString()).toBe("2026-10-16T08:00:00.000Z");
+  });
+
+  it("falls back to 4:00 AM UTC without a zone, never the server clock", () => {
+    const result = computeSM2(2.5, 0, 0, "GOOD", null, { timeZone: null, now: new Date("2026-10-15T21:30:00Z") });
+    expect(result.nextDueAt.toISOString()).toBe("2026-10-16T04:00:00.000Z");
   });
 
   it("keeps the 10-minute learning step for Again", () => {
@@ -165,6 +171,30 @@ describe("reviewCard", () => {
     const result = await reviewCard("u1", "c1", "GOOD");
 
     expect(result.intervalDays).toBe(15);
+  });
+
+  it("uses the newest plan's zone when Settings has none, like streaks and Study", async () => {
+    mockCard({ easeFactor: 2.5, intervalDays: 0, repetitions: 0 });
+    db.userGameState.findUnique.mockResolvedValue({ timezone: null });
+    db.studyPlan.findFirst.mockResolvedValue({ timezone: "America/New_York" });
+    vi.setSystemTime(new Date("2026-10-15T21:30:00Z")); // 5:30 PM in New York
+
+    const result = await reviewCard("u1", "c1", "GOOD");
+
+    // Tomorrow at 4:00 AM New York time, so it isn't due again this evening
+    expect(result.nextDueAt).toBe("2026-10-16T08:00:00.000Z");
+    const eveningEnds = endOfToday("America/New_York", new Date("2026-10-16T00:30:00Z"));
+    expect(isDueToday({ repetitions: 1, intervalDays: 1, nextDueAt: result.nextDueAt }, eveningEnds)).toBe(false);
+  });
+
+  it("takes a zone the caller already looked up", async () => {
+    mockCard({ easeFactor: 2.5, intervalDays: 0, repetitions: 0 });
+
+    const result = await reviewCard("u1", "c1", "GOOD", Promise.resolve("Asia/Tokyo"));
+
+    // It's 3:00 AM on Oct 16 in Tokyo; one day on is Oct 17 at 4:00 AM JST
+    expect(result.nextDueAt).toBe("2026-10-16T19:00:00.000Z");
+    expect(db.userGameState.findUnique).not.toHaveBeenCalled();
   });
 
   it("refuses another user's card", async () => {

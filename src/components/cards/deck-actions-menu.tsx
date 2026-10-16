@@ -31,11 +31,16 @@ export function DeckActionsMenu({
   deck: { id: string; title: string; card_count: number }
   /** Hidden on the deck's own page. */
   showEditCards?: boolean
-  /** Runs after the server deletes the deck (refresh the list, move focus). */
-  onDeleted: () => void
+  /**
+   * Runs after the server deletes the deck (refresh the list). Return the
+   * element focus moves to once the dialog closes, since the deck's own
+   * menu button may be gone; Cancel always returns focus to that button.
+   */
+  onDeleted: () => HTMLElement | null | void
 }) {
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [failedMessage, setFailedMessage] = React.useState<string>()
+  const afterDeleteRef = React.useRef<HTMLElement | null>(null)
 
   async function deleteDeck() {
     try {
@@ -45,7 +50,7 @@ export function DeckActionsMenu({
       throw err
     }
     toast("Deck deleted")
-    onDeleted()
+    afterDeleteRef.current = onDeleted() ?? null
   }
 
   return (
@@ -77,7 +82,13 @@ export function DeckActionsMenu({
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuItem variant="destructive" onSelect={() => setConfirmOpen(true)}>
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => {
+                afterDeleteRef.current = null
+                setConfirmOpen(true)
+              }}
+            >
               <Trash2Icon aria-hidden="true" />
               Delete deck
             </DropdownMenuItem>
@@ -100,6 +111,7 @@ export function DeckActionsMenu({
         confirmLabel="Delete deck"
         pendingLabel="Deleting deck…"
         failedMessage={failedMessage}
+        returnFocus={afterDeleteRef}
         onConfirm={deleteDeck}
       />
     </>

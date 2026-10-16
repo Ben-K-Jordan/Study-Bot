@@ -176,15 +176,17 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
 
 /**
  * Whether a key press should act on the review, and how. Number keys rate
- * only after the answer is shown; Space and Enter reveal the answer only
- * when focus isn't on a control (they keep activating a focused button or
- * link). Nothing acts on the done screen, while a rating saves, inside
- * text fields or open menus and dialogs, or with modifier keys.
+ * only after the answer is shown, and only while single-key shortcuts are
+ * on (the student can turn them off, WCAG 2.1.4); Space and Enter reveal the
+ * answer only when focus isn't on a control (they keep activating a focused
+ * button or link). Nothing acts on the done screen, while a rating saves,
+ * inside text fields or open menus and dialogs, or with modifier keys.
  */
 export function keyIntent(
   event: { key: string; repeat: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean },
   target: { closest: (selector: string) => unknown } | null,
   state: Pick<ReviewState, "phase" | "submitting">,
+  { singleKeys = true }: { singleKeys?: boolean } = {},
 ): { type: "reveal" } | { type: "rate"; rating: ReviewRating } | null {
   if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) return null
   if (state.phase === "done" || state.submitting) return null
@@ -197,7 +199,7 @@ export function keyIntent(
     return { type: "reveal" }
   }
 
-  if (state.phase === "answer") {
+  if (state.phase === "answer" && singleKeys) {
     const rating = ({ "1": "AGAIN", "2": "HARD", "3": "GOOD", "4": "EASY" } as const)[event.key as "1"]
     if (rating) return { type: "rate", rating }
   }

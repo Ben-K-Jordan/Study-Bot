@@ -9,12 +9,7 @@ import type { GatewayError } from "@/lib/ai/gateway";
  * `code` lets the client pick its own copy.
  */
 
-export function unauthorized() {
-  return NextResponse.json(
-    { error: "Your sign-in expired. Sign in again.", code: "UNAUTHORIZED" },
-    { status: 401 },
-  );
-}
+export { unauthorized } from "@/lib/http";
 
 export function rateLimited(retryAfterMs: number) {
   const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
