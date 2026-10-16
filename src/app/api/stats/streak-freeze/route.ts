@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { consumeStreakFreeze, type FreezeRefusal } from "@/services/gamification";
 import { logger } from "@/lib/logger";
@@ -24,7 +25,7 @@ const REFUSALS: Record<FreezeRefusal, { status: number; error: string; code: str
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return unauthorized();
   }
 
   try {

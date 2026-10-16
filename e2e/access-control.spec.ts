@@ -1,6 +1,7 @@
 /**
  * Who can see what, through the proxy and the route handlers: signed-out
- * visitors, another student's data, unknown ids and cross-site writes.
+ * visitors, revoked sessions, another student's data, unknown ids and
+ * cross-site writes.
  * The services' own ownership checks are covered by the integration tests;
  * these check the HTTP answers and the pages a browser lands on.
  */
@@ -86,4 +87,45 @@ test("a write from another site answers 403", async ({ request }) => {
     data: { course_name: "X", exam_name: "Y", mode: "RETRIEVAL", topic_scope: "Z", planned_minutes: 15 },
   });
   expect(response.status()).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "CROSS_SITE_REQUEST" });
+});
+
+test.describe("a revoked session", () => {
+  // The cookie still decodes, so the proxy lets it through and each route
+  // finds no user. That 401 must read the same as the proxy's own.
+  test("routes answer 401 with the proxy's body", async ({ playwright, baseURL, account }) => {
+    const storageState = await account.api.storageState();
+    const deleted = await account.api.delete("/api/account/delete", {
+      data: { confirm: "DELETE MY ACCOUNT", password: account.password },
+    });
+    expect(deleted.ok(), await deleted.text()).toBe(true);
+
+    const stale = await playwright.request.newContext({ baseURL, storageState });
+    try {
+      for (const [method, url] of [
+        ["GET", "/api/plans"],
+        ["POST", "/api/plans"],
+        ["GET", "/api/flashcards"],
+        ["GET", "/api/guides"],
+        ["GET", "/api/learn"],
+        ["GET", "/api/content/documents"],
+        ["GET", "/api/runs/no-such-run"],
+        ["GET", "/api/runs/no-such-run/prompt?index=0"],
+        ["GET", "/api/settings"],
+        ["GET", "/api/account/export"],
+        ["GET", "/api/integrations/google/status"],
+        ["GET", "/api/stats/game"],
+        ["GET", "/api/onboarding"],
+      ] as const) {
+        const response = await stale.fetch(url, { method, data: method === "POST" ? {} : undefined });
+        expect(response.status(), `${method} ${url}`).toBe(401);
+        expect(await response.json(), `${method} ${url}`).toEqual({
+          error: "Your sign-in expired. Sign in again.",
+          code: "UNAUTHORIZED",
+        });
+      }
+    } finally {
+      await stale.dispose();
+    }
+  });
 });

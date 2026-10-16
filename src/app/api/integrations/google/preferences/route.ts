@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -26,7 +27,7 @@ const preferencesSchema = z.object({
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return unauthorized();
   }
 
   const integration = await prisma.googleIntegration.findUnique({

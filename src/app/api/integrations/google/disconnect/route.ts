@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto/token-vault";
@@ -7,7 +8,7 @@ import { logger } from "@/lib/logger";
 export async function POST(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return unauthorized();
   }
 
   const integration = await prisma.googleIntegration.findUnique({

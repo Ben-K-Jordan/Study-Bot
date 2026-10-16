@@ -32,7 +32,7 @@ describe("GET /api/sessions/:sessionId/runs/:runId/results", () => {
     const res = await call("sess-1", "run-1", null);
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe("unauthorized");
+    expect(body.code).toBe("UNAUTHORIZED");
     expect(body.error).toBe("Your sign-in expired. Sign in again.");
   });
 

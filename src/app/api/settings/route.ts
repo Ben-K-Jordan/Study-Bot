@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { publicConfig } from "@/lib/public-config";
@@ -11,7 +12,6 @@ import {
   validateSettings,
 } from "./schema";
 
-const SIGNED_OUT = "Your sign-in expired. Sign in again.";
 
 /**
  * GET /api/settings: the student's study settings. Students who never saved
@@ -20,7 +20,7 @@ const SIGNED_OUT = "Your sign-in expired. Sign in again.";
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
+    return unauthorized();
   }
 
   let body: unknown;

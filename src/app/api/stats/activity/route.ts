@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { logger } from "@/lib/logger";
@@ -20,7 +21,7 @@ const querySchema = z.object({
 export async function GET(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return unauthorized();
   }
 
   const parsed = querySchema.safeParse({

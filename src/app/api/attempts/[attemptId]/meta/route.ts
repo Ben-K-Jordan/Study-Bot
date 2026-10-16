@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { updateAttemptMeta } from "@/services/run";
 import { updateAttemptMetaSchema } from "@/lib/validation";
@@ -18,7 +19,7 @@ export async function PATCH(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return unauthorized();
   }
 
   const { attemptId } = await params;

@@ -50,7 +50,7 @@ export async function POST(
         { status: 400 },
       );
     }
-    return NextResponse.json({ error: "The request wasn't valid JSON.", code: "invalid_json" }, { status: 400 });
+    return NextResponse.json({ error: "The request wasn't valid JSON.", code: "INVALID_JSON" }, { status: 400 });
   }
 
   // Build update data

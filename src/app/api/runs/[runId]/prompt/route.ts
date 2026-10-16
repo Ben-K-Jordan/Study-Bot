@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { getUserId } from "@/lib/auth";
 import { getRunPrompt } from "@/services/run";
 import { logger } from "@/lib/logger";
@@ -9,7 +10,7 @@ export async function GET(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: "Your sign-in expired. Sign in again." }, { status: 401 });
+    return unauthorized();
   }
 
   const { runId } = await params;

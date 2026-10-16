@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "The request wasn't valid JSON.", code: "invalid_json" },
+      { error: "The request wasn't valid JSON.", code: "INVALID_JSON" },
       { status: 400 },
     );
   }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { getAnswerReveal } from "@/services/run";
@@ -21,7 +22,6 @@ import { logger } from "@/lib/logger";
  */
 
 const MESSAGES = {
-  unauthorized: "Your sign-in expired. Sign in again.",
   badIndex: "This question isn't in the session. Reload to continue.",
   badAnswer: "Write an answer before you check it.",
   notFound: "Session not found. It may have been deleted.",
@@ -65,7 +65,7 @@ export async function GET(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: MESSAGES.unauthorized }, { status: 401 });
+    return unauthorized();
   }
 
   const { runId } = await params;
@@ -89,7 +89,7 @@ export async function POST(
 ) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: MESSAGES.unauthorized }, { status: 401 });
+    return unauthorized();
   }
 
   const { runId } = await params;

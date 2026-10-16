@@ -4,13 +4,13 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { SnowflakeIcon } from "lucide-react"
 
-import { ApiError, apiPost } from "@/lib/client-api"
+import { ApiError, apiPost, SIGNED_OUT_MESSAGE } from "@/lib/client-api"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 
 function failureMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 401) return "Your sign-in expired. Sign in again."
+    if (error.status === 401) return SIGNED_OUT_MESSAGE
     // 409 carries a full sentence: none left, already used, or studied today.
     if (error.status === 409 && error.message) return error.message
   }

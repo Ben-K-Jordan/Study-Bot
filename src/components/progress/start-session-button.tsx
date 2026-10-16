@@ -4,7 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { DumbbellIcon, WrenchIcon } from "lucide-react"
 
-import { ApiError, apiPost } from "@/lib/client-api"
+import { ApiError, apiPost, SIGNED_OUT_MESSAGE } from "@/lib/client-api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -12,7 +12,7 @@ import type { SessionRequest } from "@/components/progress/session-request"
 
 function failureMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 401) return "Your sign-in expired. Sign in again."
+    if (error.status === 401) return SIGNED_OUT_MESSAGE
     if (error.status === 429) return "Too many requests. Retry in a few seconds."
   }
   return "Session not started. Retry."
