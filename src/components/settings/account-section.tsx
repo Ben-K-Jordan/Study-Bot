@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { FieldError } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { DELETE_ACCOUNT_PHRASE } from "@/lib/account"
+import { PASSWORD_RESET_UNAVAILABLE } from "@/lib/email/messages"
 import { DeleteAccountDialog } from "./delete-account-dialog"
 import { sendJson } from "./request"
 import { SettingsRow, SettingsRows, SettingsSection } from "./settings-section"
@@ -21,9 +22,19 @@ const NOT_SIGNED_OUT = "Not signed out. Check your connection and retry."
 /**
  * Sign out, reset the password by email, and delete the account.
  * `emailConfigured` is false when reset emails only reach the server log;
- * developers get a note saying so.
+ * developers get a note saying so. `passwordResetAvailable` is false on a
+ * production server without SMTP, where no reset link can reach the
+ * student, so the row says so instead of promising an email.
  */
-export function AccountSection({ emailConfigured, dev }: { emailConfigured: boolean; dev: boolean }) {
+export function AccountSection({
+  emailConfigured,
+  passwordResetAvailable,
+  dev,
+}: {
+  emailConfigured: boolean
+  passwordResetAvailable: boolean
+  dev: boolean
+}) {
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
   const signOutRef = useRef<HTMLButtonElement>(null)
@@ -80,14 +91,20 @@ export function AccountSection({ emailConfigured, dev }: { emailConfigured: bool
 
         <SettingsRow
           title="Password"
-          description="Study Bot emails you a link to choose a new password. The link expires in 1 hour."
+          description={
+            passwordResetAvailable
+              ? "Study Bot emails you a link to choose a new password. The link expires in 1 hour."
+              : PASSWORD_RESET_UNAVAILABLE.description
+          }
         >
-          <Button asChild variant="outline" className="self-start">
-            <Link href="/auth/forgot-password">
-              <KeyRoundIcon data-icon="inline-start" aria-hidden="true" />
-              Reset password
-            </Link>
-          </Button>
+          {passwordResetAvailable ? (
+            <Button asChild variant="outline" className="self-start">
+              <Link href="/auth/forgot-password">
+                <KeyRoundIcon data-icon="inline-start" aria-hidden="true" />
+                Reset password
+              </Link>
+            </Button>
+          ) : null}
           {dev && !emailConfigured ? (
             <p className="max-w-prose type-body-s text-on-surface-variant">
               <code>EMAIL_PROVIDER</code> isn&apos;t <code>smtp</code> on this server, so the reset
@@ -101,7 +118,7 @@ export function AccountSection({ emailConfigured, dev }: { emailConfigured: bool
           title="Delete account"
           description="Permanently deletes your account and everything in it. Export your data first if you want a copy."
         >
-          <DeleteAccountDialog onDelete={deleteAccount} />
+          <DeleteAccountDialog onDelete={deleteAccount} passwordResetAvailable={passwordResetAvailable} />
         </SettingsRow>
       </SettingsRows>
     </SettingsSection>

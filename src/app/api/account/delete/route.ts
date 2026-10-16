@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unauthorized } from "@/lib/http";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { DELETE_ACCOUNT_PHRASE } from "@/lib/account";
@@ -15,31 +16,47 @@ const deleteSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
-const SIGNED_OUT = "Your sign-in expired. Sign in again.";
 const NOT_DELETED = "Account not deleted. Confirm in the dialog and retry.";
 const WRONG_PASSWORD = "That password doesn't match your account. Check it and retry.";
+/** Owner of the AI spend rows a deleted account leaves behind. */
+const DELETED_ACCOUNT_ID = "deleted";
 
 /**
- * Best effort: revoke Study Bot's Google access before the tokens are
- * deleted, so the account doesn't keep a live grant at Google.
+ * The Google token to revoke once the account is gone, read before the
+ * rows are deleted. Null when there is no connection or the token can't be
+ * read (the fake provider's placeholder, a rotated key).
  */
-async function revokeGoogleAccess(userId: string): Promise<void> {
+async function googleTokenToRevoke(userId: string): Promise<string | null> {
   try {
     const integration = await prisma.googleIntegration.findUnique({
       where: { userId },
       select: { accessTokenEncrypted: true, refreshTokenEncrypted: true },
     });
     const encrypted = integration?.refreshTokenEncrypted ?? integration?.accessTokenEncrypted;
-    if (!encrypted) return;
-    const token = decryptToken(encrypted);
+    return encrypted ? decryptToken(encrypted) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best effort: revoke Study Bot's Google access so the deleted account
+ * doesn't leave a live grant at Google. Runs only after the deletion
+ * commits: a revoke can't be undone, and revoking before a failed delete
+ * would leave a calendar that shows as connected but no longer works.
+ */
+async function revokeGoogleAccess(userId: string, token: string): Promise<void> {
+  try {
     await fetch("https://oauth2.googleapis.com/revoke", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token }),
       signal: AbortSignal.timeout(5_000),
     });
-  } catch {
-    // Ignore: the tokens are deleted below either way.
+  } catch (err) {
+    // The tokens are already deleted; the student can remove the grant from
+    // their Google Account if this didn't reach Google.
+    logger.warn("account.delete.google_revoke_failed", { userId, error: String(err) });
   }
 }
 
@@ -53,7 +70,7 @@ async function revokeGoogleAccess(userId: string): Promise<void> {
 export async function DELETE(request: NextRequest) {
   const userId = await getUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
+    return unauthorized();
   }
 
   let body: unknown;
@@ -75,7 +92,7 @@ export async function DELETE(request: NextRequest) {
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
   if (!user) {
-    return NextResponse.json({ error: SIGNED_OUT }, { status: 401 });
+    return unauthorized();
   }
   if (!(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
     return NextResponse.json(
@@ -88,7 +105,8 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  await revokeGoogleAccess(userId);
+  // Read now, while the row exists; the revoke itself waits for the commit.
+  const googleToken = await googleTokenToRevoke(userId);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -98,7 +116,10 @@ export async function DELETE(request: NextRequest) {
         tx.xpEvent.deleteMany({ where: { userId } }),
         tx.achievement.deleteMany({ where: { userId } }),
         tx.objectiveMastery.deleteMany({ where: { userId } }),
-        tx.aiCallLog.deleteMany({ where: { userId } }),
+        // Spend rows stay, detached from the account: they hold no content,
+        // and the cap across all accounts (AI_GLOBAL_DAILY_COST_CAP_USD) sums
+        // them, so deleting an account can't hand back today's spend.
+        tx.aiCallLog.updateMany({ where: { userId }, data: { userId: DELETED_ACCOUNT_ID } }),
         tx.oAuthState.deleteMany({ where: { userId } }),
         tx.studyGuide.deleteMany({ where: { userId } }),
         tx.planItemExternalEvent.deleteMany({ where: { userId } }),
@@ -152,6 +173,8 @@ export async function DELETE(request: NextRequest) {
   // Sessions on other devices end on their next request, not after the
   // recheck interval.
   forgetSessionCheck(userId);
+
+  if (googleToken) await revokeGoogleAccess(userId, googleToken);
 
   // The rows are gone; now the uploaded lecture files. Nothing references
   // them any more, so a later cleanup could never find them. A failure here

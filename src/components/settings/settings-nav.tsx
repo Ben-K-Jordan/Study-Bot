@@ -68,7 +68,7 @@ export function SettingsNav({ items }: { items: SettingsNavItem[] }) {
                 }}
                 className={cn(
                   "state-layer relative isolate flex h-12 items-center rounded-full px-4 type-label-l text-on-surface-variant transition-colors duration-150 ease-standard",
-                  current && "bg-secondary-container text-on-secondary-container"
+                  current && "bg-secondary-container text-on-secondary-container forced-colors:outline-2 forced-colors:outline-[Highlight]"
                 )}
               >
                 {item.label}

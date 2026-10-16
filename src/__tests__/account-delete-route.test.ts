@@ -1,7 +1,7 @@
 /**
  * DELETE /api/account/delete: the confirmation phrase and password contract,
- * the best-effort Google revoke before the data goes, and the uploaded files
- * removed after it.
+ * the best-effort Google revoke once the data is gone (never before a
+ * failed delete), and the uploaded files removed after it.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { NextRequest } from "next/server";
@@ -21,7 +21,7 @@ const tx = {
   xpEvent: { deleteMany: deleteMany() },
   achievement: { deleteMany: deleteMany() },
   objectiveMastery: { deleteMany: deleteMany() },
-  aiCallLog: { deleteMany: deleteMany() },
+  aiCallLog: { updateMany: deleteMany() },
   oAuthState: { deleteMany: deleteMany() },
   studyGuide: { deleteMany: deleteMany() },
   planItemExternalEvent: { deleteMany: deleteMany() },
@@ -60,6 +60,7 @@ vi.mock("@/services/account", async (importOriginal) => ({
 
 import { DELETE } from "@/app/api/account/delete/route";
 import { DELETE_ACCOUNT_PHRASE } from "@/lib/account";
+import { decryptToken } from "@/lib/crypto/token-vault";
 import { prisma } from "@/lib/db";
 import { accountDeleteLimiter, deleteUserFiles } from "@/services/account";
 
@@ -149,7 +150,7 @@ describe("DELETE /api/account/delete", () => {
     expect(tx.user.delete).not.toHaveBeenCalled();
   });
 
-  it("revokes Google access, deletes everything, then removes the uploaded files", async () => {
+  it("deletes everything, then revokes Google access and removes the uploaded files", async () => {
     findIntegration.mockResolvedValue({ accessTokenEncrypted: "a", refreshTokenEncrypted: "r" } as never);
     const res = await DELETE(request(confirmed));
     expect(res.status).toBe(200);
@@ -159,6 +160,10 @@ describe("DELETE /api/account/delete", () => {
     expect(url).toBe("https://oauth2.googleapis.com/revoke");
     expect(String(init.body)).toBe("token=plain-r");
     expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: "u1" } });
+    // AI spend stays counted toward the cap across accounts, detached from the account.
+    expect(tx.aiCallLog.updateMany).toHaveBeenCalledWith({ where: { userId: "u1" }, data: { userId: "deleted" } });
+    // The revoke can't be undone, so it waits for the deletion to commit.
+    expect(fetchMock.mock.invocationCallOrder[0]).toBeGreaterThan(tx.user.delete.mock.invocationCallOrder[0]);
     expect(tx.jobQueue.deleteMany).toHaveBeenCalledWith({
       where: { payload: { path: ["userId"], equals: "u1" }, status: { not: "RUNNING" } },
     });
@@ -174,6 +179,27 @@ describe("DELETE /api/account/delete", () => {
     const res = await DELETE(request(confirmed));
     expect(res.status).toBe(500);
     expect(removeFiles).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Google connection working when the database deletion fails", async () => {
+    // Revoking first would leave the kept account with a calendar that shows
+    // as connected but answers invalid_grant.
+    findIntegration.mockResolvedValue({ accessTokenEncrypted: "a", refreshTokenEncrypted: "r" } as never);
+    tx.user.delete.mockRejectedValueOnce(new Error("db down"));
+    const res = await DELETE(request(confirmed));
+    expect(res.status).toBe(500);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes without calling Google when the stored token can't be read", async () => {
+    findIntegration.mockResolvedValue({ accessTokenEncrypted: null, refreshTokenEncrypted: "r" } as never);
+    vi.mocked(decryptToken).mockImplementationOnce(() => {
+      throw new Error("bad key");
+    });
+    const res = await DELETE(request(confirmed));
+    expect(res.status).toBe(200);
+    expect(tx.user.delete).toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("still answers deleted when removing the files fails", async () => {

@@ -54,7 +54,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
   const dev = process.env.NODE_ENV !== "production"
   const account: AccountSummary | null = user ? { name: user.name, email: user.email } : null
   const connectResult = googleConnectResult(first(params.google), first(params.reason), { dev })
-  // Without Google credentials there's nothing to connect; only developers need to hear why.
+  // Without the fake provider or a client id there's nothing to connect; only developers need to hear why.
   const showCalendar = config.google_configured || dev
 
   const sections: SettingsNavItem[] = [
@@ -95,7 +95,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
           <AiSection config={config} dev={dev} />
           <DataSection />
-          <AccountSection emailConfigured={config.email_configured} dev={dev} />
+          <AccountSection
+            emailConfigured={config.email_configured}
+            passwordResetAvailable={config.email_links_available}
+            dev={dev}
+          />
         </div>
       </div>
     </PageContainer>

@@ -8,10 +8,17 @@ export const GOOGLE_COPY = {
   reconnect: "Google Calendar needs you to sign in again.",
   notConnected: "Connect Google Calendar to add sessions to it.",
   differentCalendar: "This plan is already in a different Google calendar.",
-  unavailable: "Google Calendar didn't respond. Retry.",
+  planNotFound: "This plan doesn't exist anymore.",
+  planForbidden: "This plan belongs to another account.",
+  /** The one fallback for any other failure. */
+  unavailable: "Google Calendar didn't respond. Retry in a minute.",
 } as const;
 
-/** Maps an API error code (body `code` or legacy `error`) to a sentence. */
+/**
+ * Maps an API error code (body `code` or legacy `error`) to a sentence.
+ * The single source for Google Calendar failures: the publish, unpublish
+ * and reschedule routes and the screens all use it.
+ */
 export function googleErrorMessage(code: string | null | undefined): string {
   switch (code) {
     case "GOOGLE_RECONNECT_REQUIRED":
@@ -21,6 +28,10 @@ export function googleErrorMessage(code: string | null | undefined): string {
       return GOOGLE_COPY.notConnected;
     case "ALREADY_PUBLISHED_DIFFERENT_CALENDAR":
       return GOOGLE_COPY.differentCalendar;
+    case "not_found":
+      return GOOGLE_COPY.planNotFound;
+    case "forbidden":
+      return GOOGLE_COPY.planForbidden;
     default:
       return GOOGLE_COPY.unavailable;
   }
@@ -79,7 +90,7 @@ export function googleConnectResult(
         tone: "error",
         title,
         description: dev
-          ? "Google Calendar isn't set up on this server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env, then restart it."
+          ? "Google Calendar isn't set up on this server. In .env, set GOOGLE_PROVIDER=\"fake\" for a local test calendar, or GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for a real one, then restart the server."
           : "Google Calendar isn't available on this server.",
       };
     case "token_exchange_failed":

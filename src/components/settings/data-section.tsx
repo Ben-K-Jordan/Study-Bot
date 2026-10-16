@@ -30,7 +30,7 @@ async function downloadExport(): Promise<void> {
     } catch {
       body = null
     }
-    const seconds = retryAfterSeconds(null, res.headers.get("Retry-After"))
+    const seconds = retryAfterSeconds(res.headers.get("Retry-After"))
     const withRetry =
       seconds && body && typeof body === "object" ? { retry_after_seconds: seconds, ...body } : body
     const message = (body as { error?: unknown } | null)?.error

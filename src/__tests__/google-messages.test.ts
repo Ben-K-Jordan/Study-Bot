@@ -62,6 +62,21 @@ describe("googleErrorMessage", () => {
     expect(googleErrorMessage("INVALID_GRANT")).toBe(GOOGLE_COPY.reconnect);
     expect(googleErrorMessage("GOOGLE_NOT_CONNECTED")).toBe(GOOGLE_COPY.notConnected);
     expect(googleErrorMessage("ALREADY_PUBLISHED_DIFFERENT_CALENDAR")).toBe(GOOGLE_COPY.differentCalendar);
+    expect(googleErrorMessage("not_found")).toBe("This plan doesn't exist anymore.");
+    expect(googleErrorMessage("forbidden")).toBe("This plan belongs to another account.");
     expect(googleErrorMessage(undefined)).toBe(GOOGLE_COPY.unavailable);
+  });
+
+  it("has one fallback sentence for every other failure", () => {
+    expect(GOOGLE_COPY.unavailable).toBe("Google Calendar didn't respond. Retry in a minute.");
+    for (const code of ["GOOGLE_API_ERROR", "RATE_LIMITED", "", null]) {
+      expect(googleErrorMessage(code)).toBe(GOOGLE_COPY.unavailable);
+    }
+  });
+
+  it("never shows a raw code, a dash or an exclamation mark", () => {
+    for (const text of Object.values(GOOGLE_COPY)) {
+      expect(text).not.toMatch(/[A-Z]{2,}_[A-Z_]+|[–—!]/);
+    }
   });
 });

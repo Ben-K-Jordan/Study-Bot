@@ -54,8 +54,9 @@ interface CalendarsResponse {
 /**
  * Google Calendar: connection status, Connect, Reconnect and Disconnect
  * (confirmed), the calendar that receives sessions, and the calendars new
- * plans treat as busy time. On a server without Google credentials the
- * page leaves this section out, except in development, where it says why.
+ * plans treat as busy time. When Google Calendar isn't available (no fake
+ * provider and no client id, see isGoogleCalendarAvailable) the page leaves
+ * this section out, except in development, where it says why.
  */
 export function GoogleCalendarSection({
   initial,
@@ -80,8 +81,9 @@ export function GoogleCalendarSection({
           <AlertTitle>Google Calendar isn&apos;t set up on this server.</AlertTitle>
           {dev ? (
             <AlertDescription>
-              Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env, then restart the server. This
-              note shows only in development.
+              In .env, set GOOGLE_PROVIDER=&quot;fake&quot; for a local test calendar, or
+              GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for a real one, then restart the server.
+              This note shows only in development.
             </AlertDescription>
           ) : null}
         </Alert>

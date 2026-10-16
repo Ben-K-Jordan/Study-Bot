@@ -1,6 +1,7 @@
 "use client"
 
 import { useId, useRef, useState } from "react"
+import Link from "next/link"
 import { CircleAlertIcon, Trash2Icon } from "lucide-react"
 
 import {
@@ -14,7 +15,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { deleteAccountFailure } from "./request"
@@ -24,8 +25,17 @@ import { deleteAccountFailure } from "./request"
  * delete without the student's current password, so a session alone (a
  * borrowed laptop, a stolen cookie) can't wipe the account. The dialog
  * stays open while the delete runs and keeps the typed password on failure.
+ * A student who doesn't know the password (it lives in a password manager
+ * on another device) gets a way to reset it, or, when this server can't
+ * send reset links, who to ask.
  */
-export function DeleteAccountDialog({ onDelete }: { onDelete: (password: string) => Promise<void> }) {
+export function DeleteAccountDialog({
+  onDelete,
+  passwordResetAvailable,
+}: {
+  onDelete: (password: string) => Promise<void>
+  passwordResetAvailable: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState("")
   const [pending, setPending] = useState(false)
@@ -34,6 +44,7 @@ export function DeleteAccountDialog({ onDelete }: { onDelete: (password: string)
   const inputRef = useRef<HTMLInputElement>(null)
   const submitRef = useRef<HTMLButtonElement>(null)
   const inputId = useId()
+  const hintId = useId()
   const fieldErrorId = useId()
   const generalErrorId = useId()
 
@@ -108,7 +119,8 @@ export function DeleteAccountDialog({ onDelete }: { onDelete: (password: string)
                 if (fieldError) setFieldError(null)
               }}
               aria-invalid={fieldError ? true : undefined}
-              aria-describedby={fieldError ? fieldErrorId : undefined}
+              // The error sits under the field and is heard first; the hint follows.
+              aria-describedby={fieldError ? `${fieldErrorId} ${hintId}` : hintId}
               disabled={pending}
             />
             {fieldError ? (
@@ -117,6 +129,15 @@ export function DeleteAccountDialog({ onDelete }: { onDelete: (password: string)
                 <span>{fieldError}</span>
               </FieldError>
             ) : null}
+            <FieldDescription id={hintId}>
+              {passwordResetAvailable ? (
+                <>
+                  Forgot it? <Link href="/auth/forgot-password">Reset your password</Link> first.
+                </>
+              ) : (
+                "Forgot it? Ask the person who runs this Study Bot to reset your password."
+              )}
+            </FieldDescription>
           </Field>
 
           {generalError ? <FieldError id={generalErrorId}>{generalError}</FieldError> : null}

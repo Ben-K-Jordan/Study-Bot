@@ -1,8 +1,9 @@
 /**
  * Settings as a student uses it: saving the profile time zone and study
- * preferences (with the Saving… and Settings saved states), "Use this
- * device's time zone", the theme, Google Calendar in fake mode and the
- * connect result banners, Export data, and Delete account.
+ * preferences (with the Saving… and Settings saved states), the unsaved
+ * changes bar at 400% zoom, "Use this device's time zone", the theme,
+ * Google Calendar in fake mode and the connect result banners, Export data,
+ * Reset password, and Delete account.
  *
  * Tests that save or delete use the `account` fixture (a real account of
  * their own); the theme and the banners only need a fresh test identity.
@@ -150,6 +151,38 @@ test.describe("profile and study preferences", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Settings not saved" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Discard changes" })).toHaveCount(0);
   });
+
+  test("with unsaved changes, the save bar stays in view on a phone and never covers the field you're editing at 400% zoom", async ({ testUserPage: page }) => {
+    const start = page.getByRole("textbox", { name: "Daily start time" });
+    const end = page.getByRole("textbox", { name: "Daily end time" });
+    const save = page.getByRole("button", { name: "Save settings" });
+    /** Whether the middle of the field is the field itself, not a bar drawn over it. */
+    const uncovered = () =>
+      end.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return top !== null && (top === el || el.contains(top));
+      });
+
+    await test.step("on a phone the bar follows you up the page", async () => {
+      await page.setViewportSize({ width: 375, height: 667 });
+      await openSettings(page);
+      await start.fill("08:30");
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(save).toBeInViewport();
+    });
+
+    await test.step("at 320 by 256 (1280 by 1024 at 400%) it waits at the end of the form", async () => {
+      await page.setViewportSize({ width: 320, height: 256 });
+      await end.focus();
+      await expect(end).toBeInViewport({ ratio: 1 });
+      expect(await uncovered()).toBe(true);
+      await expect(save).not.toBeInViewport();
+      await save.scrollIntoViewIfNeeded();
+      await expect(save).toBeInViewport();
+      await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible();
+    });
+  });
 });
 
 test.describe("appearance", () => {
@@ -190,7 +223,7 @@ test.describe("appearance", () => {
 test.describe("Google Calendar", () => {
   test("Connect Google Calendar in fake mode connects, and Disconnect asks first", async ({ account, request }) => {
     const config = await (await request.get("/api/config")).json();
-    test.skip(!config.google_configured, "Settings shows Google Calendar only when the server has GOOGLE_CLIENT_ID.");
+    test.skip(!config.google_configured, "Settings shows Google Calendar only when it can connect (GOOGLE_PROVIDER=fake or a client id).");
     const page = account.page;
     await openSettings(page);
     const section = page.getByRole("region", { name: "Google Calendar" });
@@ -231,7 +264,7 @@ test.describe("Google Calendar", () => {
 
   test("after Disconnect, focus moves to Connect Google Calendar", async ({ account, request }) => {
     const config = await (await request.get("/api/config")).json();
-    test.skip(!config.google_configured, "Settings shows Google Calendar only when the server has GOOGLE_CLIENT_ID.");
+    test.skip(!config.google_configured, "Settings shows Google Calendar only when it can connect (GOOGLE_PROVIDER=fake or a client id).");
     const seeded = await account.api.post("/api/integrations/google/test-seed", { data: { connected_email: account.email } });
     expect(seeded.status()).toBe(200);
     const page = account.page;
@@ -293,6 +326,24 @@ test.describe("data and account", () => {
     expect(data.userGameState).toMatchObject({ dailyXpGoal: 100 });
   });
 
+  test("Reset password is offered only when a reset link can reach you", async ({ testUserPage: page, request }) => {
+    // A production server without SMTP has nowhere to send the link, so
+    // Settings says so instead of promising an email.
+    const config = await (await request.get("/api/config")).json();
+    expect(typeof config.email_links_available).toBe("boolean");
+    await openSettings(page, "/settings#account");
+    const section = page.getByRole("region", { name: "Account" });
+    if (config.email_links_available) {
+      await expect(section).toContainText("Study Bot emails you a link to choose a new password. The link expires in 1 hour.");
+      await expect(section.getByRole("link", { name: "Reset password" })).toHaveAttribute("href", "/auth/forgot-password");
+    } else {
+      await expect(section).toContainText(
+        "Password reset by email isn't set up on this server. Ask the person who runs this Study Bot to reset your password.",
+      );
+      await expect(section.getByRole("link", { name: "Reset password" })).toHaveCount(0);
+    }
+  });
+
   test.describe(() => {
     // A wrong password answers 403, and signing in to the deleted account 401.
     test.use({ allowConsoleErrors: [loggedStatus(401, 403)] });
@@ -308,6 +359,11 @@ test.describe("data and account", () => {
         expect((await account.api.get("/api/settings")).status()).toBe(200);
       });
 
+      const config = await (await account.api.get("/api/config")).json();
+      const forgotHint = config.email_links_available
+        ? "Forgot it? Reset your password first."
+        : "Forgot it? Ask the person who runs this Study Bot to reset your password.";
+
       await openSettings(page, "/settings#account");
       await page.getByRole("button", { name: "Delete account" }).click();
       const dialog = page.getByRole("alertdialog", { name: "Delete your account?" });
@@ -320,9 +376,16 @@ test.describe("data and account", () => {
       await test.step("nothing happens without the right password", async () => {
         await expect(password).toBeFocused();
         await expect(confirm).toBeDisabled();
+        // A way out for a student who doesn't know the password.
+        await expect(password).toHaveAccessibleDescription(forgotHint);
+        if (config.email_links_available) {
+          await expect(dialog.getByRole("link", { name: "Reset your password" })).toHaveAttribute("href", "/auth/forgot-password");
+        }
         await password.fill("not-the-password");
         await confirm.click();
-        await expect(password).toHaveAccessibleDescription("That password doesn't match your account. Check it and retry.");
+        await expect(password).toHaveAccessibleDescription(
+          `That password doesn't match your account. Check it and retry. ${forgotHint}`,
+        );
         await expect(password).toHaveAttribute("aria-invalid", "true");
         await expect(dialog).toBeVisible();
         expect((await account.api.get("/api/settings")).status()).toBe(200);
