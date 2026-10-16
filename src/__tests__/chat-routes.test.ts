@@ -78,6 +78,7 @@ const hybridSearch = vi.fn();
 vi.mock("@/lib/search", () => ({ hybridSearch: (...args: unknown[]) => hybridSearch(...args) }));
 
 const runTask = vi.fn();
+const embed = vi.fn(async () => ({ embeddings: [[0.1]] }));
 vi.mock("@/lib/ai/gateway", () => {
   class GatewayError extends Error {
     constructor(
@@ -91,7 +92,7 @@ vi.mock("@/lib/ai/gateway", () => {
   return {
     GatewayError,
     runTask: (...args: unknown[]) => runTask(...args),
-    embed: vi.fn(async () => ({ embeddings: [[0.1]] })),
+    embed: (...args: unknown[]) => embed(...(args as [])),
   };
 });
 vi.mock("@/lib/ai/provider-factory", () => ({ createProvider: () => ({}) }));
@@ -172,6 +173,7 @@ describe("POST /api/assistant/answer with save", () => {
     rows.length = 0;
     hybridSearch.mockReset();
     runTask.mockReset();
+    embed.mockClear();
     hybridSearch.mockResolvedValue([
       { chunk_id: "c1", doc_id: "d1", doc_title: "Lecture 14", page_number: 3, rank_score: 1, snippet: "Compare the columns left to right." },
     ]);
@@ -213,6 +215,59 @@ describe("POST /api/assistant/answer with save", () => {
       "Your INFO 1300 materials don't cover this. Upload the file that does, or ask it a different way.",
     );
     expect(runTask).not.toHaveBeenCalled();
+  });
+
+  it("searches for any of the question's words when no passage has them all", async () => {
+    // "Why does an ID selector beat any number of class selectors?": no lecture says "beat"
+    hybridSearch.mockReset();
+    hybridSearch.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { chunk_id: "c1", doc_id: "d1", doc_title: "Lecture 14", page_number: 3, rank_score: 2, snippet: "An ID selector outranks classes." },
+    ]);
+    runTask.mockResolvedValueOnce({
+      output: { answer_markdown: "IDs outrank classes [1].", citations: [{ chunk_id: "c1", reason: "r", quote_snippet: "An ID selector outranks classes" }] },
+      meta: { cacheHit: false, latencyMs: 5 },
+    });
+
+    const json = await (
+      await answer({ question: "Why does an ID selector beat any number of class selectors?", course_name: "INFO 1300", save: true })
+    ).json();
+
+    expect(json.kind).toBe("answer");
+    expect(json.answer.sources[0]).toMatchObject({ n: 1, title: "Lecture 14" });
+    expect(hybridSearch.mock.calls.map(([params]) => (params as { match: string }).match)).toEqual(["all", "any"]);
+  });
+
+  it("keeps an answer that every word finds, without searching again or embedding in FTS mode", async () => {
+    vi.stubEnv("HYBRID_SEARCH_ENABLED", "false");
+    runTask.mockResolvedValueOnce({
+      output: { answer_markdown: "Columns decide [1].", citations: [{ chunk_id: "c1", reason: "r", quote_snippet: "Compare the columns" }] },
+      meta: { cacheHit: false, latencyMs: 5 },
+    });
+
+    const json = await (await answer({ question: "How do columns compare?", course_name: "INFO 1300" })).json();
+
+    expect(json.kind).toBe("answer");
+    expect(hybridSearch).toHaveBeenCalledTimes(1);
+    expect(hybridSearch.mock.calls[0][0]).toMatchObject({ match: "all", mode: "FTS" });
+    // HYBRID_SEARCH_ENABLED is off, so the vector half never runs and the embedding isn't needed
+    expect(embed).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("shows the model's 'Your materials don't cover this.' as the notice, not as an AI answer", async () => {
+    runTask.mockResolvedValueOnce({
+      output: { answer_markdown: "Your materials don’t cover this.", citations: [] },
+      meta: { cacheHit: false, latencyMs: 5 },
+    });
+
+    const json = await (await answer({ question: "How do I bake sourdough?", course_name: "INFO 1300", save: true })).json();
+
+    expect(json.kind).toBe("notice");
+    expect(json.answer.kind).toBe("notice");
+    expect(json.answer_markdown).toBe(
+      "Your INFO 1300 materials don't cover this. Upload the file that does, or ask it a different way.",
+    );
+    expect(rows.find((r) => r.role === "assistant")?.citations).toEqual({ notice: "no_match" });
   });
 
   it("refuses a retry for a question that isn't stored", async () => {

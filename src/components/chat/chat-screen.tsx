@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils"
 import { useApi } from "@/lib/swr"
 import { useActiveCourse } from "@/hooks/use-active-course"
 import { useCourseOptions } from "@/hooks/use-course-options"
+import type { CoursePreference } from "@/components/study/course-preference"
+import { usePreferredCourse } from "@/components/study/use-preferred-course"
 import { useMounted } from "@/hooks/use-mounted"
 import { ConfirmDialog } from "@/components/app/confirm-dialog"
 import { CourseSwitcher } from "@/components/app/course-switcher"
@@ -67,9 +69,17 @@ function prefersReducedMotion() {
  * box. Questions and answers are stored by the answer route, so a failed
  * answer never duplicates or loses the question.
  */
-export function ChatScreen({ timeZone }: { timeZone: string }) {
+export function ChatScreen({
+  timeZone,
+  coursePreferences,
+}: {
+  timeZone: string
+  /** Courses to open on when none is chosen: today's session, then exams by date. */
+  coursePreferences?: CoursePreference[]
+}) {
   const mounted = useMounted()
-  const { options, keys, error: coursesError, retry } = useCourseOptions()
+  const { options, keys: courseKeys, error: coursesError, retry } = useCourseOptions()
+  const keys = usePreferredCourse(courseKeys, coursePreferences)
   const { activeCourse, course } = useActiveCourse(keys)
 
   const [pending, setPending] = React.useState<PendingQuestion[]>([])
@@ -292,6 +302,11 @@ function ChatThread({
     void history.loadOlder()
   }
 
+  function retryOlder() {
+    olderAnchor.current = { height: document.documentElement.scrollHeight, y: window.scrollY }
+    void history.retryOlder()
+  }
+
   // The question bar sticks above the bottom bar while the thread scrolls.
   // Its height goes in --composer-height, so controls focused in the thread
   // stop above it instead of under it. On a short window the bar doesn't
@@ -386,16 +401,16 @@ function ChatThread({
           <ThreadSkeleton />
         ) : (
           <>
-            {history.hasMore ? (
+            {/* A failed page swaps the button for the failure and its Retry */}
+            {history.error ? (
+              <ErrorState title="Older messages didn't load." description={errorDetail(history.error)} onRetry={retryOlder} />
+            ) : history.hasMore ? (
               <div className="flex justify-center">
                 <Button variant="text" onClick={loadOlder} disabled={history.loadingOlder}>
                   {history.loadingOlder ? <Spinner data-icon="inline-start" aria-hidden="true" role={undefined} /> : null}
                   {history.loadingOlder ? "Loading older messages…" : "Load older messages"}
                 </Button>
               </div>
-            ) : null}
-            {history.error ? (
-              <ErrorState title="Older messages didn't load." description={errorDetail(history.error)} onRetry={loadOlder} />
             ) : null}
 
             {rows.length === 0 && pending.length === 0 ? (

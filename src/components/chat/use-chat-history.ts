@@ -50,7 +50,9 @@ export function useChatHistory(courseKey: string | null) {
 
   const last = data?.[data.length - 1]
   const hasMore = Boolean(last?.has_more)
-  const loadingOlder = Boolean(data) && size > (data?.length ?? 0)
+  const loaded = data?.length ?? 0
+  // A failed page leaves size one ahead of the data, so it isn't "loading" then.
+  const loadingOlder = !error && loaded > 0 && size > loaded
   const total = data?.[0]?.total ?? 0
 
   return {
@@ -61,6 +63,13 @@ export function useChatHistory(courseKey: string | null) {
     hasMore,
     loadingOlder,
     loadOlder: () => setSize((s) => s + 1),
+    /**
+     * Fetches the older page that failed, once. setSize always revalidates
+     * (SWR 2), so asking again for the size the failed request wanted
+     * refetches only that page, where loadOlder would also ask for the page
+     * after it. With no older page pending it just revalidates.
+     */
+    retryOlder: () => setSize(Math.min(size, loaded + 1)),
     mutate,
   }
 }

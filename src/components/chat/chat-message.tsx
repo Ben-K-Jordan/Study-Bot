@@ -44,11 +44,16 @@ export const QuestionBubble = React.memo(function QuestionBubble({
   )
 })
 
-function AnswerHeader({ ai }: { ai: boolean }) {
+/**
+ * "Study Bot" above each reply. In the thread it's an h3 under the day's h2,
+ * so the reply's own headings (Markdown, Sources) sit at h4 without a gap.
+ */
+function AnswerHeader({ ai, heading = true }: { ai: boolean; heading?: boolean }) {
+  const Name = heading ? "h3" : "span"
   return (
     <div className="flex items-center gap-2">
       <AppMark className="size-6" />
-      <span className="type-label-l text-on-surface">Study Bot</span>
+      <Name className="type-label-l text-on-surface">Study Bot</Name>
       {ai ? <AiTag /> : null}
     </div>
   )
@@ -115,8 +120,9 @@ function SourceList({
   onToggle: (n: number) => void
   headingId: string
 }) {
+  // A labelled group, not a region: a long chat would otherwise list dozens of "Sources (1)" landmarks
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-1">
+    <div role="group" aria-labelledby={headingId} className="flex flex-col gap-1">
       <h4 id={headingId} className="type-label-l text-on-surface-variant">
         Sources ({sources.length})
       </h4>
@@ -169,7 +175,7 @@ function SourceList({
           )
         })}
       </ol>
-    </section>
+    </div>
   )
 }
 
@@ -218,7 +224,7 @@ export function UnansweredRow({
 export function SearchingRow({ courseName }: { courseName: string }) {
   return (
     <div className="flex flex-col gap-3">
-      <AnswerHeader ai={false} />
+      <AnswerHeader ai={false} heading={false} />
       <p className="flex items-center gap-3 type-body-l text-on-surface-variant">
         <Spinner aria-hidden="true" role={undefined} className="size-5 text-primary" />
         Searching your {courseName} materials…

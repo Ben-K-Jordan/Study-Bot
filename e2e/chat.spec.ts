@@ -1,10 +1,11 @@
 /**
  * Chat over a course's materials: the empty state with no materials, a
  * question answered by the mock AI (Markdown citations and numbered
- * sources), Enter and Shift+Enter in the question box, focus staying in
- * it, Retry after a failed answer storing the question once, Delete chat
- * history with its confirmation, and older history loading above the
- * newest 50 messages.
+ * sources), a question worded differently from the file still finding it,
+ * Enter and Shift+Enter in the question box, focus staying in it, Retry
+ * after a failed answer storing the question once, Delete chat history with
+ * its confirmation, and older history loading above the newest 50 messages,
+ * with Retry when a page fails.
  *
  * Chat stores messages against a users row, so the tests use the
  * `account` fixture (a real account each, which also gives each test its
@@ -19,6 +20,7 @@ import {
   getJson,
   hasDatabase,
   insertChatMessages,
+  loggedStatus,
   toasts,
   unique,
   uploadMaterial,
@@ -93,10 +95,15 @@ test("a question gets an AI-written answer with numbered sources", { tag: "@mobi
   await test.step("the answer renders its citation as a link to numbered source 1", async () => {
     const answer = answered(page);
     await expect(answer).toContainText("AI-written");
+    // Headings run day (h2), reply (h3), then the reply's own sections (h4)
+    await expect(answer.getByRole("heading", { level: 3, name: "Study Bot" })).toBeVisible();
+    await expect(answer.getByRole("heading", { level: 4, name: "Sources (1)" })).toBeVisible();
     const citation = answer.getByRole("link", { name: "Source 1: recursion.txt" });
     await expect(citation).toHaveText("1");
     await expect(answer).not.toContainText("[1]");
-    const source = answer.getByRole("region", { name: "Sources (1)" }).getByRole("button", { name: "Source 1: recursion.txt" });
+    // A labelled group, not a landmark: a long chat would list dozens of them
+    await expect(answer.getByRole("region")).toHaveCount(0);
+    const source = answer.getByRole("group", { name: "Sources (1)" }).getByRole("button", { name: "Source 1: recursion.txt" });
     await expect(source).toHaveAttribute("aria-expanded", "false");
 
     await citation.click();
@@ -112,6 +119,26 @@ test("a question gets an AI-written answer with numbered sources", { tag: "@mobi
     await expect(asked(page)).toHaveCount(1);
     await expect(answered(page)).toHaveCount(1);
   });
+});
+
+test("a question worded differently from the file still finds it", async ({ account }) => {
+  const { api } = account;
+  const course = await courseWithMaterials(api);
+  const ask = async (question: string) => {
+    const response = await api.post("/api/assistant/answer", { data: { question, course_name: course } });
+    expect(response.status(), await response.text()).toBe(200);
+    return (await response.json()) as { kind: string; sources: { title: string | null }[] };
+  };
+
+  // The notes never say "need", so a search for every word finds nothing; most of the words still match
+  const covered = await ask("Why does each recursive call need its own frame on the stack?");
+  expect(covered.kind).toBe("answer");
+  expect(covered.sources.map((s) => s.title)).toEqual(["recursion.txt"]);
+
+  // A question the notes don't touch still gets the plain notice
+  const uncovered = await ask("What is the capital of France?");
+  expect(uncovered.kind).toBe("notice");
+  expect(uncovered.sources).toEqual([]);
 });
 
 test.describe("when an answer fails", () => {
@@ -213,4 +240,47 @@ test("older messages load above the newest 50", async ({ account }) => {
   await expect(asked(page)).toHaveText(questions(1));
   await expect(answered(page)).toHaveCount(26);
   await expect(older).toHaveCount(0);
+});
+
+test.describe("when older messages fail", () => {
+  // The simulated failure is a 400 (SWR doesn't retry it), which Chromium logs as a failed resource.
+  test.use({ allowConsoleErrors: [loggedStatus(400)] });
+
+  test("Retry loads the page that failed, and only that page", async ({ account }) => {
+    test.skip(!hasDatabase, NEEDS_DATABASE);
+    const { page, api } = account;
+    const course = await courseWithMaterials(api);
+    // 102 messages: three pages, so a Retry that also loaded the next page would show
+    await insertChatMessages(
+      account.email,
+      course,
+      Array.from({ length: 51 }, (_, i) => [
+        { role: "user" as const, content: `Question ${i + 1} about recursion` },
+        { role: "assistant" as const, content: `Answer ${i + 1} about recursion` },
+      ]).flat(),
+    );
+    let olderRequests = 0;
+    await page.route(/\/api\/chat\/messages\?.*before=/, async (route) => {
+      olderRequests++;
+      if (olderRequests === 1) await route.fulfill({ status: 400, json: { error: "Bad request" } });
+      else await route.continue();
+    });
+
+    await page.goto("/chat");
+    const questions = (from: number, to: number) =>
+      Array.from({ length: to - from + 1 }, (_, i) => `Question ${from + i} about recursion`);
+    await expect(asked(page)).toHaveText(questions(27, 51));
+
+    await page.getByRole("button", { name: "Load older messages" }).click();
+    const failed = page.getByRole("alert").filter({ hasText: "Older messages didn't load." });
+    await expect(failed).toBeVisible();
+    // The failure takes the button's place, so nothing stays stuck on "Loading older messages…"
+    await expect(page.getByRole("button", { name: /older messages/ })).toHaveCount(0);
+
+    await failed.getByRole("button", { name: "Retry" }).click();
+    await expect(asked(page)).toHaveText(questions(2, 51));
+    await expect(failed).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Load older messages" })).toBeEnabled();
+    expect(olderRequests).toBe(2);
+  });
 });

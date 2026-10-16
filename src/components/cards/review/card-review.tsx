@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import type { ReviewRating, StudyData } from "@/services/spaced-repetition"
 import { useMounted } from "@/hooks/use-mounted"
 import { readShortcutsEnabled, writeShortcutsEnabled } from "@/components/session/runner/storage"
+import { sessionTitle, useDocumentTitle } from "@/components/session/use-document-title"
 import { AiTag } from "@/components/app/ai-tag"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -25,6 +26,7 @@ import {
   initialReviewState,
   keyIntent,
   reviewReducer,
+  reviewTitle,
   type RatingResult,
   type ReviewState,
 } from "@/components/cards/review/review-state"
@@ -68,7 +70,13 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
     writeShortcutsEnabled(enabled)
   }, [])
   const card = currentCard(state)
+  const [helpOpen, setHelpOpen] = React.useState(false)
 
+  // The tab follows the screen: "Card 2 of 12 · Recursion · Study Bot"
+  useDocumentTitle(sessionTitle(reviewTitle(state, deck.title)))
+
+  const topBarRef = React.useRef<HTMLDivElement>(null)
+  const footerRef = React.useRef<HTMLDivElement>(null)
   const frontRef = React.useRef<HTMLHeadingElement>(null)
   const answerRef = React.useRef<HTMLElement>(null)
   const doneRef = React.useRef<HTMLHeadingElement>(null)
@@ -109,6 +117,7 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
       if (!intent) return
       event.preventDefault()
       if (intent.type === "reveal") dispatch({ type: "reveal" })
+      else if (intent.type === "help") setHelpOpen(true)
       else void rate(intent.rating)
     }
     window.addEventListener("keydown", onKeyDown)
@@ -117,18 +126,27 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
 
   // Move focus with the review so screen readers read the new side and the
   // keyboard never falls back to the page: front on a new card, the answer
-  // once shown, the summary at the end. Focus scrolls only when that part is
-  // out of view (on a short window, where the bars don't stick).
+  // once shown, the summary at the end. Focus never scrolls by itself, since
+  // a scroll margin can't know the sticky bars' height (the counts can wrap):
+  // a new card or the summary starts at the top of the page, and a revealed
+  // answer scrolls into view only as far as keeps the question clear of the
+  // top bar.
   const position = state.position
   const phase = state.phase
   React.useEffect(() => {
-    if (phase === "question") frontRef.current?.focus()
-    else if (phase === "answer") answerRef.current?.focus()
-    else doneRef.current?.focus()
+    if (phase === "answer") {
+      answerRef.current?.focus({ preventScroll: true })
+      revealAnswer(answerRef.current, frontRef.current, topBarRef.current, footerRef.current)
+      return
+    }
+    const target = phase === "question" ? frontRef.current : doneRef.current
+    target?.focus({ preventScroll: true })
+    window.scrollTo({ top: 0 })
   }, [phase, position])
 
   async function restart(scope: "due" | "all") {
     setRestarting(scope)
+    setHelpOpen(false)
     try {
       const next = (await apiGet(
         `/api/flashcards/${encodeURIComponent(deck.id)}/study?scope=${scope}`
@@ -149,10 +167,13 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
     <LessonAnnouncer>
       <div className="flex min-h-dvh flex-1 flex-col">
         <TopBar
+          ref={topBarRef}
           state={state}
           closeHref={closeHref}
           shortcutsEnabled={shortcutsEnabled}
           onShortcutsEnabledChange={onShortcutsEnabledChange}
+          helpOpen={helpOpen}
+          onHelpOpenChange={setHelpOpen}
         />
 
         {state.total === 0 ? (
@@ -199,6 +220,9 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
                       ))
                     : null}
                 </ul>
+                {/* On a phone the counts sit here: wrapped in the top bar, they would
+                    take a second line from the card. */}
+                <DeckCounts counts={state.stats} size="compact" className="text-lesson-muted sm:hidden" />
               </div>
 
               {state.phase === "answer" ? (
@@ -206,11 +230,7 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
                   ref={answerRef}
                   tabIndex={-1}
                   aria-labelledby="card-answer"
-                  className={cn(
-                    "flex animate-in fade-in-0 slide-in-from-bottom-2 duration-250 ease-emphasized flex-col gap-3 rounded-2xl border-2 border-lesson-option-border bg-lesson-option p-5 outline-none sm:p-6",
-                    // Focus brings the whole answer out from under the top bar and the ratings
-                    "scroll-mt-32 scroll-mb-56 short:scroll-m-4"
-                  )}
+                  className="flex animate-in fade-in-0 slide-in-from-bottom-2 duration-250 ease-emphasized flex-col gap-3 rounded-2xl border-2 border-lesson-option-border bg-lesson-option p-5 outline-none sm:p-6"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 id="card-answer" className="type-title-m font-bold text-lesson-on-surface">
@@ -232,6 +252,7 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
             </div>
 
             <div
+              ref={footerRef}
               className={cn(
                 "sticky bottom-0 z-10 border-t-2 border-lesson-option-border bg-lesson-surface",
                 STATIC_WHEN_SHORT
@@ -274,11 +295,14 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
                           onClick={() => void rate(r.rating)}
                         >
                           <span className="flex flex-col items-center leading-tight">
-                            <span>{r.label}</span>
-                            <span className="type-label-m font-medium">
-                              <span className="sr-only">, next review in </span>
-                              {intervalLabel(card.previews[r.rating])}
+                            {/* The name reads "Again, next review in 10 min". The two lines are
+                                blocks, and so is an sr-only span, and browsers put a space
+                                before a block; zero-size inline text joins the label instead. */}
+                            <span>
+                              {r.label}
+                              <span className="text-[0px]">, next review in</span>
                             </span>
+                            <span className="type-label-m font-medium">{intervalLabel(card.previews[r.rating])}</span>
                           </span>
                         </LessonButton>
                       ))}
@@ -294,20 +318,53 @@ export function CardReview({ data, timeZone }: { data: StudyData; timeZone: stri
   )
 }
 
+/**
+ * Brings a revealed answer into view between the sticky bars: all of it when
+ * that keeps the question clear of the top bar, else as much as does, and
+ * always the answer's heading (on a small phone that may be all, until the
+ * student scrolls). On a short window the bars don't stick, so the window's
+ * edges count instead.
+ */
+function revealAnswer(
+  answer: HTMLElement | null,
+  question: HTMLElement | null,
+  topBar: HTMLElement | null,
+  footer: HTMLElement | null
+) {
+  if (!answer || !question) return
+  const sticks = (el: HTMLElement | null): el is HTMLElement => el !== null && getComputedStyle(el).position === "sticky"
+  const top = sticks(topBar) ? topBar.getBoundingClientRect().bottom : 0
+  const bottom = sticks(footer) ? footer.getBoundingClientRect().top : window.innerHeight
+  const gap = 16
+  const box = answer.getBoundingClientRect()
+  const toShowAll = box.bottom + gap - bottom
+  if (toShowAll <= 0) return
+  const toKeepQuestion = question.getBoundingClientRect().top - gap - top
+  const toShowHeading = box.top + 56 - bottom
+  const delta = Math.max(Math.min(toShowAll, toKeepQuestion), toShowHeading)
+  if (delta > 0) window.scrollBy({ top: delta })
+}
+
 function TopBar({
+  ref,
   state,
   closeHref,
   shortcutsEnabled,
   onShortcutsEnabledChange,
+  helpOpen,
+  onHelpOpenChange,
 }: {
+  ref: React.Ref<HTMLDivElement>
   state: ReviewState
   closeHref: string
   shortcutsEnabled: boolean
   onShortcutsEnabledChange: (enabled: boolean) => void
+  helpOpen: boolean
+  onHelpOpenChange: (open: boolean) => void
 }) {
   const reviewing = state.total > 0 && state.phase !== "done"
   return (
-    <div className={cn("sticky top-0 z-10 bg-lesson-surface", STATIC_WHEN_SHORT)}>
+    <div ref={ref} className={cn("sticky top-0 z-10 bg-lesson-surface", STATIC_WHEN_SHORT)}>
       <div className="mx-auto flex w-full max-w-4xl items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8 sm:py-6">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -329,11 +386,17 @@ function TopBar({
           </p>
         ) : null}
         {reviewing ? (
-          <ReviewKeyboardHelp shortcutsEnabled={shortcutsEnabled} onShortcutsEnabledChange={onShortcutsEnabledChange} />
+          <ReviewKeyboardHelp
+            open={helpOpen}
+            onOpenChange={onHelpOpenChange}
+            shortcutsEnabled={shortcutsEnabled}
+            onShortcutsEnabledChange={onShortcutsEnabledChange}
+          />
         ) : null}
       </div>
       {reviewing ? (
-        <div className="mx-auto -mt-2 w-full max-w-4xl px-4 pb-2 sm:px-8">
+        // From 600px up the counts fit on one line here; below, they sit under the question
+        <div className="mx-auto -mt-2 hidden w-full max-w-4xl px-4 pb-2 sm:block sm:px-8">
           <DeckCounts counts={state.stats} size="compact" className="text-lesson-muted" />
         </div>
       ) : null}

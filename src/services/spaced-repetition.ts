@@ -10,6 +10,7 @@
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { compressIntervalForExam } from "@/lib/spacing";
+import { dateColumnValue } from "@/lib/plan-dates";
 import { addDays, dayKey, zonedTimeToUtc } from "@/lib/timezone";
 import { deckKind, displayDeckTitle, type DeckKind } from "@/services/deck-titles";
 import { resolveTimeZone } from "@/services/gamification";
@@ -173,15 +174,18 @@ export interface UpcomingExam {
 /**
  * The exam a course's cards are scheduled toward: the deck's own exam when it
  * has one and a plan exists for it, else the course's nearest upcoming exam.
- * Exam dates are calendar dates (midnight UTC), so an exam today still counts.
+ * Exam dates are calendar dates, compared with today on the student's clock
+ * (`timeZone`, else UTC): an exam today still counts, and yesterday's exam
+ * no longer caps intervals, even while it's still that day in UTC.
  */
 export async function findUpcomingExam(
   userId: string,
   courseName: string,
   examName?: string | null,
   now: Date = new Date(),
+  timeZone?: string | null,
 ): Promise<UpcomingExam | null> {
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = dateColumnValue(dayKey(now, timeZone));
   const plans = await prisma.studyPlan.findMany({
     where: { userId, courseName, examDate: { gte: today } },
     orderBy: { examDate: "asc" },
@@ -227,8 +231,8 @@ export async function reviewCard(
   if (!owner) throw new Error("Card not found");
   if (owner.deck.userId !== userId) throw new Error("Forbidden");
 
-  const exam = await findUpcomingExam(userId, owner.deck.courseName, owner.deck.examName);
   const now = new Date();
+  const exam = await findUpcomingExam(userId, owner.deck.courseName, owner.deck.examName, now, timeZone);
 
   // Read + compute + write inside a single interactive transaction to prevent
   // concurrent reviews from clobbering each other's SM-2 state.
@@ -391,7 +395,7 @@ export async function getStudyCards(
   if (!deck || deck.userId !== userId) throw new Error("Deck not found");
 
   const now = new Date();
-  const exam = await findUpcomingExam(userId, deck.courseName, deck.examName, now);
+  const exam = await findUpcomingExam(userId, deck.courseName, deck.examName, now, timeZone);
   const todayEnds = endOfToday(timeZone, now);
 
   const cards: StudyCard[] = deck.cards.map((c) => {

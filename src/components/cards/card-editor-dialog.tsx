@@ -18,7 +18,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { CARD_BACK_MAX, CARD_FRONT_MAX } from "@/components/cards/card-format"
 import { errorDetail, fieldErrors } from "@/components/cards/error-copy"
-import { apiPatch } from "@/components/cards/api-patch"
+import { apiPatch } from "@/lib/client-api"
 
 type Mode = { kind: "add" } | { kind: "edit"; cardId: string; front: string; back: string }
 

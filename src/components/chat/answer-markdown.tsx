@@ -4,12 +4,14 @@ import * as React from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { rehypeKeepCitationsWithText } from "@/lib/rehype-keep-citations"
 import type { ChatSource } from "@/components/chat/chat-types"
 
 /**
  * Renders an AI answer's Markdown with the app's type scale, and turns
  * inline markers like "[2]" into links to numbered source 2 under the
- * answer. Raw HTML in the Markdown is not rendered.
+ * answer. Raw HTML in the Markdown is not rendered, and links and images
+ * show as text.
  */
 
 interface MdNode {
@@ -77,7 +79,7 @@ function CiteRef({ n }: { n: number }) {
         event.preventDefault()
         ctx.onOpen(n)
       }}
-      className="mx-0.5 inline-flex h-5 min-w-5 -translate-y-px items-center justify-center rounded-full bg-secondary-container px-1.5 align-baseline type-label-s text-on-secondary-container no-underline tabular-nums hover:bg-primary hover:text-on-primary"
+      className="ml-0.5 inline-flex h-5 min-w-5 -translate-y-px items-center justify-center rounded-full bg-secondary-container px-1.5 align-baseline type-label-s text-on-secondary-container no-underline tabular-nums hover:bg-primary hover:text-on-primary"
     >
       {n}
     </a>
@@ -96,11 +98,11 @@ const components: Components = {
   ol: ({ children }) => <ol className="flex list-decimal flex-col gap-1.5 pl-6 marker:text-on-surface-variant">{children}</ol>,
   li: ({ children }) => <li className="pl-1">{children}</li>,
   strong: ({ children }) => <strong className="font-medium text-on-surface">{children}</strong>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
-      {children}
-    </a>
-  ),
+  // Links and images in AI-written text are shown as text, never followed or
+  // loaded, as in study sessions: an uploaded file could carry instructions
+  // that make the model write a link that sends the question elsewhere.
+  a: ({ children }) => <span className="underline decoration-current/40 underline-offset-2">{children}</span>,
+  img: ({ alt }) => (alt ? <span className="text-on-surface-variant">{alt}</span> : null),
   blockquote: ({ children }) => (
     <blockquote className="flex flex-col gap-2 border-l border-outline-variant pl-4 text-on-surface-variant">
       {children}
@@ -134,6 +136,9 @@ const extendedComponents = {
   "cite-ref": ({ n }: { n: number }) => <CiteRef n={Number(n)} />,
 } as Components
 
+// A source pill never starts a line on its own: it stays with the word before it.
+const REHYPE_PLUGINS = [rehypeKeepCitationsWithText]
+
 export function AnswerMarkdown({
   content,
   sources,
@@ -154,7 +159,7 @@ export function AnswerMarkdown({
   return (
     <SourceLinkContext.Provider value={ctx}>
       <div className="flex min-w-0 flex-col gap-3 type-body-l text-on-surface [overflow-wrap:anywhere]">
-        <ReactMarkdown remarkPlugins={plugins} components={extendedComponents}>
+        <ReactMarkdown remarkPlugins={plugins} rehypePlugins={REHYPE_PLUGINS} components={extendedComponents}>
           {content}
         </ReactMarkdown>
       </div>

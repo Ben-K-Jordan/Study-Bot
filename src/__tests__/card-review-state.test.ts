@@ -7,6 +7,7 @@ import {
   initialReviewState,
   keyIntent,
   reviewReducer,
+  reviewTitle,
   type ReviewState,
 } from "@/components/cards/review/review-state";
 import type { StudyCard, StudyStats } from "@/services/spaced-repetition";
@@ -138,6 +139,13 @@ describe("keyIntent", () => {
     });
   });
 
+  it("opens the shortcuts help with ? on either side, unless single-key shortcuts are off", () => {
+    expect(keyIntent(press("?"), body, { phase: "question", submitting: null })).toEqual({ type: "help" });
+    expect(keyIntent(press("?"), on("button"), { phase: "answer", submitting: null })).toEqual({ type: "help" });
+    expect(keyIntent(press("?"), body, { phase: "answer", submitting: null }, { singleKeys: false })).toBeNull();
+    expect(keyIntent(press("?"), on("[role=\"dialog\"]"), { phase: "answer", submitting: null })).toBeNull();
+  });
+
   it("does nothing on the done screen, while saving, in fields, on repeat, or with modifiers", () => {
     expect(keyIntent(press("3"), body, { phase: "done", submitting: null })).toBeNull();
     expect(keyIntent(press(" "), body, { phase: "done", submitting: null })).toBeNull();
@@ -145,5 +153,26 @@ describe("keyIntent", () => {
     expect(keyIntent(press("3"), on("textarea"), { phase: "answer", submitting: null })).toBeNull();
     expect(keyIntent(press("3", { repeat: true }), body, { phase: "answer", submitting: null })).toBeNull();
     expect(keyIntent(press("3", { ctrlKey: true }), body, { phase: "answer", submitting: null })).toBeNull();
+  });
+});
+
+describe("reviewTitle", () => {
+  it("names the card on screen, counting cards rated Hard or better", () => {
+    let s = initialReviewState([card("a"), card("b"), card("c")], stats);
+    expect(reviewTitle(s, "Recursion")).toBe("Card 1 of 3 · Recursion");
+    s = rate(s, "AGAIN");
+    // Card b is on screen, but no card is done yet
+    expect(reviewTitle(s, "Recursion")).toBe("Card 1 of 3 · Recursion");
+    s = rate(s, "GOOD");
+    expect(reviewTitle(s, "Recursion")).toBe("Card 2 of 3 · Recursion");
+  });
+
+  it("names the summary and the two empty screens", () => {
+    let s = initialReviewState([card("a")], stats);
+    s = rate(s, "GOOD");
+    expect(reviewTitle(s, "Recursion")).toBe("Deck reviewed · Recursion");
+    expect(reviewTitle(initialReviewState([], stats), "Recursion")).toBe("Nothing due · Recursion");
+    const none = { newCount: 0, learningCount: 0, reviewCount: 0, masteredCount: 0, dueCount: 0 };
+    expect(reviewTitle(initialReviewState([], none), "Recursion")).toBe("No cards · Recursion");
   });
 });

@@ -621,7 +621,7 @@ export async function getDeckDetail(userId: string, deckId: string): Promise<Dec
 
   const now = new Date();
   const todayEnds = endOfToday(timeZone, now);
-  const exam = await findUpcomingExam(userId, deck.courseName, deck.examName, now);
+  const exam = await findUpcomingExam(userId, deck.courseName, deck.examName, now, timeZone);
 
   return {
     ...summarizeDeck(deck, todayEnds),
@@ -659,38 +659,12 @@ export async function deleteFlashcardDeck(
 }
 
 /**
- * Get a deck with all its cards.
+ * Whether the deck exists and belongs to the user: one indexed lookup, so a
+ * page can answer a missing deck with a 404 before anything streams.
  */
-export async function getFlashcardDeck(
-  userId: string,
-  deckId: string,
-): Promise<FlashcardDeckData | null> {
-  const deck = await prisma.flashcardDeck.findUnique({
-    where: { id: deckId },
-    include: {
-      cards: { orderBy: { ordinal: "asc" } },
-    },
-  });
-
-  if (!deck || deck.userId !== userId) return null;
-
-  return {
-    id: deck.id,
-    user_id: deck.userId,
-    course_name: deck.courseName,
-    exam_name: deck.examName,
-    document_id: deck.documentId,
-    title: displayDeckTitle(deck.title, deck.courseName),
-    card_count: deck.cards.length,
-    cards: deck.cards.map((c) => ({
-      id: c.id,
-      front: c.front,
-      back: c.back,
-      tags: c.tags as string[] | null,
-      ordinal: c.ordinal,
-    })),
-    created_at: deck.createdAt.toISOString(),
-  };
+export async function isDeckOwner(userId: string, deckId: string): Promise<boolean> {
+  const deck = await prisma.flashcardDeck.findUnique({ where: { id: deckId }, select: { userId: true } });
+  return deck !== null && deck.userId === userId;
 }
 
 // ---------------------------------------------------------------------------
@@ -698,8 +672,7 @@ export async function getFlashcardDeck(
 // ---------------------------------------------------------------------------
 
 async function assertDeckOwner(userId: string, deckId: string) {
-  const deck = await prisma.flashcardDeck.findUnique({ where: { id: deckId }, select: { userId: true } });
-  if (!deck || deck.userId !== userId) throw new FlashcardError("DECK_NOT_FOUND", "Deck not found");
+  if (!(await isDeckOwner(userId, deckId))) throw new FlashcardError("DECK_NOT_FOUND", "Deck not found");
 }
 
 function isUniqueViolation(err: unknown): boolean {

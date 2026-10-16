@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/client-api"
+import { ApiError, sharedFailureReason } from "@/lib/client-api"
 
 /**
  * Turns a failed request into the sentence under "Deck not generated." or
@@ -36,10 +36,11 @@ function isTimeout(err: unknown): boolean {
 /** The fix for a failed request, as one or two sentences. */
 export function errorDetail(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 401) return "Your sign-in expired. Sign in again."
     if (err.code === "AI_DISABLED" || err.code === "BUDGET_EXCEEDED") return AI_PAUSED
     if (err.code && STUDENT_FACING_CODES.has(err.code) && err.message) return err.message
-    if (err.status === 429) return "Too many requests. Retry in a minute."
+    // An expired sign-in and too many requests (with the real wait) read the same on every screen.
+    const shared = sharedFailureReason(err)
+    if (shared) return shared
     if (err.status >= 500) return "The server didn't respond. Retry in a minute."
     return "Reload the page and retry."
   }

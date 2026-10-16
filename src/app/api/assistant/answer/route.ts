@@ -2,10 +2,14 @@
  * POST /api/assistant/answer: answers a question from the student's course
  * materials, with numbered sources.
  *
- * 1. Search course materials (hybrid FTS + vector)
+ * 1. Search course materials (hybrid FTS + vector): first for passages with
+ *    every word of the question, then, if none has them all, for passages
+ *    with enough of its words (search.ts, match "any")
  * 2. Pass retrieved chunks + question to AI (ANSWER_WITH_CITATIONS)
  * 3. Renumber the sources so inline [n] matches sources[n - 1]
- * 4. With save: true, store the question (first) and the answer in the
+ * 4. When nothing is retrieved, or the model says the excerpts don't answer
+ *    the question, reply with the app's own notice instead of AI text
+ * 5. With save: true, store the question (first) and the answer in the
  *    course's chat history. A retry passes question_id so the question is
  *    stored once.
  */
@@ -13,7 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { hybridSearch } from "@/lib/search";
+import { hybridSearch, type RetrievalMode } from "@/lib/search";
 import { runTask, embed, GatewayError, type GatewayContext } from "@/lib/ai/gateway";
 import { AiTask } from "@/lib/ai/types";
 import { getPrompt } from "@/lib/ai/prompt-registry";
@@ -59,6 +63,17 @@ const EMBED_MODEL = process.env.AI_MODEL_EMBED || "text-embedding-3-small";
 const ANSWER_MODEL = process.env.AI_MODEL_ANSWER || "gpt-4o-mini";
 const NOT_ANSWERED = "Answer not generated. Retry.";
 
+/**
+ * What ANSWER_WITH_CITATIONS tells the model to write when the excerpts
+ * don't answer the question. It's not an answer, so it gets the notice.
+ */
+const MODEL_NO_ANSWER = /^your materials don['’]t cover this( question)?\.?$/i;
+
+/** The search mode hybridSearch would pick, so FTS-only setups skip the embedding call. */
+function retrievalMode(requested: RetrievalMode | undefined): RetrievalMode {
+  return requested ?? (process.env.HYBRID_SEARCH_ENABLED === "true" ? "HYBRID" : "FTS");
+}
+
 const provider = createProvider();
 
 export async function POST(request: NextRequest) {
@@ -103,9 +118,10 @@ export async function POST(request: NextRequest) {
   const extra = questionDto ? { question: questionDto } : undefined;
 
   try {
+    const mode = retrievalMode(retrieval_mode);
     // Generate query embedding for vector/hybrid search
     let queryEmbedding: number[] | undefined;
-    if (retrieval_mode !== "FTS") {
+    if (mode !== "FTS") {
       try {
         const embedResult = await embed(ctx, [question], EMBED_MODEL);
         queryEmbedding = embedResult.embeddings[0];
@@ -115,21 +131,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Retrieve relevant chunks
-    const searchResults = await hybridSearch({
+    // Retrieve relevant chunks. Passages with every word of the question
+    // come first; a question rarely repeats its passage word for word
+    // ("Why does an ID selector beat any number of class selectors?"), so
+    // when none has them all, passages with enough of its words count.
+    const search = {
       userId,
       q: question,
-      namespace: "COURSE",
+      namespace: "COURSE" as const,
       courseName: course_name,
       examName,
       topK: top_k,
       embedding: queryEmbedding,
-      mode: retrieval_mode,
-    });
+      mode,
+    };
+    let searchResults = await hybridSearch({ ...search, match: "all" });
+    if (searchResults.length === 0) searchResults = await hybridSearch({ ...search, match: "any" });
 
-    if (searchResults.length === 0) {
-      // Say plainly why there's no answer; never fill the gap with unsourced text.
-      const notice = await noticeFor(userId, course_name, examName);
+    // Say plainly why there's no answer; never fill the gap with unsourced text.
+    const replyWithNotice = async (notice: StoredNotice["notice"], chunksRetrieved: number) => {
       const content = noticeText(notice, course_name);
       const answer = save ? await saveAnswer(userId, courseKey, content, { notice }) : null;
       return NextResponse.json({
@@ -137,10 +157,14 @@ export async function POST(request: NextRequest) {
         citations: [],
         sources: [],
         kind: "notice",
-        meta: { chunks_retrieved: 0 },
+        meta: { chunks_retrieved: chunksRetrieved },
         ...extra,
         ...(answer ? { answer } : {}),
       });
+    };
+
+    if (searchResults.length === 0) {
+      return replyWithNotice(await noticeFor(userId, course_name, examName), 0);
     }
 
     // Build AI task input
@@ -169,6 +193,11 @@ export async function POST(request: NextRequest) {
       Array.isArray(result.output.citations) ? result.output.citations : [],
       searchResults,
     );
+
+    // The model found nothing in the excerpts: that's the notice, not an AI answer
+    if (normalized.citations.length === 0 && MODEL_NO_ANSWER.test(normalized.markdown.trim())) {
+      return replyWithNotice("no_match", searchResults.length);
+    }
 
     const answer = save ? await saveAnswer(userId, courseKey, normalized.markdown, normalized.citations) : null;
 

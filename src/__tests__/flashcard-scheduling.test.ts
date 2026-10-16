@@ -138,7 +138,31 @@ describe("findUpcomingExam", () => {
     // Exams today still count: the query starts at today's calendar date
     expect(db.studyPlan.findMany.mock.calls[0][0].where.examDate.gte.toISOString()).toBe("2026-10-15T00:00:00.000Z");
   });
+
+  it("compares exam dates with today on the student's clock, not UTC's", async () => {
+    plansOn("2026-10-15", "2026-10-16");
+    // 7:00 AM on Oct 17 in Shanghai, still Oct 16 in UTC: both exams are over
+    const morningEast = new Date("2026-10-16T23:00:00Z");
+    expect(await findUpcomingExam("u1", "INFO 1300", null, morningEast, "Asia/Shanghai")).toBeNull();
+    // 7:00 PM on Oct 16 in New York: the Oct 16 exam is today
+    expect((await findUpcomingExam("u1", "INFO 1300", null, morningEast, "America/New_York"))?.examDate.toISOString()).toBe(
+      "2026-10-16T00:00:00.000Z",
+    );
+    // 8:30 PM on Oct 15 in New York, already Oct 16 in UTC: the Oct 15 exam is today
+    const eveningWest = new Date("2026-10-16T00:30:00Z");
+    expect((await findUpcomingExam("u1", "INFO 1300", null, eveningWest, "America/New_York"))?.examDate.toISOString()).toBe(
+      "2026-10-15T00:00:00.000Z",
+    );
+  });
 });
+
+/** Plans for INFO 1300 with exams on these days; findMany applies the examDate filter. */
+function plansOn(...days: string[]) {
+  const plans = days.map((day, i) => ({ examName: `Prelim ${i + 1}`, examDate: new Date(`${day}T00:00:00Z`) }));
+  db.studyPlan.findMany.mockImplementation(async ({ where }: { where: { examDate: { gte: Date } } }) =>
+    plans.filter((p) => p.examDate.getTime() >= where.examDate.gte.getTime()),
+  );
+}
 
 describe("reviewCard", () => {
   function mockCard(state: { easeFactor: number; intervalDays: number; repetitions: number }) {
@@ -195,6 +219,17 @@ describe("reviewCard", () => {
     // It's 3:00 AM on Oct 16 in Tokyo; one day on is Oct 17 at 4:00 AM JST
     expect(result.nextDueAt).toBe("2026-10-16T19:00:00.000Z");
     expect(db.userGameState.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("stops capping intervals once the exam is over on the student's clock", async () => {
+    mockCard({ easeFactor: 2.5, intervalDays: 6, repetitions: 2 });
+    plansOn("2026-10-16");
+    // 7:00 AM on Oct 17 in Shanghai: yesterday's exam would cap this to 1 day if UTC's date (Oct 16) were used
+    vi.setSystemTime(new Date("2026-10-16T23:00:00Z"));
+
+    const result = await reviewCard("u1", "c1", "GOOD", "Asia/Shanghai");
+
+    expect(result.intervalDays).toBe(15);
   });
 
   it("refuses another user's card", async () => {

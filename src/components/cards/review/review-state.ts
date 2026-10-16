@@ -5,6 +5,7 @@ import type {
   StudyCard,
   StudyStats,
 } from "@/services/spaced-repetition"
+import { formatNumber } from "@/lib/format"
 
 /**
  * The review's state machine, kept free of React so it can be tested:
@@ -110,9 +111,24 @@ export function currentCard(state: ReviewState): ReviewCardState | null {
   return id ? (state.cards[id] ?? null) : null
 }
 
-/** Cards rated at least once (Again included). */
-export function reviewedCount(state: ReviewState): number {
-  return state.ratings.AGAIN + state.ratings.HARD + state.ratings.GOOD + state.ratings.EASY
+/**
+ * The tab title for the screen on view, before " · Study Bot": "Card 2 of 12
+ * · Recursion", "Deck reviewed · Recursion", "Nothing due · Recursion" or
+ * "No cards · Recursion". A card rated Again keeps its number until a card
+ * is rated Hard or better, like the "2 of 12 done" counter.
+ */
+export function reviewTitle(
+  state: Pick<ReviewState, "phase" | "total" | "finished" | "stats">,
+  deckTitle: string,
+): string {
+  if (state.total === 0) {
+    const { newCount, learningCount, reviewCount, masteredCount } = state.stats
+    const empty = newCount + learningCount + reviewCount + masteredCount === 0
+    return `${empty ? "No cards" : "Nothing due"} · ${deckTitle}`
+  }
+  if (state.phase === "done") return `Deck reviewed · ${deckTitle}`
+  const n = Math.min(state.finished + 1, state.total)
+  return `Card ${formatNumber(n)} of ${formatNumber(state.total)} · ${deckTitle}`
 }
 
 export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
@@ -176,23 +192,26 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
 
 /**
  * Whether a key press should act on the review, and how. Number keys rate
- * only after the answer is shown, and only while single-key shortcuts are
- * on (the student can turn them off, WCAG 2.1.4); Space and Enter reveal the
- * answer only when focus isn't on a control (they keep activating a focused
- * button or link). Nothing acts on the done screen, while a rating saves,
- * inside text fields or open menus and dialogs, or with modifier keys.
+ * only after the answer is shown; they and "?" (the shortcuts help, with the
+ * switch that turns them off) act only while single-key shortcuts are on
+ * (WCAG 2.1.4). Space and Enter reveal the answer only when focus isn't on a
+ * control (they keep activating a focused button or link). Nothing acts on
+ * the done screen, while a rating saves, inside text fields or open menus
+ * and dialogs, or with Alt, Ctrl or Cmd.
  */
 export function keyIntent(
   event: { key: string; repeat: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean },
   target: { closest: (selector: string) => unknown } | null,
   state: Pick<ReviewState, "phase" | "submitting">,
   { singleKeys = true }: { singleKeys?: boolean } = {},
-): { type: "reveal" } | { type: "rate"; rating: ReviewRating } | null {
+): { type: "reveal" } | { type: "help" } | { type: "rate"; rating: ReviewRating } | null {
   if (event.repeat || event.altKey || event.ctrlKey || event.metaKey) return null
   if (state.phase === "done" || state.submitting) return null
   if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]')) {
     return null
   }
+
+  if (event.key === "?") return singleKeys ? { type: "help" } : null
 
   if (state.phase === "question" && (event.key === " " || event.key === "Enter")) {
     if (target?.closest('button, a[href], [role="button"], summary')) return null
