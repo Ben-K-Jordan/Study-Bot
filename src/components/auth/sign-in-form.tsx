@@ -128,7 +128,7 @@ export function SignInForm({
 
   return (
     <AuthCard title="Sign in" description="Use your Study Bot account.">
-      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
+      <form method="post" noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
         {verified && !problem ? (
           <Alert variant="success" role="status">
             <CircleCheckIcon aria-hidden="true" />

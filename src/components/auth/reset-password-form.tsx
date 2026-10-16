@@ -188,7 +188,7 @@ export function ResetPasswordForm({
 
   return (
     <AuthCard title="Choose a new password" description="Your new password replaces the old one.">
-      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
+      <form method="post" noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
         {problem?.type === "fields" && summaryItems.length > 0 ? (
           <ErrorSummary key={attempt} items={summaryItems} />
         ) : null}

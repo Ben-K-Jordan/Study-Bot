@@ -96,7 +96,7 @@ export function ForgotPasswordForm() {
       title="Reset password"
       description="Enter the email you sign in with, and a reset link goes to that address."
     >
-      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
+      <form method="post" noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
         {problem?.type === "field" && error ? (
           <ErrorSummary key={attempt} items={[{ fieldId: "email", message: error }]} />
         ) : null}

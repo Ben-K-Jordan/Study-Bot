@@ -177,7 +177,7 @@ export function SignUpForm({
       title="Create account"
       description="Plan for your exams and practice from your own course files."
     >
-      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
+      <form method="post" noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
         {problem?.type === "fields" && summaryItems.length > 0 ? (
           <ErrorSummary key={attempt} items={summaryItems} />
         ) : null}

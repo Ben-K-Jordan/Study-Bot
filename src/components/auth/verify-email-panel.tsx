@@ -86,7 +86,7 @@ export function VerifyEmailPanel({ status, email }: { status: VerifyEmailStatus;
 
   return (
     <AuthCard title={title} description={description}>
-      <form noValidate onSubmit={handleSend} className="flex flex-col gap-8">
+      <form method="post" noValidate onSubmit={handleSend} className="flex flex-col gap-8">
         {shownFieldError && askForEmail ? (
           <ErrorSummary key={`field-${attempt}`} items={[{ fieldId: "email", message: shownFieldError }]} />
         ) : null}
