@@ -1,7 +1,7 @@
 "use client";
 
 import { apiGet } from "@/lib/client-api";
-import type { DeckComposition, Prompt, PromptView } from "./types";
+import type { DeckComposition, Prompt, PromptView } from "@/lib/session-types";
 
 /** SWR key and URL for a finished run's results. */
 export function resultsUrl(sessionId: string, runId: string): string {

@@ -1,5 +1,5 @@
 import { ApiError } from "@/lib/client-api";
-import type { BreakState } from "./types";
+import type { BreakState } from "@/lib/session-types";
 
 /**
  * One mapper from a failed session request to the words the student reads

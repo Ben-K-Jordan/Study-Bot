@@ -23,11 +23,15 @@ export async function generateMetadata({ params }: SessionPageProps): Promise<Me
   const { sessionId } = await params;
   const loaded = await loadSessionScreen(sessionId);
   if (loaded.signedOut || "error" in loaded.result) return { title: "Session not found" };
-  const { session } = loaded.result.data;
+  const { session, results } = loaded.result.data;
   const opensOnResults = !session.active_run && session.last_completed_run != null;
-  return {
-    title: `${opensOnResults ? "Session complete" : session.mode_label} · ${session.course_name}`,
-  };
+  // The same words as the screen's heading (EndScreen keeps them in step after a load).
+  const screen = !opensOnResults
+    ? session.mode_label
+    : results?.question_count === 0
+      ? "No results yet"
+      : "Session complete";
+  return { title: `${screen} · ${session.course_name}` };
 }
 
 /**

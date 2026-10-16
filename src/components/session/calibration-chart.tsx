@@ -21,7 +21,8 @@ interface Row {
 /**
  * How often each confidence level was right: one bar per level, so a
  * student can see whether Sure answers were right more often than guesses.
- * Decorative for assistive tech: the table beside it carries the same data.
+ * Hidden from assistive tech: the screen-reader list in the same figure
+ * carries the same values.
  * Loaded with next/dynamic (recharts is heavy).
  */
 export default function CalibrationChart({ levels }: { levels: readonly LevelSummary[] }) {

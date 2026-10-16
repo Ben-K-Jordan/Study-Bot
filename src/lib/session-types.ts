@@ -200,6 +200,8 @@ export interface FollowupItem {
   days_from_now: number | null;
   /** The follow-up session, once it is in the plan. */
   session_id?: string;
+  /** Skipped days only: after the exam, or a day that has already passed. */
+  reason?: "past_exam" | "past";
 }
 
 export interface FollowupPreview {
@@ -216,7 +218,7 @@ export interface FollowupPreview {
   /** The plan the follow-ups are in (or would go into), for "Open plan". Null with no plan. */
   plan_id?: string | null;
   items: FollowupItem[];
-  /** Recommended days that fall after the exam. */
+  /** Recommended days that can't be added: after the exam, or already passed. */
   skipped: FollowupItem[];
 }
 

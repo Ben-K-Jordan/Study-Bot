@@ -1,11 +1,11 @@
-import type { RatedAnswer, SelfScore } from "./types";
+import { CONFIDENCE_SCALE, confidenceLevel, type ConfidenceLevel } from "@/lib/confidence";
+import type { RatedAnswer, SelfScore } from "@/lib/session-types";
 
 /**
  * Confidence results for the end screen: how sure the student was before
- * checking, against how the answer scored. One scale everywhere (VOICE.md):
- * Guessing, Unsure, Sure, stored as 1, 3 and 5. Runs saved before the scale
- * was unified hold 2 ("Unsure") and 4 ("Confident"); they map to the nearest
- * level.
+ * checking, against how the answer scored. Ratings are read through
+ * src/lib/confidence.ts, the one scale Progress uses too (Guessing, Unsure,
+ * Sure, stored as 1, 3 and 5, older five-step ratings mapped by meaning).
  *
  * The rules stay honest about what one session can show:
  * - Unsure matches any result. Saying you're unsure is never a mismatch.
@@ -17,27 +17,12 @@ import type { RatedAnswer, SelfScore } from "./types";
  * - Nothing is summarised until MIN_RATED answers are rated.
  */
 
-export type ConfidenceLevel = "guessing" | "unsure" | "sure";
-
-export const CONFIDENCE_LEVELS: readonly { level: ConfidenceLevel; label: string }[] = [
-  { level: "guessing", label: "Guessing" },
-  { level: "unsure", label: "Unsure" },
-  { level: "sure", label: "Sure" },
-];
+export { confidenceLevel, type ConfidenceLevel };
 
 /** Rated answers needed before the screen compares confidence with results. */
 export const MIN_RATED = 3;
 /** Guesses needed before correct guesses count as a pattern. */
 export const MIN_GUESSES_FOR_PATTERN = 3;
-
-/** Map a stored rating to a level; null for missing or out-of-range values. */
-export function confidenceLevel(rating: number | null | undefined): ConfidenceLevel | null {
-  if (rating == null || !Number.isFinite(rating)) return null;
-  if (rating < 1 || rating > 5) return null;
-  if (rating < 2) return "guessing";
-  if (rating < 4) return "unsure";
-  return "sure";
-}
 
 export interface LevelSummary {
   level: ConfidenceLevel;
@@ -77,7 +62,7 @@ export function answerFit(level: ConfidenceLevel, score: SelfScore): AnswerFit {
 }
 
 export function summarizeCalibration(answers: readonly RatedAnswer[]): CalibrationSummary {
-  const levels: LevelSummary[] = CONFIDENCE_LEVELS.map(({ level, label }) => ({
+  const levels: LevelSummary[] = CONFIDENCE_SCALE.map(({ level, label }) => ({
     level,
     label,
     count: 0,

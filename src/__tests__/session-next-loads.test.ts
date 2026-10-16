@@ -11,6 +11,7 @@ describe("nextLoads", () => {
       nextIndex: 3,
       awaitNext: false,
       scoringBegins: false,
+      deckFallback: false,
     });
   });
 
@@ -19,6 +20,7 @@ describe("nextLoads", () => {
       nextIndex: 3,
       awaitNext: true,
       scoringBegins: false,
+      deckFallback: true,
     });
   });
 
@@ -27,6 +29,7 @@ describe("nextLoads", () => {
       nextIndex: 0,
       awaitNext: false,
       scoringBegins: true,
+      deckFallback: false,
     });
   });
 
@@ -36,6 +39,19 @@ describe("nextLoads", () => {
       nextIndex: null,
       awaitNext: false,
       scoringBegins: false,
+      deckFallback: false,
     });
+  });
+
+  // The start-time deck has no answer keys, and adaptation can swap the
+  // question the server grades, so it may stand in for a failed load only
+  // while answering an exam simulation.
+  it("never falls back to the start-time deck outside exam answering", () => {
+    const scoring = nextLoads({ completed: false, index: 1, promptCount: 8, phase: "REVIEW", previousPhase: "REVIEW" });
+    expect(scoring.deckFallback).toBe(false);
+    const retrieval = nextLoads({ completed: false, index: 4, promptCount: 8, phase: "ACTIVE", previousPhase: "ACTIVE" });
+    expect(retrieval.deckFallback).toBe(false);
+    const exam = nextLoads({ completed: false, index: 4, promptCount: 8, phase: "EXAM", previousPhase: "EXAM" });
+    expect(exam).toMatchObject({ awaitNext: true, deckFallback: true });
   });
 });

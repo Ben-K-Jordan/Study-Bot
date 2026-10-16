@@ -11,6 +11,15 @@ export interface NextLoads {
   awaitNext: boolean;
   /** The last exam answer is in: scoring starts and needs the saved answers. */
   scoringBegins: boolean;
+  /**
+   * The start-time deck may stand in when the next question fails to load.
+   * Only in exam answering: there the deck matches the server, and no
+   * question needs its answer key yet. Everywhere else the deck is a stale
+   * copy without keys (scoring needs them), and difficulty adaptation may
+   * have swapped the question the server will grade. A failed load there
+   * leaves the question unset, so the runner loads it and offers Retry.
+   */
+  deckFallback: boolean;
 }
 
 export function nextLoads(input: {
@@ -27,5 +36,6 @@ export function nextLoads(input: {
     nextIndex,
     awaitNext: nextIndex !== null && input.phase === "EXAM",
     scoringBegins: input.phase === "REVIEW" && input.previousPhase === "EXAM",
+    deckFallback: nextIndex !== null && input.phase === "EXAM",
   };
 }

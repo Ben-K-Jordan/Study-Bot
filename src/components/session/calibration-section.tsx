@@ -5,19 +5,27 @@ import dynamic from "next/dynamic";
 import { formatNumber, formatPercent, plural } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MIN_RATED, summarizeCalibration } from "./calibration";
-import type { RatedAnswer } from "./types";
+import { Disclosure } from "@/components/progress/disclosure";
+import { MIN_RATED, summarizeCalibration, type LevelSummary } from "./calibration";
+import type { RatedAnswer } from "@/lib/session-types";
 
 const CalibrationChart = dynamic(() => import("./calibration-chart"), {
   ssr: false,
   loading: () => <Skeleton aria-hidden="true" className="h-52 w-full rounded-2xl" />,
 });
 
+/** "Sure: 2 of 3 correct (67%)", or "Guessing: not used". */
+function levelText(level: LevelSummary): string {
+  if (level.correctRate == null) return `${level.label}: not used`;
+  return `${level.label}: ${formatNumber(level.correct)} of ${formatNumber(level.count)} correct (${formatPercent(level.correctRate)})`;
+}
+
 /**
  * The "Confidence" section of the results: how sure the student was against
- * how the answers scored, as plain sentences, a bar chart and a table.
- * Rule-based text, so no AI tag. Nothing is summarised from fewer than
- * MIN_RATED rated answers.
+ * how the answers scored, as plain sentences and a bar chart, with the same
+ * numbers as a table on request (as on Progress). The chart is drawn for the
+ * eye only; screen readers get its values as a list. Rule-based text, so no
+ * AI tag. Nothing is summarised from fewer than MIN_RATED rated answers.
  */
 export function CalibrationSection({
   answers,
@@ -87,31 +95,36 @@ export function CalibrationSection({
               How often you were correct, by how sure you were
             </figcaption>
             <CalibrationChart levels={summary.levels} />
+            <ul className="sr-only">
+              {summary.levels.map((level) => (
+                <li key={level.level}>{levelText(level)}</li>
+              ))}
+            </ul>
           </figure>
 
-          <Table>
-            <caption className="sr-only">Correct answers by how sure you were</caption>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">How sure</TableHead>
-                <TableHead scope="col" className="text-right">Answers</TableHead>
-                <TableHead scope="col" className="text-right">Correct</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {summary.levels.map((level) => (
-                <TableRow key={level.level}>
-                  <TableHead scope="row">
-                    {level.label}
-                  </TableHead>
-                  <TableCell className="text-right tabular-nums">{level.count}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {level.correctRate != null ? `${level.correct} (${formatPercent(level.correctRate)})` : "Not used"}
-                  </TableCell>
+          <Disclosure showLabel="Show as a table" hideLabel="Hide the table">
+            <Table>
+              <caption className="sr-only">Correct answers by how sure you were</caption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">How sure</TableHead>
+                  <TableHead scope="col" className="text-right">Answers</TableHead>
+                  <TableHead scope="col" className="text-right">Correct</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {summary.levels.map((level) => (
+                  <TableRow key={level.level}>
+                    <TableHead scope="row">{level.label}</TableHead>
+                    <TableCell className="text-right tabular-nums">{level.count}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {level.correctRate != null ? `${level.correct} (${formatPercent(level.correctRate)})` : "Not used"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Disclosure>
         </>
       )}
 

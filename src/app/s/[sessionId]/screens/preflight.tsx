@@ -20,8 +20,10 @@ import { ErrorState } from "@/components/app/error-state";
 import { LessonButton } from "@/components/lesson/lesson-button";
 import { LessonProgress } from "@/components/lesson/lesson-frame";
 import type { SessionErrorCopy } from "@/components/session/errors";
+import { objectiveTitles, sessionHeading } from "@/components/session/session-heading";
 import { Fact, FactList, SessionCloseButton, SessionScreen } from "@/components/session/session-screen";
-import type { ActiveRunSummary, DeckComposition, SessionData } from "@/components/session/types";
+import type { ActiveRunSummary, DeckComposition, SessionData } from "@/lib/session-types";
+import { useHeadingFocus } from "@/components/session/use-heading-focus";
 import { useZone } from "@/components/session/use-zone";
 
 interface Props {
@@ -37,7 +39,10 @@ interface Props {
   onStart: () => void;
   /** Warm up the question screen's code before it is needed. */
   onPreload: () => void;
-  /** Move focus to the heading (after coming back from the results). */
+  /**
+   * Move focus to the heading (after coming back from the results). It also
+   * moves there when the page opens with nothing focused, as after a link.
+   */
   focusOnMount?: boolean;
 }
 
@@ -61,11 +66,10 @@ export function PreflightScreen({
   const targetAccuracy = typeof outcome?.target_accuracy === "number" ? outcome.target_accuracy : null;
   const closedBook = outcome?.closed_book_required === true;
   const breaks = breakSchedule(session.break_protocol as { type?: string; cycles?: number } | null);
-  const topics = (session.objectives ?? []).map((o) => o.title).filter(Boolean);
+  const topics = objectiveTitles(session.objectives);
+  const heading = sessionHeading(session.mode_label, session.topic_scope, topics);
 
-  useEffect(() => {
-    if (focusOnMount) headingRef.current?.focus();
-  }, [focusOnMount]);
+  useHeadingFocus(headingRef, focusOnMount);
 
   // Enter starts the session, as it checks an answer on the question screens.
   useEffect(() => {
@@ -127,7 +131,7 @@ export function PreflightScreen({
           tabIndex={-1}
           className="type-headline-s font-bold text-balance text-lesson-on-surface wrap-break-word outline-none sm:type-headline-m sm:font-bold"
         >
-          {session.mode_label}: {session.topic_scope}
+          {heading.text}
         </h1>
         <p className="type-title-m text-lesson-muted wrap-break-word">
           {session.course_name}
@@ -181,7 +185,7 @@ export function PreflightScreen({
             })}
           </Fact>
         ) : null}
-        {topics.length > 0 ? (
+        {topics.length > 0 && !heading.namesAllTopics ? (
           <Fact icon={BookOpenIcon} label={plural(topics.length, { one: "Topic", other: "Topics" })}>
             {formatList(topics)}
           </Fact>

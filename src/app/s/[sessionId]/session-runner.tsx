@@ -26,7 +26,7 @@ import type {
   RunData,
   SessionData,
   SessionResults,
-} from "@/components/session/types";
+} from "@/lib/session-types";
 import { sessionTitle, useDocumentTitle } from "@/components/session/use-document-title";
 import { BreakScreen } from "./screens/break-screen";
 import { EndScreen } from "./screens/end-screen";
@@ -60,7 +60,10 @@ interface ShellState {
   breakError: SessionErrorCopy | null;
   finishing: boolean;
   finishError: SessionErrorCopy | null;
-  /** Move focus into the screen once it mounts (not on first load). */
+  /**
+   * Move focus into the screen once it mounts (not on first load; a screen
+   * opened by a client-side navigation focuses its heading by itself).
+   */
   moveFocus: boolean;
 }
 
@@ -334,11 +337,7 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
       const newIndex: number = typeof data.current_index === "number" ? data.current_index : current.current_index;
       const promptCount: number = data.prompt_count ?? current.prompt_count;
       const phase: string = data.phase ?? current.phase;
-      const fallbackPrompt = () => {
-        const deckPrompt = current.prompts?.[newIndex];
-        return deckPrompt ? promptToView(deckPrompt, newIndex) : null;
-      };
-      const { nextIndex, awaitNext, scoringBegins } = nextLoads({
+      const { nextIndex, awaitNext, scoringBegins, deckFallback } = nextLoads({
         completed,
         index: newIndex,
         promptCount,
@@ -349,8 +348,13 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
       // An exam answer gets no feedback, so the next question replaces it at
       // once: load it first. Every other answer shows feedback first, and
       // the next question loads while the student reads it.
+      // If that load fails, the start-time deck can stand in (see deckFallback).
+      const fallbackPrompt = () => {
+        const deckPrompt = deckFallback ? current.prompts?.[newIndex] : undefined;
+        return deckPrompt ? promptToView(deckPrompt, newIndex) : null;
+      };
       const nextPrompt =
-        nextIndex !== null && awaitNext ? await fetchPrompt(current.run_id, nextIndex).catch(fallbackPrompt) : null;
+        nextIndex !== null && awaitNext ? await fetchPrompt(current.run_id, nextIndex, phase).catch(fallbackPrompt) : null;
 
       // Finishing the run or starting a break doesn't switch screens here:
       // the runner shows this answer's feedback, then calls onFinish or onBreak.
@@ -374,10 +378,14 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
       // list still on its way when the runner needs it is reused, not
       // requested twice. GET /prompt for the current question can adapt its
       // difficulty, which is why the runner must not fetch it a second time.
+      // A failed load attaches nothing: the start-time deck is no stand-in
+      // here (no answer keys, maybe not the question the server grades), so
+      // the runner's own GET of this key takes the failure and offers Retry.
       if (nextIndex !== null && !awaitNext) {
-        void preload(promptUrl(current.run_id, nextIndex), fetcher<PromptView>).then(
+        // With the run's phase, so a scoring question shares the runner's key (promptUrl).
+        void preload(promptUrl(current.run_id, nextIndex, phase), fetcher<PromptView>).then(
           (prompt) => attachPrompt(current.run_id, nextIndex, prompt),
-          () => attachPrompt(current.run_id, nextIndex, fallbackPrompt())
+          () => undefined
         );
       }
       if (scoringBegins) void preload(runUrl(current.run_id), fetcher).catch(() => undefined);
@@ -402,7 +410,9 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
       dispatch({ type: "finished", runId: current.run_id });
       // Refresh the page's server data, so the intro's "Last time" line and a
       // later Back navigation show this run. The page now opens on results,
-      // which skips the deck preview, so this reloads the results only.
+      // which skips the deck preview, so this reloads the results only. The
+      // refresh streams the metadata <title> again; useDocumentTitle keeps
+      // the tab named in between.
       startTransition(() => router.refresh());
     } catch (error) {
       dispatch({ type: "finish_failed", runId: current.run_id, error: sessionErrorCopy(error, "finish") });
@@ -440,13 +450,14 @@ export function SessionRunner({ session, deckPreview, initialResults }: Props) {
   }, [sessionId]);
 
   const course = session.course_name;
+  // The results screen names its own title, which depends on what loads.
   const title =
     state.screen === "runner"
       ? sessionTitle(runnerTitle(state.run, shownIndex), course)
       : state.screen === "break"
         ? sessionTitle("Break", course)
-        : state.screen === "end"
-          ? sessionTitle(state.finishError ? "Results aren't ready" : "Session complete", course)
+        : state.screen === "end" && state.resultsRunId
+          ? null
           : sessionTitle(session.mode_label, course);
   useDocumentTitle(title);
 

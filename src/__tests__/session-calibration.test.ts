@@ -5,7 +5,7 @@ import {
   MIN_RATED,
   summarizeCalibration,
 } from "@/components/session/calibration";
-import type { RatedAnswer, SelfScore } from "@/components/session/types";
+import type { RatedAnswer, SelfScore } from "@/lib/session-types";
 
 function answer(index: number, confidence: number | null, score: SelfScore): RatedAnswer {
   return { prompt_index: index, confidence, score };

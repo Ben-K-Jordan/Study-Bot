@@ -1,10 +1,13 @@
 import { prisma } from "@/lib/db";
 import { generateSessionId } from "@/lib/session-id";
+import { BREAK_TYPES, isAllowedBreakType } from "@/lib/breaks";
 import { buildCalendarTitle, buildCalendarDescription } from "@/lib/calendar";
 import {
+  clampPromptCount,
   createSessionSchema,
   SessionMode,
 } from "@/lib/validation";
+import { formatList } from "@/lib/format";
 import { logger } from "@/lib/logger";
 import { getBaseUrl } from "@/lib/config";
 import { computeFollowups } from "@/lib/spacing";
@@ -12,7 +15,7 @@ import { dateColumnKey } from "@/lib/plan-dates";
 import { dayKey, getUserTimezone, zonedTimeToUtc } from "@/lib/timezone";
 import { getDeckPreview } from "@/services/run";
 import { computeFollowupSchedule, findFollowupPlan } from "@/services/followups";
-import { sessionModeCopy } from "@/components/session/modes";
+import { sessionModeCopy } from "@/lib/session-modes";
 import type {
   ActiveRunSummary,
   DeckComposition,
@@ -23,7 +26,7 @@ import type {
   SelfScore,
   SessionData,
   SessionResults,
-} from "@/components/session/types";
+} from "@/lib/session-types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,8 +57,24 @@ function defaultRules(closedBook?: boolean): string[] {
   return rules;
 }
 
+/**
+ * The request schema plus the break pattern check, which depends on the
+ * environment: the test patterns (seconds-long blocks) exist only for the
+ * test suites, so a deployment rejects them like any unknown pattern.
+ */
+const sessionInputSchema = createSessionSchema.superRefine((value, ctx) => {
+  const type = value.break_protocol?.type;
+  if (type !== undefined && !isAllowedBreakType(type)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["break_protocol", "type"],
+      message: `Use one of these break patterns: ${formatList(BREAK_TYPES, "disjunction")}.`,
+    });
+  }
+});
+
 export async function createSession(userId: string, input: unknown) {
-  const parsed = createSessionSchema.parse(input);
+  const parsed = sessionInputSchema.parse(input);
 
   const sessionId = generateSessionId();
   const sessionUrl = `${getBaseUrl()}/s/${sessionId}`;
@@ -233,7 +252,7 @@ function deckPreviewFor(
     courseName: session.courseName,
     mode: session.mode,
     objectives: (session.objectives as { id: string; title: string }[] | null) ?? null,
-    promptCount: typeof outcome?.prompt_count === "number" ? outcome.prompt_count : 10,
+    promptCount: clampPromptCount(outcome?.prompt_count),
   }).catch((err: unknown) => {
     logger.warn("session.deck_preview_failed", { session_id: session.sessionId, error: String(err) });
     return null;
@@ -492,6 +511,7 @@ export async function getFollowupPreview(
       date: s.date,
       at: zonedTimeToUtc(s.date, "12:00", plan.timezone).toISOString(),
       days_from_now: s.days_from_now,
+      reason: s.reason,
     })),
   };
 }

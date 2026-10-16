@@ -10,7 +10,7 @@ import { LessonButton } from "@/components/lesson/lesson-button";
 import { LessonFrame } from "@/components/lesson/lesson-frame";
 import { useLessonAnnounce } from "@/components/lesson/lesson-announcer";
 import type { SessionErrorCopy } from "@/components/session/errors";
-import type { RunData } from "@/components/session/types";
+import type { RunData } from "@/lib/session-types";
 import { useZone } from "@/components/session/use-zone";
 
 interface Props {

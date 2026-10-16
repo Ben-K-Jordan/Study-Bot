@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
  * The end screen's data: follow-up dates from the scheduler (anchored to
@@ -32,7 +32,14 @@ const ENDED_AT = new Date("2026-10-15T19:00:00Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Which follow-up days can still be added depends on the current time.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(ENDED_AT);
   db.userGameState.findUnique.mockResolvedValue({ timezone: "America/New_York" });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("getFollowupPreview", () => {

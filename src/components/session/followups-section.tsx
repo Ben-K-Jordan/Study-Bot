@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CalendarPlusIcon } from "lucide-react";
 
@@ -11,8 +11,8 @@ import { ErrorState } from "@/components/app/error-state";
 import { LessonButton } from "@/components/lesson/lesson-button";
 import { sessionErrorCopy, type SessionErrorCopy } from "./errors";
 import { skippedText } from "./followup-copy";
-import { sessionModeCopy } from "./modes";
-import type { FollowupItem, FollowupPreview } from "./types";
+import { sessionModeCopy } from "@/lib/session-modes";
+import type { FollowupItem, FollowupPreview } from "@/lib/session-types";
 import { useZone } from "./use-zone";
 
 interface ScheduleResponse {
@@ -44,6 +44,9 @@ export function FollowupsSection({
   const mounted = useMounted();
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<SessionErrorCopy | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Set when an add succeeds: the button that had focus goes with the old status.
+  const focusAfterAdd = useRef(false);
   // No zone means the student has neither a time zone in Settings nor a
   // plan: the days are shown in the browser's zone, after hydration.
   const { timeZone, ready } = useZone(preview.timezone);
@@ -57,6 +60,7 @@ export function FollowupsSection({
     setError(null);
     try {
       const data = (await apiPost("/api/plans/followups", { run_id: runId })) as ScheduleResponse;
+      focusAfterAdd.current = true;
       if (data.status === "no_plan") {
         onChange({ ...preview, status: "no_plan" });
       } else {
@@ -80,13 +84,28 @@ export function FollowupsSection({
     }
   }
 
+  // After an add, Add follow-ups to plan unmounts and focus would fall to
+  // <body>: put it on the section heading instead. The status region below
+  // announces the result, and Tab carries on through this section's links.
+  useEffect(() => {
+    if (!focusAfterAdd.current || preview.status === "not_scheduled") return;
+    focusAfterAdd.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body) headingRef.current?.focus();
+  }, [preview.status]);
+
   const relative = (item: FollowupItem) => (mounted ? ` (${formatRelativeDay(item.at, { timeZone })})` : "");
   const day = (item: FollowupItem) => (ready ? `, ${formatDateWeekday(item.at, { timeZone })}` : "");
   const dayList = formatList(preview.items.map((item) => formatDateWeekday(item.at, { timeZone })));
 
   return (
     <section aria-labelledby="followups-title" className="flex flex-col gap-4">
-      <h2 id="followups-title" className="type-title-l font-bold text-lesson-on-surface">
+      <h2
+        ref={headingRef}
+        id="followups-title"
+        tabIndex={-1}
+        className="type-title-l font-bold text-lesson-on-surface outline-none"
+      >
         Follow-up sessions
       </h2>
 
@@ -135,7 +154,7 @@ export function FollowupsSection({
           <p className="type-body-l text-lesson-on-surface">
             {"Follow-ups go into a plan, and you don't have one yet. "}
             <Link href="/plan/new" className="font-bold text-lesson-primary underline underline-offset-4">
-              Create plan
+              New plan
             </Link>
           </p>
         ) : null}

@@ -20,6 +20,9 @@ test("a session in a plan opens from the Plan page", { tag: "@mobile" }, async (
 
   await expect(page).toHaveURL(/\/s\/[\w-]+$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(`${mode}:`);
+  // A link into a session moves focus to its heading, so a screen reader names
+  // the session even though its tab title is still streaming in.
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
   await expect(page.getByRole("main").getByText(plan.course)).toBeVisible();
   await expect(page.getByRole("button", { name: "Start session" })).toBeEnabled();
 });

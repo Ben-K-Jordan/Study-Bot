@@ -3,7 +3,7 @@
  * student saw it. The runs are finished through the API; the deck rules for
  * each mode are covered by src/__tests__/integration/mode-parity.test.ts.
  */
-import { test, expect, createSession, finishSession, unique, type SessionMode } from "./fixtures";
+import { test, expect, createPlan, createSession, finishSession, hydrated, unique, type SessionMode } from "./fixtures";
 
 const MODES: { mode: SessionMode; label: string; incorrect: number; accuracy: string }[] = [
   { mode: "INTERLEAVED_PRACTICE", label: "Interleaved practice", incorrect: 0, accuracy: "100%" },
@@ -49,4 +49,23 @@ test("an Error repair session retests the course's unresolved errors", async ({ 
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Session complete" })).toBeVisible();
   await expect(page.getByRole("main").getByText("Error repair: Unresolved errors", { exact: true })).toBeVisible();
+});
+
+test("adding follow-ups by keyboard leaves focus on the Follow-up sessions heading", async ({ page, request }) => {
+  const course = unique("E2E Follow-ups");
+  await createPlan(request, { course_name: course });
+  const session = await createSession(request, { course_name: course });
+  await finishSession(request, session.id);
+
+  await page.goto(session.url);
+  const followups = page.getByRole("region", { name: "Follow-up sessions" });
+  const add = followups.getByRole("button", { name: "Add follow-ups to plan" });
+  await hydrated(add);
+  await add.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(followups.getByRole("status")).toContainText("Added to your plan:");
+  await expect(add).toHaveCount(0);
+  // The button is gone, so focus moves to the section, not back to the top of the page.
+  await expect(followups.getByRole("heading", { level: 2, name: "Follow-up sessions" })).toBeFocused();
 });

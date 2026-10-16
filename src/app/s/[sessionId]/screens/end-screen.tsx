@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import { CheckIcon, ClipboardListIcon } from "lucide-react";
 
@@ -14,8 +14,11 @@ import { resultsUrl } from "@/components/session/api";
 import { CalibrationSection } from "@/components/session/calibration-section";
 import { sessionErrorCopy, type SessionErrorCopy } from "@/components/session/errors";
 import { FollowupsSection } from "@/components/session/followups-section";
+import { objectiveTitles, sessionHeading } from "@/components/session/session-heading";
 import { SessionScreen } from "@/components/session/session-screen";
-import type { FollowupPreview, SessionData, SessionResults } from "@/components/session/types";
+import type { FollowupPreview, SessionData, SessionResults } from "@/lib/session-types";
+import { sessionTitle, useDocumentTitle } from "@/components/session/use-document-title";
+import { useHeadingFocus } from "@/components/session/use-heading-focus";
 import { useZone } from "@/components/session/use-zone";
 
 interface Props {
@@ -29,7 +32,10 @@ interface Props {
   finishing: boolean;
   onRetryFinish: () => void;
   onStartAgain: () => void;
-  /** Move focus to the heading (after the last question). */
+  /**
+   * Move focus to the heading (after the last question). It also moves there
+   * when the page opens with nothing focused, as after a link.
+   */
   focusOnMount?: boolean;
 }
 
@@ -55,9 +61,18 @@ export function EndScreen({
     { fallbackData: fallback, revalidateOnMount: !fallback }
   );
 
-  useEffect(() => {
-    if (focusOnMount) headingRef.current?.focus();
-  }, [focusOnMount]);
+  const results = data ?? null;
+  const empty = results != null && results.question_count === 0;
+  const screen = finishError ? "unfinished" : empty ? "empty" : "results";
+
+  useHeadingFocus(headingRef, focusOnMount, screen);
+  // The tab says what the heading says.
+  useDocumentTitle(
+    sessionTitle(
+      screen === "unfinished" ? "Results aren't ready" : screen === "empty" ? "No results yet" : "Session complete",
+      session.course_name
+    )
+  );
 
   const footer = (
     <>
@@ -96,9 +111,6 @@ export function EndScreen({
       </SessionScreen>
     );
   }
-
-  const results = data ?? null;
-  const empty = results != null && results.question_count === 0;
 
   if (empty) {
     return (
@@ -189,7 +201,7 @@ function ResultsHeader({
         Session complete
       </h1>
       <p className="type-title-m text-pretty text-lesson-on-surface wrap-break-word">
-        {session.mode_label}: {session.topic_scope}
+        {sessionHeading(session.mode_label, session.topic_scope, objectiveTitles(session.objectives)).text}
       </p>
       <p className="type-body-l text-lesson-muted wrap-break-word">
         {session.course_name}

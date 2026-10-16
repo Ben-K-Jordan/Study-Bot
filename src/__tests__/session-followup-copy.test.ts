@@ -31,6 +31,28 @@ describe("skippedText", () => {
     ).toBe("The follow-up dates fall after Final, so there's nothing to add.");
   });
 
+  it("says a passed day has passed, not that it falls after the exam", () => {
+    const past = { ...day("2026-10-14"), reason: "past" as const };
+    expect(skippedText({ exam_name: "Prelim 2", items: [day("2026-10-18")], skipped: [past] }, ZONE)).toBe(
+      "Wed, Oct 14 has passed, so it isn't added."
+    );
+    expect(skippedText({ exam_name: "Prelim 2", items: [], skipped: [past, { ...day("2026-10-16"), reason: "past" }] }, ZONE)).toBe(
+      "The follow-up dates have passed, so there's nothing to add."
+    );
+  });
+
+  it("gives each reason its own sentence", () => {
+    const text = skippedText(
+      {
+        exam_name: "Prelim 2",
+        items: [],
+        skipped: [{ ...day("2026-10-14"), reason: "past" }, { ...day("2026-10-21"), reason: "past_exam" }],
+      },
+      ZONE
+    );
+    expect(text).toBe("Wed, Oct 21 falls after Prelim 2, so it isn't added. Wed, Oct 14 has passed, so it isn't added.");
+  });
+
   it("keeps a # in the exam name", () => {
     const text = skippedText({ exam_name: "Prelim #2", items: [day("2026-10-18")], skipped: [day("2026-10-21")] }, ZONE);
     expect(text).toBe("Wed, Oct 21 falls after Prelim #2, so it isn't added.");
