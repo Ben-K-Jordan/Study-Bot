@@ -144,10 +144,14 @@ export function buildExamScore(input: {
   }
 }
 
-/** The correction recorded for a missed multiple-choice exam question. */
+/**
+ * The correction recorded for an incorrect multiple-choice exam answer.
+ * Same wording as the server's for graded multiple choice (services/run.ts):
+ * auto-flashcards looks for `The correct answer is "X"` to turn a "Which of
+ * the following" stem into a card that can be answered without its options.
+ */
 export function mcqCorrectionRule(correctChoice: string): ErrorLogPayload {
-  const choice = correctChoice.trim().replace(/[.\s]+$/, "")
-  return { error_type: "MISCONCEPTION", correction_rule: `The right answer is ${choice}.` }
+  return { error_type: "MISCONCEPTION", correction_rule: `The correct answer is "${correctChoice.trim()}".` }
 }
 
 /**

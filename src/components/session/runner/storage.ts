@@ -10,19 +10,33 @@ export function draftKey(runId: string, phase: string, index: number): string {
   return `draft:${runId}:${phase}:${index}`
 }
 
-export function readDraft(key: string): Draft | null {
+/**
+ * A stored draft, keeping only fields of the right type. The question
+ * state checks the values themselves (a choice that still exists, a
+ * confidence on the 1, 3, 5 scale).
+ */
+export function parseDraft(raw: string | null): Draft | null {
+  if (!raw) return null
   try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== "object") return null
     const value = parsed as Record<string, unknown>
     const draft: Draft = {}
     if (typeof value.answer === "string") draft.answer = value.answer
+    if (typeof value.choice === "number") draft.choice = value.choice
+    if (typeof value.confidence === "number") draft.confidence = value.confidence
     if (typeof value.correction_rule === "string") draft.correction_rule = value.correction_rule
     if (typeof value.variant_question === "string") draft.variant_question = value.variant_question
     if (typeof value.error_type === "string") draft.error_type = value.error_type
     return draft
+  } catch {
+    return null
+  }
+}
+
+export function readDraft(key: string): Draft | null {
+  try {
+    return parseDraft(window.localStorage.getItem(key))
   } catch {
     return null
   }

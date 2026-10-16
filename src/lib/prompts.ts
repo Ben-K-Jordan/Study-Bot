@@ -324,7 +324,7 @@ export function generateErrorRepairPrompts(
     const text = variant
       ? `${variant}\n\nFrom memory: answer this similar question you wrote, then state the correction rule.`
       : original
-        ? `${original}\n\nYou missed this question before. From memory: state the correct rule and give a new example where it applies.`
+        ? `${original}\n\nYou answered this incorrectly before. From memory: state the correction rule and give a new example where it applies.`
         : `From memory: state the correction rule for this error and give a new example where it applies.`;
 
     return {

@@ -161,3 +161,47 @@ export function sourceLabel(n: number, source: { doc_title: string; page_number:
   const page = source.page_number && source.page_number > 0 ? `, page ${source.page_number}` : ""
   return `Source ${n}: ${source.doc_title}${page}`
 }
+
+/** Markdown and [n] citations stripped from AI text, for a one-line summary. */
+export function plainSummaryText(markdown: string): string {
+  return markdown
+    .replace(/\s*\[\d{1,2}\](?!\()/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "$2")
+    .replace(/\*(?=\S)([^*\n]*\S)\*/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** The first sentence of plain text, or all of it when it has no sentence end. */
+function firstSentence(text: string): string {
+  const match = text.match(/^(.+?[.?!])(?=\s|$)/)
+  return match ? match[1] : text
+}
+
+export interface FeedbackSummary {
+  /** "takeaway" is the AI's own takeaway; "explanation" is the explanation's first sentence. */
+  kind: "takeaway" | "explanation"
+  text: string
+}
+
+/**
+ * The one line the feedback sheet shows: the takeaway when there is one,
+ * else, after an answer that wasn't correct, the explanation's first
+ * sentence. A correct answer needs no more than its verdict, and its "why
+ * it's correct" reads in full just above. The full text reads below the
+ * question either way.
+ */
+export function feedbackSummary(
+  feedback: { key_takeaway?: string; explanation?: string } | null,
+  correct: boolean
+): FeedbackSummary | null {
+  const takeaway = plainSummaryText(feedback?.key_takeaway ?? "")
+  if (takeaway) return { kind: "takeaway", text: takeaway }
+  if (correct) return null
+  const main = plainSummaryText(feedback?.explanation ?? "")
+  return main ? { kind: "explanation", text: firstSentence(main) } : null
+}

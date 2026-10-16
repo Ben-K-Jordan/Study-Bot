@@ -4,18 +4,14 @@ import * as React from "react"
 import type { LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { AiTag as SharedAiTag } from "@/components/app/ai-tag"
 import { Skeleton } from "@/components/ui/skeleton"
 
 import { RichText } from "./rich-text"
 
 /** The tag every block of AI-written text carries beside its heading. */
 export function AiTag({ className }: { className?: string }) {
-  return (
-    <Badge variant="outline" className={cn("border-current/30 text-current", className)}>
-      AI-written
-    </Badge>
-  )
+  return <SharedAiTag tone="lesson" className={className} />
 }
 
 /** A heading for one block of the lesson, with an optional AI tag. */

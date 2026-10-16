@@ -48,6 +48,12 @@ export interface RunnerRun {
   current_prompt: RunnerPrompt | null
   /** Saved answers; present while scoring an exam simulation. */
   attempts?: RunnerAttemptRecord[]
+  /**
+   * The deck the run started with (redacted). Repair questions added during
+   * the run are stored apart from it, so prompt_count minus its length is
+   * how many were added, even after a refresh.
+   */
+  prompts?: readonly unknown[]
   break_state?: { on_break?: boolean } | null
 }
 
@@ -131,4 +137,14 @@ export function resultPhase(result: AttemptSubmitResult | null | undefined): str
 export function promptStepCount(prompt: RunnerPrompt): number | null {
   const value = prompt.meta?.step_count
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * Repair questions added to this run so far. They are stored apart from the
+ * starting deck, so the count survives a refresh; without the deck, fall
+ * back to the growth seen since the screen opened.
+ */
+export function repairsAdded(run: Pick<RunnerRun, "prompt_count" | "prompts">, totalAtOpen: number): number {
+  const base = Array.isArray(run.prompts) && run.prompts.length > 0 ? run.prompts.length : totalAtOpen
+  return Math.max(0, run.prompt_count - base)
 }

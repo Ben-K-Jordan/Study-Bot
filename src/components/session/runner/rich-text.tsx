@@ -78,8 +78,10 @@ function CitationButton({ n, citations }: { n: number; citations: Citations }) {
       aria-controls={`source-${n}`}
       aria-pressed={active}
       onClick={() => citations.onCite(n)}
+      // Margin on the left only, so the punctuation after a citation hugs it
+      // ("revisits it [1]."), and no taller than the line it sits in.
       className={cn(
-        "mx-0.5 inline-flex size-6 -translate-y-px items-center justify-center rounded-full align-middle text-xs font-bold tabular-nums transition-colors duration-150 ease-standard",
+        "ml-1 inline-flex size-5 items-center justify-center rounded-full align-[0.1em] type-label-s font-bold tabular-nums transition-colors duration-150 ease-standard",
         active
           ? "bg-lesson-selected-border text-lesson-on-primary"
           : "bg-lesson-selected text-lesson-on-selected hover:bg-lesson-selected-border hover:text-lesson-on-primary"

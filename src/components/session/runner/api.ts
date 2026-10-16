@@ -51,6 +51,18 @@ export async function saveReflection(
 }
 
 /**
+ * True when retrying the same request can't help and only a reload can:
+ * a 409 (another tab answered, the answer was already saved before a
+ * timeout, the session finished) or a message that already says to reload.
+ * The draft in localStorage brings the typed answer back after the reload.
+ */
+export function needsReload(error: unknown): boolean {
+  if (error instanceof ApiError && error.status === 409) return true
+  const message = error instanceof Error ? error.message : ""
+  return /\bReload\b/.test(message)
+}
+
+/**
  * Readable text for a failed save. Server messages that tell the student to
  * reload (another tab answered, the session finished) are shown as they
  * are; anything else gets the fallback, never a raw code.

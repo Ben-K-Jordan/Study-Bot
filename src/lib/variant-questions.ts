@@ -19,14 +19,14 @@ import type { Prompt } from "@/lib/prompts";
 
 /**
  * Variant question templates. Each retests the same idea from a different
- * angle; the missed question comes first, the instruction after it, and no
+ * angle; the question answered incorrectly comes first, the instruction after it, and no
  * template names the error type (an enum) or quotes an earlier repair.
  * Every one asks for an answer from memory.
  */
 const VARIANT_TEMPLATES = [
-  // Explain the idea and why the mistake happens
+  // Explain the idea and why the error happens
   (original: string) =>
-    `${original}\n\nFrom memory: explain the idea behind this question and why the usual mistake happens.`,
+    `${original}\n\nFrom memory: explain the idea behind this question and why this error usually happens.`,
 
   // Apply the same method to a new case
   (original: string) =>

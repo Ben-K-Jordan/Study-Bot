@@ -15,21 +15,29 @@ import { HOTKEY_HELP } from "./hotkeys"
  * The session's keyboard shortcuts, one button away (or "?"). Single-key
  * shortcuts can be turned off here (WCAG 2.1.4); Ctrl or Cmd with Enter
  * always works. Hidden on touch screens, where there is no keyboard.
+ *
+ * Opened with "?", it hands focus back to where the student was (an answer,
+ * say) when it closes, so the next Enter submits instead of reopening the
+ * help from its own button.
  */
 export function KeyboardHelp({
   open,
   onOpenChange,
+  returnFocusRef,
   shortcutsEnabled,
   onShortcutsEnabledChange,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Set when "?" opened the help: the element focused before it. Cleared on close. */
+  returnFocusRef?: React.RefObject<HTMLElement | null>
   shortcutsEnabled: boolean
   onShortcutsEnabledChange: (enabled: boolean) => void
 }) {
   const mod = useModKey()
   const titleId = React.useId()
   const switchId = React.useId()
+  const contentRef = React.useRef<HTMLDivElement>(null)
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -41,7 +49,24 @@ export function KeyboardHelp({
           <KeyboardIcon aria-hidden="true" className="size-6" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-80" aria-labelledby={titleId}>
+      <PopoverContent
+        align="start"
+        side="top"
+        className="w-80"
+        aria-labelledby={titleId}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current
+          if (returnFocusRef) returnFocusRef.current = null
+          // Opened from the button: Radix returns focus to it, as usual.
+          if (!target || !target.isConnected) return
+          // Closed by clicking or tabbing somewhere else: focus is already there.
+          const active = document.activeElement
+          if (active && active !== document.body && !contentRef.current?.contains(active)) return
+          event.preventDefault()
+          target.focus({ preventScroll: true })
+        }}
+        ref={contentRef}
+      >
         <h2 id={titleId} className="type-title-m">
           Keyboard shortcuts
         </h2>

@@ -16,6 +16,7 @@ import type { Outcome } from "./question-reducer"
 import { QuestionScreen, type SavedAnswer } from "./question-screen"
 import { readShortcutsEnabled, writeShortcutsEnabled } from "./storage"
 import {
+  repairsAdded,
   resultCompletesRun,
   resultStartsBreak,
   type AttemptSubmitResult,
@@ -67,12 +68,14 @@ export function RunnerScreen(props: RunnerScreenProps) {
   )
 }
 
-function Runner({ run, session, onSubmit, onComplete, onFinish, onBreak, onQuestionShown }: RunnerScreenProps) {
+function Runner({ run, onSubmit, onComplete, onFinish, onBreak, onQuestionShown }: RunnerScreenProps) {
   const announce = useLessonAnnounce()
   const [held, setHeld] = React.useState<HeldQuestion | null>(null)
   const [shortcutsEnabled, setShortcutsEnabled] = React.useState(readShortcutsEnabled)
-  // The deck can grow when a missed question brings a repair question.
-  const [baseTotal] = React.useState(run.prompt_count)
+  // The deck can grow when an incorrect answer brings a repair question.
+  // Without the starting deck (an older run payload), count from the size
+  // the run had when this screen opened.
+  const [totalAtOpen] = React.useState(run.prompt_count)
 
   // After the last exam answer the run turns to scoring: say so once.
   const [phaseSeen, setPhaseSeen] = React.useState(run.phase)
@@ -148,23 +151,17 @@ function Runner({ run, session, onSubmit, onComplete, onFinish, onBreak, onQuest
     writeShortcutsEnabled(enabled)
   }, [])
 
-  const injected = Math.max(0, run.prompt_count - baseTotal)
-  const status: React.ReactNode = examSim ? (
-    run.phase === "EXAM" ? (
-      "Answering"
-    ) : (
-      "Scoring"
-    )
-  ) : injected > 0 ? (
-    <>
-      {session.mode_label}
-      <span aria-hidden="true"> · </span>
-      <span className="sr-only">, </span>
-      <span>{plural(injected, { one: "# repair question added", other: "# repair questions added" })}</span>
-    </>
-  ) : (
-    session.mode_label
-  )
+  const injected = repairsAdded(run, totalAtOpen)
+  // A status line only when it carries state: the exam phase, or repair
+  // questions this session added. The mode itself is in the tab title and
+  // on the preflight screen, not an eyebrow over every question.
+  const status: string | undefined = examSim
+    ? run.phase === "EXAM"
+      ? "Answering"
+      : "Scoring"
+    : injected > 0
+      ? plural(injected, { one: "# repair question added", other: "# repair questions added" })
+      : undefined
 
   const question = held ?? (livePrompt ? { phase: run.phase, index: run.current_index, prompt: livePrompt } : null)
   const recovered =

@@ -100,7 +100,7 @@ function ErrorTypePicker({
     >
       <legend className="mb-1 type-title-m font-bold">Error type</legend>
       <p id={descriptionId} className="-mt-2 type-body-m text-lesson-muted">
-        It picks how the repair question asks about this again.
+        The type you pick decides how the repair question asks about this again.
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {ERROR_TYPE_OPTIONS.map((option) => {
@@ -149,6 +149,7 @@ export function ErrorLogForm({
   errorType,
   correctionRule,
   similarQuestion,
+  correctionError,
   disabled,
   onErrorType,
   onCorrection,
@@ -161,6 +162,9 @@ export function ErrorLogForm({
   errorType: ErrorType
   correctionRule: string
   similarQuestion: string
+  /** Shown beside the correction rule, such as when it was left empty. */
+  correctionError?: string
+  /** Saving: the choices lock and the text fields turn read-only, so focus stays put. */
   disabled: boolean
   onErrorType: (value: ErrorType) => void
   onCorrection: (text: string) => void
@@ -193,9 +197,10 @@ export function ErrorLogForm({
         value={correctionRule}
         onChange={(event) => onCorrection(event.target.value)}
         onKeyDown={onKeyDown}
+        error={correctionError}
         required
         aria-required="true"
-        disabled={disabled}
+        readOnly={disabled}
       />
       <FreeRecallInput
         label="Similar question (optional)"
@@ -204,7 +209,7 @@ export function ErrorLogForm({
         onChange={(event) => onSimilar(event.target.value)}
         onKeyDown={onKeyDown}
         showSubmitHint={false}
-        disabled={disabled}
+        readOnly={disabled}
       />
     </section>
   )

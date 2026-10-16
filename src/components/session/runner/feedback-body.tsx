@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BookOpenIcon, LightbulbIcon, TriangleAlertIcon } from "lucide-react"
+import { BookOpenIcon, TriangleAlertIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { ErrorState } from "@/components/app/error-state"
@@ -12,8 +12,8 @@ import { FreeRecallInput } from "@/components/lesson/free-recall-input"
 import { AiTag } from "./parts"
 import { highlightSnippet, sourceLabel } from "./question-kind"
 import { RichText, type Citations } from "./rich-text"
-import type { FeedbackStatus } from "./use-feedback"
-import type { FeedbackPayload, FeedbackSource, McqResult, SelfScore } from "./types"
+import type { FeedbackFailure, FeedbackState } from "./use-feedback"
+import type { FeedbackSource, McqResult, SelfScore } from "./types"
 
 /** Respect reduced motion when moving the view to a cited source. */
 function scrollBehavior(): ScrollBehavior {
@@ -32,6 +32,7 @@ function SectionTitle({ id, children, ai = false }: { id: string; children: Reac
   )
 }
 
+/** The numbered passages behind the explanation, as a plain list. */
 function Sources({
   sources,
   active,
@@ -43,9 +44,9 @@ function Sources({
 }) {
   const id = React.useId()
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-3">
+    <section aria-labelledby={id} className="flex flex-col gap-1">
       <SectionTitle id={id}>Sources</SectionTitle>
-      <ol className="flex flex-col gap-3">
+      <ol className="flex flex-col">
         {sources.map((source, i) => {
           const n = i + 1
           return (
@@ -57,15 +58,18 @@ function Sources({
                 if (el) sourceRefs.current.set(n, el)
                 else sourceRefs.current.delete(n)
               }}
-              className={cn(
-                "flex flex-col gap-2 rounded-2xl bg-lesson-surface px-4 py-3 ring-1 ring-lesson-option-border transition-shadow duration-150 ease-standard outline-none",
-                active === n && "ring-2 ring-lesson-selected-border"
-              )}
+              className="flex flex-col gap-1.5 border-t border-current/15 py-3 outline-none first:border-t-0"
             >
               <p className="flex items-start gap-2 type-label-l font-bold">
+                {/* The cited source's number fills in, like its citation button. */}
                 <span
                   aria-hidden="true"
-                  className="flex size-6 shrink-0 items-center justify-center rounded-full bg-lesson-selected type-label-m font-bold text-lesson-on-selected tabular-nums"
+                  className={cn(
+                    "flex size-6 shrink-0 items-center justify-center rounded-full type-label-m font-bold tabular-nums transition-colors duration-150 ease-standard",
+                    active === n
+                      ? "bg-lesson-selected-border text-lesson-on-primary"
+                      : "bg-lesson-selected text-lesson-on-selected"
+                  )}
                 >
                   {n}
                 </span>
@@ -77,7 +81,7 @@ function Sources({
                   ) : null}
                 </span>
               </p>
-              <blockquote className="type-body-m font-medium break-words text-lesson-neutral-text">
+              <blockquote className="pl-8 type-body-m font-medium break-words text-lesson-neutral-text">
                 {highlightSnippet(source.snippet).map((segment, k) =>
                   segment.mark ? (
                     <mark key={k} className="rounded-sm bg-lesson-selected px-0.5 text-lesson-on-selected">
@@ -127,11 +131,20 @@ function FeedbackLoading() {
   )
 }
 
+/** Each reason feedback isn't here gets its own words; the answer is always saved. */
+const FAILURE_COPY: Record<FeedbackFailure, { title: string; description: string }> = {
+  unavailable: { title: "Feedback isn't available for this question.", description: "Your answer is saved." },
+  load: { title: "Feedback didn't load.", description: "Your answer is saved. Check your connection, then retry." },
+  slow: {
+    title: "Feedback is taking longer than usual.",
+    description: "Your answer is saved. Retry to check again.",
+  },
+}
+
 export interface ReflectionProps {
   open: boolean
   onToggle: () => void
   correct: boolean
-  socraticQuestion: string | null
   selfExplanation: string
   socraticAnswer: string
   generatedExample: string
@@ -145,7 +158,7 @@ export interface ReflectionProps {
  * Self-explanation and the follow-up question, behind one quiet link. Saved
  * with the answer when the student moves on.
  */
-function Reflection(props: ReflectionProps) {
+function Reflection({ socraticQuestion, ...props }: ReflectionProps & { socraticQuestion: string | null }) {
   const panelId = React.useId()
   return (
     <div className="flex flex-col gap-4">
@@ -160,13 +173,13 @@ function Reflection(props: ReflectionProps) {
       </button>
       {props.open ? (
         <div id={panelId} className="flex flex-col gap-5">
-          {props.socraticQuestion ? (
+          {socraticQuestion ? (
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h3 className="type-title-s font-bold">Question to consider</h3>
                 <AiTag />
               </div>
-              <p className="type-body-l font-medium">{props.socraticQuestion}</p>
+              <p className="type-body-l font-medium">{socraticQuestion}</p>
               <FreeRecallInput
                 label="Your answer to the question (optional)"
                 description=""
@@ -205,46 +218,36 @@ function Reflection(props: ReflectionProps) {
 }
 
 /**
- * Everything the feedback sheet holds after an answer: the multiple-choice
- * result, the confident-error note, the pretest note, the AI explanation
- * with numbered sources, the student's own correction, and the reflection.
- * Feedback states (loading, nothing in the materials, failed) are distinct.
+ * The feedback that reads below the answered question, in the page's own
+ * scroll: why the wrong choice is tempting, the confident-error note, the
+ * AI explanation with numbered sources, the notes, the student's own
+ * correction and the reflection. The feedback sheet keeps only the verdict
+ * and a one-line summary, so it never covers this. Feedback states
+ * (loading, nothing in the materials, failed) are distinct.
  */
 export function FeedbackBody({
   score,
   mcq,
-  mcqMissing,
-  isPretest,
-  modelAnswerShown,
   confidentError,
-  status,
-  feedback,
-  onRetry,
-  retrying,
+  feedback: state,
   correctionRule,
   similarQuestion,
   reflection,
 }: {
   score: SelfScore | null
   mcq: McqResult | null
-  /** The multiple-choice result didn't come back with the saved answer. */
-  mcqMissing: boolean
-  isPretest: boolean
-  /** A model answer is on screen above the sheet. */
-  modelAnswerShown: boolean
   confidentError: boolean
-  status: FeedbackStatus
-  feedback: FeedbackPayload | null
-  onRetry: () => void
-  retrying: boolean
+  feedback: FeedbackState
   correctionRule: string
   similarQuestion: string
   reflection: ReflectionProps | null
 }) {
   const [activeSource, setActiveSource] = React.useState<number | null>(null)
   const sourceRefs = React.useRef(new Map<number, HTMLLIElement>())
+  const headingId = React.useId()
   const explanationId = React.useId()
   const correctionId = React.useId()
+  const { status, failure, feedback } = state
   const sources = feedback?.excerpts ?? []
   const correct = score === "CORRECT"
 
@@ -270,47 +273,32 @@ export function FeedbackBody({
     { title: "Pattern", text: feedback?.pattern_advice },
   ]
   const hasCorrection = Boolean(correctionRule.trim() || similarQuestion.trim())
+  const rationale = mcq && !mcq.is_correct ? mcq.rationale?.trim() : undefined
+  const hasStatus = status === "loading" || status === "failed" || status === "ready" || (status === "empty" && !correct)
+
+  if (!hasStatus && !rationale && !confidentError && !hasCorrection && !reflection) return null
 
   return (
-    <div data-testid="review-panel" className="flex flex-col gap-5 text-lesson-on-surface">
-      {/* Names the group for screen readers (and the e2e suite) without a
-          visible label stacked over the Explanation heading. */}
-      {score !== null && !correct ? <h3 className="sr-only">Feedback from your materials</h3> : null}
-      {mcq ? (
-        <div data-testid="mcq-result" className="flex flex-col gap-1">
-          {mcq.is_correct ? (
-            <p className="sr-only">Your answer is right: {mcq.correct_choice}</p>
-          ) : (
-            <>
-              <p className="type-body-l font-bold">Right answer: {mcq.correct_choice}</p>
-              {mcq.rationale ? (
-                <div className="flex flex-col gap-1 pt-1">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <h3 className="type-title-s font-bold">Why your answer is tempting</h3>
-                    <AiTag />
-                  </div>
-                  <p className="type-body-m font-medium text-lesson-neutral-text">{mcq.rationale}</p>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      ) : null}
-
-      {mcqMissing ? (
-        <p className="type-body-l font-medium">
-          Your answer is saved, but its result didn&apos;t load. You&apos;ll see it with your session results.
-        </p>
-      ) : null}
+    <section
+      aria-labelledby={headingId}
+      data-testid="review-panel"
+      // Enter inside the feedback acts on what's focused here, never "Next question".
+      data-feedback-details=""
+      // Anything scrolled to or focused here stays clear of the sticky top
+      // bar and of the feedback sheet (up to about a third of a phone screen).
+      className="flex flex-col gap-6 text-lesson-on-surface **:scroll-mt-28 **:scroll-mb-[max(18rem,40dvh)]"
+    >
+      {/* Names the region for screen readers without a visible label
+          stacked over the Explanation heading. */}
+      <h2 id={headingId} className="sr-only">
+        Feedback from your materials
+      </h2>
 
       {confidentError ? (
-        <div
-          data-testid="hypercorrection-badge"
-          className="flex items-start gap-3 rounded-2xl bg-lesson-surface px-4 py-3 ring-1 ring-lesson-option-border"
-        >
+        <div data-testid="hypercorrection-badge" className="flex items-start gap-2">
           <TriangleAlertIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-lesson-on-wrong" />
           <div className="flex flex-col gap-1">
-            <h3 className="type-title-s font-bold">Confident error</h3>
+            <h3 className="type-body-m font-bold">Confident error</h3>
             <p className="type-body-m font-medium text-lesson-neutral-text">
               You marked this Sure. Errors made with high confidence are often corrected well right after feedback,
               then return later, so this question comes back on another day.
@@ -319,25 +307,22 @@ export function FeedbackBody({
         </div>
       ) : null}
 
-      {isPretest ? (
-        <p className="type-body-l font-medium">
-          {correct
-            ? "You already knew this one."
-            : modelAnswerShown
-              ? "Read the model answer now: trying first helps it stick."
-              : "Trying first helps this topic stick when you study it."}
-        </p>
+      {rationale ? (
+        <section aria-labelledby={`${headingId}-tempting`} className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 id={`${headingId}-tempting`} className="type-title-s font-bold">
+              Why your answer is tempting
+            </h3>
+            <AiTag />
+          </div>
+          <p className="type-body-m font-medium text-lesson-neutral-text">{rationale}</p>
+        </section>
       ) : null}
 
       {status === "loading" ? <FeedbackLoading /> : null}
 
       {status === "failed" ? (
-        <ErrorState
-          title="Feedback isn't available for this question."
-          description="Your answer is saved."
-          onRetry={onRetry}
-          retrying={retrying}
-        />
+        <ErrorState {...FAILURE_COPY[failure ?? "unavailable"]} onRetry={state.retry} retrying={state.retrying} />
       ) : null}
 
       {status === "empty" && !correct ? (
@@ -350,7 +335,7 @@ export function FeedbackBody({
       {status === "ready" && mainText ? (
         <section aria-labelledby={explanationId} className="flex flex-col gap-2">
           <SectionTitle id={explanationId} ai>
-            {correct ? "Why it's right" : "Explanation"}
+            {correct ? "Why it's correct" : "Explanation"}
           </SectionTitle>
           <p className="type-body-m text-lesson-muted">
             {sources.length > 0
@@ -360,15 +345,6 @@ export function FeedbackBody({
           <RichText className="type-body-l font-medium" citations={citations}>
             {mainText}
           </RichText>
-          {feedback?.key_takeaway ? (
-            <p className="flex items-start gap-2 type-body-l font-bold">
-              <LightbulbIcon aria-hidden="true" className="mt-1 size-5 shrink-0" />
-              <span>
-                <span className="sr-only">Takeaway: </span>
-                {feedback.key_takeaway}
-              </span>
-            </p>
-          ) : null}
         </section>
       ) : null}
 
@@ -393,11 +369,11 @@ export function FeedbackBody({
               Similar question: {similarQuestion.trim()}
             </p>
           ) : null}
-          <p className="type-body-m text-lesson-muted">Say the right answer out loud once before you move on.</p>
+          <p className="type-body-m text-lesson-muted">Say the correct answer out loud once before you move on.</p>
         </section>
       ) : null}
 
-      {reflection ? <Reflection {...reflection} /> : null}
-    </div>
+      {reflection ? <Reflection {...reflection} socraticQuestion={feedback?.socratic_followup ?? null} /> : null}
+    </section>
   )
 }

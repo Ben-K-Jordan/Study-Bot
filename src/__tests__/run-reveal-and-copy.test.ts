@@ -195,7 +195,12 @@ describe("question text", () => {
     const today = crossSessionRepairText({ daysSince: 0, originalText: "Define recursion." });
     expect(today).toContain("earlier today");
 
-    for (const t of [withVariant, withOriginal, today]) {
+    // VOICE: an incorrect answer is an error, and the student wrote a "correction rule".
+    expect(withOriginal).toContain("You answered this incorrectly 1 day ago.");
+    expect(crossSessionRepairText({ daysSince: 2 })).toContain("state the correction rule");
+
+    for (const t of [withVariant, withOriginal, today, crossSessionRepairText({ daysSince: 2 })]) {
+      expect(t).not.toMatch(/\b(missed|mistake|correct rule)\b/i);
       expect(t).not.toMatch(DASHES);
       expect(t).not.toMatch(/\b(MISCONCEPTION|misconception error|\d+d ago)\b/);
     }

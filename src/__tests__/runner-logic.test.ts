@@ -36,8 +36,14 @@ import {
   type QuestionAction,
   type QuestionState,
 } from "@/components/session/runner/question-reducer"
-import { draftKey } from "@/components/session/runner/storage"
-import { resultCompletesRun, resultStartsBreak } from "@/components/session/runner/types"
+import { draftKey, parseDraft } from "@/components/session/runner/storage"
+import { repairsAdded, resultCompletesRun, resultStartsBreak } from "@/components/session/runner/types"
+import { feedbackSummary, plainSummaryText } from "@/components/session/runner/question-kind"
+import { feedbackStatus } from "@/components/session/runner/use-feedback"
+import { questionBindings, type QuestionHotkeys } from "@/components/session/runner/use-question-hotkeys"
+import { submitFailure } from "@/components/session/runner/use-question-actions"
+import { needsReload } from "@/components/session/runner/api"
+import { ApiError } from "@/lib/client-api"
 
 describe("answer timing", () => {
   it("counts whole seconds and stays under the server's 7200 limit", () => {
@@ -120,10 +126,20 @@ describe("error logs", () => {
       kind: "SCORE",
       self_score: "CORRECT",
     })
-    expect(buildExamScore({ index: 2, score: "INCORRECT", errorLog: mcqCorrectionRule("Stack.") }).error_log).toEqual({
+    expect(buildExamScore({ index: 2, score: "INCORRECT", errorLog: mcqCorrectionRule(" Stack ") }).error_log).toEqual({
       error_type: "MISCONCEPTION",
-      correction_rule: "The right answer is Stack.",
+      correction_rule: 'The correct answer is "Stack".',
     })
+  })
+
+  it("word an exam multiple-choice correction like the server, so error cards stay answerable", () => {
+    // src/lib/auto-flashcards.ts wraps a "Which of the following" stem only
+    // when the correction carries this marker; services/run.ts writes the same.
+    const marker = /the correct answer is\s*"[^"]+"/i
+    expect(mcqCorrectionRule("A hash table keyed by vertex").correction_rule).toMatch(marker)
+    expect(mcqCorrectionRule("A hash table keyed by vertex").correction_rule).toBe(
+      'The correct answer is "A hash table keyed by vertex".'
+    )
   })
 })
 
@@ -332,6 +348,52 @@ describe("question state", () => {
     expect(state).toMatchObject({ pending: null, error: "Answer not saved.", answer: "a", step: "answering" })
   })
 
+  it("keeps a multiple-choice pick and its rating across a break or refresh", () => {
+    const picked = run(
+      initialQuestionState({ examScoring: false, choiceCount: 4 }),
+      { type: "choose", index: 2 },
+      { type: "rate", value: 5 }
+    )
+    const saved = draftOf(picked)
+    expect(saved).toEqual({ choice: 2, confidence: 5 })
+    // Through localStorage and back.
+    const restored = initialQuestionState({ examScoring: false, draft: parseDraft(JSON.stringify(saved)), choiceCount: 4 })
+    expect(restored).toMatchObject({ choice: 2, confidence: 5 })
+    // A pick that no longer fits the question, or a rating off the scale, is dropped.
+    expect(initialQuestionState({ examScoring: false, draft: { choice: 5, confidence: 4 }, choiceCount: 4 })).toMatchObject({
+      choice: null,
+      confidence: null,
+    })
+    // Exam scoring reads the answer saved during the exam, never a draft.
+    expect(initialQuestionState({ examScoring: true, draft: { choice: 1 }, choiceCount: 4 }).choice).toBeNull()
+  })
+
+  it("shows an empty correction rule beside the field and clears it on typing", () => {
+    const logging = run(
+      fresh(),
+      { type: "answer", text: "a" },
+      { type: "reveal_start", seconds: 1 },
+      { type: "reveal_done", reveal: { model_answer: "m", key_points: null } },
+      { type: "score", score: "INCORRECT", errorLog: true },
+      { type: "field_error", error: { field: "correction", message: "Write the correction rule first." } }
+    )
+    expect(logging.fieldError).toEqual({ field: "correction", message: "Write the correction rule first." })
+    expect(run(logging, { type: "correction", text: "r" }).fieldError).toBeNull()
+    expect(run(logging, { type: "similar", text: "q" }).fieldError).not.toBeNull()
+  })
+
+  it("remembers when only a reload helps, until the next try", () => {
+    const failed = run(
+      fresh(),
+      { type: "answer", text: "a" },
+      { type: "submit_start" },
+      { type: "failed", message: "x", reload: true }
+    )
+    expect(failed.errorReload).toBe(true)
+    expect(run(failed, { type: "submit_start" }).errorReload).toBe(false)
+    expect(run(fresh(), { type: "submit_start" }, { type: "failed", message: "x" }).errorReload).toBe(false)
+  })
+
   it("lets the student change the score from the error log", () => {
     const state = run(
       fresh(),
@@ -358,5 +420,132 @@ describe("submit results", () => {
 describe("draft keys", () => {
   it("keep the existing localStorage contract", () => {
     expect(draftKey("run-1", "ACTIVE", 3)).toBe("draft:run-1:ACTIVE:3")
+  })
+})
+
+describe("stored drafts", () => {
+  it("keep only fields of the right type", () => {
+    expect(parseDraft(JSON.stringify({ answer: "a", choice: "2", confidence: 3, error_type: "MEMORY" }))).toEqual({
+      answer: "a",
+      confidence: 3,
+      error_type: "MEMORY",
+    })
+    expect(parseDraft("not json")).toBeNull()
+    expect(parseDraft(null)).toBeNull()
+  })
+})
+
+describe("feedback status", () => {
+  const ok = { status: "OK", excerpts: [], explanation: "x" }
+  const pending = { status: "PENDING", excerpts: [] }
+  it("tells a slow poll, a failed load and unavailable feedback apart", () => {
+    expect(feedbackStatus({ attemptId: null, error: null, data: undefined, polls: 0 })).toEqual({
+      status: "idle",
+      failure: null,
+    })
+    expect(feedbackStatus({ attemptId: "a", error: null, data: undefined, polls: 0 }).status).toBe("loading")
+    expect(feedbackStatus({ attemptId: "a", error: null, data: pending, polls: 3 }).status).toBe("loading")
+    expect(feedbackStatus({ attemptId: "a", error: null, data: pending, polls: 25 })).toEqual({
+      status: "failed",
+      failure: "slow",
+    })
+    expect(feedbackStatus({ attemptId: "a", error: new Error("x"), data: undefined, polls: 0 }).failure).toBe("load")
+    expect(
+      feedbackStatus({ attemptId: "a", error: null, data: { status: "UNAVAILABLE", excerpts: [] }, polls: 0 }).failure
+    ).toBe("unavailable")
+    expect(feedbackStatus({ attemptId: "a", error: null, data: ok, polls: 0 }).status).toBe("ready")
+    expect(feedbackStatus({ attemptId: "a", error: null, data: { status: "OK", excerpts: [] }, polls: 0 }).status).toBe(
+      "empty"
+    )
+  })
+})
+
+describe("feedback sheet summary", () => {
+  it("prefers the takeaway, else the explanation's first sentence, without markdown or citations", () => {
+    expect(feedbackSummary({ key_takeaway: "Use a **priority queue** [1].", explanation: "Long." }, false)).toEqual({
+      kind: "takeaway",
+      text: "Use a priority queue.",
+    })
+    expect(
+      feedbackSummary({ explanation: "Dijkstra always takes the closest vertex [1]. So it needs a heap [2]." }, false)
+    ).toEqual({ kind: "explanation", text: "Dijkstra always takes the closest vertex." })
+    expect(feedbackSummary({ explanation: "Use a `heap` here. More." }, false)).toEqual({
+      kind: "explanation",
+      text: "Use a heap here.",
+    })
+    // A correct answer shows only a takeaway; its explanation reads in full above.
+    expect(feedbackSummary({ explanation: "Why it works." }, true)).toBeNull()
+    expect(feedbackSummary({ key_takeaway: "Keep it." }, true)).toEqual({ kind: "takeaway", text: "Keep it." })
+    expect(feedbackSummary({ explanation: "  " }, false)).toBeNull()
+    expect(feedbackSummary(null, false)).toBeNull()
+  })
+
+  it("strips links, headings and list markers", () => {
+    expect(plainSummaryText("## Why\n- See [the notes](http://x) for *more*")).toBe("Why See the notes for more")
+  })
+})
+
+describe("question keys", () => {
+  const noop = () => undefined
+  const base: QuestionHotkeys = {
+    step: "answering",
+    mcq: true,
+    choiceCount: 3,
+    examMcqScorable: false,
+    shortcutsEnabled: true,
+    helpOpen: false,
+    onToggleHelp: noop,
+    onChoose: noop,
+    onRate: noop,
+    onSubmit: noop,
+    onScore: noop,
+    onSaveExamMcqScore: noop,
+    onSaveCorrection: noop,
+    onContinue: noop,
+  }
+  const keys = (input: QuestionHotkeys) => questionBindings(input).map((b) => `${b.mod ? "mod+" : ""}${b.key}`)
+
+  it("pick, rate and submit a multiple-choice answer", () => {
+    expect(keys(base)).toEqual(["?", "1", "2", "3", "enter", "q", "w", "e"])
+    const chosen: number[] = []
+    const rated: number[] = []
+    const all = questionBindings({ ...base, onChoose: (i) => chosen.push(i), onRate: (v) => rated.push(v) })
+    for (const binding of all) if (binding.key !== "?" && binding.key !== "enter") binding.run()
+    expect(chosen).toEqual([0, 1, 2])
+    expect(rated).toEqual([1, 3, 5])
+  })
+
+  it("keep only Enter bindings when single-key shortcuts are off", () => {
+    expect(keys({ ...base, shortcutsEnabled: false })).toEqual(["enter"])
+    expect(keys({ ...base, mcq: false, shortcutsEnabled: false })).toEqual(["mod+enter"])
+    expect(keys({ ...base, step: "scoring", mcq: false })).toEqual(["?", "1", "2", "3"])
+    expect(keys({ ...base, step: "error_log" })).toEqual(["?", "mod+enter"])
+    expect(keys({ ...base, step: "feedback", shortcutsEnabled: false })).toEqual(["enter"])
+  })
+})
+
+describe("failed saves", () => {
+  it("offer Reload instead of Retry when the server already moved on", () => {
+    const saved = new ApiError("This session changed in another tab. Reload to continue.", 409, {
+      code: "duplicate_attempt",
+    })
+    expect(submitFailure(saved)).toEqual({ message: "This answer is already saved. Reload to continue.", reload: true })
+    const otherTab = new ApiError("This question was answered in another tab. Reload to continue.", 409, {
+      code: "wrong_index",
+    })
+    expect(submitFailure(otherTab)).toEqual({ message: otherTab.message, reload: true })
+    const server = new ApiError("Answer not saved. Retry in a moment.", 500, null)
+    expect(submitFailure(server)).toEqual({ message: server.message, reload: false })
+    expect(needsReload(new ApiError("This question isn't in the session. Reload to continue.", 400, null))).toBe(true)
+    expect(needsReload(new TypeError("Failed to fetch"))).toBe(false)
+  })
+})
+
+describe("repair questions added", () => {
+  it("count from the starting deck, so a refresh keeps the number", () => {
+    expect(repairsAdded({ prompt_count: 7, prompts: [1, 2, 3, 4, 5] }, 7)).toBe(2)
+    expect(repairsAdded({ prompt_count: 5, prompts: [1, 2, 3, 4, 5] }, 5)).toBe(0)
+    // No deck in the payload: growth since the screen opened.
+    expect(repairsAdded({ prompt_count: 6 }, 5)).toBe(1)
   })
 })

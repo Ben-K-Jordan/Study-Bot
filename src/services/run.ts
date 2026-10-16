@@ -1681,9 +1681,9 @@ export function pretestQuestionText(topic: string): string {
 
 /**
  * A cross-session repair question. The student's own similar question is
- * the retest when there is one; otherwise the missed question comes back
- * with a request for the rule. Keeps "From memory" (repair templates share
- * it across modes).
+ * the retest when there is one; otherwise the question answered incorrectly
+ * comes back with a request for the correction rule. Keeps "From memory"
+ * (repair templates share it across modes).
  */
 export function crossSessionRepairText(params: {
   daysSince: number;
@@ -1699,9 +1699,9 @@ export function crossSessionRepairText(params: {
     return `${variant}\n\nFrom memory: answer this similar question you wrote ${when}, then state the correction rule.`;
   }
   if (original) {
-    return `${original}\n\nYou missed this question ${when}. From memory: state the correct rule, say why the mistake happens, and give a new example where the rule applies.`;
+    return `${original}\n\nYou answered this incorrectly ${when}. From memory: state the correction rule, say why the error happens, and give a new example where the rule applies.`;
   }
-  return "From memory: state the correction rule for an error you made earlier, say why the mistake happens, and give a new example where the rule applies.";
+  return "From memory: state the correction rule for an error you made earlier, say why the error happens, and give a new example where the rule applies.";
 }
 
 /** A spaced review question for a due topic. */
@@ -2356,8 +2356,10 @@ async function completePlanItemsForSession(
   const result = await prisma.studyPlanItem.updateMany({
     where: {
       sessionId,
-      // Moved sessions (RESCHEDULED) are still to do, so finishing one marks it done too
-      status: { in: ["SCHEDULED", "IN_PROGRESS", "RESCHEDULED"] },
+      // Moved sessions (RESCHEDULED) are still to do, and a missed or skipped
+      // session the student does anyway is done, so finishing any of them
+      // marks it done.
+      status: { in: ["SCHEDULED", "IN_PROGRESS", "RESCHEDULED", "MISSED", "SKIPPED"] },
     },
     data: {
       status: "DONE",
